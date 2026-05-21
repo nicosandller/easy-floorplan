@@ -71,6 +71,33 @@ Edit a dashboard → **Add card** → search **Easy Floorplan**. Use the toolbar
 - **select** — move, rotate, resize, recolor, delete. Arrow keys nudge the selection
   (hold **Shift** for 1-unit steps). Undo/redo and a zoom slider are in the toolbar.
 
+## Devices
+
+A **device** binds a Home Assistant entity to a spot on the plan. Add one with
+**+ device**, then pick the entity in the side panel. By default it shows an icon badge:
+
+- **Tap to act** — lights, switches, covers, fans and `input_boolean`s toggle on tap;
+  any other entity opens its more-info dialog.
+- **Live look** — the badge highlights when the entity is "on". Turn on **Show state**
+  to display the current value next to it (handy for temperature/humidity sensors).
+- **Make it yours** — override the **icon** (with autocomplete + live preview), set a
+  custom **name**, change the **size**, **rotate** it, or hide the icon entirely.
+
+### Presence ripples
+
+For motion/occupancy/presence sensors, switch a device's **Display** mode from *Icon
+badge* to **Ripple** or **Icon + ripple**. Instead of a static icon it draws animated
+concentric rings:
+
+- **Active** (sensor on) → the rings continuously pulse outward and fade, drawing the
+  eye to where motion is happening.
+- **Idle** (sensor off) → the rings stop and only a faint dot remains, so the spot stays
+  marked without being distracting.
+
+You can set the **ripple color** and **ripple size** per device, so e.g. a calm blue
+ring in the living room and a warmer one by the entrance. It works with any entity that
+reports an on/off-like state, not just presence sensors.
+
 ## Configuration reference
 
 The editor writes this config for you; manual editing is optional.
