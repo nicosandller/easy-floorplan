@@ -35,7 +35,12 @@ automatically to the card and screen size.
 
 ### HACS (recommended)
 
-This is currently distributed as a **custom repository**:
+This is currently distributed as a **custom repository**. Click the badge to add it
+to your own Home Assistant in one step:
+
+[![Open Easy Floorplan in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=nicosandller&repository=easy-floorplan&category=frontend)
+
+…or add it manually:
 
 1. In Home Assistant, open **HACS**.
 2. Top-right **⋮ → Custom repositories**.
