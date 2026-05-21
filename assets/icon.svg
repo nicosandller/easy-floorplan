@@ -1,0 +1,26 @@
+<svg width="512" height="512" viewBox="0 0 512 512" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <!-- Pastel background -->
+  <rect width="512" height="512" rx="96" fill="#B2DFDB"/>
+
+  <!-- Floorplan walls: closed room with a door opening on the bottom wall -->
+  <g stroke="#37474F" stroke-width="28" stroke-linecap="round" stroke-linejoin="round" fill="none">
+    <!-- Top wall -->
+    <path d="M132 138 H380"/>
+    <!-- Right wall -->
+    <path d="M380 138 V374"/>
+    <!-- Left wall -->
+    <path d="M132 138 V374"/>
+    <!-- Bottom wall, left segment (stops at the door opening) -->
+    <path d="M132 374 H236"/>
+    <!-- Bottom wall, right segment -->
+    <path d="M340 374 H380"/>
+  </g>
+
+  <!-- Door: open leaf + quarter swing arc -->
+  <g stroke="#00897B" stroke-width="20" stroke-linecap="round" fill="none">
+    <!-- swing arc -->
+    <path d="M340 374 A104 104 0 0 0 236 270" opacity="0.55"/>
+    <!-- open door leaf -->
+    <path d="M236 374 V270"/>
+  </g>
+</svg>
