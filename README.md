@@ -4,16 +4,12 @@
 [![release][release-badge]][release-url]
 [![license][license-badge]](LICENSE)
 
-A Home Assistant Lovelace card for building an interactive floorplan — **with a visual
+A Home Assistant Lovelace card for building an interactive floorplan — **with a visual DRAG AND DROP 
 editor**. Draw walls, drop doors and windows, add gray furniture diagrams and text
 labels, and place your entities as icons, ripples or live state. Everything scales
 automatically to the card and screen size.
 
-> You almost never write YAML by hand — the card ships with a drag-and-drop editor.
-> The configuration below is generated for you and shown here for reference.
-
-![screenshot](docs/screenshot.png)
-<!-- Replace docs/screenshot.png with a real screenshot or GIF of the editor. -->
+<img width="1080" height="608" alt="demo" src="https://github.com/user-attachments/assets/98abaddc-b713-492f-be85-ca5f778f3779" />
 
 ## Features
 
@@ -30,6 +26,10 @@ automatically to the card and screen size.
 - **Text labels** and a configurable **canvas background color**.
 - **Auto-scaling** — a virtual coordinate space + SVG means the plan rescales to any
   card or screen size with no reflow.
+
+## What you can end up with
+
+<img width="1103" height="592" alt="demo_screenshot" src="https://github.com/user-attachments/assets/c05d32e3-8a9e-4643-8c25-79c1128dbb59" />
 
 ## Installation
 
