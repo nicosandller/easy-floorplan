@@ -808,9 +808,12 @@ export class FloorplanCardEditor extends LitElement {
     const walls = this._floor().walls.map((w) => ({ ...w, id: uid("wall") }));
     const n = (this._config.floors?.length ?? 1) + 1;
     const floor = makeFloor(`Floor ${n}`, walls);
-    this._commit({ ...this._config, floors: [...(this._config.floors ?? []), floor] });
+    const floors = [...(this._config.floors ?? []), floor];
+    // Make the new floor active *before* committing so that a synchronous
+    // config-changed -> setConfig round-trip keeps the new floor selected.
     this._activeFloorId = floor.id;
     this._clearSel();
+    this._commit({ ...this._config, floors });
   }
 
   private _switchFloor(id: string): void {
@@ -923,10 +926,14 @@ export class FloorplanCardEditor extends LitElement {
           <span class="floors">
             <label>floor</label>
             <select
-              .value=${this._activeFloorId}
               @change=${(e: Event) => this._switchFloor((e.target as HTMLSelectElement).value)}
             >
-              ${floors.map((f) => html`<option value=${f.id}>${f.name}</option>`)}
+              ${floors.map(
+                (f) =>
+                  html`<option value=${f.id} ?selected=${f.id === this._activeFloorId}>
+                    ${f.name}
+                  </option>`
+              )}
             </select>
             <input
               class="floor-name"
@@ -1212,7 +1219,7 @@ export class FloorplanCardEditor extends LitElement {
       </p>`;
 
     if (sel.kind === "opening") {
-      const o = this._config.openings.find((x) => x.id === sel.id);
+      const o = this._floor().openings.find((x) => x.id === sel.id);
       if (!o) return html`${nothing}`;
       return html`
         <div class="row">
@@ -1264,7 +1271,7 @@ export class FloorplanCardEditor extends LitElement {
     }
 
     if (sel.kind === "item") {
-      const it = this._config.items.find((x) => x.id === sel.id);
+      const it = this._floor().items.find((x) => x.id === sel.id);
       if (!it) return html`${nothing}`;
       return html`
         <div class="row">
@@ -1450,7 +1457,7 @@ export class FloorplanCardEditor extends LitElement {
     }
 
     if (sel.kind === "text") {
-      const t = (this._config.texts ?? []).find((x) => x.id === sel.id);
+      const t = this._floor().texts.find((x) => x.id === sel.id);
       if (!t) return html`${nothing}`;
       return html`
         <div class="row">
@@ -1526,7 +1533,7 @@ export class FloorplanCardEditor extends LitElement {
     }
 
     if (sel.kind === "furniture") {
-      const f = (this._config.furniture ?? []).find((x) => x.id === sel.id);
+      const f = this._floor().furniture.find((x) => x.id === sel.id);
       if (!f) return html`${nothing}`;
       return html`
         <div class="row">
