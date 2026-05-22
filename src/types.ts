@@ -34,6 +34,8 @@ export interface Opening {
   entity?: string;
   /** Flip the open/closed interpretation of `entity` (for inverted sensors). */
   invert?: boolean;
+  /** Color of the leaf/sash and swing arc while actively open. Falls back to the primary color. */
+  activeColor?: string;
 }
 
 export type ItemKind = "light" | "switch" | "sensor" | "binary_sensor" | "climate" | "cover" | "generic";

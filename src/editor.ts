@@ -1259,16 +1259,34 @@ export class FloorplanCardEditor extends LitElement {
         </div>
         ${o.entity
           ? html`<div class="row">
-              <label>Invert</label>
-              <input
-                type="checkbox"
-                .checked=${o.invert ?? false}
-                @change=${(e: Event) =>
-                  this._updateOpening(o.id, {
-                    invert: (e.target as HTMLInputElement).checked || undefined,
-                  })}
-              />
-            </div>`
+                <label>Invert</label>
+                <input
+                  type="checkbox"
+                  .checked=${o.invert ?? false}
+                  @change=${(e: Event) =>
+                    this._updateOpening(o.id, {
+                      invert: (e.target as HTMLInputElement).checked || undefined,
+                    })}
+                />
+              </div>
+              <div class="row">
+                <label>Active color</label>
+                <input
+                  type="color"
+                  .value=${o.activeColor ?? "#03a9f4"}
+                  @input=${(e: Event) =>
+                    this._updateOpening(o.id, { activeColor: (e.target as HTMLInputElement).value })}
+                />
+                <input
+                  type="text"
+                  placeholder="(primary)"
+                  .value=${o.activeColor ?? ""}
+                  @change=${(e: Event) =>
+                    this._updateOpening(o.id, {
+                      activeColor: (e.target as HTMLInputElement).value || undefined,
+                    })}
+                />
+              </div>`
           : nothing}
         <div class="row">
           <label>Angle</label>
@@ -1723,19 +1741,23 @@ export class FloorplanCardEditor extends LitElement {
       opacity: 0.5;
       pointer-events: none;
     }
-    .fp-door-leaf {
+    .fp-door-leaf,
+    .fp-leaf-r {
       transform-box: fill-box;
-      transform-origin: left center;
       transition: transform 0.5s ease;
     }
-    .fp-door-leaf rect {
+    .fp-door-leaf {
+      transform-origin: left center;
+    }
+    .fp-leaf-r {
+      transform-origin: right center;
+    }
+    .fp-door-leaf rect,
+    .fp-leaf-r rect {
       transition: fill 0.5s ease;
     }
     .fp-door-arc {
       transition: stroke-dashoffset 0.5s ease, stroke 0.5s ease;
-    }
-    .fp-window-sash {
-      transition: transform 0.5s ease, stroke 0.5s ease;
     }
     .wall-hit {
       stroke: transparent;

@@ -204,7 +204,8 @@ export class FloorplanCard extends LitElement {
                 "var(--primary-text-color)",
                 "var(--card-background-color, #fff)",
                 isOpen,
-                !!o.entity && isOpen
+                !!o.entity && isOpen,
+                o.activeColor ?? "var(--primary-color, #03a9f4)"
               );
             })}
           </svg>
@@ -289,19 +290,23 @@ export class FloorplanCard extends LitElement {
     .wall {
       stroke: var(--primary-text-color);
     }
-    .fp-door-leaf {
+    .fp-door-leaf,
+    .fp-leaf-r {
       transform-box: fill-box;
-      transform-origin: left center;
       transition: transform 0.5s ease;
     }
-    .fp-door-leaf rect {
+    .fp-door-leaf {
+      transform-origin: left center;
+    }
+    .fp-leaf-r {
+      transform-origin: right center;
+    }
+    .fp-door-leaf rect,
+    .fp-leaf-r rect {
       transition: fill 0.5s ease;
     }
     .fp-door-arc {
       transition: stroke-dashoffset 0.5s ease, stroke 0.5s ease;
-    }
-    .fp-window-sash {
-      transition: transform 0.5s ease, stroke 0.5s ease;
     }
     .items {
       position: absolute;

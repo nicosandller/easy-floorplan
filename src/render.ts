@@ -77,8 +77,10 @@ export function renderOpening(
 
   let body: SVGTemplateResult;
   if (o.type === "window") {
-    // A sliding sash: the right pane slides left over the fixed left pane when open.
-    const slide = open ? -half : 0;
+    // Two casement leaves hinged at each jamb. Closed, they meet in the middle
+    // along the wall; open, they swing outward (up) like double doors, each
+    // tracing a quarter-circle arc (radius = half) that draws on as it opens.
+    const arcLen = (Math.PI / 2) * half;
     body = svg`
         ${cut}
         <!-- jambs -->
@@ -86,13 +88,24 @@ export function renderOpening(
               stroke=${color} stroke-width="2" />
         <line x1=${half} y1=${-cutH / 2} x2=${half} y2=${cutH / 2}
               stroke=${color} stroke-width="2" />
-        <!-- fixed pane (left half) -->
-        <line x1=${-half} y1="-2.5" x2="0" y2="-2.5" stroke=${color} stroke-width="1.5" />
-        <line x1=${-half} y1="2.5" x2="0" y2="2.5" stroke=${color} stroke-width="1.5" />
-        <!-- sliding sash (right half); inherits stroke so it can transition color -->
-        <g class="fp-window-sash" style="transform:translateX(${slide}px);stroke:${tone};">
-          <line x1="0" y1="-2.5" x2=${half} y2="-2.5" stroke-width="2.5" />
-          <line x1="0" y1="2.5" x2=${half} y2="2.5" stroke-width="2.5" />
+        <!-- swing arcs, drawn from the middle outward -->
+        <path class="fp-door-arc" d="M 0 0 A ${half} ${half} 0 0 0 ${-half} ${-half}"
+              fill="none" stroke-width="1.5" stroke-dasharray=${arcLen}
+              style="stroke:${tone};stroke-dashoffset:${open ? 0 : arcLen};" />
+        <path class="fp-door-arc" d="M 0 0 A ${half} ${half} 0 0 1 ${half} ${-half}"
+              fill="none" stroke-width="1.5" stroke-dasharray=${arcLen}
+              style="stroke:${tone};stroke-dashoffset:${open ? 0 : arcLen};" />
+        <!-- left leaf, hinged at left jamb -->
+        <g transform="translate(${-half} 0)">
+          <g class="fp-door-leaf" style="transform:rotate(${open ? -90 : 0}deg);">
+            <rect x="0" y="-1.25" width=${half} height="2.5" style="fill:${tone};" />
+          </g>
+        </g>
+        <!-- right leaf, hinged at right jamb -->
+        <g transform="translate(${half} 0)">
+          <g class="fp-leaf-r" style="transform:rotate(${open ? 90 : 0}deg);">
+            <rect x=${-half} y="-1.25" width=${half} height="2.5" style="fill:${tone};" />
+          </g>
         </g>
       `;
   } else {
