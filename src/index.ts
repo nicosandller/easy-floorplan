@@ -16,4 +16,4 @@ w.customCards.push({
 });
 
 // eslint-disable-next-line no-console
-console.info("%c EASY-FLOORPLAN %c 0.3.5 ", "background:#03a9f4;color:#fff", "color:#03a9f4");
+console.info("%c EASY-FLOORPLAN %c 0.3.6 ", "background:#03a9f4;color:#fff", "color:#03a9f4");

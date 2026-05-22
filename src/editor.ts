@@ -220,6 +220,12 @@ export class FloorplanCardEditor extends LitElement {
     return this._config.grid ?? DEFAULT_GRID;
   }
 
+  /** Round to the visible grid (used for wall-drawing gravity, independent of `snap`). */
+  private _snapToGrid(v: number): number {
+    const g = this.grid;
+    return Math.round(v / g) * g;
+  }
+
   /** Placement snap step; 0 means free placement (no snapping). */
   private get snapStep(): number {
     return this._config.snap ?? 0;
@@ -257,9 +263,9 @@ export class FloorplanCardEditor extends LitElement {
     return best;
   }
 
-  /** Snap a raw point to a nearby existing wall endpoint, else honor the snap step. */
+  /** Snap a raw point to a nearby existing wall endpoint, else to the visible grid. */
   private _snapWallPoint(rawX: number, rawY: number): { x: number; y: number } {
-    return this._nearestCorner(rawX, rawY) ?? { x: this._snap(rawX), y: this._snap(rawY) };
+    return this._nearestCorner(rawX, rawY) ?? { x: this._snapToGrid(rawX), y: this._snapToGrid(rawY) };
   }
 
   /**
@@ -279,9 +285,10 @@ export class FloorplanCardEditor extends LitElement {
     const dx = rawX - x1;
     const dy = rawY - y1;
     const t = Math.tan((WALL_AXIS_SNAP_DEG * Math.PI) / 180);
-    if (Math.abs(dy) <= Math.abs(dx) * t) return { x: this._snap(rawX), y: y1 }; // horizontal
-    if (Math.abs(dx) <= Math.abs(dy) * t) return { x: x1, y: this._snap(rawY) }; // vertical
-    return { x: this._snap(rawX), y: this._snap(rawY) };
+    // Sticky: align flat to an axis when close, and pull the free coordinate to the grid.
+    if (Math.abs(dy) <= Math.abs(dx) * t) return { x: this._snapToGrid(rawX), y: y1 }; // horizontal
+    if (Math.abs(dx) <= Math.abs(dy) * t) return { x: x1, y: this._snapToGrid(rawY) }; // vertical
+    return { x: this._snapToGrid(rawX), y: this._snapToGrid(rawY) };
   }
 
   // ---- config mutation + history ----------------------------------------
