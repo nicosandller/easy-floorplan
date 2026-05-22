@@ -17,13 +17,22 @@ automatically to the card and screen size.
   click to drop doors/windows that snap onto walls, drag everything around, nudge with
   arrow keys, undo/redo, zoom.
 - **Devices** — bind any entity to an icon. Click to toggle lights/switches or open the
-  more-info dialog. Optional live state label, custom icon (with autocomplete + preview),
-  size and rotation.
+  more-info dialog. Optional live state label (incl. a paired temperature + humidity
+  entity), custom icon (with autocomplete + preview), size and rotation.
 - **Presence ripples** — render presence/movement sensors as animated concentric rings
   that pulse while active and fade to a faint dot when idle.
+- **Animated doors & windows** — link a contact `binary_sensor` or `cover` so doors swing
+  and windows open on the plan as their real state changes, with an optional accent color
+  while open.
 - **Furniture** — gray line-art diagrams: table, round table, desk, chair, sofa, bed,
   wardrobe, rug, plant, fridge, stove, sink, toilet, stairs, tv.
 - **Text labels** and a configurable **canvas background color**.
+- **Multiple floors** — group elements per floor and switch between them with a control in
+  the top-right (in both the editor and the live card).
+- **Multi-select & copy/paste** — shift/ctrl-click or drag a box to select many; move,
+  duplicate (Ctrl/Cmd+D), copy/paste (Ctrl/Cmd+C/V) or delete them together.
+- **Free placement** — elements aren't locked to the visible grid, so you can center them
+  precisely; an optional **Snap** setting re-enables grid snapping at any granularity.
 - **Auto-scaling** — a virtual coordinate space + SVG means the plan rescales to any
   card or screen size with no reflow.
 
@@ -66,12 +75,24 @@ Edit a dashboard → **Add card** → search **Easy Floorplan**. Use the toolbar
 
 - **wall** — drag to draw. Endpoints snap to nearby corners; start a new wall on an
   existing corner to continue the perimeter.
-- **door / window** — click to drop; it snaps onto the nearest wall.
+- **door / window** — click to drop; it snaps onto the nearest wall. Assign a sensor in
+  the side panel to animate it open/closed (see **Doors & windows**).
 - **+ device / + text / + furniture…** — add elements, then edit them in the side panel.
-- **select** — move, rotate, resize, recolor, delete. Arrow keys nudge the selection
-  (hold **Shift** for 1-unit steps). Undo/redo and a zoom slider are in the toolbar.
+- **select** — move, rotate, resize, recolor, delete. Shift/Ctrl-click or drag a box to
+  select several at once; arrow keys nudge the selection (Shift+arrow jumps a full grid
+  cell), and **Ctrl/Cmd+C/V/D** copy / paste / duplicate.
+- **floor** — add, rename, switch and delete floors (top-right of the toolbar).
 
-## Devices
+Undo/redo and a zoom slider are in the toolbar.
+
+## Elements
+
+Everything you place on the plan is an **element** you can select, move (freely or
+snapped to a grid), nudge with arrow keys, copy/paste, duplicate and delete. The element
+types are **devices**, **doors & windows**, **furniture** and **text** — and each floor
+holds its own set of them.
+
+### Devices
 
 A **device** binds a Home Assistant entity to a spot on the plan. Add one with
 **+ device**, then pick the entity in the side panel. By default it shows an icon badge:
@@ -79,7 +100,8 @@ A **device** binds a Home Assistant entity to a spot on the plan. Add one with
 - **Tap to act** — lights, switches, covers, fans and `input_boolean`s toggle on tap;
   any other entity opens its more-info dialog.
 - **Live look** — the badge highlights when the entity is "on". Turn on **Show state**
-  to display the current value next to it (handy for temperature/humidity sensors).
+  to display the current value next to it. Add a **2nd entity** to show two readings in
+  one element — e.g. a temperature and a humidity sensor render together as `21 °C · 45 %`.
 - **Make it yours** — override the **icon** (with autocomplete + live preview), set a
   custom **name**, change the **size**, **rotate** it, or hide the icon entirely.
 
@@ -100,6 +122,25 @@ reports an on/off-like state, not just presence sensors.
 
 <img width="1080" height="608" alt="ripple_demo_gif" src="https://github.com/user-attachments/assets/e43949cf-13a2-48f8-804d-73738299475f" />
 
+### Doors & windows
+
+Drop a **door** or **window** from the toolbar and it snaps onto the nearest wall. On its
+own a door is drawn open (the familiar swing arc) and a window closed — a static floor
+plan, just like before.
+
+Bind a **Sensor** entity in the side panel — a contact `binary_sensor` or a `cover` — to
+make the opening track its real state:
+
+- **Open / closed** — the opening is drawn open when the entity is `on` / `open`, closed
+  otherwise. A door's leaf swings around its hinge; a window's two leaves swing outward
+  from the middle. When closed the swing arc is hidden; as the opening moves, the arc
+  **draws on**, tracing the path of the leaf edge — animated smoothly.
+- **Active color** — while actively open, the leaf/sash and arc take an accent color (the
+  same idea as presence ripples) so an open door is easy to spot. Defaults to the primary
+  color; pick your own per opening.
+- **Invert** — flip the open/closed interpretation for sensors wired the other way.
+
+Openings without a sensor keep the static look.
 
 ## Configuration reference
 
@@ -113,13 +154,27 @@ The editor writes this config for you; manual editing is optional.
 | `title`      | string   | —                  | Optional card header.                        |
 | `width`      | number   | `1000`             | Virtual canvas width.                        |
 | `height`     | number   | `600`              | Virtual canvas height.                       |
-| `grid`       | number   | `20`               | Editor grid spacing / snap step.             |
+| `grid`       | number   | `20`               | Visible grid spacing (a visual guide).       |
+| `snap`       | number   | `0`                | Placement snap step; `0` = free placement.   |
 | `background` | string   | card background    | Canvas background color (CSS / hex).         |
-| `walls`      | Wall[]   | `[]`               | Wall segments.                               |
+| `floors`     | Floor[]  | —                  | Per-floor element groups (see **Floors**).   |
+| `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
+| `walls`      | Wall[]   | `[]`               | Wall segments (single-floor / floor 1).      |
 | `openings`   | Opening[]| `[]`               | Doors and windows.                           |
 | `items`      | Item[]   | `[]`               | Entity devices.                              |
 | `texts`      | Text[]   | `[]`               | Free text labels.                            |
 | `furniture`  | Furniture[]| `[]`             | Gray furniture/fixture diagrams.             |
+
+When `floors` is present each floor carries its own `walls`, `openings`, `items`, `texts`
+and `furniture`. The top-level arrays describe a single implicit floor and remain valid
+for backward compatibility.
+
+### Floor
+
+`{ id, name, walls, openings, items, texts, furniture }` — a named floor with its own
+elements. Use the **floor** controls in the editor toolbar to add, rename, switch and
+delete floors; the live card shows a floor switcher in the top-right when there is more
+than one.
 
 ### Wall
 
@@ -127,13 +182,16 @@ The editor writes this config for you; manual editing is optional.
 
 ### Opening (door / window)
 
-| Field    | Type                | Description                          |
-| -------- | ------------------- | ------------------------------------ |
-| `id`     | string              | Unique id.                           |
-| `type`   | `door` \| `window`  | Symbol drawn.                        |
-| `x`, `y` | number              | Center position.                     |
-| `length` | number              | Length along the wall.               |
-| `angle`  | number              | Rotation in degrees.                 |
+| Field         | Type                | Description                                            |
+| ------------- | ------------------- | ------------------------------------------------------ |
+| `id`          | string              | Unique id.                                             |
+| `type`        | `door` \| `window`  | Symbol drawn.                                          |
+| `x`, `y`      | number              | Center position.                                       |
+| `length`      | number              | Length along the wall.                                 |
+| `angle`       | number              | Rotation in degrees.                                   |
+| `entity`      | string              | Optional contact `binary_sensor` / `cover` driving open/closed. |
+| `invert`      | boolean             | Flip the open/closed interpretation.                   |
+| `activeColor` | string              | Leaf/arc color while actively open (default primary).  |
 
 ### Item (device)
 
@@ -141,6 +199,7 @@ The editor writes this config for you; manual editing is optional.
 | ------------- | -------------------------------------- | ------------ | ------------------------------------------------------ |
 | `id`          | string                                 | —            | Unique id.                                             |
 | `entity`      | string                                 | —            | Entity id to bind.                                     |
+| `secondaryEntity` | string                             | —            | Optional 2nd entity shown alongside (e.g. humidity).   |
 | `x`, `y`      | number                                 | —            | Position.                                              |
 | `kind`        | light/switch/sensor/binary_sensor/climate/cover/generic | inferred | Used for the default icon.            |
 | `icon`        | string                                 | entity icon  | Override mdi icon.                                     |
@@ -183,7 +242,14 @@ walls:
   - { id: w3, x1: 900, y1: 500, x2: 100, y2: 500 }
   - { id: w4, x1: 100, y1: 500, x2: 100, y2: 100 }
 openings:
-  - { id: d1, type: door, x: 300, y: 500, length: 80, angle: 0 }
+  - id: d1
+    type: door
+    x: 300
+    y: 500
+    length: 80
+    angle: 0
+    entity: binary_sensor.front_door   # swings open when the contact opens
+    activeColor: "#ef5350"
   - { id: win1, type: window, x: 600, y: 100, length: 140, angle: 0 }
 items:
   - { id: i1, entity: light.living_room, x: 240, y: 200, kind: light }
@@ -195,6 +261,13 @@ items:
     display: iconRipple
     rippleColor: "#26c6da"
     rippleSize: 120
+  - id: i3
+    entity: sensor.living_room_temperature
+    secondaryEntity: sensor.living_room_humidity
+    x: 700
+    y: 380
+    kind: sensor
+    showState: true
 furniture:
   - { id: f1, type: sofa, x: 250, y: 420, w: 170, h: 72, angle: 0 }
 texts:
