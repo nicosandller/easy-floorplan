@@ -6,7 +6,8 @@
   "scripts": {
     "build": "vite build",
     "watch": "vite build --watch",
-    "dev": "vite build --watch"
+    "dev": "vite build --watch",
+    "serve": "vite --open /dev/"
   },
   "keywords": ["home-assistant", "lovelace", "custom-card", "hacs", "floorplan"],
   "license": "MIT",
