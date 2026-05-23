@@ -66,12 +66,15 @@ export function renderOpening(
   bg: string,
   open = true,
   active = false,
-  accent = "var(--primary-color, #03a9f4)"
+  accent = "var(--primary-color, #03a9f4)",
+  drawCut = true
 ): SVGTemplateResult {
   const half = o.length / 2;
   const cutH = WALL_THICKNESS + 4;
   // Mask out the wall segment behind the opening.
-  const cut = svg`<rect x=${-half} y=${-cutH / 2} width=${o.length} height=${cutH} fill=${bg} />`;
+  const cut = drawCut
+    ? svg`<rect x=${-half} y=${-cutH / 2} width=${o.length} height=${cutH} fill=${bg} />`
+    : svg``;
   // The moving parts take the accent color when actively open (sensor-driven).
   const tone = active ? accent : color;
 

@@ -23,10 +23,13 @@ const ACTIVE_DOMAINS = new Set(["light", "switch", "cover", "fan", "input_boolea
 
 @customElement("easy-floorplan-card")
 export class FloorplanCard extends LitElement {
+  private static _nextWallMaskId = 0;
+
   @property({ attribute: false }) public hass?: HomeAssistant;
   @state() private _config?: FloorplanCardConfig;
   /** View-state: which floor is shown. Never persisted to config. */
   @state() private _activeFloorId?: string;
+  private readonly _wallMaskId = `fp-wall-mask-${FloorplanCard._nextWallMaskId++}`;
 
   public setConfig(config: FloorplanCardConfig): void {
     if (!config) throw new Error("Invalid configuration");
@@ -196,11 +199,25 @@ export class FloorplanCard extends LitElement {
                           preserveAspectRatio="none" opacity=${active.imageOpacity ?? 1} />`
               : nothing}
             ${active.furniture.map((f) => renderFurniture(f))}
-            ${active.walls.map(
-              (w) => svg`
+            <defs>
+              <mask id=${this._wallMaskId} maskUnits="userSpaceOnUse">
+                <rect x="0" y="0" width=${c.width} height=${c.height} fill="white" />
+                ${active.openings.map((o) => {
+                  const cutH = WALL_THICKNESS + 4;
+                  const half = o.length / 2;
+                  return svg`<rect x=${o.x - half} y=${o.y - cutH / 2}
+                                   width=${o.length} height=${cutH} fill="black"
+                                   transform="rotate(${o.angle} ${o.x} ${o.y})" />`;
+                })}
+              </mask>
+            </defs>
+            <g mask=${`url(#${this._wallMaskId})`}>
+              ${active.walls.map(
+                (w) => svg`
                 <line x1=${w.x1} y1=${w.y1} x2=${w.x2} y2=${w.y2}
                       class="wall" stroke-width=${WALL_THICKNESS} stroke-linecap="round" />`
-            )}
+              )}
+            </g>
             ${active.openings.map((o) => {
               const isOpen = this._openingIsOpen(o);
               return renderOpening(
@@ -209,7 +226,8 @@ export class FloorplanCard extends LitElement {
                 "var(--card-background-color, #fff)",
                 isOpen,
                 !!o.entity && isOpen,
-                o.activeColor ?? "var(--primary-color, #03a9f4)"
+                o.activeColor ?? "var(--primary-color, #03a9f4)",
+                false
               );
             })}
           </svg>
