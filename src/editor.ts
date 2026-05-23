@@ -1046,6 +1046,10 @@ export class FloorplanCardEditor extends LitElement {
                 height=${c.height}
                 fill=${c.background ?? "var(--card-background-color, #fff)"}
               />
+              ${floor.image
+                ? svg`<image href=${floor.image} x="0" y="0" width=${c.width} height=${c.height}
+                            preserveAspectRatio="none" opacity=${floor.imageOpacity ?? 1} />`
+                : nothing}
               ${this._renderGrid()}
               ${floor.furniture.map((f) => this._renderFurnitureSel(f))}
               ${floor.walls.map((w) => this._renderWall(w))}
@@ -1267,6 +1271,32 @@ export class FloorplanCardEditor extends LitElement {
               this._patchConfig({ background: (e.target as HTMLInputElement).value || undefined })}
           />
         </div>
+        <div class="row">
+          <label>Bg image</label>
+          <input
+            type="text"
+            placeholder="/local/floorplan.png or URL"
+            .value=${this._floor()?.image ?? ""}
+            @change=${(e: Event) =>
+              this._commitFloor({ image: (e.target as HTMLInputElement).value || undefined })}
+          />
+        </div>
+        ${this._floor()?.image
+          ? html`<div class="row">
+              <label>Image opacity</label>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.05"
+                .value=${String(this._floor()?.imageOpacity ?? 1)}
+                @input=${(e: Event) =>
+                  this._commitFloor({
+                    imageOpacity: Number((e.target as HTMLInputElement).value),
+                  })}
+              />
+            </div>`
+          : nothing}
         <hr />
         ${this._renderSelectionProps()}
       </div>

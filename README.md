@@ -27,6 +27,8 @@ automatically to the card and screen size.
 - **Furniture** — gray line-art diagrams: table, round table, desk, chair, sofa, bed,
   wardrobe, rug, plant, fridge, stove, sink, toilet, stairs, tv.
 - **Text labels** and a configurable **canvas background color**.
+- **Background image** — drop in a floor-plan image (per floor) and trace walls, doors and
+  devices over it, with adjustable opacity.
 - **Multiple floors** — group elements per floor and switch between them with a control in
   the top-right (in both the editor and the live card).
 - **Multi-select & copy/paste** — shift/ctrl-click or drag a box to select many; move,
@@ -174,10 +176,15 @@ for backward compatibility.
 
 ### Floor
 
-`{ id, name, walls, openings, items, texts, furniture }` — a named floor with its own
-elements. Use the **floor** controls in the editor toolbar to add, rename, switch and
-delete floors; the live card shows a floor switcher in the top-right when there is more
-than one.
+`{ id, name, image?, imageOpacity?, walls, openings, items, texts, furniture }` — a named
+floor with its own elements. Use the **floor** controls in the editor toolbar to add,
+rename, switch and delete floors; the live card shows a floor switcher in the top-right
+when there is more than one.
+
+Set **`image`** to a background image URL (e.g. `/local/floorplan.png` or an external
+URL) to draw it behind the elements — handy for tracing over a real floor plan. It fills
+the canvas, so match the canvas `width`/`height` to the image's aspect ratio to avoid
+distortion. **`imageOpacity`** (0–1, default 1) fades it.
 
 ### Wall
 

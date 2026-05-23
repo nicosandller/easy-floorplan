@@ -191,6 +191,10 @@ export class FloorplanCard extends LitElement {
           "var(--card-background-color, #fff)"};"
         >
           <svg viewBox="0 0 ${c.width} ${c.height}" preserveAspectRatio="none">
+            ${active.image
+              ? svg`<image href=${active.image} x="0" y="0" width=${c.width} height=${c.height}
+                          preserveAspectRatio="none" opacity=${active.imageOpacity ?? 1} />`
+              : nothing}
             ${active.furniture.map((f) => renderFurniture(f))}
             ${active.walls.map(
               (w) => svg`

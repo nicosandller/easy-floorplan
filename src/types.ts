@@ -152,6 +152,15 @@ export const FURNITURE_DEFAULT_SIZE: Record<FurnitureType, { w: number; h: numbe
 export interface Floor {
   id: string;
   name: string;
+  /**
+   * Optional background image URL (e.g. `/local/floorplan.png` or an external
+   * URL) drawn behind the elements — handy for tracing over a real floor plan.
+   * It fills the virtual canvas, so match the canvas width/height to the image
+   * aspect ratio to avoid distortion.
+   */
+  image?: string;
+  /** Background image opacity, 0–1. Default 1. */
+  imageOpacity?: number;
   walls: Wall[];
   openings: Opening[];
   items: FloorItem[];
