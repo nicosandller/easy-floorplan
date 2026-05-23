@@ -5,6 +5,8 @@ dist/
 .claude/
 # personal dev deploy script
 deploy.sh
+deploy-dev.sh
+deploy.env
 # never commit secrets
 *.secret
 .env
