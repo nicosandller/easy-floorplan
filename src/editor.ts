@@ -935,6 +935,59 @@ export class FloorplanCardEditor extends LitElement {
     return this._selection.some((s) => s.kind === kind && s.id === id);
   }
 
+  /**
+   * The second toolbar row: shows controls and hints for whatever you're
+   * currently doing — options for the active drawing tool, or actions for the
+   * current selection. This keeps contextual controls (which come and go) out
+   * of the always-present top row.
+   */
+  private _renderContextBar(): TemplateResult {
+    const t = this._tool;
+    let label: string;
+    let body: TemplateResult;
+
+    if (t === "wall") {
+      label = "Wall";
+      body = html`
+        <button
+          class=${this._freeWalls ? "" : "active"}
+          title="Snap walls to horizontal/vertical and existing corners (off = draw freely)"
+          @click=${() => {
+            this._freeWalls = !this._freeWalls;
+          }}
+        >
+          straighten
+        </button>
+        <span class="ctx-hint">Drag to draw. Endpoints snap to nearby corners to close rooms.</span>
+      `;
+    } else if (t === "door" || t === "window") {
+      label = t === "door" ? "Door" : "Window";
+      body = html`<span class="ctx-hint">Click on a wall to drop a ${t}; it snaps onto the wall.</span>`;
+    } else {
+      label = "Select";
+      const n = this._selection.length;
+      body =
+        n > 0
+          ? html`
+              <span class="ctx-count">${n} selected</span>
+              <button title="Duplicate the selection" @click=${this._duplicate}>⧉ duplicate</button>
+              <button class="danger" title="Delete the selection" @click=${this._deleteSelected}>
+                🗑 delete
+              </button>
+            `
+          : html`<span class="ctx-hint"
+              >Click an element to select it, or drag a box to select several.</span
+            >`;
+    }
+
+    return html`
+      <div class="context-bar">
+        <span class="ctx-label">${label}</span>
+        ${body}
+      </div>
+    `;
+  }
+
   protected render(): TemplateResult {
     if (!this._config) return html`${nothing}`;
     const c = this._config;
@@ -943,58 +996,58 @@ export class FloorplanCardEditor extends LitElement {
     return html`
       <div class="editor">
         <div class="toolbar">
-          ${(["select", "wall", "door", "window"] as Tool[]).map(
-            (t) => html`
-              <button
-                class=${this._tool === t ? "active" : ""}
-                @click=${() => {
-                  this._tool = t;
-                  this._draft = null;
-                }}
-              >
-                ${t}
-              </button>`
-          )}
-          ${this._tool === "wall"
-            ? html`<button
-                class=${this._freeWalls ? "" : "active"}
-                title="Snap walls to horizontal/vertical and existing corners (off = draw freely)"
-                @click=${() => {
-                  this._freeWalls = !this._freeWalls;
-                }}
-              >
-                straighten
-              </button>`
-            : nothing}
+          <!-- Tools — modes; exactly one is active at a time -->
+          <div class="seg" role="group" aria-label="Tool">
+            ${(["select", "wall", "door", "window"] as Tool[]).map(
+              (t) => html`
+                <button
+                  class=${this._tool === t ? "active" : ""}
+                  @click=${() => {
+                    this._tool = t;
+                    this._draft = null;
+                  }}
+                >
+                  ${t}
+                </button>`
+            )}
+          </div>
+
+          <span class="divider"></span>
+
+          <!-- Insert — one-shot: drops a new element on the active floor -->
+          <div class="group" aria-label="Insert">
+            <button @click=${() => this._addItem("generic")}>+ device</button>
+            <button @click=${this._addText}>+ text</button>
+            <select
+              class="furn-add"
+              @change=${(e: Event) => {
+                const v = (e.target as HTMLSelectElement).value as FurnitureType | "";
+                if (v) this._addFurniture(v);
+                (e.target as HTMLSelectElement).value = "";
+              }}
+            >
+              <option value="">+ furniture…</option>
+              ${FURNITURE_TYPES.map((t) => html`<option value=${t}>${FURNITURE_LABELS[t]}</option>`)}
+            </select>
+          </div>
+
           <span class="spacer"></span>
-          <button title="Undo" ?disabled=${!this._history.length} @click=${this._undo}>↶ undo</button>
-          <button title="Redo" ?disabled=${!this._future.length} @click=${this._redo}>↷ redo</button>
-          <button @click=${() => this._addItem("generic")}>+ device</button>
-          <button @click=${this._addText}>+ text</button>
-          <select
-            class="furn-add"
-            @change=${(e: Event) => {
-              const v = (e.target as HTMLSelectElement).value as FurnitureType | "";
-              if (v) this._addFurniture(v);
-              (e.target as HTMLSelectElement).value = "";
-            }}
-          >
-            <option value="">+ furniture…</option>
-            ${FURNITURE_TYPES.map((t) => html`<option value=${t}>${FURNITURE_LABELS[t]}</option>`)}
-          </select>
-          <button class="danger" ?disabled=${!this._selection.length} @click=${this._deleteSelected}>
-            delete
-          </button>
+
+          <!-- History -->
+          <div class="group">
+            <button title="Undo" ?disabled=${!this._history.length} @click=${this._undo}>↶</button>
+            <button title="Redo" ?disabled=${!this._future.length} @click=${this._redo}>↷</button>
+          </div>
+
+          <span class="divider"></span>
+
+          <!-- Floor -->
           <span class="floors">
             <label>floor</label>
-            <select
-              @change=${(e: Event) => this._switchFloor((e.target as HTMLSelectElement).value)}
-            >
+            <select @change=${(e: Event) => this._switchFloor((e.target as HTMLSelectElement).value)}>
               ${floors.map(
                 (f) =>
-                  html`<option value=${f.id} ?selected=${f.id === this._activeFloorId}>
-                    ${f.name}
-                  </option>`
+                  html`<option value=${f.id} ?selected=${f.id === this._activeFloorId}>${f.name}</option>`
               )}
             </select>
             <input
@@ -1005,9 +1058,7 @@ export class FloorplanCardEditor extends LitElement {
               @change=${(e: Event) =>
                 this._renameFloor(this._activeFloorId, (e.target as HTMLInputElement).value)}
             />
-            <button title="Add a floor (copies the current walls)" @click=${this._addFloor}>
-              + floor
-            </button>
+            <button title="Add a floor (copies the current walls)" @click=${this._addFloor}>+ floor</button>
             <button
               class="danger"
               title="Delete the current floor"
@@ -1017,6 +1068,10 @@ export class FloorplanCardEditor extends LitElement {
               − floor
             </button>
           </span>
+
+          <span class="divider"></span>
+
+          <!-- Zoom -->
           <span class="zoom">
             <label>zoom</label>
             <input
@@ -1032,6 +1087,8 @@ export class FloorplanCardEditor extends LitElement {
             <span class="zoom-val">${Math.round(this._zoom * 100)}%</span>
           </span>
         </div>
+
+        ${this._renderContextBar()}
 
         <div class="canvas-wrap">
           <div class="stage" style="aspect-ratio: ${c.width} / ${c.height}; width:${this._zoom * 100}%;">
@@ -1796,6 +1853,73 @@ export class FloorplanCardEditor extends LitElement {
     }
     .toolbar .spacer {
       flex: 1;
+    }
+    /* generic inline cluster of related controls */
+    .group {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+    }
+    /* vertical rule between toolbar groups */
+    .divider {
+      align-self: stretch;
+      width: 1px;
+      min-height: 26px;
+      margin: 0 4px;
+      background: var(--divider-color, #e0e0e0);
+    }
+    /* tools rendered as a connected segmented control (one active) */
+    .seg {
+      display: inline-flex;
+    }
+    .seg button {
+      border-radius: 0;
+      border-left-width: 0;
+    }
+    .seg button:first-child {
+      border-left-width: 1px;
+      border-top-left-radius: 6px;
+      border-bottom-left-radius: 6px;
+    }
+    .seg button:last-child {
+      border-top-right-radius: 6px;
+      border-bottom-right-radius: 6px;
+    }
+    /* contextual second row: options/actions for the current tool or selection */
+    .context-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+      margin-top: 6px;
+      padding: 5px 10px;
+      min-height: 36px;
+      box-sizing: border-box;
+      border: 1px solid var(--divider-color, #e0e0e0);
+      border-radius: 6px;
+      background: var(--secondary-background-color, #f5f5f5);
+    }
+    .context-bar .ctx-label {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--primary-color, #03a9f4);
+      padding-right: 8px;
+      margin-right: 2px;
+      border-right: 1px solid var(--divider-color, #e0e0e0);
+    }
+    .context-bar .ctx-hint {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+    }
+    .context-bar .ctx-count {
+      font-size: 12px;
+      color: var(--primary-text-color);
+    }
+    .context-bar button {
+      padding: 4px 10px;
+      font-size: 13px;
     }
     button {
       cursor: pointer;

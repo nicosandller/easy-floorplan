@@ -73,19 +73,23 @@ HACS adds the dashboard resource automatically.
 
 ## Usage
 
-Edit a dashboard → **Add card** → search **Easy Floorplan**. Use the toolbar:
+Edit a dashboard → **Add card** → search **Easy Floorplan**. The editor has a **tools
+row** and, below it, a **context row** that shows options and actions for whatever you're
+currently doing:
 
+- **select** — the default tool. Click an element to move, rotate, resize, recolor or
+  delete it; Shift/Ctrl-click or drag a box to select several at once. Arrow keys nudge
+  the selection (Shift+arrow jumps a full grid cell), and **Ctrl/Cmd+C/V/D** copy / paste
+  / duplicate. With a selection, the context row offers **duplicate** and **delete**.
 - **wall** — drag to draw. Endpoints snap to nearby corners; start a new wall on an
-  existing corner to continue the perimeter.
+  existing corner to continue the perimeter. The context row's **straighten** toggle keeps
+  walls horizontal/vertical and corner-snapped — turn it off to draw freely at any angle.
 - **door / window** — click to drop; it snaps onto the nearest wall. Assign a sensor in
   the side panel to animate it open/closed (see **Doors & windows**).
-- **+ device / + text / + furniture…** — add elements, then edit them in the side panel.
-- **select** — move, rotate, resize, recolor, delete. Shift/Ctrl-click or drag a box to
-  select several at once; arrow keys nudge the selection (Shift+arrow jumps a full grid
-  cell), and **Ctrl/Cmd+C/V/D** copy / paste / duplicate.
-- **floor** — add, rename, switch and delete floors (top-right of the toolbar).
+- **+ device / + text / + furniture…** — drop a new element, then edit it in the side panel.
+- **floor** — add, rename, switch and delete floors.
 
-Undo/redo and a zoom slider are in the toolbar.
+Undo/redo and a zoom slider live at the right of the tools row.
 
 ## Elements
 
