@@ -12,6 +12,7 @@ import {
 import {
   WALL_THICKNESS,
   renderOpening,
+  renderWallMask,
   openingDefaultOpen,
   renderRipple,
   renderFurniture,
@@ -199,18 +200,7 @@ export class FloorplanCard extends LitElement {
                           preserveAspectRatio="none" opacity=${active.imageOpacity ?? 1} />`
               : nothing}
             ${active.furniture.map((f) => renderFurniture(f))}
-            <defs>
-              <mask id=${this._wallMaskId} maskUnits="userSpaceOnUse">
-                <rect x="0" y="0" width=${c.width} height=${c.height} fill="white" />
-                ${active.openings.map((o) => {
-                  const cutH = WALL_THICKNESS + 4;
-                  const half = o.length / 2;
-                  return svg`<rect x=${o.x - half} y=${o.y - cutH / 2}
-                                   width=${o.length} height=${cutH} fill="black"
-                                   transform="rotate(${o.angle} ${o.x} ${o.y})" />`;
-                })}
-              </mask>
-            </defs>
+            ${renderWallMask(active.openings, c.width, c.height, this._wallMaskId)}
             <g mask=${`url(#${this._wallMaskId})`}>
               ${active.walls.map(
                 (w) => svg`
@@ -220,15 +210,12 @@ export class FloorplanCard extends LitElement {
             </g>
             ${active.openings.map((o) => {
               const isOpen = this._openingIsOpen(o);
-              return renderOpening(
-                o,
-                "var(--primary-text-color)",
-                "var(--card-background-color, #fff)",
-                isOpen,
-                !!o.entity && isOpen,
-                o.activeColor ?? "var(--primary-color, #03a9f4)",
-                false
-              );
+              return renderOpening(o, {
+                color: "var(--primary-text-color)",
+                open: isOpen,
+                active: !!o.entity && isOpen,
+                accent: o.activeColor ?? "var(--primary-color, #03a9f4)",
+              });
             })}
           </svg>
           <div class="items">

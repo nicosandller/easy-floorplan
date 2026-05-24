@@ -30,6 +30,7 @@ import {
 import {
   WALL_THICKNESS,
   renderOpening,
+  renderWallMask,
   openingDefaultOpen,
   renderRipple,
   renderFurniture,
@@ -197,9 +198,12 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _patchFloors(partial: Partial<Floor>): Floor[] {
-    return (this._config.floors ?? []).map((f) =>
-      f.id === this._activeFloorId ? { ...f, ...partial } : f
-    );
+    const floors = this._config.floors ?? [];
+    // Patch the floor actually being shown. Fall back to the first floor when
+    // `_activeFloorId` is stale (matching `_floor()`), so edits are never
+    // silently dropped onto a non-existent floor id.
+    const active = floors.find((f) => f.id === this._activeFloorId) ?? floors[0];
+    return floors.map((f) => (active && f.id === active.id ? { ...f, ...partial } : f));
   }
 
   protected firstUpdated(): void {
@@ -1117,18 +1121,7 @@ export class FloorplanCardEditor extends LitElement {
                 : nothing}
               ${this._renderGrid()}
               ${floor.furniture.map((f) => this._renderFurnitureSel(f))}
-              <defs>
-                <mask id=${this._wallMaskId} maskUnits="userSpaceOnUse">
-                  <rect x="0" y="0" width=${c.width} height=${c.height} fill="white" />
-                  ${floor.openings.map((o) => {
-                    const cutH = WALL_THICKNESS + 4;
-                    const half = o.length / 2;
-                    return svg`<rect x=${o.x - half} y=${o.y - cutH / 2}
-                                     width=${o.length} height=${cutH} fill="black"
-                                     transform="rotate(${o.angle} ${o.x} ${o.y})" />`;
-                  })}
-                </mask>
-              </defs>
+              ${renderWallMask(floor.openings, c.width, c.height, this._wallMaskId)}
               ${floor.walls.map((w) => this._renderWall(w))}
               ${floor.openings.map((o) => this._renderOpeningSel(o))}
               ${
@@ -1191,15 +1184,10 @@ export class FloorplanCardEditor extends LitElement {
     return svg`
       <g class="opening-hit"
          @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "opening", id: o.id })}>
-        ${renderOpening(
-          o,
-          selected ? "var(--primary-color, #03a9f4)" : "var(--primary-text-color)",
-          "var(--card-background-color, #fff)",
-          openingDefaultOpen(o),
-          false,
-          undefined,
-          false
-        )}
+        ${renderOpening(o, {
+          color: selected ? "var(--primary-color, #03a9f4)" : "var(--primary-text-color)",
+          open: openingDefaultOpen(o),
+        })}
       </g>`;
   }
 
