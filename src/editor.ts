@@ -380,6 +380,12 @@ export class FloorplanCardEditor extends LitElement {
   // ---- keyboard nudging ---------------------------------------------------
 
   private _handleKeyDown(ev: KeyboardEvent): void {
+    // The listener is on `window` (capture phase) so HA's dialog can't swallow
+    // arrow keys before we see them — the canvas itself isn't focusable. But
+    // that also means a hidden/background editor instance would otherwise react,
+    // so ignore the event unless this editor is actually visible.
+    const checkVisibility = (this as { checkVisibility?: () => boolean }).checkVisibility;
+    if (checkVisibility && !checkVisibility.call(this)) return;
     // Don't hijack keys while typing in a field / picker.
     const path = ev.composedPath();
     if (
@@ -955,6 +961,7 @@ export class FloorplanCardEditor extends LitElement {
       body = html`
         <button
           class=${this._freeWalls ? "" : "active"}
+          aria-pressed=${!this._freeWalls}
           title="Snap walls to horizontal/vertical and existing corners (off = draw freely)"
           @click=${() => {
             this._freeWalls = !this._freeWalls;
@@ -1006,6 +1013,7 @@ export class FloorplanCardEditor extends LitElement {
               (t) => html`
                 <button
                   class=${this._tool === t ? "active" : ""}
+                  aria-pressed=${this._tool === t}
                   @click=${() => {
                     this._tool = t;
                     this._draft = null;
@@ -1286,18 +1294,20 @@ export class FloorplanCardEditor extends LitElement {
           <label>Canvas W / H</label>
           <input
             type="number"
+            min="1"
             .value=${String(this._config.width)}
             @change=${(e: Event) =>
               this._patchConfig({
-                width: Number((e.target as HTMLInputElement).value) || DEFAULT_WIDTH,
+                width: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_WIDTH),
               })}
           />
           <input
             type="number"
+            min="1"
             .value=${String(this._config.height)}
             @change=${(e: Event) =>
               this._patchConfig({
-                height: Number((e.target as HTMLInputElement).value) || DEFAULT_HEIGHT,
+                height: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_HEIGHT),
               })}
           />
         </div>
@@ -1387,8 +1397,8 @@ export class FloorplanCardEditor extends LitElement {
         Pick a tool to draw. Wall ends snap to nearby wall corners — start a new wall on an existing
         corner to continue the perimeter. Switch to <b>select</b> to move or delete things. Drag a box
         on empty canvas to select many; <b>Shift</b>/<b>Ctrl</b>-click adds to the selection. With
-        something selected, <b>arrow keys</b> nudge it (hold <b>Shift</b> for 1-unit steps), and
-        <b>Ctrl/Cmd+C/V/D</b> copy / paste / duplicate.
+        something selected, <b>arrow keys</b> nudge it (hold <b>Shift</b> to jump a full grid cell),
+        and <b>Ctrl/Cmd+C/V/D</b> copy / paste / duplicate.
       </p>`;
 
     if (sel.kind === "opening") {

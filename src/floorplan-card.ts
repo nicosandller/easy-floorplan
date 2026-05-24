@@ -220,7 +220,7 @@ export class FloorplanCard extends LitElement {
           </svg>
           <div class="items">
             ${active.texts.map((t) => this._renderText(t, c))}
-            ${active.items.map((it) => this._renderItem(it, c))}
+            ${active.items.filter((it) => it.entity).map((it) => this._renderItem(it, c))}
           </div>
           ${floors.length > 1 ? this._renderFloorSwitcher(floors, active) : nothing}
         </div>
