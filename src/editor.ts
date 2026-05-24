@@ -1035,8 +1035,12 @@ export class FloorplanCardEditor extends LitElement {
 
           <!-- History -->
           <div class="group">
-            <button title="Undo" ?disabled=${!this._history.length} @click=${this._undo}>↶</button>
-            <button title="Redo" ?disabled=${!this._future.length} @click=${this._redo}>↷</button>
+            <button aria-label="Undo" title="Undo" ?disabled=${!this._history.length} @click=${this._undo}>
+              ↶
+            </button>
+            <button aria-label="Redo" title="Redo" ?disabled=${!this._future.length} @click=${this._redo}>
+              ↷
+            </button>
           </div>
 
           <span class="divider"></span>
