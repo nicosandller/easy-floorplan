@@ -7,7 +7,10 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch:
 
-permissions: {}
+# Least privilege: read-only is all the validation/build jobs need (checkout
+# requires contents: read).
+permissions:
+  contents: read
 
 # Opt the bundled JS actions into the Node 24 runtime ahead of GitHub forcing it
 # (Node 20 action runtime is deprecated).
