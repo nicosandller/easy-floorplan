@@ -49,32 +49,29 @@ export function openingDefaultOpen(o: Opening): boolean {
   return o.type === "door";
 }
 
+/** Style options for {@link renderOpening}. */
+export interface OpeningStyle {
+  /** Base color of the jambs / leaf / swing arc. */
+  color: string;
+  /** Whether the opening is drawn open (default `true`). */
+  open?: boolean;
+  /** Entity-driven "actively open" state: tints the moving parts with `accent`. */
+  active?: boolean;
+  /** Accent color used while `active` (default the HA primary color). */
+  accent?: string;
+}
+
 /**
  * Render a door or window as an SVG group centered at the origin, then translated
- * and rotated into place. A background-colored "cut" masks the wall so the opening
- * reads as a gap, then the symbol (window panes / door swing) is drawn on top.
- *
- * The moving parts (door leaf, window sash) carry CSS classes so the host
- * component's styles can transition them smoothly between open and closed.
- *
- * @param bg    Color used to mask the wall behind the opening (the card background).
- * @param open  Whether the opening is currently open.
+ * and rotated into place. The wall behind the opening is cut away by the host via
+ * an SVG mask (see {@link renderWallMask}), so this draws only the symbol — jambs,
+ * swing arc and the moving leaf/sash, which carry CSS classes so the host's styles
+ * can transition them smoothly between open and closed.
  */
-export function renderOpening(
-  o: Opening,
-  color: string,
-  bg: string,
-  open = true,
-  active = false,
-  accent = "var(--primary-color, #03a9f4)",
-  drawCut = true
-): SVGTemplateResult {
+export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResult {
+  const { color, open = true, active = false, accent = "var(--primary-color, #03a9f4)" } = style;
   const half = o.length / 2;
   const cutH = WALL_THICKNESS + 4;
-  // Mask out the wall segment behind the opening.
-  const cut = drawCut
-    ? svg`<rect x=${-half} y=${-cutH / 2} width=${o.length} height=${cutH} fill=${bg} />`
-    : svg``;
   // The moving parts take the accent color when actively open (sensor-driven).
   const tone = active ? accent : color;
 
@@ -85,7 +82,6 @@ export function renderOpening(
     // tracing a quarter-circle arc (radius = half) that draws on as it opens.
     const arcLen = (Math.PI / 2) * half;
     body = svg`
-        ${cut}
         <!-- jambs -->
         <line x1=${-half} y1=${-cutH / 2} x2=${-half} y2=${cutH / 2}
               stroke=${color} stroke-width="2" />
@@ -120,7 +116,6 @@ export function renderOpening(
     // the door edge. arcLen is the quarter-circle length (radius = o.length).
     const arcLen = (Math.PI / 2) * o.length;
     body = svg`
-        ${cut}
         <!-- swing arc: hidden when closed, drawn as it opens -->
         <path class="fp-door-arc"
               d="M ${half} 0 A ${o.length} ${o.length} 0 0 0 ${-half} ${-o.length}"
@@ -135,6 +130,34 @@ export function renderOpening(
       `;
   }
   return svg`<g transform="translate(${o.x} ${o.y}) rotate(${o.angle})">${body}</g>`;
+}
+
+/**
+ * Build an SVG `<mask>` (white field with a black rect at each opening) that, when
+ * applied to the wall layer, removes the wall pixels behind doors/windows so a gap
+ * shows through — including any background image. Shared by the live card and the
+ * editor so both cut walls identically. Wrap the wall strokes in
+ * `<g mask="url(#id)">` (or set `mask="url(#id)"` on each wall line).
+ */
+export function renderWallMask(
+  openings: Opening[],
+  width: number,
+  height: number,
+  id: string
+): SVGTemplateResult {
+  const cutH = WALL_THICKNESS + 4;
+  return svg`
+    <defs>
+      <mask id=${id} maskUnits="userSpaceOnUse">
+        <rect x="0" y="0" width=${width} height=${height} fill="white" />
+        ${openings.map((o) => {
+          const half = o.length / 2;
+          return svg`<rect x=${o.x - half} y=${o.y - cutH / 2}
+                           width=${o.length} height=${cutH} fill="black"
+                           transform="rotate(${o.angle} ${o.x} ${o.y})" />`;
+        })}
+      </mask>
+    </defs>`;
 }
 
 /**

@@ -30,6 +30,7 @@ import {
 import {
   WALL_THICKNESS,
   renderOpening,
+  renderWallMask,
   openingDefaultOpen,
   renderRipple,
   renderFurniture,
@@ -197,9 +198,12 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _patchFloors(partial: Partial<Floor>): Floor[] {
-    return (this._config.floors ?? []).map((f) =>
-      f.id === this._activeFloorId ? { ...f, ...partial } : f
-    );
+    const floors = this._config.floors ?? [];
+    // Patch the floor actually being shown. Fall back to the first floor when
+    // `_activeFloorId` is stale (matching `_floor()`), so edits are never
+    // silently dropped onto a non-existent floor id.
+    const active = floors.find((f) => f.id === this._activeFloorId) ?? floors[0];
+    return floors.map((f) => (active && f.id === active.id ? { ...f, ...partial } : f));
   }
 
   protected firstUpdated(): void {
@@ -376,6 +380,12 @@ export class FloorplanCardEditor extends LitElement {
   // ---- keyboard nudging ---------------------------------------------------
 
   private _handleKeyDown(ev: KeyboardEvent): void {
+    // The listener is on `window` (capture phase) so HA's dialog can't swallow
+    // arrow keys before we see them — the canvas itself isn't focusable. But
+    // that also means a hidden/background editor instance would otherwise react,
+    // so ignore the event unless this editor is actually visible.
+    const checkVisibility = (this as { checkVisibility?: () => boolean }).checkVisibility;
+    if (checkVisibility && !checkVisibility.call(this)) return;
     // Don't hijack keys while typing in a field / picker.
     const path = ev.composedPath();
     if (
@@ -951,6 +961,7 @@ export class FloorplanCardEditor extends LitElement {
       body = html`
         <button
           class=${this._freeWalls ? "" : "active"}
+          aria-pressed=${!this._freeWalls}
           title="Snap walls to horizontal/vertical and existing corners (off = draw freely)"
           @click=${() => {
             this._freeWalls = !this._freeWalls;
@@ -1002,6 +1013,7 @@ export class FloorplanCardEditor extends LitElement {
               (t) => html`
                 <button
                   class=${this._tool === t ? "active" : ""}
+                  aria-pressed=${this._tool === t}
                   @click=${() => {
                     this._tool = t;
                     this._draft = null;
@@ -1117,18 +1129,7 @@ export class FloorplanCardEditor extends LitElement {
                 : nothing}
               ${this._renderGrid()}
               ${floor.furniture.map((f) => this._renderFurnitureSel(f))}
-              <defs>
-                <mask id=${this._wallMaskId} maskUnits="userSpaceOnUse">
-                  <rect x="0" y="0" width=${c.width} height=${c.height} fill="white" />
-                  ${floor.openings.map((o) => {
-                    const cutH = WALL_THICKNESS + 4;
-                    const half = o.length / 2;
-                    return svg`<rect x=${o.x - half} y=${o.y - cutH / 2}
-                                     width=${o.length} height=${cutH} fill="black"
-                                     transform="rotate(${o.angle} ${o.x} ${o.y})" />`;
-                  })}
-                </mask>
-              </defs>
+              ${renderWallMask(floor.openings, c.width, c.height, this._wallMaskId)}
               ${floor.walls.map((w) => this._renderWall(w))}
               ${floor.openings.map((o) => this._renderOpeningSel(o))}
               ${
@@ -1191,15 +1192,10 @@ export class FloorplanCardEditor extends LitElement {
     return svg`
       <g class="opening-hit"
          @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "opening", id: o.id })}>
-        ${renderOpening(
-          o,
-          selected ? "var(--primary-color, #03a9f4)" : "var(--primary-text-color)",
-          "var(--card-background-color, #fff)",
-          openingDefaultOpen(o),
-          false,
-          undefined,
-          false
-        )}
+        ${renderOpening(o, {
+          color: selected ? "var(--primary-color, #03a9f4)" : "var(--primary-text-color)",
+          open: openingDefaultOpen(o),
+        })}
       </g>`;
   }
 
@@ -1298,18 +1294,20 @@ export class FloorplanCardEditor extends LitElement {
           <label>Canvas W / H</label>
           <input
             type="number"
+            min="1"
             .value=${String(this._config.width)}
             @change=${(e: Event) =>
               this._patchConfig({
-                width: Number((e.target as HTMLInputElement).value) || DEFAULT_WIDTH,
+                width: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_WIDTH),
               })}
           />
           <input
             type="number"
+            min="1"
             .value=${String(this._config.height)}
             @change=${(e: Event) =>
               this._patchConfig({
-                height: Number((e.target as HTMLInputElement).value) || DEFAULT_HEIGHT,
+                height: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_HEIGHT),
               })}
           />
         </div>
@@ -1399,8 +1397,8 @@ export class FloorplanCardEditor extends LitElement {
         Pick a tool to draw. Wall ends snap to nearby wall corners — start a new wall on an existing
         corner to continue the perimeter. Switch to <b>select</b> to move or delete things. Drag a box
         on empty canvas to select many; <b>Shift</b>/<b>Ctrl</b>-click adds to the selection. With
-        something selected, <b>arrow keys</b> nudge it (hold <b>Shift</b> for 1-unit steps), and
-        <b>Ctrl/Cmd+C/V/D</b> copy / paste / duplicate.
+        something selected, <b>arrow keys</b> nudge it (hold <b>Shift</b> to jump a full grid cell),
+        and <b>Ctrl/Cmd+C/V/D</b> copy / paste / duplicate.
       </p>`;
 
     if (sel.kind === "opening") {

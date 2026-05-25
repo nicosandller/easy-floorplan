@@ -7,7 +7,15 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch:
 
-permissions: {}
+# Least privilege: read-only is all the validation/build jobs need (checkout
+# requires contents: read).
+permissions:
+  contents: read
+
+# Opt the bundled JS actions into the Node 24 runtime ahead of GitHub forcing it
+# (Node 20 action runtime is deprecated).
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
 
 jobs:
   validate-hacs:
@@ -17,3 +25,19 @@ jobs:
         uses: hacs/action@main
         with:
           category: plugin
+
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Type-check
+        run: npm run typecheck
+      - name: Test
+        run: npm test
+      - name: Build
+        run: npm run build
