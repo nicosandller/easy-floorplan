@@ -164,7 +164,7 @@ The editor writes this config for you; manual editing is optional.
 | `width`      | number   | `1000`             | Virtual canvas width, in canvas units.       |
 | `height`     | number   | `600`              | Virtual canvas height, in canvas units.      |
 | `grid`       | number   | `20`               | Gap between grid lines, in canvas units (so on a 1000-wide canvas, `20` ≈ 50 columns). A **smaller** number means a **finer** grid with more lines. |
-| `snap`       | number   | follows `grid`     | Snap step for placement / drag / nudge / wall drawing, in canvas units. Omit to snap to the visible grid; set `0` for free placement; set any other number for a custom step (smaller than `grid` = finer, larger = coarser). |
+| `snap`       | number   | follows `grid`     | Snap step for placement / drag / nudge / wall drawing, in canvas units. Omit to snap to the visible grid; set `0` for free placement; set any other number for a custom step. The editor shows a custom step as a **percentage of the grid** (e.g. `50` % of a `20` grid is stored here as `10`), but the value here is always absolute. |
 | `background` | string   | card background    | Canvas background color (CSS / hex).         |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see **Floors**).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |

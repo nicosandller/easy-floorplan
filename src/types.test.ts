@@ -1,5 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { emptyConfig, makeFloor, getFloors, resolveSnap, uid } from "./types";
+import {
+  emptyConfig,
+  makeFloor,
+  getFloors,
+  resolveSnap,
+  snapToGridPercent,
+  gridPercentToSnap,
+  uid,
+} from "./types";
 import type { FloorplanCardConfig } from "./types";
 
 describe("resolveSnap", () => {
@@ -15,6 +23,36 @@ describe("resolveSnap", () => {
   it("returns the custom step when snap is a positive number", () => {
     expect(resolveSnap(5, 20)).toBe(5);
     expect(resolveSnap(25, 20)).toBe(25);
+  });
+});
+
+describe("snapToGridPercent / gridPercentToSnap", () => {
+  it("expresses a snap step as a percentage of the grid", () => {
+    expect(snapToGridPercent(10, 20)).toBe(50);
+    expect(snapToGridPercent(20, 20)).toBe(100);
+    expect(snapToGridPercent(40, 20)).toBe(200); // coarser than the grid
+    expect(snapToGridPercent(5, 20)).toBe(25);
+  });
+
+  it("converts a percentage of the grid back into an absolute step", () => {
+    expect(gridPercentToSnap(50, 20)).toBe(10);
+    expect(gridPercentToSnap(100, 20)).toBe(20);
+    expect(gridPercentToSnap(200, 20)).toBe(40);
+  });
+
+  it("clamps the resulting step to at least 1 unit", () => {
+    expect(gridPercentToSnap(1, 20)).toBe(1); // 0.2 -> clamped
+    expect(gridPercentToSnap(0, 20)).toBe(1);
+  });
+
+  it("round-trips common values", () => {
+    for (const pct of [25, 50, 100, 200]) {
+      expect(snapToGridPercent(gridPercentToSnap(pct, 20), 20)).toBe(pct);
+    }
+  });
+
+  it("guards against a zero grid", () => {
+    expect(snapToGridPercent(10, 0)).toBe(100);
   });
 });
 

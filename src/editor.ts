@@ -15,7 +15,7 @@ import type {
   ItemDisplay,
 } from "./types";
 import {
-  DEFAULT_CUSTOM_SNAP,
+  DEFAULT_CUSTOM_PERCENT,
   DEFAULT_GRID,
   DEFAULT_HEIGHT,
   DEFAULT_WIDTH,
@@ -25,8 +25,10 @@ import {
   FURNITURE_DEFAULT_SIZE,
   emptyConfig,
   getFloors,
+  gridPercentToSnap,
   makeFloor,
   resolveSnap,
+  snapToGridPercent,
   uid,
 } from "./types";
 import {
@@ -253,10 +255,23 @@ export class FloorplanCardEditor extends LitElement {
     } else if (mode === "off") {
       this._patchConfig({ snap: 0 });
     } else {
-      // Keep an existing custom value; otherwise seed with the project default.
+      // Keep an existing custom value; otherwise seed with the default percent
+      // of the current grid (stored as an absolute step).
       const cur = this._config.snap;
-      this._patchConfig({ snap: cur && cur > 0 ? cur : DEFAULT_CUSTOM_SNAP });
+      this._patchConfig({
+        snap: cur && cur > 0 ? cur : gridPercentToSnap(DEFAULT_CUSTOM_PERCENT, this.grid),
+      });
     }
+  }
+
+  /** Update the grid; rescale a custom snap so its percentage of the grid is preserved. */
+  private _setGrid(newGrid: number): void {
+    const patch: Partial<FloorplanCardConfig> = { grid: newGrid };
+    if (this._snapMode === "custom") {
+      const pct = snapToGridPercent(this._config.snap as number, this.grid);
+      patch.snap = gridPercentToSnap(pct, newGrid);
+    }
+    this._patchConfig(patch);
   }
 
   private _snap(v: number): number {
@@ -1317,13 +1332,15 @@ export class FloorplanCardEditor extends LitElement {
       { id: "off", label: "Off" },
       { id: "custom", label: "Custom" },
     ];
+    const customPercent = snapToGridPercent(this._config.snap as number, this.grid);
     const hint =
       mode === "grid"
         ? `Walls and elements snap to the ${this.grid}-unit grid above.`
         : mode === "off"
           ? "No snapping — place walls and elements freely at any position."
-          : `Snap to this many canvas units (grid is ${this.grid}; ` +
-            `a smaller value snaps finer than the grid, a larger value coarser).`;
+          : // % of grid: 100% = the grid; 50% = half a grid cell; 200% = two cells.
+            `Snap to ${customPercent}% of the grid (= ${this._resolvedSnap} units). ` +
+            `Below 100% snaps finer than the grid, above 100% coarser.`;
     return html`
       <div class="row">
         <label>Snap to</label>
@@ -1345,13 +1362,14 @@ export class FloorplanCardEditor extends LitElement {
                 class="num"
                 type="number"
                 min="1"
-                .value=${String(this._config.snap ?? DEFAULT_CUSTOM_SNAP)}
-                @change=${(e: Event) =>
-                  this._patchConfig({
-                    snap: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_CUSTOM_SNAP),
-                  })}
+                step="5"
+                .value=${String(customPercent)}
+                @change=${(e: Event) => {
+                  const pct = Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_CUSTOM_PERCENT);
+                  this._patchConfig({ snap: gridPercentToSnap(pct, this.grid) });
+                }}
               />
-              <span class="hint">units</span>`
+              <span class="hint">% of grid</span>`
           : nothing}
         <span class="hint">${hint}</span>
       </div>
@@ -1398,9 +1416,7 @@ export class FloorplanCardEditor extends LitElement {
             min="1"
             .value=${String(this.grid)}
             @change=${(e: Event) =>
-              this._patchConfig({
-                grid: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_GRID),
-              })}
+              this._setGrid(Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_GRID))}
           />
           <span class="hint">
             Gap between grid lines, in canvas units (canvas is ${this._config.width}×${this._config

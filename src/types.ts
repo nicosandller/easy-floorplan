@@ -177,12 +177,14 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   /** Visible editor grid spacing in virtual units (purely a visual guide). */
   grid?: number;
   /**
-   * Placement snap step in virtual units. Tri-state:
+   * Placement snap step in virtual (canvas) units. Tri-state:
    * - **unset** — placement/drag/nudge snap to the visible `grid` (the default).
    * - **`0`** — free placement (no snapping anywhere).
-   * - **`> 0`** — snap to this custom step (independent of the grid).
+   * - **`> 0`** — snap to this custom step (absolute units).
    *
-   * Resolve with {@link resolveSnap}.
+   * The editor presents a custom step as a percentage of the grid (e.g. `50` %
+   * of a `20` grid is stored here as `10`), but the stored value is always
+   * absolute. Resolve with {@link resolveSnap}.
    */
   snap?: number;
   /** Canvas background color (CSS / hex). Falls back to the card background. */
@@ -205,19 +207,40 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
 export const DEFAULT_WIDTH = 1000;
 export const DEFAULT_HEIGHT = 600;
 export const DEFAULT_GRID = 20;
-/** Step used when a user picks the **Custom** snap mode without an existing value. */
-export const DEFAULT_CUSTOM_SNAP = 10;
+/**
+ * Default for the **Custom** snap mode, as a percentage of the grid — i.e. half
+ * a grid cell. The editor expresses custom snap relative to the grid; the stored
+ * `snap` value remains an absolute step in canvas units.
+ */
+export const DEFAULT_CUSTOM_PERCENT = 50;
 
 /**
  * Resolve a `snap` config value into the effective step that placement / drag
- * / nudge should use, given the visible `grid`.
+ * / nudge / wall drawing should use, given the visible `grid`.
  *
  * - `null` / `undefined` → follow the visible grid (most intuitive default).
  * - `0` → free placement (no snapping).
- * - any other number → that exact step.
+ * - any other number → that exact step (absolute, in canvas units).
  */
 export function resolveSnap(snap: number | null | undefined, grid: number): number {
   return snap == null ? grid : snap;
+}
+
+/**
+ * Express a custom (absolute) snap step as a percentage of the grid, for the
+ * editor UI. `50` means "half a grid cell". Rounded to a whole percent.
+ */
+export function snapToGridPercent(snap: number, grid: number): number {
+  if (grid <= 0) return 100;
+  return Math.round((snap / grid) * 100);
+}
+
+/**
+ * Convert a percentage-of-grid back into an absolute snap step (canvas units),
+ * clamped to a sensible minimum so the step is never zero/negative.
+ */
+export function gridPercentToSnap(percent: number, grid: number): number {
+  return Math.max(1, Math.round((grid * percent) / 100));
 }
 
 export function emptyConfig(type: string): FloorplanCardConfig {
