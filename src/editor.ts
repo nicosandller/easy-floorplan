@@ -2075,6 +2075,10 @@ export class FloorplanCardEditor extends LitElement {
     }
     .wall {
       stroke: var(--primary-text-color);
+      /* The wide transparent .wall-hit line beneath handles selection/drag.
+         Without this, the visible line (painted on top) swallows clicks on the
+         wall body, so you could only grab it just *outside* the body. */
+      pointer-events: none;
     }
     .wall.selected {
       stroke: var(--primary-color, #03a9f4);
