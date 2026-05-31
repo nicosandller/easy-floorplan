@@ -230,12 +230,6 @@ export class FloorplanCardEditor extends LitElement {
     return this._config.grid ?? DEFAULT_GRID;
   }
 
-  /** Round to the visible grid (used for wall-drawing gravity, independent of `snap`). */
-  private _snapToGrid(v: number): number {
-    const g = this.grid;
-    return Math.round(v / g) * g;
-  }
-
   /**
    * Resolved placement snap step. `snap` is tri-state in the config: unset
    * means "follow the grid" (the default behaviour), `0` is free placement,
@@ -297,15 +291,17 @@ export class FloorplanCardEditor extends LitElement {
     return best;
   }
 
-  /** Snap a raw point to a nearby existing wall endpoint, else to the visible grid. */
+  /** Snap a raw point to a nearby existing wall endpoint, else to the snap step. */
   private _snapWallPoint(rawX: number, rawY: number): { x: number; y: number } {
-    return this._nearestCorner(rawX, rawY) ?? { x: this._snapToGrid(rawX), y: this._snapToGrid(rawY) };
+    return this._nearestCorner(rawX, rawY) ?? { x: this._snap(rawX), y: this._snap(rawY) };
   }
 
   /**
    * Snap a wall's moving endpoint while drawing. Existing corners win (so rooms
    * close/continue); otherwise, unless free-draw is on, apply "gravity" toward
-   * horizontal/vertical relative to the start point.
+   * horizontal/vertical relative to the start point. The position itself snaps
+   * to the configured snap step (which is the grid by default, or nothing when
+   * Snap is Off) — "straighten" only governs the H/V alignment, not snapping.
    */
   private _snapWallEnd(
     x1: number,
@@ -319,10 +315,10 @@ export class FloorplanCardEditor extends LitElement {
     const dx = rawX - x1;
     const dy = rawY - y1;
     const t = Math.tan((WALL_AXIS_SNAP_DEG * Math.PI) / 180);
-    // Sticky: align flat to an axis when close, and pull the free coordinate to the grid.
-    if (Math.abs(dy) <= Math.abs(dx) * t) return { x: this._snapToGrid(rawX), y: y1 }; // horizontal
-    if (Math.abs(dx) <= Math.abs(dy) * t) return { x: x1, y: this._snapToGrid(rawY) }; // vertical
-    return { x: this._snapToGrid(rawX), y: this._snapToGrid(rawY) };
+    // Sticky: align flat to an axis when close; the free coordinate snaps to step.
+    if (Math.abs(dy) <= Math.abs(dx) * t) return { x: this._snap(rawX), y: y1 }; // horizontal
+    if (Math.abs(dx) <= Math.abs(dy) * t) return { x: x1, y: this._snap(rawY) }; // vertical
+    return { x: this._snap(rawX), y: this._snap(rawY) };
   }
 
   // ---- config mutation + history ----------------------------------------
@@ -1323,10 +1319,11 @@ export class FloorplanCardEditor extends LitElement {
     ];
     const hint =
       mode === "grid"
-        ? `Elements snap to the ${this.grid}-unit grid above.`
+        ? `Walls and elements snap to the ${this.grid}-unit grid above.`
         : mode === "off"
-          ? "Elements can be placed anywhere (free placement)."
-          : "Elements snap to this step.";
+          ? "No snapping — place walls and elements freely at any position."
+          : `Snap to this many canvas units (grid is ${this.grid}; ` +
+            `a smaller value snaps finer than the grid, a larger value coarser).`;
     return html`
       <div class="row">
         <label>Snap to</label>
@@ -1345,15 +1342,16 @@ export class FloorplanCardEditor extends LitElement {
         </div>
         ${mode === "custom"
           ? html`<input
-              class="num"
-              type="number"
-              min="1"
-              .value=${String(this._config.snap ?? DEFAULT_CUSTOM_SNAP)}
-              @change=${(e: Event) =>
-                this._patchConfig({
-                  snap: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_CUSTOM_SNAP),
-                })}
-            />`
+                class="num"
+                type="number"
+                min="1"
+                .value=${String(this._config.snap ?? DEFAULT_CUSTOM_SNAP)}
+                @change=${(e: Event) =>
+                  this._patchConfig({
+                    snap: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_CUSTOM_SNAP),
+                  })}
+              />
+              <span class="hint">units</span>`
           : nothing}
         <span class="hint">${hint}</span>
       </div>
@@ -1394,7 +1392,7 @@ export class FloorplanCardEditor extends LitElement {
           />
         </div>
         <div class="row">
-          <label>Grid</label>
+          <label>Grid size</label>
           <input
             type="number"
             min="1"
@@ -1404,7 +1402,10 @@ export class FloorplanCardEditor extends LitElement {
                 grid: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_GRID),
               })}
           />
-          <span class="hint">Visible grid; wall corners snap here.</span>
+          <span class="hint">
+            Gap between grid lines, in canvas units (canvas is ${this._config.width}×${this._config
+              .height}). Smaller = finer grid, more lines.
+          </span>
         </div>
         ${this._renderSnapRow()}
         <div class="row">
@@ -2047,8 +2048,14 @@ export class FloorplanCardEditor extends LitElement {
       cursor: crosshair;
     }
     .grid {
-      stroke: var(--divider-color, #e0e0e0);
-      stroke-width: 0.5;
+      /* Theme text colour at low opacity so the grid stays visible over a
+         background image (and on both light and dark themes); non-scaling-stroke
+         keeps the lines a crisp ~1px at any canvas size / zoom. Editor-only —
+         the live card never draws a grid. */
+      stroke: var(--primary-text-color, #212121);
+      stroke-opacity: 0.25;
+      stroke-width: 1;
+      vector-effect: non-scaling-stroke;
     }
     .wall {
       stroke: var(--primary-text-color);
