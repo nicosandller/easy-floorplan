@@ -2072,6 +2072,9 @@ export class FloorplanCardEditor extends LitElement {
       stroke-opacity: 0.25;
       stroke-width: 1;
       vector-effect: non-scaling-stroke;
+      /* Purely decorative — must never intercept pointers, or a press that lands
+         on a grid line would capture the pointer there and break wall drawing. */
+      pointer-events: none;
     }
     .wall {
       stroke: var(--primary-text-color);
