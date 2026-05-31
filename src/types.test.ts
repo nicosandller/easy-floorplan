@@ -1,6 +1,22 @@
 import { describe, it, expect } from "vitest";
-import { emptyConfig, makeFloor, getFloors, uid } from "./types";
+import { emptyConfig, makeFloor, getFloors, resolveSnap, uid } from "./types";
 import type { FloorplanCardConfig } from "./types";
+
+describe("resolveSnap", () => {
+  it("falls back to the grid when snap is unset (the new default)", () => {
+    expect(resolveSnap(undefined, 20)).toBe(20);
+    expect(resolveSnap(null, 20)).toBe(20);
+  });
+
+  it("returns 0 for free placement when snap is explicitly 0", () => {
+    expect(resolveSnap(0, 20)).toBe(0);
+  });
+
+  it("returns the custom step when snap is a positive number", () => {
+    expect(resolveSnap(5, 20)).toBe(5);
+    expect(resolveSnap(25, 20)).toBe(25);
+  });
+});
 
 describe("emptyConfig", () => {
   it("produces a blank, valid single-floor config", () => {

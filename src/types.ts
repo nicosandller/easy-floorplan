@@ -177,8 +177,12 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   /** Visible editor grid spacing in virtual units (purely a visual guide). */
   grid?: number;
   /**
-   * Placement snap step in virtual units. When 0 or unset, elements are placed
-   * freely (no snapping); when > 0, placement/drag/nudge round to this step.
+   * Placement snap step in virtual units. Tri-state:
+   * - **unset** — placement/drag/nudge snap to the visible `grid` (the default).
+   * - **`0`** — free placement (no snapping anywhere).
+   * - **`> 0`** — snap to this custom step (independent of the grid).
+   *
+   * Resolve with {@link resolveSnap}.
    */
   snap?: number;
   /** Canvas background color (CSS / hex). Falls back to the card background. */
@@ -201,6 +205,20 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
 export const DEFAULT_WIDTH = 1000;
 export const DEFAULT_HEIGHT = 600;
 export const DEFAULT_GRID = 20;
+/** Step used when a user picks the **Custom** snap mode without an existing value. */
+export const DEFAULT_CUSTOM_SNAP = 10;
+
+/**
+ * Resolve a `snap` config value into the effective step that placement / drag
+ * / nudge should use, given the visible `grid`.
+ *
+ * - `null` / `undefined` → follow the visible grid (most intuitive default).
+ * - `0` → free placement (no snapping).
+ * - any other number → that exact step.
+ */
+export function resolveSnap(snap: number | null | undefined, grid: number): number {
+  return snap == null ? grid : snap;
+}
 
 export function emptyConfig(type: string): FloorplanCardConfig {
   return {

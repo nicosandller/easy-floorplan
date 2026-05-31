@@ -15,6 +15,7 @@ import type {
   ItemDisplay,
 } from "./types";
 import {
+  DEFAULT_CUSTOM_SNAP,
   DEFAULT_GRID,
   DEFAULT_HEIGHT,
   DEFAULT_WIDTH,
@@ -25,6 +26,7 @@ import {
   emptyConfig,
   getFloors,
   makeFloor,
+  resolveSnap,
   uid,
 } from "./types";
 import {
@@ -234,13 +236,37 @@ export class FloorplanCardEditor extends LitElement {
     return Math.round(v / g) * g;
   }
 
-  /** Placement snap step; 0 means free placement (no snapping). */
-  private get snapStep(): number {
-    return this._config.snap ?? 0;
+  /**
+   * Resolved placement snap step. `snap` is tri-state in the config: unset
+   * means "follow the grid" (the default behaviour), `0` is free placement,
+   * any other number is a custom step. See {@link resolveSnap}.
+   */
+  private get _resolvedSnap(): number {
+    return resolveSnap(this._config.snap, this.grid);
+  }
+
+  /** Which radio option the panel's "Snap to" control shows as active. */
+  private get _snapMode(): "grid" | "off" | "custom" {
+    const s = this._config.snap;
+    if (s == null) return "grid";
+    if (s === 0) return "off";
+    return "custom";
+  }
+
+  private _setSnapMode(mode: "grid" | "off" | "custom"): void {
+    if (mode === "grid") {
+      this._patchConfig({ snap: undefined });
+    } else if (mode === "off") {
+      this._patchConfig({ snap: 0 });
+    } else {
+      // Keep an existing custom value; otherwise seed with the project default.
+      const cur = this._config.snap;
+      this._patchConfig({ snap: cur && cur > 0 ? cur : DEFAULT_CUSTOM_SNAP });
+    }
   }
 
   private _snap(v: number): number {
-    const s = this.snapStep;
+    const s = this._resolvedSnap;
     return s > 0 ? Math.round(v / s) * s : v;
   }
 
@@ -442,7 +468,9 @@ export class FloorplanCardEditor extends LitElement {
     if (!d) return;
     ev.preventDefault();
     // Default nudge is fine (snap step, or 1 unit when free); Shift jumps a grid cell.
-    const step = ev.shiftKey ? this.grid : this.snapStep || 1;
+    // Default nudge follows the resolved snap (= the grid when unset, or the
+    // explicit custom step). Shift always jumps a full grid cell.
+    const step = ev.shiftKey ? this.grid : this._resolvedSnap || 1;
     this._nudge(d[0] * step, d[1] * step);
   }
 
@@ -802,11 +830,13 @@ export class FloorplanCardEditor extends LitElement {
     });
   }
 
-  /** Paste the clipboard onto the active floor, offset by one grid step, with fresh ids. */
+  /** Paste the clipboard onto the active floor, offset by one snap step, with fresh ids. */
   private _paste(): void {
     if (!this._clipboard) return;
     const cb = structuredClone(this._clipboard);
-    const off = this.grid;
+    // Offset by the resolved snap so paste lands on the same step as drag.
+    // Fall back to the grid when snap is explicitly off (`0`) to avoid overlap.
+    const off = this._resolvedSnap || this.grid;
     const f = this._floor();
     const newWalls: Wall[] = cb.walls.map((w) => ({
       ...w,
@@ -1278,6 +1308,58 @@ export class FloorplanCardEditor extends LitElement {
     `;
   }
 
+  /**
+   * The panel's "Snap to" row: a three-option segmented control over the
+   * tri-state `snap` config. **Grid** (unset) follows the visible grid;
+   * **Off** (`0`) is truly free placement; **Custom** (`> 0`) exposes a number
+   * input for a bespoke step.
+   */
+  private _renderSnapRow(): TemplateResult {
+    const mode = this._snapMode;
+    const opts: { id: "grid" | "off" | "custom"; label: string }[] = [
+      { id: "grid", label: "Grid" },
+      { id: "off", label: "Off" },
+      { id: "custom", label: "Custom" },
+    ];
+    const hint =
+      mode === "grid"
+        ? `Elements snap to the ${this.grid}-unit grid above.`
+        : mode === "off"
+          ? "Elements can be placed anywhere (free placement)."
+          : "Elements snap to this step.";
+    return html`
+      <div class="row">
+        <label>Snap to</label>
+        <div class="seg" role="group" aria-label="Snap mode">
+          ${opts.map(
+            (o) => html`
+              <button
+                class=${mode === o.id ? "active" : ""}
+                aria-pressed=${mode === o.id}
+                @click=${() => this._setSnapMode(o.id)}
+              >
+                ${o.label}
+              </button>
+            `
+          )}
+        </div>
+        ${mode === "custom"
+          ? html`<input
+              class="num"
+              type="number"
+              min="1"
+              .value=${String(this._config.snap ?? DEFAULT_CUSTOM_SNAP)}
+              @change=${(e: Event) =>
+                this._patchConfig({
+                  snap: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_CUSTOM_SNAP),
+                })}
+            />`
+          : nothing}
+        <span class="hint">${hint}</span>
+      </div>
+    `;
+  }
+
   private _renderPanel(): TemplateResult {
     return html`
       <div class="panel">
@@ -1315,27 +1397,16 @@ export class FloorplanCardEditor extends LitElement {
           <label>Grid</label>
           <input
             type="number"
+            min="1"
             .value=${String(this.grid)}
             @change=${(e: Event) =>
               this._patchConfig({
-                grid: Number((e.target as HTMLInputElement).value) || DEFAULT_GRID,
+                grid: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_GRID),
               })}
           />
+          <span class="hint">Visible grid; wall corners snap here.</span>
         </div>
-        <div class="row">
-          <label>Snap</label>
-          <input
-            class="num"
-            type="number"
-            min="0"
-            .value=${String(this.snapStep)}
-            @change=${(e: Event) =>
-              this._patchConfig({
-                snap: Number((e.target as HTMLInputElement).value) || undefined,
-              })}
-          />
-          <span class="hint">0 = free placement</span>
-        </div>
+        ${this._renderSnapRow()}
         <div class="row">
           <label>Background</label>
           <input

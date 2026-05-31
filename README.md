@@ -163,8 +163,8 @@ The editor writes this config for you; manual editing is optional.
 | `title`      | string   | —                  | Optional card header.                        |
 | `width`      | number   | `1000`             | Virtual canvas width.                        |
 | `height`     | number   | `600`              | Virtual canvas height.                       |
-| `grid`       | number   | `20`               | Visible grid spacing (a visual guide).       |
-| `snap`       | number   | `0`                | Placement snap step; `0` = free placement.   |
+| `grid`       | number   | `20`               | Visible grid spacing; wall endpoints snap to this while drawing. |
+| `snap`       | number   | follows `grid`     | Placement / drag / nudge snap step. Omit (or leave unset) to follow the visible grid; set to `0` for free placement; set to any other number for a custom step. |
 | `background` | string   | card background    | Canvas background color (CSS / hex).         |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see **Floors**).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
