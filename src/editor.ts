@@ -1003,22 +1003,6 @@ export class FloorplanCardEditor extends LitElement {
 
     if (t === "wall") {
       label = "Wall";
-      // Snap mode lives next to Straighten so the two drawing-aid controls sit
-      // together. The same setting governs placement/drag across all tools — it
-      // moved here from the project-config panel below.
-      const snapMode = this._snapMode;
-      const customPercent = snapToGridPercent(this._config.snap as number, this.grid);
-      const snapOpts: { id: "grid" | "off" | "custom"; label: string }[] = [
-        { id: "grid", label: "On" },
-        { id: "off", label: "Off" },
-        { id: "custom", label: "Custom" },
-      ];
-      const snapHint =
-        snapMode === "grid"
-          ? `Snapping to the ${this.grid}-unit grid.`
-          : snapMode === "off"
-            ? "No snapping — free placement."
-            : `Snap = ${customPercent}% of grid (${this._resolvedSnap} units).`;
       body = html`
         <button
           class=${this._freeWalls ? "" : "active"}
@@ -1030,43 +1014,7 @@ export class FloorplanCardEditor extends LitElement {
         >
           straighten
         </button>
-        <span class="ctx-field-label">Snap</span>
-        <div class="seg" role="group" aria-label="Snap mode">
-          ${snapOpts.map(
-            (o) => html`
-              <button
-                class=${snapMode === o.id ? "active" : ""}
-                aria-pressed=${snapMode === o.id}
-                title=${o.id === "grid"
-                  ? "Snap to the grid"
-                  : o.id === "off"
-                    ? "Free placement"
-                    : "Custom step (% of grid)"}
-                @click=${() => this._setSnapMode(o.id)}
-              >
-                ${o.label}
-              </button>
-            `
-          )}
-        </div>
-        ${snapMode === "custom"
-          ? html`<input
-                class="num"
-                type="number"
-                min="1"
-                step="5"
-                .value=${String(customPercent)}
-                title="Custom snap step, as a percentage of the grid"
-                @change=${(e: Event) => {
-                  const pct = Math.max(
-                    1,
-                    Number((e.target as HTMLInputElement).value) || DEFAULT_CUSTOM_PERCENT
-                  );
-                  this._patchConfig({ snap: gridPercentToSnap(pct, this.grid) });
-                }}
-              /><span class="ctx-field-label">%</span>`
-          : nothing}
-        <span class="ctx-hint">${snapHint}</span>
+        <span class="ctx-hint">Drag to draw. Endpoints snap to nearby corners to close rooms.</span>
       `;
     } else if (t === "door" || t === "window") {
       label = t === "door" ? "Door" : "Window";
@@ -1119,7 +1067,69 @@ export class FloorplanCardEditor extends LitElement {
       <div class="context-bar">
         <span class="ctx-label">${label}</span>
         ${body}
+        <span class="ctx-divider"></span>
+        ${this._renderSnapControl()}
       </div>
+    `;
+  }
+
+  /**
+   * Snap control rendered at the end of the context bar for every tool. The
+   * setting governs placement / drag / wall drawing across all tools, so the
+   * control needs to be reachable regardless of which tool is active.
+   */
+  private _renderSnapControl(): TemplateResult {
+    const mode = this._snapMode;
+    const customPercent = snapToGridPercent(this._config.snap as number, this.grid);
+    const opts: { id: "grid" | "off" | "custom"; label: string }[] = [
+      { id: "grid", label: "On" },
+      { id: "off", label: "Off" },
+      { id: "custom", label: "Custom" },
+    ];
+    const hint =
+      mode === "grid"
+        ? `Snapping to the ${this.grid}-unit grid.`
+        : mode === "off"
+          ? "No snapping — free placement."
+          : `Snap = ${customPercent}% of grid (${this._resolvedSnap} units).`;
+    return html`
+      <span class="ctx-field-label">Snap</span>
+      <div class="seg" role="group" aria-label="Snap mode">
+        ${opts.map(
+          (o) => html`
+            <button
+              class=${mode === o.id ? "active" : ""}
+              aria-pressed=${mode === o.id}
+              title=${o.id === "grid"
+                ? "Snap to the grid"
+                : o.id === "off"
+                  ? "Free placement"
+                  : "Custom step (% of grid)"}
+              @click=${() => this._setSnapMode(o.id)}
+            >
+              ${o.label}
+            </button>
+          `
+        )}
+      </div>
+      ${mode === "custom"
+        ? html`<input
+              class="num"
+              type="number"
+              min="1"
+              step="5"
+              .value=${String(customPercent)}
+              title="Custom snap step, as a percentage of the grid"
+              @change=${(e: Event) => {
+                const pct = Math.max(
+                  1,
+                  Number((e.target as HTMLInputElement).value) || DEFAULT_CUSTOM_PERCENT
+                );
+                this._patchConfig({ snap: gridPercentToSnap(pct, this.grid) });
+              }}
+            /><span class="ctx-field-label">%</span>`
+        : nothing}
+      <span class="ctx-hint">${hint}</span>
     `;
   }
 
@@ -2078,6 +2088,15 @@ export class FloorplanCardEditor extends LitElement {
     }
     .context-bar input.num {
       width: 60px;
+    }
+    /* Thin vertical rule separating the tool-specific contents from the
+       always-on Snap control on the right side of the context bar. */
+    .ctx-divider {
+      flex: 0 0 1px;
+      align-self: stretch;
+      min-height: 22px;
+      margin: 0 4px;
+      background: var(--divider-color, #e0e0e0);
     }
     button {
       cursor: pointer;
