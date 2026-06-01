@@ -73,24 +73,28 @@ HACS adds the dashboard resource automatically.
 
 ## Usage
 
-Edit a dashboard → **Add card** → search **Easy Floorplan**. The editor has a **tools
-row** and, below it, a **context row** that shows options and actions for whatever you're
-currently doing:
+Edit a dashboard → **Add card** → search **Easy Floorplan**. The editor is laid out
+top-to-bottom as a **tools row**, a **context row** with options/actions for whatever
+you're doing, the **canvas**, and two sections below — **Element** (per-element editor
+for the current selection) and **Project** (page-level settings like canvas size, grid,
+background):
 
-- **select** — the default tool. Click an element to move, rotate, resize, recolor or
-  delete it; Shift/Ctrl-click or drag a box to select several at once. Arrow keys nudge
-  the selection (Shift+arrow jumps a full grid cell), and **Ctrl/Cmd+C/V/D** copy / paste
-  / duplicate. With a selection, the context row offers **duplicate** and **delete**.
+- **select** — the default tool. Click an element to select it; Shift/Ctrl-click or drag
+  a box to select several at once. Arrow keys nudge the selection (Shift+arrow jumps a
+  full grid cell), and **Ctrl/Cmd+C/V/D** copy / paste / duplicate. With a selection,
+  the context row offers **duplicate** and **delete**, and the **Element** section below
+  the canvas exposes the full property editor for whatever you have selected.
 - **wall** — drag to draw. Endpoints snap to nearby corners; start a new wall on an
-  existing corner to continue the perimeter. The context row's **straighten** toggle keeps
-  walls horizontal/vertical and corner-snapped — turn it off to draw freely at any angle.
+  existing corner to continue the perimeter. The context row's **straighten** toggle
+  keeps walls horizontal/vertical and corner-snapped (turn it off to draw freely), and
+  the **Snap** segmented control (`On` / `Off` / `Custom`) governs snapping for *all*
+  tools — `Custom` lets you snap to a percentage of the grid (e.g. 50% = half a cell).
 - **door / window** — click to drop; it snaps onto the nearest wall. The context row
   shows a **Length** field for the *next* opening you place, so you can size doors and
-  windows before placing them. Assign a sensor after placement to animate it
-  open/closed (see **Doors & windows**).
-- **+ device / + text / + furniture…** — drop a new element, then edit it in the context
-  row above the canvas (selecting any element reveals its full property editor there,
-  so configuring is one click — no scrolling away from the canvas).
+  windows before placing them. Assign a sensor after placement (in the **Element**
+  section) to animate the opening open/closed — see **Doors & windows**.
+- **+ device / + text / + furniture…** — drop a new element; the **Element** section
+  below the canvas shows its full property editor so you can configure it right away.
 - **floor** — add, rename, switch and delete floors.
 
 Undo/redo and a zoom slider live at the right of the tools row.
@@ -105,7 +109,7 @@ holds its own set of them.
 ### Devices
 
 A **device** binds a Home Assistant entity to a spot on the plan. Add one with
-**+ device**, then pick the entity in the context row that appears above the canvas.
+**+ device**, then pick the entity in the **Element** section below the canvas.
 By default it shows an icon badge:
 
 - **Tap to act** — lights, switches, covers, fans and `input_boolean`s toggle on tap;
@@ -139,7 +143,7 @@ Drop a **door** or **window** from the toolbar and it snaps onto the nearest wal
 own a door is drawn open (the familiar swing arc) and a window closed — a static floor
 plan, just like before.
 
-Select the opening and bind a **Sensor** entity in the context row above the canvas —
+Select the opening and bind a **Sensor** entity in the **Element** section below the canvas —
 a contact `binary_sensor` or a `cover` — to make the opening track its real state:
 
 - **Open / closed** — the opening is drawn open when the entity is `on` / `open`, closed

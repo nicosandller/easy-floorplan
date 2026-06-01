@@ -1003,6 +1003,22 @@ export class FloorplanCardEditor extends LitElement {
 
     if (t === "wall") {
       label = "Wall";
+      // Snap mode lives next to Straighten so the two drawing-aid controls sit
+      // together. The same setting governs placement/drag across all tools — it
+      // moved here from the project-config panel below.
+      const snapMode = this._snapMode;
+      const customPercent = snapToGridPercent(this._config.snap as number, this.grid);
+      const snapOpts: { id: "grid" | "off" | "custom"; label: string }[] = [
+        { id: "grid", label: "On" },
+        { id: "off", label: "Off" },
+        { id: "custom", label: "Custom" },
+      ];
+      const snapHint =
+        snapMode === "grid"
+          ? `Snapping to the ${this.grid}-unit grid.`
+          : snapMode === "off"
+            ? "No snapping — free placement."
+            : `Snap = ${customPercent}% of grid (${this._resolvedSnap} units).`;
       body = html`
         <button
           class=${this._freeWalls ? "" : "active"}
@@ -1014,7 +1030,43 @@ export class FloorplanCardEditor extends LitElement {
         >
           straighten
         </button>
-        <span class="ctx-hint">Drag to draw. Endpoints snap to nearby corners to close rooms.</span>
+        <span class="ctx-field-label">Snap</span>
+        <div class="seg" role="group" aria-label="Snap mode">
+          ${snapOpts.map(
+            (o) => html`
+              <button
+                class=${snapMode === o.id ? "active" : ""}
+                aria-pressed=${snapMode === o.id}
+                title=${o.id === "grid"
+                  ? "Snap to the grid"
+                  : o.id === "off"
+                    ? "Free placement"
+                    : "Custom step (% of grid)"}
+                @click=${() => this._setSnapMode(o.id)}
+              >
+                ${o.label}
+              </button>
+            `
+          )}
+        </div>
+        ${snapMode === "custom"
+          ? html`<input
+                class="num"
+                type="number"
+                min="1"
+                step="5"
+                .value=${String(customPercent)}
+                title="Custom snap step, as a percentage of the grid"
+                @change=${(e: Event) => {
+                  const pct = Math.max(
+                    1,
+                    Number((e.target as HTMLInputElement).value) || DEFAULT_CUSTOM_PERCENT
+                  );
+                  this._patchConfig({ snap: gridPercentToSnap(pct, this.grid) });
+                }}
+              /><span class="ctx-field-label">%</span>`
+          : nothing}
+        <span class="ctx-hint">${snapHint}</span>
       `;
     } else if (t === "door" || t === "window") {
       label = t === "door" ? "Door" : "Window";
@@ -1040,21 +1092,15 @@ export class FloorplanCardEditor extends LitElement {
         <span class="ctx-hint">Click on a wall to drop a ${t}; it snaps onto the wall.</span>
       `;
     } else {
+      // Selection actions only — the full per-element editor renders BELOW the
+      // canvas in its own area (so the context bar's height stays stable as
+      // selections change, and the canvas doesn't jump up and down).
       label = "Select";
       const n = this._selection.length;
       if (n === 0) {
         body = html`<span class="ctx-hint"
           >Click an element to select it, or drag a box to select several.</span
         >`;
-      } else if (n === 1) {
-        // Inline editor for the single selected element + the usual actions.
-        body = html`
-          ${this._renderSelectionEditor()}
-          <button title="Duplicate the selection" @click=${this._duplicate}>⧉ duplicate</button>
-          <button class="danger" title="Delete the selection" @click=${this._deleteSelected}>
-            🗑 delete
-          </button>
-        `;
       } else {
         body = html`
           <span class="ctx-count">${n} selected</span>
@@ -1062,7 +1108,9 @@ export class FloorplanCardEditor extends LitElement {
           <button class="danger" title="Delete the selection" @click=${this._deleteSelected}>
             🗑 delete
           </button>
-          <span class="ctx-hint">Edit elements one at a time.</span>
+          ${n > 1
+            ? html`<span class="ctx-hint">Edit elements one at a time.</span>`
+            : nothing}
         `;
       }
     }
@@ -1233,8 +1281,36 @@ export class FloorplanCardEditor extends LitElement {
           </div>
         </div>
 
+        ${this._renderElementEdit()}
         ${this._renderPanel()}
       </div>
+    `;
+  }
+
+  /**
+   * Per-element editor area, rendered BELOW the canvas with a small title.
+   * Kept separate from the project panel so users can tell the two apart, and
+   * separate from the context bar so the bar's height stays stable across
+   * selection changes (the canvas no longer jumps when you click around).
+   */
+  private _renderElementEdit(): TemplateResult {
+    const n = this._selection.length;
+    let body: TemplateResult;
+    if (n === 0) {
+      body = html`<p class="hint">Select an element on the canvas to edit its properties here.</p>`;
+    } else if (n > 1) {
+      body = html`<p class="hint">
+        <b>${n} elements selected.</b> Edit them one at a time, or use the
+        Duplicate/Delete buttons in the context bar above.
+      </p>`;
+    } else {
+      body = this._renderSelectionEditor();
+    }
+    return html`
+      <section class="edit-area">
+        <h3 class="section-title">Element</h3>
+        ${body}
+      </section>
     `;
   }
 
@@ -1354,66 +1430,10 @@ export class FloorplanCardEditor extends LitElement {
     `;
   }
 
-  /**
-   * The panel's "Snap to" row: a three-option segmented control over the
-   * tri-state `snap` config. **Grid** (unset) follows the visible grid;
-   * **Off** (`0`) is truly free placement; **Custom** (`> 0`) exposes a number
-   * input for a bespoke step.
-   */
-  private _renderSnapRow(): TemplateResult {
-    const mode = this._snapMode;
-    const opts: { id: "grid" | "off" | "custom"; label: string }[] = [
-      { id: "grid", label: "Grid" },
-      { id: "off", label: "Off" },
-      { id: "custom", label: "Custom" },
-    ];
-    const customPercent = snapToGridPercent(this._config.snap as number, this.grid);
-    const hint =
-      mode === "grid"
-        ? `Walls and elements snap to the ${this.grid}-unit grid above.`
-        : mode === "off"
-          ? "No snapping — place walls and elements freely at any position."
-          : // % of grid: 100% = the grid; 50% = half a grid cell; 200% = two cells.
-            `Snap to ${customPercent}% of the grid (= ${this._resolvedSnap} units). ` +
-            `Below 100% snaps finer than the grid, above 100% coarser.`;
-    return html`
-      <div class="row">
-        <label>Snap to</label>
-        <div class="seg" role="group" aria-label="Snap mode">
-          ${opts.map(
-            (o) => html`
-              <button
-                class=${mode === o.id ? "active" : ""}
-                aria-pressed=${mode === o.id}
-                @click=${() => this._setSnapMode(o.id)}
-              >
-                ${o.label}
-              </button>
-            `
-          )}
-        </div>
-        ${mode === "custom"
-          ? html`<input
-                class="num"
-                type="number"
-                min="1"
-                step="5"
-                .value=${String(customPercent)}
-                @change=${(e: Event) => {
-                  const pct = Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_CUSTOM_PERCENT);
-                  this._patchConfig({ snap: gridPercentToSnap(pct, this.grid) });
-                }}
-              />
-              <span class="hint">% of grid</span>`
-          : nothing}
-        <span class="hint">${hint}</span>
-      </div>
-    `;
-  }
-
   private _renderPanel(): TemplateResult {
     return html`
-      <div class="panel">
+      <section class="panel">
+        <h3 class="section-title">Project</h3>
         <div class="row">
           <label>Title</label>
           <input
@@ -1458,7 +1478,6 @@ export class FloorplanCardEditor extends LitElement {
               .height}). Smaller = finer grid, more lines.
           </span>
         </div>
-        ${this._renderSnapRow()}
         <div class="row">
           <label>Background</label>
           <input
@@ -1500,7 +1519,7 @@ export class FloorplanCardEditor extends LitElement {
               />
             </div>`
           : nothing}
-      </div>
+      </section>
     `;
   }
 
@@ -2038,17 +2057,6 @@ export class FloorplanCardEditor extends LitElement {
       padding: 4px 10px;
       font-size: 13px;
     }
-    /* When the selection editor's <div class="row"> blocks render INSIDE the
-       context bar (instead of stacked in a panel), make them inline so several
-       rows sit side-by-side and wrap naturally on narrow widths. */
-    .context-bar .row {
-      margin: 0;
-      flex: 0 0 auto;
-    }
-    .context-bar .row label {
-      flex: 0 0 auto;
-      font-size: 12px;
-    }
     /* A label + input pair inline in the context bar (e.g. default Length for
        the Door/Window tools). The <label> wraps both so clicking the text
        focuses the input. */
@@ -2060,6 +2068,15 @@ export class FloorplanCardEditor extends LitElement {
       color: var(--secondary-text-color);
     }
     .context-bar .ctx-field input.num {
+      width: 60px;
+    }
+    /* Inline label for a control rendered loose in the context bar (e.g. the
+       "Snap" word next to the segmented control). */
+    .context-bar .ctx-field-label {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+    }
+    .context-bar input.num {
       width: 60px;
     }
     button {
@@ -2088,8 +2105,12 @@ export class FloorplanCardEditor extends LitElement {
       border-radius: 8px;
       overflow: auto;
       resize: both;
-      height: 62vh;
-      min-height: 320px;
+      /* Size to the canvas's own aspect ratio rather than forcing a fixed
+         viewport-relative height. This avoids the empty band above and below
+         the grid that used to appear with the default 1000×600 canvas, and
+         leaves room for the Element / Project sections below. The user can
+         still drag-resize via the corner handle (resize: both). */
+      min-height: 200px;
       background: var(--secondary-background-color, #f5f5f5);
       display: flex;
       align-items: flex-start;
@@ -2355,10 +2376,21 @@ export class FloorplanCardEditor extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
     }
-    .panel {
+    /* The panel ("Project" config) and the new element-edit area share the
+       same boxed look so the two sections below the canvas read as siblings. */
+    .panel,
+    .edit-area {
       border: 1px solid var(--divider-color, #ccc);
       border-radius: 8px;
       padding: 10px;
+    }
+    .section-title {
+      margin: 0 0 8px;
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--secondary-text-color);
     }
     .row {
       display: flex;
