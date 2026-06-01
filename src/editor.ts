@@ -2076,17 +2076,22 @@ export class FloorplanCardEditor extends LitElement {
          on a grid line would capture the pointer there and break wall drawing. */
       pointer-events: none;
     }
-    .wall {
+    /* Scoped to <line> so the rule doesn't accidentally match the <svg>,
+       which carries the active-tool class (e.g. "wall") on the canvas. A
+       bare ".wall" selector matched the SVG too, and because pointer-events
+       is inherited in SVG, setting it to none disabled the entire canvas
+       — so no pointerdown reached the wall-draw handler. */
+    line.wall {
       stroke: var(--primary-text-color);
       /* The wide transparent .wall-hit line beneath handles selection/drag.
          Without this, the visible line (painted on top) swallows clicks on the
          wall body, so you could only grab it just *outside* the body. */
       pointer-events: none;
     }
-    .wall.selected {
+    line.wall.selected {
       stroke: var(--primary-color, #03a9f4);
     }
-    .wall.draft {
+    line.wall.draft {
       opacity: 0.5;
       pointer-events: none;
     }
