@@ -138,6 +138,8 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _draft: { x1: number; y1: number; x2: number; y2: number } | null = null;
   /** When true, walls are drawn freely (no horizontal/vertical or corner gravity). */
   @state() private _freeWalls = false;
+  /** Default length applied to a freshly placed door/window. User-editable from the context bar. */
+  @state() private _defaultOpeningLength = 60;
   @state() private _marquee: Marquee | null = null;
   @state() private _history: FloorplanCardConfig[] = [];
   @state() private _future: FloorplanCardConfig[] = [];
@@ -751,7 +753,9 @@ export class FloorplanCardEditor extends LitElement {
       type,
       x: snap?.x ?? x,
       y: snap?.y ?? y,
-      length: 60,
+      // User-editable from the door/window context bar so opening size can be
+      // set BEFORE placing (the previous hardcoded 60 forced place-then-resize).
+      length: this._defaultOpeningLength,
       angle: snap?.angle ?? 0,
     };
     this._commitFloor({ openings: [...f.openings, o] });
@@ -1014,22 +1018,53 @@ export class FloorplanCardEditor extends LitElement {
       `;
     } else if (t === "door" || t === "window") {
       label = t === "door" ? "Door" : "Window";
-      body = html`<span class="ctx-hint">Click on a wall to drop a ${t}; it snaps onto the wall.</span>`;
+      // Length input here so the user can size openings BEFORE placing them
+      // (every new opening defaults to this; previously it was hardcoded).
+      body = html`
+        <label class="ctx-field">
+          Length
+          <input
+            class="num"
+            type="number"
+            min="1"
+            .value=${String(this._defaultOpeningLength)}
+            title="Default length applied to the next ${t} you place"
+            @change=${(e: Event) => {
+              this._defaultOpeningLength = Math.max(
+                1,
+                Number((e.target as HTMLInputElement).value) || this._defaultOpeningLength
+              );
+            }}
+          />
+        </label>
+        <span class="ctx-hint">Click on a wall to drop a ${t}; it snaps onto the wall.</span>
+      `;
     } else {
       label = "Select";
       const n = this._selection.length;
-      body =
-        n > 0
-          ? html`
-              <span class="ctx-count">${n} selected</span>
-              <button title="Duplicate the selection" @click=${this._duplicate}>⧉ duplicate</button>
-              <button class="danger" title="Delete the selection" @click=${this._deleteSelected}>
-                🗑 delete
-              </button>
-            `
-          : html`<span class="ctx-hint"
-              >Click an element to select it, or drag a box to select several.</span
-            >`;
+      if (n === 0) {
+        body = html`<span class="ctx-hint"
+          >Click an element to select it, or drag a box to select several.</span
+        >`;
+      } else if (n === 1) {
+        // Inline editor for the single selected element + the usual actions.
+        body = html`
+          ${this._renderSelectionEditor()}
+          <button title="Duplicate the selection" @click=${this._duplicate}>⧉ duplicate</button>
+          <button class="danger" title="Delete the selection" @click=${this._deleteSelected}>
+            🗑 delete
+          </button>
+        `;
+      } else {
+        body = html`
+          <span class="ctx-count">${n} selected</span>
+          <button title="Duplicate the selection" @click=${this._duplicate}>⧉ duplicate</button>
+          <button class="danger" title="Delete the selection" @click=${this._deleteSelected}>
+            🗑 delete
+          </button>
+          <span class="ctx-hint">Edit elements one at a time.</span>
+        `;
+      }
     }
 
     return html`
@@ -1465,29 +1500,20 @@ export class FloorplanCardEditor extends LitElement {
               />
             </div>`
           : nothing}
-        <hr />
-        ${this._renderSelectionProps()}
       </div>
     `;
   }
 
-  private _renderSelectionProps(): TemplateResult {
-    if (this._selection.length > 1)
-      return html`<p class="hint">
-        <b>${this._selection.length} elements selected.</b> Drag any of them to move the group, use
-        <b>arrow keys</b> to nudge, <b>Ctrl/Cmd+C</b> then <b>Ctrl/Cmd+V</b> to copy/paste (paste lands
-        on the current floor), <b>Ctrl/Cmd+D</b> to duplicate, or <b>Delete</b> to remove them.
-      </p>`;
-
+  /**
+   * Editor fields for the currently-selected element, rendered inline inside the
+   * context bar so the user can configure the selection without scrolling away
+   * from the canvas. Returns nothing when the selection isn't exactly one
+   * element — multi-select and empty-select states are handled by the context
+   * bar itself.
+   */
+  private _renderSelectionEditor(): TemplateResult {
     const sel = this._primary();
-    if (!sel)
-      return html`<p class="hint">
-        Pick a tool to draw. Wall ends snap to nearby wall corners — start a new wall on an existing
-        corner to continue the perimeter. Switch to <b>select</b> to move or delete things. Drag a box
-        on empty canvas to select many; <b>Shift</b>/<b>Ctrl</b>-click adds to the selection. With
-        something selected, <b>arrow keys</b> nudge it (hold <b>Shift</b> to jump a full grid cell),
-        and <b>Ctrl/Cmd+C/V/D</b> copy / paste / duplicate.
-      </p>`;
+    if (!sel || this._selection.length !== 1) return html`${nothing}`;
 
     if (sel.kind === "opening") {
       const o = this._floor().openings.find((x) => x.id === sel.id);
@@ -1923,10 +1949,11 @@ export class FloorplanCardEditor extends LitElement {
       `;
     }
 
-    return html`<p class="hint">
-      Wall selected — drag the line to move it, or drag the round handles to move an endpoint
-      (endpoints snap to other wall corners). Use <b>delete</b> to remove it.
-    </p>`;
+    // sel.kind === "wall" (or unknown) — no inline editor today; the user can
+    // drag the wall or its endpoint handles directly on the canvas.
+    return html`<span class="ctx-hint"
+      >Drag the line to move it, or the round handles to move an endpoint.</span
+    >`;
   }
 
   static styles = css`
@@ -2010,6 +2037,30 @@ export class FloorplanCardEditor extends LitElement {
     .context-bar button {
       padding: 4px 10px;
       font-size: 13px;
+    }
+    /* When the selection editor's <div class="row"> blocks render INSIDE the
+       context bar (instead of stacked in a panel), make them inline so several
+       rows sit side-by-side and wrap naturally on narrow widths. */
+    .context-bar .row {
+      margin: 0;
+      flex: 0 0 auto;
+    }
+    .context-bar .row label {
+      flex: 0 0 auto;
+      font-size: 12px;
+    }
+    /* A label + input pair inline in the context bar (e.g. default Length for
+       the Door/Window tools). The <label> wraps both so clicking the text
+       focuses the input. */
+    .context-bar .ctx-field {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--secondary-text-color);
+    }
+    .context-bar .ctx-field input.num {
+      width: 60px;
     }
     button {
       cursor: pointer;
