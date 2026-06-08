@@ -6,9 +6,10 @@ import {
   resolveSnap,
   snapToGridPercent,
   gridPercentToSnap,
+  trackerAxisFraction,
   uid,
 } from "./types";
-import type { FloorplanCardConfig } from "./types";
+import type { FloorplanCardConfig, TrackerSensor } from "./types";
 
 describe("resolveSnap", () => {
   it("falls back to the grid when snap is unset (the new default)", () => {
@@ -66,6 +67,41 @@ describe("emptyConfig", () => {
     expect(c.walls).toEqual([]);
     expect(c.openings).toEqual([]);
     expect(c.items).toEqual([]);
+    expect(c.trackers).toEqual([]);
+  });
+});
+
+describe("trackerAxisFraction", () => {
+  const s: TrackerSensor = { entity: "sensor.x", min: 0, max: 5 };
+
+  it("maps the reading linearly into 0..1 across [min, max]", () => {
+    expect(trackerAxisFraction(s, 0)).toBe(0);
+    expect(trackerAxisFraction(s, 5)).toBe(1);
+    expect(trackerAxisFraction(s, 2.5)).toBe(0.5);
+  });
+
+  it("clamps readings outside [min, max] into the unit interval", () => {
+    expect(trackerAxisFraction(s, -10)).toBe(0);
+    expect(trackerAxisFraction(s, 999)).toBe(1);
+  });
+
+  it("respects invert by flipping the fraction", () => {
+    expect(trackerAxisFraction({ ...s, invert: true }, 0)).toBe(1);
+    expect(trackerAxisFraction({ ...s, invert: true }, 5)).toBe(0);
+  });
+
+  it("returns null for missing sensor, missing reading, NaN, or zero span", () => {
+    expect(trackerAxisFraction(undefined, 1)).toBeNull();
+    expect(trackerAxisFraction(s, null)).toBeNull();
+    expect(trackerAxisFraction(s, undefined)).toBeNull();
+    expect(trackerAxisFraction(s, NaN)).toBeNull();
+    expect(trackerAxisFraction({ entity: "sensor.x", min: 3, max: 3 }, 3)).toBeNull();
+  });
+
+  it("supports min greater than max via the negative span", () => {
+    const reversed: TrackerSensor = { entity: "sensor.x", min: 5, max: 0 };
+    expect(trackerAxisFraction(reversed, 5)).toBe(0);
+    expect(trackerAxisFraction(reversed, 0)).toBe(1);
   });
 });
 
@@ -76,6 +112,7 @@ describe("makeFloor", () => {
     expect(f.id).toMatch(/^floor_/);
     expect(f.walls).toEqual([]);
     expect(f.openings).toEqual([]);
+    expect(f.trackers).toEqual([]);
   });
 
   it("seeds the floor with the provided walls", () => {

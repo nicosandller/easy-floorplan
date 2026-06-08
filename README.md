@@ -26,6 +26,13 @@ automatically to the card and screen size.
   while open.
 - **Furniture** — gray line-art diagrams: table, round table, desk, chair, sofa, bed,
   wardrobe, rug, plant, fridge, stove, sink, toilet, stairs, tv.
+- **Live position tracker** — draw a rectangular tracked area and bind one or two
+  orthogonal distance sensors (e.g. mmWave / radar). The card linearly maps each
+  sensor's `[min, max]` reading to the rectangle's edges and animates a pulsating
+  triangle with ripples at the resolved `(x, y)`. With only one sensor configured
+  it falls back to a faint pulsating line with ripples along the unknown axis.
+  The zone outline is visible only in the editor — the live card shows just the
+  animation.
 - **Text labels** and a configurable **canvas background color**.
 - **Background image** — drop in a floor-plan image (per floor) and trace walls, doors and
   devices over it, with adjustable opacity.
@@ -93,6 +100,10 @@ background):
   shows a **Length** field for the *next* opening you place, so you can size doors and
   windows before placing them. Assign a sensor after placement (in the **Element**
   section) to animate the opening open/closed — see **Doors & windows**.
+- **tracker** — drag to draw a rectangular tracked area, then bind one or two distance
+  sensors (X axis and/or Y axis) in the **Element** section to animate a live position
+  marker inside the zone — see **Tracker**. The zone outline is visible only in the
+  editor; the live card shows just the marker.
 - **+ device / + text / + furniture…** — drop a new element; the **Element** section
   below the canvas shows its full property editor so you can configure it right away.
 - **floor** — add, rename, switch and delete floors.
@@ -103,8 +114,8 @@ Undo/redo and a zoom slider live at the right of the tools row.
 
 Everything you place on the plan is an **element** you can select, move (freely or
 snapped to a grid), nudge with arrow keys, copy/paste, duplicate and delete. The element
-types are **devices**, **doors & windows**, **furniture** and **text** — and each floor
-holds its own set of them.
+types are **devices**, **doors & windows**, **furniture**, **text** and **trackers** —
+and each floor holds its own set of them.
 
 ### Devices
 
@@ -159,6 +170,68 @@ Openings without a sensor keep the static look.
 
 <img width="540" height="304" alt="door_window_demo" src="https://github.com/user-attachments/assets/091b3c89-5202-4025-8a0f-0fe867276be2" />
 
+### Live position trackers
+
+A **tracker** turns one or two distance sensors into a live marker that moves around
+the floor plan in real time. The classic use case is a pair of mmWave / radar /
+LIDAR sensors aimed along orthogonal axes — each one reports the target's distance
+from itself, and together they pin down an `(x, y)` position. With only one sensor
+you still get useful information: the position along that axis.
+
+1. Pick the **Tracker** tool from the toolbar.
+2. Drag on the canvas to draw a rectangle covering the area you want to track.
+3. With the new tracker selected, fill in the **Element** section below the canvas:
+   - **X sensor** — the entity that measures horizontal distance, plus a
+     `min` and `max` distance reading (in the sensor's own units, usually metres)
+     that correspond to the rectangle's left and right edges.
+   - **Y sensor** — same, for vertical distance / top and bottom edges.
+   - **Invert** per axis — if a higher reading should map to the *near* edge
+     instead of the *far* edge, tick this. Saves you flipping `min` and `max`.
+
+You can leave one of the axes empty: the tracker still works, it just draws a line
+spanning the unknown axis instead of a point.
+
+#### How it animates
+
+- **Both sensors set** — a small pulsating triangle glides to the resolved
+  `(x, y)`, emitting concentric ripple rings. Readings outside `[min, max]` clamp
+  to the rectangle's edge so a glitch never sends the marker off the plan.
+- **Only one sensor set** — a faint pulsating line spans the unknown axis at the
+  known coordinate, with ripple bands expanding along it. This honestly conveys
+  "the target is *somewhere* on this line" without pretending you know more.
+- **Both sensors unavailable** — nothing renders in the live card (no ghost
+  markers when the sensors drop out). The editor still shows the zone outline so
+  you can find and reposition it.
+
+The marker color and dot size are configurable per tracker. Updates are smoothed
+with a short CSS transition, so the marker glides between readings instead of
+snapping (handy when sensors update at 1–4 Hz).
+
+#### Tips for calibrating the range
+
+Distance sensors are usually mounted on a wall and report the gap to the closest
+target, but it's rare for the rectangle you drew on the plan to match `[0, max]`
+of the sensor exactly. Two common adjustments:
+
+- **Offset** — if the sensor is mounted *outside* the tracked rectangle (e.g.
+  bolted to the wall a metre behind it), set `min` to that offset so a reading
+  of "1.0 m" lands at the near edge instead of off-plan.
+- **Direction** — if the sensor faces the far edge (so distance *grows* as the
+  target moves toward the near edge), tick **invert** instead of swapping `min`
+  and `max`. Same result, fewer footguns.
+
+#### Editor-only zone
+
+The zone rectangle (dashed outline, light fill) is drawn **only in the editor**
+so you can grab and resize it. The dashboard view renders just the animated
+marker — your finished plan stays clean.
+
+#### Sensor compatibility
+
+Anything that resolves to a finite number works: `sensor` entities reporting
+distance, `input_number` helpers (great for testing), `number` entities, etc.
+States of `unavailable`, `unknown`, or non-numeric values are treated as
+"no reading" — the corresponding axis falls back to its no-data behaviour.
 
 ## Configuration reference
 
@@ -250,6 +323,40 @@ domains open the more-info dialog.
 `toilet`, `stairs`, `tv`. `color` defaults to gray so furniture reads differently from
 walls.
 
+### Tracker
+
+A live (x, y) position estimate driven by one or two orthogonal distance sensors,
+animated inside a rectangular tracked area:
+
+```yaml
+{ id, x, y, w, h, angle?, color?, dotSize?,
+  xSensor?: { entity, min, max, invert? },
+  ySensor?: { entity, min, max, invert? } }
+```
+
+- `x`, `y`, `w`, `h` define the rectangle in canvas units (top-left + size).
+- `xSensor` / `ySensor` are each `{ entity, min, max, invert? }`. The card linearly
+  maps `[min, max]` to the rectangle's edges along the sensor's axis; `invert`
+  flips the mapping. Both sensors are optional and independent.
+- With **both** sensors set → a pulsating triangle with ripple rings glides to the
+  computed `(x, y)`.
+- With **only one** sensor set → a faint pulsating line spans the unknown axis,
+  with ripples expanding along it.
+- The rectangle itself is **invisible at runtime** (visible only in the editor for
+  drawing and resizing); only the marker animation appears in the dashboard.
+
+```yaml
+trackers:
+  - id: kitchen_radar
+    x: 100
+    y: 100
+    w: 400
+    h: 270
+    color: "#26c6da"
+    xSensor: { entity: sensor.radar_x_distance, min: 0, max: 4.0 }
+    ySensor: { entity: sensor.radar_y_distance, min: 0, max: 2.7 }
+```
+
 ### Example
 
 ```yaml
@@ -295,6 +402,15 @@ furniture:
   - { id: f1, type: sofa, x: 250, y: 420, w: 170, h: 72, angle: 0 }
 texts:
   - { id: t1, x: 500, y: 60, text: Living Room, size: 22 }
+trackers:
+  - id: pet
+    x: 120
+    y: 130
+    w: 760
+    h: 350
+    color: "#26c6da"
+    xSensor: { entity: sensor.radar_x_distance, min: 0, max: 7.6 }
+    ySensor: { entity: sensor.radar_y_distance, min: 0, max: 3.5 }
 ```
 
 ## Development

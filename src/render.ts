@@ -1,6 +1,6 @@
 import { svg, html, type SVGTemplateResult, type TemplateResult } from "lit";
-import type { Opening, ItemKind, Furniture } from "./types";
-import { FURNITURE_COLOR } from "./types";
+import type { Opening, ItemKind, Furniture, Tracker } from "./types";
+import { FURNITURE_COLOR, DEFAULT_TRACKER_DOT_SIZE, trackerAxisFraction } from "./types";
 
 export const WALL_THICKNESS = 8;
 
@@ -315,6 +315,127 @@ export function renderRipple(
       )}
     </div>
   `;
+}
+
+/** Read a tracker sensor's current numeric value from HA, returning null when unavailable. */
+export function trackerSensorReading(
+  states: Record<string, { state: string } | undefined> | undefined,
+  entity: string | undefined,
+): number | null {
+  if (!entity || !states) return null;
+  const raw = states[entity]?.state;
+  if (raw == null || raw === "unavailable" || raw === "unknown") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? n : null;
+}
+
+/** Options for {@link renderTracker}. */
+export interface TrackerRenderOptions {
+  /**
+   * Whether the tracker is being rendered inside the editor. In the editor the
+   * zone rectangle is drawn (semi-transparent fill + dashed stroke) so the user
+   * can see / grab the tracked area. In the live card it is invisible — only
+   * the tracked-object animation renders.
+   */
+  editing: boolean;
+  /** Live X-axis sensor reading (null when unavailable). */
+  xReading: number | null;
+  /** Live Y-axis sensor reading (null when unavailable). */
+  yReading: number | null;
+}
+
+/**
+ * Render a Tracker as an SVG group: an optional editor-only zone outline plus a
+ * live tracked-object marker driven by 1 or 2 distance sensors. Two-sensor mode
+ * shows a pulsating triangle at the resolved `(x, y)` with concentric ripples;
+ * one-sensor mode shows a faint pulsating line spanning the unknown axis with
+ * ripple bands. CSS keyframes `fp-tracker-pulse`, `fp-tracker-ring` and
+ * `fp-tracker-band` are provided by the host component's styles.
+ */
+export function renderTracker(t: Tracker, opts: TrackerRenderOptions): SVGTemplateResult {
+  const color = t.color ?? "var(--primary-color, #03a9f4)";
+  const dotR = (t.dotSize ?? DEFAULT_TRACKER_DOT_SIZE) / 2;
+  const cx = t.x + t.w / 2;
+  const cy = t.y + t.h / 2;
+  const angle = t.angle ?? 0;
+
+  const fx = trackerAxisFraction(t.xSensor, opts.xReading);
+  const fy = trackerAxisFraction(t.ySensor, opts.yReading);
+  const hasX = fx != null;
+  const hasY = fy != null;
+
+  // Local (centered) coordinates so a rotation around the rect center is trivial.
+  const hw = t.w / 2;
+  const hh = t.h / 2;
+
+  // Zone outline — editor only.
+  const zone = opts.editing
+    ? svg`<rect class="tracker-zone" x=${-hw} y=${-hh} width=${t.w} height=${t.h}
+                fill=${color} fill-opacity="0.08" stroke=${color} stroke-width="1.5"
+                stroke-dasharray="6 4" rx="4" pointer-events="none" />`
+    : svg``;
+
+  let marker: SVGTemplateResult;
+  if (hasX && hasY) {
+    // 2-sensor: pulsating triangle + ripple rings at the resolved (x, y).
+    const mx = -hw + fx! * t.w;
+    const my = -hh + fy! * t.h;
+    // Equilateral-ish triangle pointing up, sized in user units (≈ dotR scale).
+    const tri = `0,${-dotR} ${dotR * 0.9},${dotR * 0.7} ${-dotR * 0.9},${dotR * 0.7}`;
+    const ringMax = Math.max(dotR * 3.5, Math.min(t.w, t.h) * 0.45);
+    marker = svg`
+      <g class="tracker-marker" style="transform:translate(${mx}px, ${my}px);">
+        <circle class="tracker-ring" cx="0" cy="0" r="0"
+                fill="none" stroke=${color} stroke-width="1.5"
+                style="--fp-tracker-ring-max:${ringMax}px;" />
+        <circle class="tracker-ring" cx="0" cy="0" r="0"
+                fill="none" stroke=${color} stroke-width="1.5"
+                style="--fp-tracker-ring-max:${ringMax}px; animation-delay:0.7s;" />
+        <polygon class="tracker-dot" points=${tri} fill=${color} />
+      </g>`;
+  } else if (hasX || hasY) {
+    // 1-sensor: faint pulsating line + ripple bands along the unknown axis.
+    if (hasX) {
+      // Vertical line at the X position, spanning full height.
+      const lx = -hw + fx! * t.w;
+      marker = svg`
+        <g class="tracker-line" style="transform:translate(${lx}px, 0);">
+          <line class="tracker-line-stroke" x1="0" y1=${-hh} x2="0" y2=${hh}
+                stroke=${color} stroke-width="1.5" />
+          <line class="tracker-band" x1="0" y1=${-hh} x2="0" y2=${hh}
+                stroke=${color} stroke-width="3" stroke-linecap="round" />
+          <line class="tracker-band" x1="0" y1=${-hh} x2="0" y2=${hh}
+                stroke=${color} stroke-width="3" stroke-linecap="round"
+                style="animation-delay:0.8s;" />
+        </g>`;
+    } else {
+      // Horizontal line at the Y position, spanning full width.
+      const ly = -hh + fy! * t.h;
+      marker = svg`
+        <g class="tracker-line tracker-line-h" style="transform:translate(0, ${ly}px);">
+          <line class="tracker-line-stroke" x1=${-hw} y1="0" x2=${hw} y2="0"
+                stroke=${color} stroke-width="1.5" />
+          <line class="tracker-band" x1=${-hw} y1="0" x2=${hw} y2="0"
+                stroke=${color} stroke-width="3" stroke-linecap="round" />
+          <line class="tracker-band" x1=${-hw} y1="0" x2=${hw} y2="0"
+                stroke=${color} stroke-width="3" stroke-linecap="round"
+                style="animation-delay:0.8s;" />
+        </g>`;
+    }
+  } else if (opts.editing) {
+    // Editor placeholder: a faint center dot so the user can still see the tracker.
+    marker = svg`<circle class="tracker-placeholder" cx="0" cy="0" r=${dotR}
+                          fill=${color} fill-opacity="0.25" />`;
+  } else {
+    // Runtime + no sensors → render nothing.
+    marker = svg``;
+  }
+
+  return svg`
+    <g class="tracker ${opts.editing ? "editing" : ""}"
+       transform="translate(${cx} ${cy}) rotate(${angle})">
+      ${zone}${marker}
+    </g>`;
 }
 
 /**

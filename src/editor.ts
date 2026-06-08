@@ -13,6 +13,8 @@ import type {
   FurnitureType,
   ItemKind,
   ItemDisplay,
+  Tracker,
+  TrackerSensor,
 } from "./types";
 import {
   DEFAULT_CUSTOM_PERCENT,
@@ -22,6 +24,7 @@ import {
   DEFAULT_ITEM_SIZE,
   DEFAULT_TEXT_SIZE,
   DEFAULT_RIPPLE_SIZE,
+  DEFAULT_TRACKER_DOT_SIZE,
   FURNITURE_DEFAULT_SIZE,
   emptyConfig,
   getFloors,
@@ -38,6 +41,8 @@ import {
   openingDefaultOpen,
   renderRipple,
   renderFurniture,
+  renderTracker,
+  trackerSensorReading,
   defaultIcon,
   kindFromEntity,
   snapToWall,
@@ -80,8 +85,8 @@ const FURNITURE_LABELS: Record<FurnitureType, string> = {
   tv: "tv",
 };
 
-type Tool = "select" | "wall" | "door" | "window";
-type SelKind = "wall" | "opening" | "item" | "text" | "furniture";
+type Tool = "select" | "wall" | "door" | "window" | "tracker";
+type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker";
 type Sel = { kind: SelKind; id: string };
 type OverlaySel = { kind: "item" | "text"; id: string };
 
@@ -115,6 +120,7 @@ interface Clipboard {
   items: FloorItem[];
   texts: FloorText[];
   furniture: Furniture[];
+  trackers: Tracker[];
 }
 
 /** Snap distance (virtual units) for openings onto walls / wall endpoints onto each other. */
@@ -136,6 +142,8 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _selection: Sel[] = [];
   @state() private _activeFloorId!: string;
   @state() private _draft: { x1: number; y1: number; x2: number; y2: number } | null = null;
+  /** While dragging the Tracker tool, the rectangle being drawn (top-left corner + opposite corner). */
+  @state() private _draftTracker: { x0: number; y0: number; x1: number; y1: number } | null = null;
   /** When true, walls are drawn freely (no horizontal/vertical or corner gravity). */
   @state() private _freeWalls = false;
   /** Default length applied to a freshly placed door/window. User-editable from the context bar. */
@@ -177,6 +185,7 @@ export class FloorplanCardEditor extends LitElement {
       items: [],
       texts: [],
       furniture: [],
+      trackers: [],
     };
     if (!this._activeFloorId || !floors.some((f) => f.id === this._activeFloorId)) {
       this._activeFloorId =
@@ -495,6 +504,7 @@ export class FloorplanCardEditor extends LitElement {
     const iIds = this._idsOfKind("item");
     const tIds = this._idsOfKind("text");
     const fIds = this._idsOfKind("furniture");
+    const trIds = this._idsOfKind("tracker");
     this._commitFloor({
       walls: f.walls.map((w) =>
         wIds.has(w.id) ? { ...w, x1: w.x1 + dx, y1: w.y1 + dy, x2: w.x2 + dx, y2: w.y2 + dy } : w
@@ -504,6 +514,9 @@ export class FloorplanCardEditor extends LitElement {
       texts: f.texts.map((t) => (tIds.has(t.id) ? { ...t, x: t.x + dx, y: t.y + dy } : t)),
       furniture: f.furniture.map((fu) =>
         fIds.has(fu.id) ? { ...fu, x: fu.x + dx, y: fu.y + dy } : fu
+      ),
+      trackers: (f.trackers ?? []).map((tr) =>
+        trIds.has(tr.id) ? { ...tr, x: tr.x + dx, y: tr.y + dy } : tr
       ),
     });
   }
@@ -526,6 +539,13 @@ export class FloorplanCardEditor extends LitElement {
       this._addOpening(this._tool, this._snap(raw.x), this._snap(raw.y));
       return;
     }
+    if (this._tool === "tracker") {
+      const x = this._snap(raw.x);
+      const y = this._snap(raw.y);
+      this._draftTracker = { x0: x, y0: y, x1: x, y1: y };
+      (ev.target as Element).setPointerCapture?.(ev.pointerId);
+      return;
+    }
     // Select tool, empty canvas: start a marquee (rubber-band) selection.
     this._marqueeAdd = ev.shiftKey || ev.ctrlKey || ev.metaKey;
     this._marquee = { x0: raw.x, y0: raw.y, x1: raw.x, y1: raw.y };
@@ -537,6 +557,15 @@ export class FloorplanCardEditor extends LitElement {
       const raw = this._toVirtual(ev, false);
       const s = this._snapWallEnd(this._draft.x1, this._draft.y1, raw.x, raw.y);
       this._draft = { ...this._draft, x2: s.x, y2: s.y };
+      return;
+    }
+    if (this._tool === "tracker" && this._draftTracker) {
+      const raw = this._toVirtual(ev, false);
+      this._draftTracker = {
+        ...this._draftTracker,
+        x1: this._snap(raw.x),
+        y1: this._snap(raw.y),
+      };
       return;
     }
     if (this._marquee) {
@@ -555,6 +584,31 @@ export class FloorplanCardEditor extends LitElement {
         const wall: Wall = { id: uid("wall"), ...d };
         this._commitFloor({ walls: [...this._floor().walls, wall] });
         this._selection = [{ kind: "wall", id: wall.id }];
+      }
+      return;
+    }
+    if (this._tool === "tracker" && this._draftTracker) {
+      const d = this._draftTracker;
+      this._draftTracker = null;
+      // Browsers throw NotFoundError if the pointer was never captured on this
+      // target (e.g. in HA's editor dialog, or when events arrive synthetically
+      // without a matching pointerdown). The thrown error would skip the rest
+      // of the handler and silently swallow the drag — which is exactly what
+      // "drag to draw the tracker isn't working" looked like. Pointerup
+      // implicitly releases capture anyway, so a best-effort release is fine.
+      try {
+        (ev.target as Element).releasePointerCapture?.(ev.pointerId);
+      } catch {
+        /* no active capture — already released by the implicit pointerup release */
+      }
+      const x = Math.min(d.x0, d.x1);
+      const y = Math.min(d.y0, d.y1);
+      const w = Math.abs(d.x1 - d.x0);
+      const h = Math.abs(d.y1 - d.y0);
+      // Reject zero-size drags (a stray click) so the tool doesn't litter the
+      // canvas with invisible trackers.
+      if (w >= this.grid / 2 && h >= this.grid / 2) {
+        this._addTracker(x, y, w, h);
       }
       return;
     }
@@ -593,6 +647,8 @@ export class FloorplanCardEditor extends LitElement {
     for (const it of f.items) if (inside(it.x, it.y)) out.push({ kind: "item", id: it.id });
     for (const t of f.texts) if (inside(t.x, t.y)) out.push({ kind: "text", id: t.id });
     for (const fu of f.furniture) if (inside(fu.x, fu.y)) out.push({ kind: "furniture", id: fu.id });
+    for (const tr of f.trackers ?? [])
+      if (inside(tr.x + tr.w / 2, tr.y + tr.h / 2)) out.push({ kind: "tracker", id: tr.id });
     return out;
   }
 
@@ -631,9 +687,13 @@ export class FloorplanCardEditor extends LitElement {
       } else if (s.kind === "text") {
         const t = f.texts.find((x) => x.id === s.id);
         if (t) m.set(`text:${t.id}`, { kind: "pt", x: t.x, y: t.y });
-      } else {
+      } else if (s.kind === "furniture") {
         const fu = f.furniture.find((x) => x.id === s.id);
         if (fu) m.set(`furniture:${fu.id}`, { kind: "pt", x: fu.x, y: fu.y });
+      } else {
+        // tracker — stored by top-left corner.
+        const tr = (f.trackers ?? []).find((x) => x.id === s.id);
+        if (tr) m.set(`tracker:${tr.id}`, { kind: "pt", x: tr.x, y: tr.y });
       }
     }
     return m;
@@ -711,6 +771,10 @@ export class FloorplanCardEditor extends LitElement {
       }),
       furniture: f.furniture.map((el) => {
         const o = orig.get(`furniture:${el.id}`);
+        return o && o.kind === "pt" ? { ...el, x: o.x + dx, y: o.y + dy } : el;
+      }),
+      trackers: (f.trackers ?? []).map((el) => {
+        const o = orig.get(`tracker:${el.id}`);
         return o && o.kind === "pt" ? { ...el, x: o.x + dx, y: o.y + dy } : el;
       }),
     };
@@ -795,6 +859,27 @@ export class FloorplanCardEditor extends LitElement {
     this._tool = "select";
   }
 
+  /**
+   * Drop a new Tracker on the active floor sized to the user's drag and
+   * select it so the per-element editor (entity pickers + sensor ranges) is
+   * immediately reachable. Tool switches back to Select so the user can
+   * configure / move the new tracker without re-dragging.
+   */
+  private _addTracker(x: number, y: number, w: number, h: number): void {
+    const tr: Tracker = {
+      id: uid("tracker"),
+      x,
+      y,
+      w,
+      h,
+      angle: 0,
+      dotSize: DEFAULT_TRACKER_DOT_SIZE,
+    };
+    this._commitFloor({ trackers: [...(this._floor().trackers ?? []), tr] });
+    this._selection = [{ kind: "tracker", id: tr.id }];
+    this._tool = "select";
+  }
+
   private _addText(): void {
     const t: FloorText = {
       id: uid("text"),
@@ -816,12 +901,14 @@ export class FloorplanCardEditor extends LitElement {
     const iIds = this._idsOfKind("item");
     const tIds = this._idsOfKind("text");
     const fIds = this._idsOfKind("furniture");
+    const trIds = this._idsOfKind("tracker");
     this._commitFloor({
       walls: f.walls.filter((w) => !wIds.has(w.id)),
       openings: f.openings.filter((o) => !oIds.has(o.id)),
       items: f.items.filter((i) => !iIds.has(i.id)),
       texts: f.texts.filter((t) => !tIds.has(t.id)),
       furniture: f.furniture.filter((fu) => !fIds.has(fu.id)),
+      trackers: (f.trackers ?? []).filter((tr) => !trIds.has(tr.id)),
     });
     this._clearSel();
   }
@@ -836,12 +923,14 @@ export class FloorplanCardEditor extends LitElement {
     const iIds = this._idsOfKind("item");
     const tIds = this._idsOfKind("text");
     const fIds = this._idsOfKind("furniture");
+    const trIds = this._idsOfKind("tracker");
     this._clipboard = structuredClone({
       walls: f.walls.filter((w) => wIds.has(w.id)),
       openings: f.openings.filter((o) => oIds.has(o.id)),
       items: f.items.filter((it) => iIds.has(it.id)),
       texts: f.texts.filter((t) => tIds.has(t.id)),
       furniture: f.furniture.filter((fu) => fIds.has(fu.id)),
+      trackers: (f.trackers ?? []).filter((tr) => trIds.has(tr.id)),
     });
   }
 
@@ -885,12 +974,19 @@ export class FloorplanCardEditor extends LitElement {
       x: fu.x + off,
       y: fu.y + off,
     }));
+    const newTrackers: Tracker[] = (cb.trackers ?? []).map((tr) => ({
+      ...tr,
+      id: uid("tracker"),
+      x: tr.x + off,
+      y: tr.y + off,
+    }));
     this._commitFloor({
       walls: [...f.walls, ...newWalls],
       openings: [...f.openings, ...newOpenings],
       items: [...f.items, ...newItems],
       texts: [...f.texts, ...newTexts],
       furniture: [...f.furniture, ...newFurn],
+      trackers: [...(f.trackers ?? []), ...newTrackers],
     });
     this._selection = [
       ...newWalls.map((w) => ({ kind: "wall" as const, id: w.id })),
@@ -898,6 +994,7 @@ export class FloorplanCardEditor extends LitElement {
       ...newItems.map((it) => ({ kind: "item" as const, id: it.id })),
       ...newTexts.map((t) => ({ kind: "text" as const, id: t.id })),
       ...newFurn.map((fu) => ({ kind: "furniture" as const, id: fu.id })),
+      ...newTrackers.map((tr) => ({ kind: "tracker" as const, id: tr.id })),
     ];
     this._tool = "select";
   }
@@ -969,6 +1066,30 @@ export class FloorplanCardEditor extends LitElement {
     });
   }
 
+  private _updateTracker(id: string, partial: Partial<Tracker>): void {
+    this._commitFloor({
+      trackers: (this._floor().trackers ?? []).map((t) =>
+        t.id === id ? { ...t, ...partial } : t
+      ),
+    });
+  }
+
+  /** Patch a single field on one of a tracker's sensor sub-objects (X / Y axis). */
+  private _updateTrackerSensor(
+    id: string,
+    axis: "xSensor" | "ySensor",
+    partial: Partial<TrackerSensor> | null,
+  ): void {
+    const tr = (this._floor().trackers ?? []).find((t) => t.id === id);
+    if (!tr) return;
+    if (partial === null) {
+      this._updateTracker(id, { [axis]: undefined });
+      return;
+    }
+    const cur = tr[axis] ?? { entity: "", min: 0, max: 5 };
+    this._updateTracker(id, { [axis]: { ...cur, ...partial } });
+  }
+
   private _patchConfig(partial: Partial<FloorplanCardConfig>): void {
     this._commit({ ...this._config, ...partial });
   }
@@ -1015,6 +1136,14 @@ export class FloorplanCardEditor extends LitElement {
           straighten
         </button>
         <span class="ctx-hint">Drag to draw. Endpoints snap to nearby corners to close rooms.</span>
+      `;
+    } else if (t === "tracker") {
+      label = "Tracker";
+      body = html`
+        <span class="ctx-hint"
+          >Drag on the canvas to draw the tracked area; bind one or two
+          distance sensors in the Element editor.</span
+        >
       `;
     } else if (t === "door" || t === "window") {
       label = t === "door" ? "Door" : "Window";
@@ -1143,7 +1272,7 @@ export class FloorplanCardEditor extends LitElement {
         <div class="toolbar">
           <!-- Tools — modes; exactly one is active at a time -->
           <div class="seg" role="group" aria-label="Tool">
-            ${(["select", "wall", "door", "window"] as Tool[]).map(
+            ${(["select", "wall", "door", "window", "tracker"] as Tool[]).map(
               (t) => html`
                 <button
                   class=${this._tool === t ? "active" : ""}
@@ -1151,6 +1280,7 @@ export class FloorplanCardEditor extends LitElement {
                   @click=${() => {
                     this._tool = t;
                     this._draft = null;
+                    this._draftTracker = null;
                   }}
                 >
                   ${t}
@@ -1266,6 +1396,17 @@ export class FloorplanCardEditor extends LitElement {
               ${renderWallMask(floor.openings, c.width, c.height, this._wallMaskId)}
               ${floor.walls.map((w) => this._renderWall(w))}
               ${floor.openings.map((o) => this._renderOpeningSel(o))}
+              ${(floor.trackers ?? []).map((tr) => this._renderTrackerSel(tr))}
+              ${
+                this._draftTracker
+                  ? svg`<rect class="tracker-draft"
+                              x=${Math.min(this._draftTracker.x0, this._draftTracker.x1)}
+                              y=${Math.min(this._draftTracker.y0, this._draftTracker.y1)}
+                              width=${Math.abs(this._draftTracker.x1 - this._draftTracker.x0)}
+                              height=${Math.abs(this._draftTracker.y1 - this._draftTracker.y0)}
+                              rx="4" />`
+                  : nothing
+              }
               ${
                 this._draft
                   ? svg`<line x1=${this._draft.x1} y1=${this._draft.y1}
@@ -1358,6 +1499,33 @@ export class FloorplanCardEditor extends LitElement {
           color: selected ? "var(--primary-color, #03a9f4)" : "var(--primary-text-color)",
           open: openingDefaultOpen(o),
         })}
+      </g>`;
+  }
+
+  /**
+   * Render a Tracker in the editor SVG with its zone outline visible (so the
+   * user can grab/resize it) plus a hit overlay for drag-to-move and a dashed
+   * selection rectangle when active.
+   */
+  private _renderTrackerSel(tr: Tracker): TemplateResult {
+    const selected = this._isSel("tracker", tr.id);
+    const xRead = trackerSensorReading(this.hass?.states, tr.xSensor?.entity);
+    const yRead = trackerSensorReading(this.hass?.states, tr.ySensor?.entity);
+    return svg`
+      <g class="tracker-hit ${selected ? "selected" : ""}"
+         @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "tracker", id: tr.id })}>
+        ${renderTracker(tr, { editing: true, xReading: xRead, yReading: yRead })}
+        <rect x=${tr.x} y=${tr.y} width=${tr.w} height=${tr.h}
+              transform="rotate(${tr.angle ?? 0} ${tr.x + tr.w / 2} ${tr.y + tr.h / 2})"
+              class="tracker-hit-rect" />
+        ${
+          selected
+            ? svg`<rect x=${tr.x - 4} y=${tr.y - 4}
+                        width=${tr.w + 8} height=${tr.h + 8}
+                        transform="rotate(${tr.angle ?? 0} ${tr.x + tr.w / 2} ${tr.y + tr.h / 2})"
+                        class="tracker-outline" />`
+            : nothing
+        }
       </g>`;
   }
 
@@ -1978,11 +2146,193 @@ export class FloorplanCardEditor extends LitElement {
       `;
     }
 
+    if (sel.kind === "tracker") {
+      const tr = (this._floor().trackers ?? []).find((x) => x.id === sel.id);
+      if (!tr) return html`${nothing}`;
+      return html`
+        ${this._renderTrackerSensorRows(tr, "xSensor", "X sensor")}
+        ${this._renderTrackerSensorRows(tr, "ySensor", "Y sensor")}
+        <div class="row">
+          <label>Width / Height</label>
+          <input
+            class="num"
+            type="number"
+            min="10"
+            .value=${String(tr.w)}
+            @change=${(e: Event) =>
+              this._updateTracker(tr.id, {
+                w: Math.max(10, Number((e.target as HTMLInputElement).value) || tr.w),
+              })}
+          />
+          <input
+            class="num"
+            type="number"
+            min="10"
+            .value=${String(tr.h)}
+            @change=${(e: Event) =>
+              this._updateTracker(tr.id, {
+                h: Math.max(10, Number((e.target as HTMLInputElement).value) || tr.h),
+              })}
+          />
+        </div>
+        <div class="row">
+          <label>Position</label>
+          <input
+            class="num"
+            type="number"
+            .value=${String(Math.round(tr.x))}
+            @change=${(e: Event) =>
+              this._updateTracker(tr.id, { x: Number((e.target as HTMLInputElement).value) })}
+          />
+          <input
+            class="num"
+            type="number"
+            .value=${String(Math.round(tr.y))}
+            @change=${(e: Event) =>
+              this._updateTracker(tr.id, { y: Number((e.target as HTMLInputElement).value) })}
+          />
+        </div>
+        <div class="row">
+          <label>Angle</label>
+          <input
+            type="range"
+            min="0"
+            max="360"
+            .value=${String(tr.angle ?? 0)}
+            @input=${(e: Event) =>
+              this._updateTracker(tr.id, { angle: Number((e.target as HTMLInputElement).value) })}
+          />
+          <input
+            class="num"
+            type="number"
+            min="0"
+            max="360"
+            .value=${String(Math.round(tr.angle ?? 0))}
+            @change=${(e: Event) =>
+              this._updateTracker(tr.id, {
+                angle: ((Number((e.target as HTMLInputElement).value) % 360) + 360) % 360,
+              })}
+          />
+        </div>
+        <div class="row">
+          <label>Color</label>
+          <input
+            type="color"
+            .value=${tr.color ?? "#03a9f4"}
+            @input=${(e: Event) =>
+              this._updateTracker(tr.id, { color: (e.target as HTMLInputElement).value })}
+          />
+          <input
+            type="text"
+            placeholder="(primary)"
+            .value=${tr.color ?? ""}
+            @change=${(e: Event) =>
+              this._updateTracker(tr.id, {
+                color: (e.target as HTMLInputElement).value || undefined,
+              })}
+          />
+        </div>
+        <div class="row">
+          <label>Dot size</label>
+          <input
+            type="range"
+            min="6"
+            max="40"
+            step="1"
+            .value=${String(tr.dotSize ?? DEFAULT_TRACKER_DOT_SIZE)}
+            @input=${(e: Event) =>
+              this._updateTracker(tr.id, {
+                dotSize: Number((e.target as HTMLInputElement).value),
+              })}
+          />
+          <input
+            class="num"
+            type="number"
+            min="6"
+            max="80"
+            .value=${String(tr.dotSize ?? DEFAULT_TRACKER_DOT_SIZE)}
+            @change=${(e: Event) =>
+              this._updateTracker(tr.id, {
+                dotSize:
+                  Number((e.target as HTMLInputElement).value) || DEFAULT_TRACKER_DOT_SIZE,
+              })}
+          />
+        </div>
+      `;
+    }
+
     // sel.kind === "wall" (or unknown) — no inline editor today; the user can
     // drag the wall or its endpoint handles directly on the canvas.
     return html`<span class="ctx-hint"
       >Drag the line to move it, or the round handles to move an endpoint.</span
     >`;
+  }
+
+  /**
+   * Editor rows for one of a tracker's two sensor mappings (X or Y). Entity
+   * picker is always shown; min / max / invert appear once a sensor entity is
+   * set so the panel stays compact while empty.
+   */
+  private _renderTrackerSensorRows(
+    tr: Tracker,
+    axis: "xSensor" | "ySensor",
+    label: string,
+  ): TemplateResult {
+    const s = tr[axis];
+    return html`
+      <div class="row">
+        <label>${label}</label>
+        <ha-entity-picker
+          .hass=${this.hass}
+          .value=${s?.entity ?? ""}
+          .includeDomains=${["sensor", "input_number", "number"]}
+          allow-custom-entity
+          @value-changed=${(e: CustomEvent) => {
+            const v = (e.detail.value as string) || "";
+            if (!v) this._updateTrackerSensor(tr.id, axis, null);
+            else this._updateTrackerSensor(tr.id, axis, { entity: v });
+          }}
+        ></ha-entity-picker>
+      </div>
+      ${s
+        ? html`<div class="row">
+            <label>${label} range</label>
+            <input
+              class="num"
+              type="number"
+              step="0.01"
+              title="Reading at the near edge"
+              .value=${String(s.min)}
+              @change=${(e: Event) =>
+                this._updateTrackerSensor(tr.id, axis, {
+                  min: Number((e.target as HTMLInputElement).value),
+                })}
+            />
+            <input
+              class="num"
+              type="number"
+              step="0.01"
+              title="Reading at the far edge"
+              .value=${String(s.max)}
+              @change=${(e: Event) =>
+                this._updateTrackerSensor(tr.id, axis, {
+                  max: Number((e.target as HTMLInputElement).value),
+                })}
+            />
+            <label class="inline-check">
+              <input
+                type="checkbox"
+                .checked=${s.invert ?? false}
+                @change=${(e: Event) =>
+                  this._updateTrackerSensor(tr.id, axis, {
+                    invert: (e.target as HTMLInputElement).checked || undefined,
+                  })}
+              />
+              invert
+            </label>
+          </div>`
+        : nothing}
+    `;
   }
 
   static styles = css`
@@ -2151,7 +2501,8 @@ export class FloorplanCardEditor extends LitElement {
     }
     svg.wall,
     svg.door,
-    svg.window {
+    svg.window,
+    svg.tracker {
       cursor: crosshair;
     }
     .grid {
@@ -2366,6 +2717,104 @@ export class FloorplanCardEditor extends LitElement {
         opacity: 0;
       }
     }
+    /* === Tracker (editor + card share the same animation classes). The zone
+       outline is editor-only and added by renderTracker when editing:true; in
+       the live card only the marker / line shows. Movement transitions are
+       applied to the marker group's transform so the dot/triangle glides
+       between sensor updates rather than jumping. === */
+    /* Scoped to <g> so the rule doesn't also match the <svg>, which carries
+       the active-tool class (e.g. "tracker") for cursor styling. A bare
+       ".tracker" matched the SVG too, and pointer-events is inherited in
+       SVG — so toggling the tracker tool silently killed every pointerdown
+       on the canvas, breaking drag-to-draw. Same trap as line.wall above. */
+    g.tracker {
+      pointer-events: none;
+    }
+    .tracker-zone {
+      transition: opacity 0.2s ease;
+    }
+    .tracker-hit {
+      cursor: move;
+    }
+    .tracker-hit-rect {
+      /* Transparent fill turns the entire zone into a pointer target for drag,
+         without obscuring the dashed outline drawn by the renderer. */
+      fill: transparent;
+      pointer-events: all;
+    }
+    .tracker-outline {
+      fill: none;
+      stroke: var(--primary-color, #03a9f4);
+      stroke-width: 1.5;
+      stroke-dasharray: 6 4;
+      pointer-events: none;
+    }
+    .tracker-draft {
+      fill: var(--primary-color, #03a9f4);
+      fill-opacity: 0.08;
+      stroke: var(--primary-color, #03a9f4);
+      stroke-width: 1.5;
+      stroke-dasharray: 6 4;
+      pointer-events: none;
+    }
+    .tracker-marker {
+      transition: transform 0.4s ease-out;
+      transform-box: fill-box;
+    }
+    .tracker-dot {
+      animation: fp-tracker-pulse 1.4s ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+    .tracker-ring {
+      animation: fp-tracker-ring 2.2s ease-out infinite;
+      opacity: 0;
+    }
+    .tracker-line {
+      transition: transform 0.4s ease-out;
+    }
+    .tracker-line-stroke {
+      opacity: 0.45;
+      animation: fp-tracker-pulse 1.6s ease-in-out infinite;
+    }
+    .tracker-band {
+      opacity: 0;
+      animation: fp-tracker-band 2.2s ease-out infinite;
+    }
+    .tracker-placeholder {
+      opacity: 0.6;
+    }
+    @keyframes fp-tracker-pulse {
+      0%,
+      100% {
+        transform: scale(0.9);
+        opacity: 0.7;
+      }
+      50% {
+        transform: scale(1.1);
+        opacity: 1;
+      }
+    }
+    @keyframes fp-tracker-ring {
+      0% {
+        r: 0;
+        opacity: 0.7;
+      }
+      100% {
+        r: var(--fp-tracker-ring-max, 60px);
+        opacity: 0;
+      }
+    }
+    @keyframes fp-tracker-band {
+      0% {
+        opacity: 0.5;
+        stroke-width: 1.5;
+      }
+      100% {
+        opacity: 0;
+        stroke-width: 14;
+      }
+    }
     .edit-text {
       position: absolute;
       pointer-events: auto;
@@ -2440,6 +2889,16 @@ export class FloorplanCardEditor extends LitElement {
     }
     .row input.num {
       flex: 0 0 64px;
+    }
+    /* Compact inline checkbox+label used inside a .row that already has its
+       primary <label> on the left (e.g. the Tracker sensor "invert" toggle). */
+    .row .inline-check {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--secondary-text-color);
     }
     .hint {
       font-size: 13px;
