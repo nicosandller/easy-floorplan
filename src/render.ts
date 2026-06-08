@@ -342,6 +342,19 @@ export interface TrackerRenderOptions {
   xReading: number | null;
   /** Live Y-axis sensor reading (null when unavailable). */
   yReading: number | null;
+  /**
+   * Tri-state presence gate per axis:
+   * - `null` / undefined — no presence sensor configured for that axis (don't gate).
+   * - `true` — presence detected, allow the marker.
+   * - `false` — presence clear (or unavailable / unknown), hide the marker.
+   *
+   * If **any** configured gate is `false`, the whole marker hides — that's the
+   * "either presence sensor reports clear, so we don't trust the position"
+   * semantics. The zone outline still renders when `editing` so the user can
+   * find and re-configure the tracker.
+   */
+  xPresent?: boolean | null;
+  yPresent?: boolean | null;
 }
 
 /**
@@ -364,19 +377,32 @@ export function renderTracker(t: Tracker, opts: TrackerRenderOptions): SVGTempla
   const hasX = fx != null;
   const hasY = fy != null;
 
+  // Presence gate: hide the marker if any configured presence sensor reports
+  // "not detected" (false). A null/undefined here means no gate is configured
+  // for that axis, so it doesn't veto. With both gates unset the behaviour is
+  // unchanged from before this feature landed.
+  const presenceGated = opts.xPresent === false || opts.yPresent === false;
+
   // Local (centered) coordinates so a rotation around the rect center is trivial.
   const hw = t.w / 2;
   const hh = t.h / 2;
 
   // Zone outline — editor only.
   const zone = opts.editing
-    ? svg`<rect class="tracker-zone" x=${-hw} y=${-hh} width=${t.w} height=${t.h}
+    ? svg`<rect class="tracker-zone ${presenceGated ? "presence-gated" : ""}"
+                x=${-hw} y=${-hh} width=${t.w} height=${t.h}
                 fill=${color} fill-opacity="0.08" stroke=${color} stroke-width="1.5"
                 stroke-dasharray="6 4" rx="4" pointer-events="none" />`
     : svg``;
 
   let marker: SVGTemplateResult;
-  if (hasX && hasY) {
+  if (presenceGated) {
+    // A presence gate is configured AND reports clear → hide the marker.
+    // The zone outline (editor only) above still renders, so the user can
+    // tell the tracker exists, but no pulsating triangle / line distracts
+    // when nobody is there. Runtime view shows nothing.
+    marker = svg``;
+  } else if (hasX && hasY) {
     // 2-sensor: pulsating triangle + ripple rings at the resolved (x, y).
     const mx = -hw + fx! * t.w;
     const my = -hh + fy! * t.h;

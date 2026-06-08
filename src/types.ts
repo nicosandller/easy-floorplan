@@ -160,6 +160,13 @@ export interface Tracker {
  * A single distance sensor mapping. `[min, max]` reading values map
  * linearly to the edge-to-edge span of the tracker rectangle along the
  * sensor's axis. `invert: true` flips the mapping (max → min edge).
+ *
+ * Optionally a `presence` entity gates the marker: when any configured
+ * presence on the tracker reports "not detected" the animation is hidden
+ * entirely (the zone outline still shows in the editor). This handles the
+ * common case where a radar / mmWave device exposes both `sensor.*_distance`
+ * and `binary_sensor.*_occupancy` as siblings — gating on the latter
+ * suppresses ghost markers when the room is empty.
  */
 export interface TrackerSensor {
   entity: string;
@@ -168,6 +175,26 @@ export interface TrackerSensor {
   /** Sensor reading when the target is at the "far" edge. */
   max: number;
   /** Flip the mapping so that `max` corresponds to the near edge. */
+  invert?: boolean;
+  /**
+   * Optional binary entity (`binary_sensor.*`, `input_boolean`, etc.) whose
+   * "not detected" state hides the marker animation. When unset, the marker
+   * is never gated by presence — only by whether a distance reading is
+   * available.
+   */
+  presence?: TrackerPresence;
+}
+
+/**
+ * A presence / occupancy gate bound to a tracker sensor. `entity` is read as
+ * a binary on/off state (with `invert` to flip inverted-logic sensors). When
+ * the entity is `unavailable` / `unknown` we treat it as "not detected" —
+ * better to hide a possibly-stale marker than to leave it showing during a
+ * sensor outage.
+ */
+export interface TrackerPresence {
+  entity: string;
+  /** Treat "off" / "clear" as detected (for inverted-logic sensors). */
   invert?: boolean;
 }
 
@@ -349,6 +376,32 @@ export function getFloors(c: FloorplanCardConfig): Floor[] {
       trackers: c.trackers ?? [],
     },
   ];
+}
+
+/**
+ * Resolve a tracker presence gate into a tri-state:
+ * - `null` — no presence gate configured for this sensor (caller treats as
+ *   "not gated", i.e. always allow the marker).
+ * - `true` — entity reports detected (`on`, `open`, `home`, `detected`).
+ * - `false` — entity reports clear, or is `unavailable` / `unknown` (fail
+ *   closed: hide the marker rather than show a stale position).
+ *
+ * `invert: true` flips detected ↔ clear for sensors wired with reversed
+ * semantics. Unavailable / unknown is **never** inverted — those always
+ * mean "we don't know", which always gates the marker off.
+ */
+export function trackerPresenceDetected(
+  states: Record<string, { state: string } | undefined> | undefined,
+  presence: TrackerPresence | null | undefined,
+): boolean | null {
+  if (!presence) return null;
+  const raw = states?.[presence.entity]?.state;
+  if (raw == null || raw === "unavailable" || raw === "unknown") return false;
+  // Common "detected" states across binary_sensor device classes
+  // (occupancy/motion/presence/etc.) plus input_boolean's plain on.
+  const detected =
+    raw === "on" || raw === "open" || raw === "home" || raw === "detected";
+  return presence.invert ? !detected : detected;
 }
 
 /**

@@ -31,8 +31,9 @@ automatically to the card and screen size.
   sensor's `[min, max]` reading to the rectangle's edges and animates a pulsating
   triangle with ripples at the resolved `(x, y)`. With only one sensor configured
   it falls back to a faint pulsating line with ripples along the unknown axis.
-  The zone outline is visible only in the editor — the live card shows just the
-  animation.
+  An optional occupancy `binary_sensor` per axis gates the animation so the
+  marker hides cleanly when the room is empty. The zone outline is visible only
+  in the editor — the live card shows just the animation.
 - **Text labels** and a configurable **canvas background color**.
 - **Background image** — drop in a floor-plan image (per floor) and trace walls, doors and
   devices over it, with adjustable opacity.
@@ -203,6 +204,29 @@ spanning the unknown axis instead of a point.
   markers when the sensors drop out). The editor still shows the zone outline so
   you can find and reposition it.
 
+#### Hiding the marker when nobody's there (presence gate)
+
+Most mmWave / radar devices expose a distance entity **and** an occupancy
+`binary_sensor` as siblings (e.g. `sensor.kitchen_radar_distance` +
+`binary_sensor.kitchen_radar_occupancy`). Bind the occupancy entity to the
+sensor's **Presence** field and the marker animation will hide whenever the
+sensor reports "clear" — no more triangle pulsing in an empty room because the
+distance value is stale.
+
+- Configure presence **per axis** alongside the distance sensor. If either
+  axis's presence reports clear, the marker hides — fail-safe semantics:
+  when in doubt, don't show a position.
+- Works for any binary entity: `binary_sensor.*`, `input_boolean`,
+  `device_tracker` reporting `home`, etc. `on` / `open` / `home` / `detected`
+  count as detected; anything else (including `unavailable` and `unknown`)
+  is treated as clear.
+- **Invert** flips the interpretation for inverted-logic sensors. It does
+  *not* invert `unavailable` / `unknown` — those always hide the marker so
+  a sensor outage can't accidentally pin the dot somewhere stale.
+- In the editor, a gated zone outline dims to ~35% opacity so it's clear at
+  a glance that the marker is intentionally hidden (not broken). The live
+  card just shows nothing.
+
 The marker color and dot size are configurable per tracker. Updates are smoothed
 with a short CSS transition, so the marker glides between readings instead of
 snapping (handy when sensors update at 1–4 Hz).
@@ -330,14 +354,20 @@ animated inside a rectangular tracked area:
 
 ```yaml
 { id, x, y, w, h, angle?, color?, dotSize?,
-  xSensor?: { entity, min, max, invert? },
-  ySensor?: { entity, min, max, invert? } }
+  xSensor?: { entity, min, max, invert?, presence?: { entity, invert? } },
+  ySensor?: { entity, min, max, invert?, presence?: { entity, invert? } } }
 ```
 
 - `x`, `y`, `w`, `h` define the rectangle in canvas units (top-left + size).
-- `xSensor` / `ySensor` are each `{ entity, min, max, invert? }`. The card linearly
-  maps `[min, max]` to the rectangle's edges along the sensor's axis; `invert`
-  flips the mapping. Both sensors are optional and independent.
+- `xSensor` / `ySensor` are each `{ entity, min, max, invert?, presence? }`. The
+  card linearly maps `[min, max]` to the rectangle's edges along the sensor's
+  axis; `invert` flips the mapping. Both sensors are optional and independent.
+- `presence` is an optional binary gate per axis. When set and reporting "clear"
+  (or `unavailable` / `unknown`), the marker animation is hidden — useful for
+  pairing a distance sensor with the occupancy sibling on the same radar
+  device. If **either** axis's presence is clear, the marker hides. `invert`
+  flips on/off for inverted-logic sensors (never applied to unavailable /
+  unknown).
 - With **both** sensors set → a pulsating triangle with ripple rings glides to the
   computed `(x, y)`.
 - With **only one** sensor set → a faint pulsating line spans the unknown axis,
@@ -353,8 +383,16 @@ trackers:
     w: 400
     h: 270
     color: "#26c6da"
-    xSensor: { entity: sensor.radar_x_distance, min: 0, max: 4.0 }
-    ySensor: { entity: sensor.radar_y_distance, min: 0, max: 2.7 }
+    xSensor:
+      entity: sensor.radar_x_distance
+      min: 0
+      max: 4.0
+      presence: { entity: binary_sensor.radar_occupancy }
+    ySensor:
+      entity: sensor.radar_y_distance
+      min: 0
+      max: 2.7
+      presence: { entity: binary_sensor.radar_occupancy }
 ```
 
 ### Example
@@ -409,8 +447,17 @@ trackers:
     w: 760
     h: 350
     color: "#26c6da"
-    xSensor: { entity: sensor.radar_x_distance, min: 0, max: 7.6 }
-    ySensor: { entity: sensor.radar_y_distance, min: 0, max: 3.5 }
+    xSensor:
+      entity: sensor.radar_x_distance
+      min: 0
+      max: 7.6
+      # Hide the marker when the room is empty (paired occupancy sensor):
+      presence: { entity: binary_sensor.living_room_presence }
+    ySensor:
+      entity: sensor.radar_y_distance
+      min: 0
+      max: 3.5
+      presence: { entity: binary_sensor.living_room_presence }
 ```
 
 ## Development
