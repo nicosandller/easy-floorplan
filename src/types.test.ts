@@ -7,6 +7,7 @@ import {
   snapToGridPercent,
   gridPercentToSnap,
   trackerAxisFraction,
+  trackerPresenceDetected,
   uid,
 } from "./types";
 import type { FloorplanCardConfig, TrackerSensor } from "./types";
@@ -102,6 +103,51 @@ describe("trackerAxisFraction", () => {
     const reversed: TrackerSensor = { entity: "sensor.x", min: 5, max: 0 };
     expect(trackerAxisFraction(reversed, 5)).toBe(0);
     expect(trackerAxisFraction(reversed, 0)).toBe(1);
+  });
+});
+
+describe("trackerPresenceDetected", () => {
+  const states = {
+    "binary_sensor.occ": { state: "on" },
+    "binary_sensor.clear": { state: "off" },
+    "binary_sensor.detected": { state: "detected" },
+    "binary_sensor.open": { state: "open" },
+    "binary_sensor.dead": { state: "unavailable" },
+    "binary_sensor.unknown": { state: "unknown" },
+  };
+
+  it("returns null when no presence gate is configured (caller treats as ungated)", () => {
+    expect(trackerPresenceDetected(states, undefined)).toBeNull();
+    expect(trackerPresenceDetected(states, null)).toBeNull();
+  });
+
+  it("maps common detected states to true", () => {
+    expect(trackerPresenceDetected(states, { entity: "binary_sensor.occ" })).toBe(true);
+    expect(trackerPresenceDetected(states, { entity: "binary_sensor.detected" })).toBe(true);
+    expect(trackerPresenceDetected(states, { entity: "binary_sensor.open" })).toBe(true);
+  });
+
+  it("maps clear / off to false", () => {
+    expect(trackerPresenceDetected(states, { entity: "binary_sensor.clear" })).toBe(false);
+  });
+
+  it("fails closed on unavailable / unknown / missing entity", () => {
+    expect(trackerPresenceDetected(states, { entity: "binary_sensor.dead" })).toBe(false);
+    expect(trackerPresenceDetected(states, { entity: "binary_sensor.unknown" })).toBe(false);
+    expect(trackerPresenceDetected(states, { entity: "binary_sensor.missing" })).toBe(false);
+    expect(trackerPresenceDetected(undefined, { entity: "binary_sensor.occ" })).toBe(false);
+  });
+
+  it("honors invert for on/off mapping", () => {
+    expect(trackerPresenceDetected(states, { entity: "binary_sensor.occ", invert: true })).toBe(false);
+    expect(trackerPresenceDetected(states, { entity: "binary_sensor.clear", invert: true })).toBe(true);
+  });
+
+  it("never inverts unavailable / unknown — those always gate the marker off", () => {
+    // 'unknown' shouldn't ever resolve to 'detected' just because invert is set —
+    // we genuinely don't know whether anyone's there.
+    expect(trackerPresenceDetected(states, { entity: "binary_sensor.dead", invert: true })).toBe(false);
+    expect(trackerPresenceDetected(states, { entity: "binary_sensor.missing", invert: true })).toBe(false);
   });
 });
 

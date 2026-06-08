@@ -202,6 +202,14 @@ function setHassState(entity: string, value: number) {
   editor.hass = nextHass;
 }
 
+/** Set a binary entity to "on"/"off" so presence-gating can be toggled in the emulator. */
+function setHassBinary(entity: string, on: boolean) {
+  baseStates[entity] = { state: on ? "on" : "off" };
+  const nextHass = { ...hass, states: { ...baseStates } };
+  card.hass = nextHass;
+  editor.hass = nextHass;
+}
+
 const orbitState = new Map<string, { rafId: number | null }>();
 
 function refreshTrackerEmu(cfg: FloorplanCardConfig) {
@@ -238,7 +246,9 @@ function refreshTrackerEmu(cfg: FloorplanCardConfig) {
     panel.appendChild(head);
 
     panel.appendChild(buildAxisRow("X", xs));
+    if (xs?.presence) panel.appendChild(buildPresenceRow("X", xs.presence.entity));
     panel.appendChild(buildAxisRow("Y", ys));
+    if (ys?.presence) panel.appendChild(buildPresenceRow("Y", ys.presence.entity));
     frag.appendChild(panel);
 
     // Wire orbit AFTER sliders exist so we can drive them.
@@ -275,6 +285,41 @@ function refreshTrackerEmu(cfg: FloorplanCardConfig) {
     });
   }
   host.replaceChildren(frag);
+}
+
+/**
+ * Per-axis presence toggle. Distance sliders and Auto-orbit keep working
+ * independently — flipping the toggle off should make the marker vanish even
+ * mid-orbit so you can see the gating in action.
+ */
+function buildPresenceRow(axis: "X" | "Y", entity: string): HTMLElement {
+  const row = document.createElement("div");
+  row.className = "axis-row presence";
+  // Default to detected so the marker is visible until the user toggles off.
+  if (baseStates[entity]?.state !== "off") setHassBinary(entity, true);
+
+  const ent = document.createElement("span");
+  ent.className = "ent";
+  ent.textContent = `${axis} presence: ${entity}`;
+  const wrap = document.createElement("label");
+  wrap.style.gridColumn = "2 / 4";
+  wrap.style.display = "inline-flex";
+  wrap.style.alignItems = "center";
+  wrap.style.gap = "6px";
+  wrap.style.fontSize = "12px";
+  wrap.style.color = "#455a64";
+  const chk = document.createElement("input");
+  chk.type = "checkbox";
+  chk.checked = baseStates[entity]?.state !== "off";
+  const lbl = document.createElement("span");
+  lbl.textContent = chk.checked ? "detected" : "clear";
+  chk.addEventListener("change", () => {
+    setHassBinary(entity, chk.checked);
+    lbl.textContent = chk.checked ? "detected" : "clear";
+  });
+  wrap.append(chk, lbl);
+  row.append(ent, wrap);
+  return row;
 }
 
 function buildAxisRow(axis: "X" | "Y", s: TrackerSensor | undefined): HTMLElement {

@@ -32,6 +32,7 @@ import {
   makeFloor,
   resolveSnap,
   snapToGridPercent,
+  trackerPresenceDetected,
   uid,
 } from "./types";
 import {
@@ -1511,10 +1512,18 @@ export class FloorplanCardEditor extends LitElement {
     const selected = this._isSel("tracker", tr.id);
     const xRead = trackerSensorReading(this.hass?.states, tr.xSensor?.entity);
     const yRead = trackerSensorReading(this.hass?.states, tr.ySensor?.entity);
+    const xPres = trackerPresenceDetected(this.hass?.states, tr.xSensor?.presence);
+    const yPres = trackerPresenceDetected(this.hass?.states, tr.ySensor?.presence);
     return svg`
       <g class="tracker-hit ${selected ? "selected" : ""}"
          @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "tracker", id: tr.id })}>
-        ${renderTracker(tr, { editing: true, xReading: xRead, yReading: yRead })}
+        ${renderTracker(tr, {
+          editing: true,
+          xReading: xRead,
+          yReading: yRead,
+          xPresent: xPres,
+          yPresent: yPres,
+        })}
         <rect x=${tr.x} y=${tr.y} width=${tr.w} height=${tr.h}
               transform="rotate(${tr.angle ?? 0} ${tr.x + tr.w / 2} ${tr.y + tr.h / 2})"
               class="tracker-hit-rect" />
@@ -2330,6 +2339,37 @@ export class FloorplanCardEditor extends LitElement {
               />
               invert
             </label>
+          </div>
+          <div class="row">
+            <label>${label} presence</label>
+            <ha-entity-picker
+              .hass=${this.hass}
+              .value=${s.presence?.entity ?? ""}
+              .includeDomains=${["binary_sensor", "input_boolean"]}
+              allow-custom-entity
+              @value-changed=${(e: CustomEvent) => {
+                const v = (e.detail.value as string) || "";
+                this._updateTrackerSensor(tr.id, axis, {
+                  presence: v ? { entity: v, invert: s.presence?.invert } : undefined,
+                });
+              }}
+            ></ha-entity-picker>
+            ${s.presence
+              ? html`<label class="inline-check" title="Treat 'off' as detected">
+                  <input
+                    type="checkbox"
+                    .checked=${s.presence.invert ?? false}
+                    @change=${(e: Event) =>
+                      this._updateTrackerSensor(tr.id, axis, {
+                        presence: {
+                          entity: s.presence!.entity,
+                          invert: (e.target as HTMLInputElement).checked || undefined,
+                        },
+                      })}
+                  />
+                  invert
+                </label>`
+              : nothing}
           </div>`
         : nothing}
     `;
@@ -2732,6 +2772,13 @@ export class FloorplanCardEditor extends LitElement {
     }
     .tracker-zone {
       transition: opacity 0.2s ease;
+    }
+    /* Dim the zone when a configured presence sensor reports "clear" so the
+       editor visibly confirms the marker is being gated off — without this,
+       a user toggling the mock presence sensor would just see the triangle
+       vanish with no other feedback. */
+    .tracker-zone.presence-gated {
+      opacity: 0.35;
     }
     .tracker-hit {
       cursor: move;

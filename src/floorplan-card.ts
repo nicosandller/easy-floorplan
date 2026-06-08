@@ -8,6 +8,7 @@ import {
   DEFAULT_TEXT_SIZE,
   DEFAULT_RIPPLE_SIZE,
   getFloors,
+  trackerPresenceDetected,
 } from "./types";
 import {
   WALL_THICKNESS,
@@ -224,6 +225,8 @@ export class FloorplanCard extends LitElement {
                 editing: false,
                 xReading: trackerSensorReading(this.hass?.states, tr.xSensor?.entity),
                 yReading: trackerSensorReading(this.hass?.states, tr.ySensor?.entity),
+                xPresent: trackerPresenceDetected(this.hass?.states, tr.xSensor?.presence),
+                yPresent: trackerPresenceDetected(this.hass?.states, tr.ySensor?.presence),
               })
             )}
           </svg>
