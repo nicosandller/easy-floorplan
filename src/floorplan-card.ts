@@ -16,6 +16,8 @@ import {
   openingDefaultOpen,
   renderRipple,
   renderFurniture,
+  renderTracker,
+  trackerSensorReading,
   defaultIcon,
 } from "./render";
 import type { Opening } from "./types";
@@ -217,6 +219,13 @@ export class FloorplanCard extends LitElement {
                 accent: o.activeColor ?? "var(--primary-color, #03a9f4)",
               });
             })}
+            ${(active.trackers ?? []).map((tr) =>
+              renderTracker(tr, {
+                editing: false,
+                xReading: trackerSensorReading(this.hass?.states, tr.xSensor?.entity),
+                yReading: trackerSensorReading(this.hass?.states, tr.ySensor?.entity),
+              })
+            )}
           </svg>
           <div class="items">
             ${active.texts.map((t) => this._renderText(t, c))}
@@ -415,6 +424,64 @@ export class FloorplanCard extends LitElement {
       100% {
         transform: scale(1);
         opacity: 0;
+      }
+    }
+    /* === Tracker animations (live card). The zone outline is editor-only —
+       renderTracker is called with editing:false here, so only the marker /
+       line and ripples render. Movement transitions on the group's transform
+       so the dot/triangle glides between sensor updates rather than jumping. === */
+    .tracker-marker {
+      transition: transform 0.4s ease-out;
+    }
+    .tracker-dot {
+      animation: fp-tracker-pulse 1.4s ease-in-out infinite;
+      transform-box: fill-box;
+      transform-origin: center;
+    }
+    .tracker-ring {
+      animation: fp-tracker-ring 2.2s ease-out infinite;
+      opacity: 0;
+    }
+    .tracker-line {
+      transition: transform 0.4s ease-out;
+    }
+    .tracker-line-stroke {
+      opacity: 0.45;
+      animation: fp-tracker-pulse 1.6s ease-in-out infinite;
+    }
+    .tracker-band {
+      opacity: 0;
+      animation: fp-tracker-band 2.2s ease-out infinite;
+    }
+    @keyframes fp-tracker-pulse {
+      0%,
+      100% {
+        transform: scale(0.9);
+        opacity: 0.7;
+      }
+      50% {
+        transform: scale(1.1);
+        opacity: 1;
+      }
+    }
+    @keyframes fp-tracker-ring {
+      0% {
+        r: 0;
+        opacity: 0.7;
+      }
+      100% {
+        r: var(--fp-tracker-ring-max, 60px);
+        opacity: 0;
+      }
+    }
+    @keyframes fp-tracker-band {
+      0% {
+        opacity: 0.5;
+        stroke-width: 1.5;
+      }
+      100% {
+        opacity: 0;
+        stroke-width: 14;
       }
     }
   `;

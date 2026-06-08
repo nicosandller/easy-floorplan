@@ -121,6 +121,58 @@ export interface Furniture {
   color?: string;
 }
 
+/**
+ * A live position tracker driven by 1 or 2 distance sensors aimed along
+ * orthogonal axes. The user draws a rectangular tracked area on the floor
+ * plan and binds an HA distance entity to each axis; the card linearly
+ * maps each sensor's `[min, max]` reading to the corresponding edge-to-edge
+ * span of the rectangle.
+ *
+ * With both sensors configured the card animates a pulsating triangle with
+ * ripple rings at the resolved (x, y) inside the zone. With only one
+ * sensor configured it animates a faint pulsating line spanning the
+ * unknown axis (we know the target sits *somewhere* on that line).
+ *
+ * The zone rectangle is visible only in the editor; the live card renders
+ * only the tracked-object animation.
+ */
+export interface Tracker {
+  id: string;
+  /** Top-left in virtual units. */
+  x: number;
+  y: number;
+  /** Size in virtual units. */
+  w: number;
+  h: number;
+  /** Rotation in degrees. Default 0. */
+  angle?: number;
+  /** Marker / ripple color (CSS / hex). Falls back to the primary color. */
+  color?: string;
+  /** Marker diameter in pixels. Default 14. */
+  dotSize?: number;
+  /** Distance sensor mapped to the X axis (rectangle's horizontal span). */
+  xSensor?: TrackerSensor;
+  /** Distance sensor mapped to the Y axis (rectangle's vertical span). */
+  ySensor?: TrackerSensor;
+}
+
+/**
+ * A single distance sensor mapping. `[min, max]` reading values map
+ * linearly to the edge-to-edge span of the tracker rectangle along the
+ * sensor's axis. `invert: true` flips the mapping (max → min edge).
+ */
+export interface TrackerSensor {
+  entity: string;
+  /** Sensor reading when the target is at the "near" edge. */
+  min: number;
+  /** Sensor reading when the target is at the "far" edge. */
+  max: number;
+  /** Flip the mapping so that `max` corresponds to the near edge. */
+  invert?: boolean;
+}
+
+export const DEFAULT_TRACKER_DOT_SIZE = 14;
+
 export const DEFAULT_ITEM_SIZE = 34;
 export const DEFAULT_TEXT_SIZE = 16;
 export const DEFAULT_RIPPLE_SIZE = 80;
@@ -166,6 +218,7 @@ export interface Floor {
   items: FloorItem[];
   texts: FloorText[];
   furniture: Furniture[];
+  trackers: Tracker[];
 }
 
 export interface FloorplanCardConfig extends LovelaceCardConfig {
@@ -202,6 +255,7 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   items: FloorItem[];
   texts?: FloorText[];
   furniture?: Furniture[];
+  trackers?: Tracker[];
 }
 
 export const DEFAULT_WIDTH = 1000;
@@ -254,6 +308,7 @@ export function emptyConfig(type: string): FloorplanCardConfig {
     items: [],
     texts: [],
     furniture: [],
+    trackers: [],
   };
 }
 
@@ -263,7 +318,16 @@ export function uid(prefix: string): string {
 
 /** A fresh, empty floor (optionally seeded with walls). */
 export function makeFloor(name: string, walls: Wall[] = []): Floor {
-  return { id: uid("floor"), name, walls, openings: [], items: [], texts: [], furniture: [] };
+  return {
+    id: uid("floor"),
+    name,
+    walls,
+    openings: [],
+    items: [],
+    texts: [],
+    furniture: [],
+    trackers: [],
+  };
 }
 
 /**
@@ -282,6 +346,26 @@ export function getFloors(c: FloorplanCardConfig): Floor[] {
       items: c.items ?? [],
       texts: c.texts ?? [],
       furniture: c.furniture ?? [],
+      trackers: c.trackers ?? [],
     },
   ];
+}
+
+/**
+ * Resolve a sensor reading into a 0..1 fraction along its axis, applying
+ * `min`/`max` mapping, clamping, and `invert`. Returns `null` when the
+ * sensor is missing, the reading isn't a finite number, or the span is
+ * zero (mis-configured) — callers fall back to neutral / unknown states.
+ */
+export function trackerAxisFraction(
+  sensor: TrackerSensor | undefined,
+  reading: number | null | undefined,
+): number | null {
+  if (!sensor) return null;
+  if (reading == null || !Number.isFinite(reading)) return null;
+  const span = sensor.max - sensor.min;
+  if (span === 0) return null;
+  const f = (reading - sensor.min) / span;
+  const clamped = Math.max(0, Math.min(1, f));
+  return sensor.invert ? 1 - clamped : clamped;
 }

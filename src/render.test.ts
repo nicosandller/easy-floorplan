@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { snapToWall, openingDefaultOpen, kindFromEntity, defaultIcon } from "./render";
+import {
+  snapToWall,
+  openingDefaultOpen,
+  kindFromEntity,
+  defaultIcon,
+  trackerSensorReading,
+} from "./render";
 import type { Opening } from "./types";
 
 describe("snapToWall", () => {
@@ -60,6 +66,24 @@ describe("kindFromEntity", () => {
   it("falls back to generic for unknown domains", () => {
     expect(kindFromEntity("media_player.tv")).toBe("generic");
     expect(kindFromEntity("weird")).toBe("generic");
+  });
+});
+
+describe("trackerSensorReading", () => {
+  const states = {
+    "sensor.x": { state: "2.5" },
+    "sensor.bad": { state: "unavailable" },
+    "sensor.text": { state: "open" },
+  };
+  it("parses a numeric entity state", () => {
+    expect(trackerSensorReading(states, "sensor.x")).toBe(2.5);
+  });
+  it("returns null for missing entity, missing state, or non-numeric reading", () => {
+    expect(trackerSensorReading(states, undefined)).toBeNull();
+    expect(trackerSensorReading(undefined, "sensor.x")).toBeNull();
+    expect(trackerSensorReading(states, "sensor.missing")).toBeNull();
+    expect(trackerSensorReading(states, "sensor.bad")).toBeNull();
+    expect(trackerSensorReading(states, "sensor.text")).toBeNull();
   });
 });
 
