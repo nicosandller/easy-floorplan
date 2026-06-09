@@ -1,5 +1,6 @@
 import { FloorplanCard } from "./floorplan-card";
 import "./editor";
+import { version } from "../package.json";
 
 export { FloorplanCard };
 
@@ -16,4 +17,8 @@ w.customCards.push({
 });
 
 // eslint-disable-next-line no-console
-console.info("%c EASY-FLOORPLAN %c 0.4.2 ", "background:#03a9f4;color:#fff", "color:#03a9f4");
+console.info(
+  `%c EASY-FLOORPLAN %c ${version} `,
+  "background:#03a9f4;color:#fff",
+  "color:#03a9f4"
+);
