@@ -474,6 +474,36 @@ export class FloorplanCardEditor extends LitElement {
       }
       return;
     }
+    // Undo / redo — the toolbar buttons exist, but the keyboard is what
+    // everyone reaches for first. Ctrl/Cmd+Z, Shift for redo, plus Ctrl+Y.
+    if (mod && key === "z") {
+      ev.preventDefault();
+      if (ev.shiftKey) this._redo();
+      else this._undo();
+      return;
+    }
+    if (mod && key === "y") {
+      ev.preventDefault();
+      this._redo();
+      return;
+    }
+    if (ev.key === "Escape") {
+      // Cancel an in-progress draft / marquee first; otherwise clear the
+      // selection. Only swallow the key when it actually did something, so
+      // HA's dialog still closes on Escape when there's nothing to cancel.
+      if (this._draft || this._draftTracker || this._marquee) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this._draft = null;
+        this._draftTracker = null;
+        this._marquee = null;
+      } else if (this._selection.length) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this._clearSel();
+      }
+      return;
+    }
     if ((ev.key === "Delete" || ev.key === "Backspace") && this._selection.length) {
       ev.preventDefault();
       this._deleteSelected();
@@ -1058,6 +1088,12 @@ export class FloorplanCardEditor extends LitElement {
     this._clearSel();
   }
 
+  private _updateWall(id: string, partial: Partial<Wall>): void {
+    this._commitFloor({
+      walls: this._floor().walls.map((w) => (w.id === id ? { ...w, ...partial } : w)),
+    });
+  }
+
   private _updateOpening(id: string, partial: Partial<Opening>): void {
     this._commitFloor({
       openings: this._floor().openings.map((o) => (o.id === id ? { ...o, ...partial } : o)),
@@ -1112,14 +1148,24 @@ export class FloorplanCardEditor extends LitElement {
 
   // ---- rendering ----------------------------------------------------------
 
+  /** Cached grid templates; rebuilding hundreds of lines on every render is wasteful. */
+  private _gridCache: { key: string; lines: TemplateResult[] } | null = null;
+
   private _renderGrid(): TemplateResult[] {
-    const lines: TemplateResult[] = [];
     const { width, height } = this._config;
     const g = this.grid;
+    // This runs on every render — including every pointermove while drawing
+    // or dragging. The grid only depends on canvas size + spacing, so return
+    // the same template array until one of those changes; Lit then sees
+    // identical items and skips diffing the (potentially hundreds of) lines.
+    const key = `${width}x${height}x${g}`;
+    if (this._gridCache?.key === key) return this._gridCache.lines;
+    const lines: TemplateResult[] = [];
     for (let x = 0; x <= width; x += g)
       lines.push(svg`<line x1=${x} y1="0" x2=${x} y2=${height} class="grid" />`);
     for (let y = 0; y <= height; y += g)
       lines.push(svg`<line x1="0" y1=${y} x2=${width} y2=${y} class="grid" />`);
+    this._gridCache = { key, lines };
     return lines;
   }
 
@@ -1726,6 +1772,41 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
+   * Shared "Angle" row (slider + number box) used by every rotatable element.
+   * Centralizes the wrap-to-0..360 math and guards the number box against a
+   * cleared field — `Number("")` is 0 but `Number("abc")`/partial input is
+   * NaN, which previously got stored and broke the element's transform.
+   */
+  private _renderAngleRow(value: number, apply: (angle: number) => void): TemplateResult {
+    const current = Math.round(value);
+    return html`
+      <div class="row">
+        <label>Angle</label>
+        <input
+          type="range"
+          min="0"
+          max="360"
+          .value=${String(value)}
+          @input=${(e: Event) => apply(Number((e.target as HTMLInputElement).value))}
+        />
+        <input
+          class="num"
+          type="number"
+          min="0"
+          max="360"
+          .value=${String(current)}
+          @change=${(e: Event) => {
+            const input = e.target as HTMLInputElement;
+            const n = Number(input.value);
+            if (input.value !== "" && Number.isFinite(n)) apply(((n % 360) + 360) % 360);
+            else input.value = String(current);
+          }}
+        />
+      </div>
+    `;
+  }
+
+  /**
    * Editor fields for the currently-selected element, rendered inline inside the
    * context bar so the user can configure the selection without scrolling away
    * from the canvas. Returns nothing when the selection isn't exactly one
@@ -1757,9 +1838,16 @@ export class FloorplanCardEditor extends LitElement {
           <label>Length</label>
           <input
             type="number"
+            min="1"
             .value=${String(o.length)}
-            @change=${(e: Event) =>
-              this._updateOpening(o.id, { length: Number((e.target as HTMLInputElement).value) })}
+            @change=${(e: Event) => {
+              const input = e.target as HTMLInputElement;
+              const n = Number(input.value);
+              // A cleared / invalid field would store 0 or NaN — an invisible
+              // opening that's impossible to click again. Keep the old length.
+              if (input.value !== "" && n >= 1) this._updateOpening(o.id, { length: n });
+              else input.value = String(o.length);
+            }}
           />
         </div>
         <div class="row">
@@ -1804,29 +1892,7 @@ export class FloorplanCardEditor extends LitElement {
                 />
               </div>`
           : nothing}
-        <div class="row">
-          <label>Angle</label>
-          <input
-            type="range"
-            min="0"
-            max="360"
-            .value=${String(o.angle)}
-            @input=${(e: Event) =>
-              this._updateOpening(o.id, { angle: Number((e.target as HTMLInputElement).value) })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="0"
-            max="360"
-            step="1"
-            .value=${String(Math.round(o.angle))}
-            @change=${(e: Event) =>
-              this._updateOpening(o.id, {
-                angle: ((Number((e.target as HTMLInputElement).value) % 360) + 360) % 360,
-              })}
-          />
-        </div>
+        ${this._renderAngleRow(o.angle, (angle) => this._updateOpening(o.id, { angle }))}
       `;
     }
 
@@ -1911,28 +1977,7 @@ export class FloorplanCardEditor extends LitElement {
               })}
           />
         </div>
-        <div class="row">
-          <label>Angle</label>
-          <input
-            type="range"
-            min="0"
-            max="360"
-            .value=${String(it.angle ?? 0)}
-            @input=${(e: Event) =>
-              this._updateItem(it.id, { angle: Number((e.target as HTMLInputElement).value) })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="0"
-            max="360"
-            .value=${String(Math.round(it.angle ?? 0))}
-            @change=${(e: Event) =>
-              this._updateItem(it.id, {
-                angle: ((Number((e.target as HTMLInputElement).value) % 360) + 360) % 360,
-              })}
-          />
-        </div>
+        ${this._renderAngleRow(it.angle ?? 0, (angle) => this._updateItem(it.id, { angle }))}
         <div class="row">
           <label>Display</label>
           <select
@@ -2067,28 +2112,7 @@ export class FloorplanCardEditor extends LitElement {
               this._updateText(t.id, { color: (e.target as HTMLInputElement).value || undefined })}
           />
         </div>
-        <div class="row">
-          <label>Angle</label>
-          <input
-            type="range"
-            min="0"
-            max="360"
-            .value=${String(t.angle ?? 0)}
-            @input=${(e: Event) =>
-              this._updateText(t.id, { angle: Number((e.target as HTMLInputElement).value) })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="0"
-            max="360"
-            .value=${String(Math.round(t.angle ?? 0))}
-            @change=${(e: Event) =>
-              this._updateText(t.id, {
-                angle: ((Number((e.target as HTMLInputElement).value) % 360) + 360) % 360,
-              })}
-          />
-        </div>
+        ${this._renderAngleRow(t.angle ?? 0, (angle) => this._updateText(t.id, { angle }))}
       `;
     }
 
@@ -2127,28 +2151,7 @@ export class FloorplanCardEditor extends LitElement {
               this._updateFurniture(f.id, { h: Number((e.target as HTMLInputElement).value) || f.h })}
           />
         </div>
-        <div class="row">
-          <label>Angle</label>
-          <input
-            type="range"
-            min="0"
-            max="360"
-            .value=${String(f.angle ?? 0)}
-            @input=${(e: Event) =>
-              this._updateFurniture(f.id, { angle: Number((e.target as HTMLInputElement).value) })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="0"
-            max="360"
-            .value=${String(Math.round(f.angle ?? 0))}
-            @change=${(e: Event) =>
-              this._updateFurniture(f.id, {
-                angle: ((Number((e.target as HTMLInputElement).value) % 360) + 360) % 360,
-              })}
-          />
-        </div>
+        ${this._renderAngleRow(f.angle ?? 0, (angle) => this._updateFurniture(f.id, { angle }))}
         <div class="row">
           <label>Color</label>
           <input
@@ -2216,28 +2219,7 @@ export class FloorplanCardEditor extends LitElement {
               this._updateTracker(tr.id, { y: Number((e.target as HTMLInputElement).value) })}
           />
         </div>
-        <div class="row">
-          <label>Angle</label>
-          <input
-            type="range"
-            min="0"
-            max="360"
-            .value=${String(tr.angle ?? 0)}
-            @input=${(e: Event) =>
-              this._updateTracker(tr.id, { angle: Number((e.target as HTMLInputElement).value) })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="0"
-            max="360"
-            .value=${String(Math.round(tr.angle ?? 0))}
-            @change=${(e: Event) =>
-              this._updateTracker(tr.id, {
-                angle: ((Number((e.target as HTMLInputElement).value) % 360) + 360) % 360,
-              })}
-          />
-        </div>
+        ${this._renderAngleRow(tr.angle ?? 0, (angle) => this._updateTracker(tr.id, { angle }))}
         <div class="row">
           <label>Color</label>
           <input
@@ -2285,11 +2267,71 @@ export class FloorplanCardEditor extends LitElement {
       `;
     }
 
-    // sel.kind === "wall" (or unknown) — no inline editor today; the user can
-    // drag the wall or its endpoint handles directly on the canvas.
-    return html`<span class="ctx-hint"
-      >Drag the line to move it, or the round handles to move an endpoint.</span
-    >`;
+    if (sel.kind === "wall") {
+      const w = this._floor().walls.find((x) => x.id === sel.id);
+      if (!w) return html`${nothing}`;
+      const length = Math.round(Math.hypot(w.x2 - w.x1, w.y2 - w.y1));
+      // One coordinate input; a cleared / invalid field restores the old value.
+      const coord = (value: number, apply: (n: number) => void) => html`
+        <input
+          class="num"
+          type="number"
+          .value=${String(Math.round(value))}
+          @change=${(e: Event) => {
+            const input = e.target as HTMLInputElement;
+            const n = Number(input.value);
+            if (input.value !== "" && Number.isFinite(n)) apply(n);
+            else input.value = String(Math.round(value));
+          }}
+        />
+      `;
+      return html`
+        <div class="row">
+          <label>Start X / Y</label>
+          ${coord(w.x1, (x1) => this._updateWall(w.id, { x1 }))}
+          ${coord(w.y1, (y1) => this._updateWall(w.id, { y1 }))}
+        </div>
+        <div class="row">
+          <label>End X / Y</label>
+          ${coord(w.x2, (x2) => this._updateWall(w.id, { x2 }))}
+          ${coord(w.y2, (y2) => this._updateWall(w.id, { y2 }))}
+        </div>
+        <div class="row">
+          <label>Length</label>
+          <input
+            class="num"
+            type="number"
+            min="1"
+            .value=${String(length)}
+            @change=${(e: Event) => {
+              const input = e.target as HTMLInputElement;
+              const n = Number(input.value);
+              if (input.value === "" || !(n >= 1)) {
+                input.value = String(length);
+                return;
+              }
+              // Resize from the start point along the wall's current
+              // direction (a zero-length wall extends horizontally).
+              const dx = w.x2 - w.x1;
+              const dy = w.y2 - w.y1;
+              const cur = Math.hypot(dx, dy);
+              const ux = cur > 0 ? dx / cur : 1;
+              const uy = cur > 0 ? dy / cur : 0;
+              this._updateWall(w.id, {
+                x2: Math.round(w.x1 + ux * n),
+                y2: Math.round(w.y1 + uy * n),
+              });
+            }}
+          />
+          <span class="hint">Resizes from the start point, keeping the direction.</span>
+        </div>
+        <p class="hint">
+          Or drag the line on the canvas to move it, and the round handles to move an endpoint.
+        </p>
+      `;
+    }
+
+    return html`${nothing}`;
   }
 
   /**

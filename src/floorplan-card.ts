@@ -1,4 +1,4 @@
-import { LitElement, html, css, svg, nothing, type TemplateResult } from "lit";
+import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor } from "./types";
 import {
@@ -34,6 +34,8 @@ export class FloorplanCard extends LitElement {
   /** View-state: which floor is shown. Never persisted to config. */
   @state() private _activeFloorId?: string;
   private readonly _wallMaskId = `fp-wall-mask-${FloorplanCard._nextWallMaskId++}`;
+  /** Entity ids this plan actually displays; used to skip irrelevant hass updates. */
+  private _watchedEntities: Set<string> = new Set();
 
   public setConfig(config: FloorplanCardConfig): void {
     if (!config) throw new Error("Invalid configuration");
@@ -47,6 +49,43 @@ export class FloorplanCard extends LitElement {
       texts: config.texts ?? [],
       furniture: config.furniture ?? [],
     };
+    this._watchedEntities = this._collectWatchedEntities(this._config);
+  }
+
+  /** Every entity id whose state can change what this card draws (all floors). */
+  private _collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
+    const ids = new Set<string>();
+    for (const f of getFloors(c)) {
+      for (const o of f.openings) if (o.entity) ids.add(o.entity);
+      for (const it of f.items) {
+        if (it.entity) ids.add(it.entity);
+        if (it.secondaryEntity) ids.add(it.secondaryEntity);
+      }
+      for (const tr of f.trackers) {
+        for (const s of [tr.xSensor, tr.ySensor]) {
+          if (s?.entity) ids.add(s.entity);
+          if (s?.presence?.entity) ids.add(s.presence.entity);
+        }
+      }
+    }
+    return ids;
+  }
+
+  /**
+   * HA pushes a fresh `hass` on every state change anywhere in the instance —
+   * for most updates nothing on this plan moved. Skip those renders entirely:
+   * HA replaces an entity's state object whenever it changes, so a reference
+   * compare per watched entity is enough to detect a relevant update.
+   */
+  protected shouldUpdate(changed: PropertyValues): boolean {
+    // Anything but a pure hass tick (config change, floor switch, first render).
+    if (!(changed.size === 1 && changed.has("hass"))) return true;
+    const prev = changed.get("hass") as HomeAssistant | undefined;
+    if (!prev || !this.hass) return true;
+    for (const id of this._watchedEntities) {
+      if (prev.states[id] !== this.hass.states[id]) return true;
+    }
+    return false;
   }
 
   public getCardSize(): number {
