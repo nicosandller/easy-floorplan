@@ -524,6 +524,31 @@ export class FloorplanCardEditor extends LitElement {
 
   // ---- canvas (SVG) pointer handling: drawing walls/openings -------------
 
+  /**
+   * Best-effort pointer capture. `setPointerCapture` throws NotFoundError when
+   * the pointer id isn't active (synthetic events, or HA's dialog re-targeting
+   * the pointer), which would abort the rest of the calling handler — we hit
+   * exactly that with the tracker tool's drag-to-draw. Capture is an
+   * enhancement (smooth dragging past the canvas edge), never a requirement,
+   * so failures are safe to swallow.
+   */
+  private _capturePointer(ev: PointerEvent, target: Element | null = ev.target as Element): void {
+    try {
+      target?.setPointerCapture?.(ev.pointerId);
+    } catch {
+      /* pointer not active — drag still works, just without capture */
+    }
+  }
+
+  /** Best-effort release; pointerup releases capture implicitly anyway. */
+  private _releasePointer(ev: PointerEvent, target: Element | null = ev.target as Element): void {
+    try {
+      target?.releasePointerCapture?.(ev.pointerId);
+    } catch {
+      /* no active capture — already released by the implicit pointerup release */
+    }
+  }
+
   private _onCanvasDown(ev: PointerEvent): void {
     if (ev.button !== 0) return;
     const raw = this._toVirtual(ev, false);
@@ -533,7 +558,7 @@ export class FloorplanCardEditor extends LitElement {
         ? { x: this._snap(raw.x), y: this._snap(raw.y) }
         : this._snapWallPoint(raw.x, raw.y);
       this._draft = { x1: s.x, y1: s.y, x2: s.x, y2: s.y };
-      (ev.target as Element).setPointerCapture?.(ev.pointerId);
+      this._capturePointer(ev);
       return;
     }
     if (this._tool === "door" || this._tool === "window") {
@@ -544,13 +569,13 @@ export class FloorplanCardEditor extends LitElement {
       const x = this._snap(raw.x);
       const y = this._snap(raw.y);
       this._draftTracker = { x0: x, y0: y, x1: x, y1: y };
-      (ev.target as Element).setPointerCapture?.(ev.pointerId);
+      this._capturePointer(ev);
       return;
     }
     // Select tool, empty canvas: start a marquee (rubber-band) selection.
     this._marqueeAdd = ev.shiftKey || ev.ctrlKey || ev.metaKey;
     this._marquee = { x0: raw.x, y0: raw.y, x1: raw.x, y1: raw.y };
-    (ev.target as Element).setPointerCapture?.(ev.pointerId);
+    this._capturePointer(ev);
   }
 
   private _onCanvasMove(ev: PointerEvent): void {
@@ -591,17 +616,7 @@ export class FloorplanCardEditor extends LitElement {
     if (this._tool === "tracker" && this._draftTracker) {
       const d = this._draftTracker;
       this._draftTracker = null;
-      // Browsers throw NotFoundError if the pointer was never captured on this
-      // target (e.g. in HA's editor dialog, or when events arrive synthetically
-      // without a matching pointerdown). The thrown error would skip the rest
-      // of the handler and silently swallow the drag — which is exactly what
-      // "drag to draw the tracker isn't working" looked like. Pointerup
-      // implicitly releases capture anyway, so a best-effort release is fine.
-      try {
-        (ev.target as Element).releasePointerCapture?.(ev.pointerId);
-      } catch {
-        /* no active capture — already released by the implicit pointerup release */
-      }
+      this._releasePointer(ev);
       const x = Math.min(d.x0, d.x1);
       const y = Math.min(d.y0, d.y1);
       const w = Math.abs(d.x1 - d.x0);
@@ -616,7 +631,7 @@ export class FloorplanCardEditor extends LitElement {
     if (this._marquee) {
       const m = this._marquee;
       this._marquee = null;
-      (ev.target as Element).releasePointerCapture?.(ev.pointerId);
+      this._releasePointer(ev);
       const moved = Math.hypot(m.x1 - m.x0, m.y1 - m.y0) > 4;
       if (!moved) {
         // A plain click on empty canvas clears the selection.
@@ -629,7 +644,7 @@ export class FloorplanCardEditor extends LitElement {
     }
     if (this._drag) {
       this._drag = null;
-      (ev.target as Element).releasePointerCapture?.(ev.pointerId);
+      this._releasePointer(ev);
     }
   }
 
@@ -668,7 +683,7 @@ export class FloorplanCardEditor extends LitElement {
       endpoint,
     };
     this._pushHistory();
-    (ev.target as Element).setPointerCapture?.(ev.pointerId);
+    this._capturePointer(ev);
   }
 
   /** Capture the start positions of every selected element on the active floor. */
@@ -794,7 +809,7 @@ export class FloorplanCardEditor extends LitElement {
       orig: this._snapshotSelection(),
     };
     this._pushHistory();
-    (ev.currentTarget as Element).setPointerCapture?.(ev.pointerId);
+    this._capturePointer(ev, ev.currentTarget as Element);
   }
 
   private _onOverlayMove(ev: PointerEvent): void {
@@ -804,7 +819,7 @@ export class FloorplanCardEditor extends LitElement {
   private _onOverlayUp(ev: PointerEvent): void {
     if (this._drag) {
       this._drag = null;
-      (ev.currentTarget as Element).releasePointerCapture?.(ev.pointerId);
+      this._releasePointer(ev, ev.currentTarget as Element);
     }
   }
 
@@ -2345,7 +2360,7 @@ export class FloorplanCardEditor extends LitElement {
             <ha-entity-picker
               .hass=${this.hass}
               .value=${s.presence?.entity ?? ""}
-              .includeDomains=${["binary_sensor", "input_boolean"]}
+              .includeDomains=${["binary_sensor", "input_boolean", "device_tracker"]}
               allow-custom-entity
               @value-changed=${(e: CustomEvent) => {
                 const v = (e.detail.value as string) || "";

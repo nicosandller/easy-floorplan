@@ -172,10 +172,10 @@ describe("makeFloor", () => {
 });
 
 describe("getFloors", () => {
-  it("returns the floors array when present and non-empty", () => {
+  it("returns the floors when present and non-empty (normalized copies)", () => {
     const floors = [makeFloor("A"), makeFloor("B")];
     const c = { ...emptyConfig("x"), floors } as FloorplanCardConfig;
-    expect(getFloors(c)).toBe(floors);
+    expect(getFloors(c)).toStrictEqual(floors);
   });
 
   it("wraps a legacy flat config into a single implicit floor", () => {
@@ -192,6 +192,40 @@ describe("getFloors", () => {
   it("treats an empty floors array as legacy (wraps flat arrays)", () => {
     const c = { ...emptyConfig("x"), floors: [] } as FloorplanCardConfig;
     expect(getFloors(c)).toHaveLength(1);
+  });
+
+  it("backfills element arrays missing from hand-written floors", () => {
+    // A minimal hand-written multi-floor config: only walls provided. Every
+    // other element array must come back as [] so render paths can map over
+    // them without crashing.
+    const c = {
+      ...emptyConfig("x"),
+      floors: [
+        {
+          id: "f1",
+          name: "Hand-written",
+          walls: [{ id: "w1", x1: 0, y1: 0, x2: 10, y2: 0 }],
+        } as unknown,
+      ],
+    } as FloorplanCardConfig;
+    const [f] = getFloors(c);
+    expect(f.walls).toHaveLength(1);
+    expect(f.openings).toEqual([]);
+    expect(f.items).toEqual([]);
+    expect(f.texts).toEqual([]);
+    expect(f.furniture).toEqual([]);
+    expect(f.trackers).toEqual([]);
+  });
+
+  it("preserves extra floor fields (image, opacity) while backfilling", () => {
+    const c = {
+      ...emptyConfig("x"),
+      floors: [{ id: "f1", name: "F", image: "/local/plan.png", imageOpacity: 0.5 } as unknown],
+    } as FloorplanCardConfig;
+    const [f] = getFloors(c);
+    expect(f.image).toBe("/local/plan.png");
+    expect(f.imageOpacity).toBe(0.5);
+    expect(f.trackers).toEqual([]);
   });
 });
 

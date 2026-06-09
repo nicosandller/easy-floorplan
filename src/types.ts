@@ -358,12 +358,31 @@ export function makeFloor(name: string, walls: Wall[] = []): Floor {
 }
 
 /**
- * Normalize a config into a list of floors. If `floors` is present and non-empty
- * it is returned as-is; otherwise the legacy flat arrays are wrapped into a
- * single floor so old single-floor configs keep rendering unchanged.
+ * Backfill any missing element arrays on a floor. Hand-written YAML configs
+ * (and configs saved by older card versions, from before an element type
+ * existed) routinely omit arrays like `texts` or `trackers`; the render paths
+ * map over them directly, so a missing array would crash the card/editor.
+ */
+function normalizeFloor(f: Floor): Floor {
+  return {
+    ...f,
+    walls: f.walls ?? [],
+    openings: f.openings ?? [],
+    items: f.items ?? [],
+    texts: f.texts ?? [],
+    furniture: f.furniture ?? [],
+    trackers: f.trackers ?? [],
+  };
+}
+
+/**
+ * Normalize a config into a list of floors. If `floors` is present and
+ * non-empty each floor is returned with any missing element arrays
+ * backfilled; otherwise the legacy flat arrays are wrapped into a single
+ * floor so old single-floor configs keep rendering unchanged.
  */
 export function getFloors(c: FloorplanCardConfig): Floor[] {
-  if (c.floors && c.floors.length) return c.floors;
+  if (c.floors && c.floors.length) return c.floors.map(normalizeFloor);
   return [
     {
       id: "floor_main",
