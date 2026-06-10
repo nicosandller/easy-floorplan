@@ -91,6 +91,25 @@ type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker";
 type Sel = { kind: SelKind; id: string };
 type OverlaySel = { kind: "item" | "text"; id: string };
 
+/** Toolbar metadata per tool: mdi icon + label (icons make the modes scannable). */
+const TOOL_META: Record<Tool, { icon: string; label: string }> = {
+  select: { icon: "mdi:cursor-default", label: "Select" },
+  wall: { icon: "mdi:wall", label: "Wall" },
+  door: { icon: "mdi:door", label: "Door" },
+  window: { icon: "mdi:window-closed-variant", label: "Window" },
+  tracker: { icon: "mdi:crosshairs-gps", label: "Tracker" },
+};
+
+/** Icon shown in the Element header per selected element kind. */
+const SEL_KIND_ICON: Record<SelKind, string> = {
+  wall: "mdi:wall",
+  opening: "mdi:door",
+  item: "mdi:lightbulb-outline",
+  text: "mdi:format-text",
+  furniture: "mdi:sofa-outline",
+  tracker: "mdi:crosshairs-gps",
+};
+
 /** Snapshot of an element's position at drag start, for group translation. */
 type OrigPos =
   | { kind: "wall"; x1: number; y1: number; x2: number; y2: number }
@@ -153,8 +172,15 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _history: FloorplanCardConfig[] = [];
   @state() private _future: FloorplanCardConfig[] = [];
   @state() private _zoom = 1;
+  /** Floor gear popover (rename / delete floor) visibility. */
+  @state() private _floorMenuOpen = false;
+  /** "+ Add" popover (device / text / furniture glyphs) visibility. */
+  @state() private _addMenuOpen = false;
+  /** Project section expanded? Collapsed by default — page settings are touched rarely. */
+  @state() private _projectOpen = false;
 
   @query("svg") private _svg?: SVGSVGElement;
+  @query(".canvas-wrap") private _canvasWrap?: HTMLElement;
 
   private _drag: Drag | null = null;
   /** True when the active marquee should add to (rather than replace) the selection. */
@@ -471,6 +497,44 @@ export class FloorplanCardEditor extends LitElement {
       if (this._selection.length) {
         ev.preventDefault();
         this._duplicate();
+      }
+      return;
+    }
+    // Undo / redo — the toolbar buttons exist, but the keyboard is what
+    // everyone reaches for first. Ctrl/Cmd+Z, Shift for redo, plus Ctrl+Y.
+    if (mod && key === "z") {
+      ev.preventDefault();
+      if (ev.shiftKey) this._redo();
+      else this._undo();
+      return;
+    }
+    if (mod && key === "y") {
+      ev.preventDefault();
+      this._redo();
+      return;
+    }
+    if (ev.key === "Escape") {
+      // Close an open popover first, then cancel an in-progress draft /
+      // marquee, then clear the selection. Only swallow the key when it
+      // actually did something, so HA's dialog still closes on Escape when
+      // there's nothing to cancel.
+      if (this._floorMenuOpen || this._addMenuOpen) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this._floorMenuOpen = false;
+        this._addMenuOpen = false;
+        return;
+      }
+      if (this._draft || this._draftTracker || this._marquee) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this._draft = null;
+        this._draftTracker = null;
+        this._marquee = null;
+      } else if (this._selection.length) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this._clearSel();
       }
       return;
     }
@@ -1058,6 +1122,12 @@ export class FloorplanCardEditor extends LitElement {
     this._clearSel();
   }
 
+  private _updateWall(id: string, partial: Partial<Wall>): void {
+    this._commitFloor({
+      walls: this._floor().walls.map((w) => (w.id === id ? { ...w, ...partial } : w)),
+    });
+  }
+
   private _updateOpening(id: string, partial: Partial<Opening>): void {
     this._commitFloor({
       openings: this._floor().openings.map((o) => (o.id === id ? { ...o, ...partial } : o)),
@@ -1112,14 +1182,79 @@ export class FloorplanCardEditor extends LitElement {
 
   // ---- rendering ----------------------------------------------------------
 
+  // ---- zoom ----------------------------------------------------------------
+
+  private _setZoom(z: number): void {
+    this._zoom = Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
+  }
+
+  /** Ctrl/Cmd + wheel zooms the canvas (also catches trackpad pinch); plain wheel scrolls. */
+  private _onCanvasWheel(ev: WheelEvent): void {
+    if (!ev.ctrlKey && !ev.metaKey) return;
+    ev.preventDefault();
+    this._setZoom(this._zoom - Math.sign(ev.deltaY) * 0.1);
+  }
+
+  /** Reset to 100% (where the stage fits the wrap width) and scroll home. */
+  private _fitView(): void {
+    this._setZoom(1);
+    this._canvasWrap?.scrollTo({ top: 0, left: 0 });
+  }
+
+  /** One-line description of the selected element for the Element header. */
+  private _selectionSummary(sel: Sel): string {
+    const f = this._floor();
+    switch (sel.kind) {
+      case "wall": {
+        const w = f.walls.find((x) => x.id === sel.id);
+        return w ? `Wall · ${Math.round(Math.hypot(w.x2 - w.x1, w.y2 - w.y1))} units` : "Wall";
+      }
+      case "opening": {
+        const o = f.openings.find((x) => x.id === sel.id);
+        if (!o) return "Opening";
+        return `${o.type === "door" ? "Door" : "Window"} · ${Math.round(o.length)} units`;
+      }
+      case "item": {
+        const it = f.items.find((x) => x.id === sel.id);
+        return it?.entity ? `Device · ${it.entity}` : "Device";
+      }
+      case "text": {
+        const t = f.texts.find((x) => x.id === sel.id);
+        const txt = t?.text ?? "";
+        if (!txt) return "Text";
+        return `Text · “${txt.length > 24 ? `${txt.slice(0, 24)}…` : txt}”`;
+      }
+      case "furniture": {
+        const fu = f.furniture.find((x) => x.id === sel.id);
+        if (!fu) return "Furniture";
+        const label = FURNITURE_LABELS[fu.type];
+        return `${label.charAt(0).toUpperCase()}${label.slice(1)} · ${Math.round(fu.w)}×${Math.round(fu.h)}`;
+      }
+      default: {
+        const tr = (f.trackers ?? []).find((x) => x.id === sel.id);
+        return tr ? `Tracker · ${Math.round(tr.w)}×${Math.round(tr.h)}` : "Tracker";
+      }
+    }
+  }
+
+  /** Cached grid templates; rebuilding hundreds of lines on every render is wasteful. */
+  private _gridCache: { key: string; lines: TemplateResult[] } | null = null;
+
   private _renderGrid(): TemplateResult[] {
-    const lines: TemplateResult[] = [];
     const { width, height } = this._config;
     const g = this.grid;
+    // This runs on every render — including every pointermove while drawing
+    // or dragging. The grid only depends on canvas size + spacing, so return
+    // the same template array until one of those changes; Lit then sees
+    // identical items and skips diffing the (potentially hundreds of) lines.
+    const key = `${width}x${height}x${g}`;
+    if (this._gridCache?.key === key) return this._gridCache.lines;
+    const lines: TemplateResult[] = [];
     for (let x = 0; x <= width; x += g)
       lines.push(svg`<line x1=${x} y1="0" x2=${x} y2=${height} class="grid" />`);
     for (let y = 0; y <= height; y += g)
       lines.push(svg`<line x1="0" y1=${y} x2=${width} y2=${y} class="grid" />`);
+    this._gridCache = { key, lines };
     return lines;
   }
 
@@ -1185,27 +1320,20 @@ export class FloorplanCardEditor extends LitElement {
         <span class="ctx-hint">Click on a wall to drop a ${t}; it snaps onto the wall.</span>
       `;
     } else {
-      // Selection actions only — the full per-element editor renders BELOW the
-      // canvas in its own area (so the context bar's height stays stable as
-      // selections change, and the canvas doesn't jump up and down).
+      // Tool hints only — the per-element editor AND its actions (duplicate /
+      // delete) live in the Element section below the canvas, so the bar's
+      // height stays stable and the selection has a single home.
       label = "Select";
       const n = this._selection.length;
-      if (n === 0) {
-        body = html`<span class="ctx-hint"
-          >Click an element to select it, or drag a box to select several.</span
-        >`;
-      } else {
-        body = html`
-          <span class="ctx-count">${n} selected</span>
-          <button title="Duplicate the selection" @click=${this._duplicate}>⧉ duplicate</button>
-          <button class="danger" title="Delete the selection" @click=${this._deleteSelected}>
-            🗑 delete
-          </button>
-          ${n > 1
-            ? html`<span class="ctx-hint">Edit elements one at a time.</span>`
-            : nothing}
-        `;
-      }
+      body =
+        n === 0
+          ? html`<span class="ctx-hint"
+              >Click an element to select it, or drag a box to select several.</span
+            >`
+          : html`
+              <span class="ctx-count">${n} selected</span>
+              <span class="ctx-hint">Properties and actions are in the Element section below.</span>
+            `;
     }
 
     return html`
@@ -1283,8 +1411,24 @@ export class FloorplanCardEditor extends LitElement {
     const c = this._config;
     const floor = this._floor();
     const floors = c.floors ?? [];
+    const floorEmpty =
+      !floor.walls.length &&
+      !floor.openings.length &&
+      !floor.items.length &&
+      !floor.texts.length &&
+      !floor.furniture.length &&
+      !(floor.trackers ?? []).length;
     return html`
       <div class="editor">
+        ${this._floorMenuOpen || this._addMenuOpen
+          ? html`<div
+              class="pop-backdrop"
+              @click=${() => {
+                this._floorMenuOpen = false;
+                this._addMenuOpen = false;
+              }}
+            ></div>`
+          : nothing}
         <div class="toolbar">
           <!-- Tools — modes; exactly one is active at a time -->
           <div class="seg" role="group" aria-label="Tool">
@@ -1293,52 +1437,51 @@ export class FloorplanCardEditor extends LitElement {
                 <button
                   class=${this._tool === t ? "active" : ""}
                   aria-pressed=${this._tool === t}
+                  title=${TOOL_META[t].label}
                   @click=${() => {
                     this._tool = t;
                     this._draft = null;
                     this._draftTracker = null;
                   }}
                 >
-                  ${t}
+                  <ha-icon icon=${TOOL_META[t].icon}></ha-icon>${TOOL_META[t].label}
                 </button>`
             )}
           </div>
 
           <span class="divider"></span>
 
-          <!-- Insert — one-shot: drops a new element on the active floor -->
-          <div class="group" aria-label="Insert">
-            <button @click=${() => this._addItem("generic")}>+ device</button>
-            <button @click=${this._addText}>+ text</button>
-            <select
-              class="furn-add"
-              @change=${(e: Event) => {
-                const v = (e.target as HTMLSelectElement).value as FurnitureType | "";
-                if (v) this._addFurniture(v);
-                (e.target as HTMLSelectElement).value = "";
+          <!-- Insert — one popover for everything droppable on the floor -->
+          <span class="pop-wrap">
+            <button
+              aria-haspopup="true"
+              aria-expanded=${this._addMenuOpen}
+              @click=${() => {
+                this._addMenuOpen = !this._addMenuOpen;
+                this._floorMenuOpen = false;
               }}
             >
-              <option value="">+ furniture…</option>
-              ${FURNITURE_TYPES.map((t) => html`<option value=${t}>${FURNITURE_LABELS[t]}</option>`)}
-            </select>
-          </div>
+              + Add
+            </button>
+            ${this._addMenuOpen ? this._renderAddMenu() : nothing}
+          </span>
 
           <span class="spacer"></span>
 
           <!-- History -->
           <div class="group">
-            <button aria-label="Undo" title="Undo" ?disabled=${!this._history.length} @click=${this._undo}>
-              ↶
+            <button aria-label="Undo" title="Undo (Ctrl/Cmd+Z)" ?disabled=${!this._history.length} @click=${this._undo}>
+              <ha-icon icon="mdi:undo"></ha-icon>
             </button>
-            <button aria-label="Redo" title="Redo" ?disabled=${!this._future.length} @click=${this._redo}>
-              ↷
+            <button aria-label="Redo" title="Redo (Ctrl/Cmd+Shift+Z)" ?disabled=${!this._future.length} @click=${this._redo}>
+              <ha-icon icon="mdi:redo"></ha-icon>
             </button>
           </div>
 
           <span class="divider"></span>
 
-          <!-- Floor -->
-          <span class="floors">
+          <!-- Floor — switch + add inline; rename/delete behind the gear -->
+          <span class="floors pop-wrap">
             <label>floor</label>
             <select @change=${(e: Event) => this._switchFloor((e.target as HTMLSelectElement).value)}>
               ${floors.map(
@@ -1346,47 +1489,50 @@ export class FloorplanCardEditor extends LitElement {
                   html`<option value=${f.id} ?selected=${f.id === this._activeFloorId}>${f.name}</option>`
               )}
             </select>
-            <input
-              class="floor-name"
-              type="text"
-              title="Rename floor"
-              .value=${floor?.name ?? ""}
-              @change=${(e: Event) =>
-                this._renameFloor(this._activeFloorId, (e.target as HTMLInputElement).value)}
-            />
-            <button title="Add a floor (copies the current walls)" @click=${this._addFloor}>+ floor</button>
+            <button title="Add a floor (copies the current walls)" @click=${this._addFloor}>+</button>
             <button
-              class="danger"
-              title="Delete the current floor"
-              ?disabled=${floors.length <= 1}
-              @click=${this._deleteFloor}
-            >
-              − floor
-            </button>
-          </span>
-
-          <span class="divider"></span>
-
-          <!-- Zoom -->
-          <span class="zoom">
-            <label>zoom</label>
-            <input
-              type="range"
-              min="0.5"
-              max="3"
-              step="0.1"
-              .value=${String(this._zoom)}
-              @input=${(e: Event) => {
-                this._zoom = Number((e.target as HTMLInputElement).value);
+              aria-label="Floor settings"
+              title="Rename or delete this floor"
+              aria-haspopup="true"
+              aria-expanded=${this._floorMenuOpen}
+              @click=${() => {
+                this._floorMenuOpen = !this._floorMenuOpen;
+                this._addMenuOpen = false;
               }}
-            />
-            <span class="zoom-val">${Math.round(this._zoom * 100)}%</span>
+            >
+              <ha-icon icon="mdi:cog-outline"></ha-icon>
+            </button>
+            ${this._floorMenuOpen
+              ? html`<div class="pop">
+                  <div class="pop-row">
+                    <label>Rename</label>
+                    <input
+                      class="floor-name"
+                      type="text"
+                      .value=${floor?.name ?? ""}
+                      @change=${(e: Event) =>
+                        this._renameFloor(this._activeFloorId, (e.target as HTMLInputElement).value)}
+                    />
+                  </div>
+                  <button
+                    class="danger pop-action"
+                    ?disabled=${floors.length <= 1}
+                    @click=${() => {
+                      this._deleteFloor();
+                      this._floorMenuOpen = false;
+                    }}
+                  >
+                    <ha-icon icon="mdi:delete-outline"></ha-icon> Delete this floor
+                  </button>
+                </div>`
+              : nothing}
           </span>
         </div>
 
         ${this._renderContextBar()}
 
-        <div class="canvas-wrap">
+        <div class="canvas-outer">
+        <div class="canvas-wrap" @wheel=${this._onCanvasWheel}>
           <div class="stage" style="aspect-ratio: ${c.width} / ${c.height}; width:${this._zoom * 100}%;">
             <svg
               viewBox="0 0 ${c.width} ${c.height}"
@@ -1447,9 +1593,85 @@ export class FloorplanCardEditor extends LitElement {
             </div>
           </div>
         </div>
+        ${floorEmpty && !this._draft && !this._draftTracker
+          ? html`<div class="empty-hint">
+              <div>
+                <b>Draw your first room:</b> pick the <b>Wall</b> tool and drag on the canvas.<br />
+                Then drop doors, windows and devices onto it.
+              </div>
+            </div>`
+          : nothing}
+        <div class="zoom-overlay">
+          <button aria-label="Zoom out" title="Zoom out" @click=${() => this._setZoom(this._zoom - 0.25)}>
+            <ha-icon icon="mdi:minus"></ha-icon>
+          </button>
+          <button class="zoom-val-btn" title="Reset zoom to 100%" @click=${() => this._setZoom(1)}>
+            ${Math.round(this._zoom * 100)}%
+          </button>
+          <button aria-label="Zoom in" title="Zoom in" @click=${() => this._setZoom(this._zoom + 0.25)}>
+            <ha-icon icon="mdi:plus"></ha-icon>
+          </button>
+          <button aria-label="Fit to view" title="Fit to view" @click=${this._fitView}>
+            <ha-icon icon="mdi:fit-to-screen-outline"></ha-icon>
+          </button>
+        </div>
+        </div>
 
         ${this._renderElementEdit()}
         ${this._renderPanel()}
+      </div>
+    `;
+  }
+
+  /** The "+ Add" popover: device, text, then every furniture type as its real glyph. */
+  private _renderAddMenu(): TemplateResult {
+    const close = () => {
+      this._addMenuOpen = false;
+    };
+    return html`
+      <div class="pop left add-pop">
+        <button
+          class="add-entry"
+          @click=${() => {
+            this._addItem("generic");
+            close();
+          }}
+        >
+          <ha-icon icon="mdi:lightbulb-outline"></ha-icon> Device
+        </button>
+        <button
+          class="add-entry"
+          @click=${() => {
+            this._addText();
+            close();
+          }}
+        >
+          <ha-icon icon="mdi:format-text"></ha-icon> Text
+        </button>
+        <div class="add-furn-grid">
+          ${FURNITURE_TYPES.map((t) => {
+            const size = FURNITURE_DEFAULT_SIZE[t];
+            // Glyphs are drawn centered at the origin; pad the viewBox a bit
+            // (tv draws its stand below the box, plants overflow slightly).
+            const pad = Math.max(size.w, size.h) * 0.25 + 6;
+            const vb = `${-size.w / 2 - pad} ${-size.h / 2 - pad} ${size.w + pad * 2} ${size.h + pad * 2}`;
+            return html`
+              <button
+                class="furn-cell"
+                title=${FURNITURE_LABELS[t]}
+                @click=${() => {
+                  this._addFurniture(t);
+                  close();
+                }}
+              >
+                <svg viewBox=${vb}>
+                  ${renderFurniture({ id: "preview", type: t, x: 0, y: 0, w: size.w, h: size.h })}
+                </svg>
+                <span>${FURNITURE_LABELS[t]}</span>
+              </button>
+            `;
+          })}
+        </div>
       </div>
     `;
   }
@@ -1462,21 +1684,37 @@ export class FloorplanCardEditor extends LitElement {
    */
   private _renderElementEdit(): TemplateResult {
     const n = this._selection.length;
-    let body: TemplateResult;
-    if (n === 0) {
-      body = html`<p class="hint">Select an element on the canvas to edit its properties here.</p>`;
-    } else if (n > 1) {
-      body = html`<p class="hint">
-        <b>${n} elements selected.</b> Edit them one at a time, or use the
-        Duplicate/Delete buttons in the context bar above.
-      </p>`;
-    } else {
-      body = this._renderSelectionEditor();
+    const sel = this._primary();
+    if (n === 0 || !sel) {
+      return html`
+        <section class="edit-area">
+          <h3 class="section-title">Element</h3>
+          <p class="hint">Select an element on the canvas to edit its properties here.</p>
+        </section>
+      `;
     }
+    // Header names the selection and carries its actions, so everything about
+    // the selected element lives in one place (the context bar stays tool-only).
+    const summary = n > 1 ? `${n} elements selected` : this._selectionSummary(sel);
+    const icon = n > 1 ? "mdi:select-group" : SEL_KIND_ICON[sel.kind];
     return html`
       <section class="edit-area">
-        <h3 class="section-title">Element</h3>
-        ${body}
+        <div class="edit-head">
+          <ha-icon icon=${icon}></ha-icon>
+          <span class="edit-title">${summary}</span>
+          <span class="head-spacer"></span>
+          <button aria-label="Duplicate" title="Duplicate (Ctrl/Cmd+D)" @click=${this._duplicate}>
+            <ha-icon icon="mdi:content-duplicate"></ha-icon>
+          </button>
+          <button class="danger" aria-label="Delete" title="Delete (Del)" @click=${this._deleteSelected}>
+            <ha-icon icon="mdi:delete-outline"></ha-icon>
+          </button>
+        </div>
+        ${n > 1
+          ? html`<p class="hint">
+              Edit elements one at a time. Drag any selected element to move the whole group.
+            </p>`
+          : html`<div class="rows">${this._renderSelectionEditor()}</div>`}
       </section>
     `;
   }
@@ -1633,9 +1871,33 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _renderPanel(): TemplateResult {
+    // Collapsed by default — page-level settings are touched rarely, and
+    // collapsing them keeps the Element editor close to the canvas.
     return html`
       <section class="panel">
-        <h3 class="section-title">Project</h3>
+        <button
+          class="section-toggle"
+          aria-expanded=${this._projectOpen}
+          @click=${() => {
+            this._projectOpen = !this._projectOpen;
+          }}
+        >
+          <ha-icon icon=${this._projectOpen ? "mdi:chevron-down" : "mdi:chevron-right"}></ha-icon>
+          <span class="section-title-inline">Project</span>
+          ${this._projectOpen
+            ? nothing
+            : html`<span class="section-summary"
+                >${this._config.title || "Untitled"} · ${this._config.width}×${this._config.height}</span
+              >`}
+        </button>
+        ${this._projectOpen ? this._renderPanelBody() : nothing}
+      </section>
+    `;
+  }
+
+  private _renderPanelBody(): TemplateResult {
+    return html`
+      <div class="rows panel-body">
         <div class="row">
           <label>Title</label>
           <input
@@ -1666,7 +1928,7 @@ export class FloorplanCardEditor extends LitElement {
               })}
           />
         </div>
-        <div class="row">
+        <div class="row wide">
           <label>Grid size</label>
           <input
             type="number"
@@ -1695,7 +1957,7 @@ export class FloorplanCardEditor extends LitElement {
               this._patchConfig({ background: (e.target as HTMLInputElement).value || undefined })}
           />
         </div>
-        <div class="row">
+        <div class="row wide">
           <label>Bg image</label>
           <input
             type="text"
@@ -1721,7 +1983,42 @@ export class FloorplanCardEditor extends LitElement {
               />
             </div>`
           : nothing}
-      </section>
+      </div>
+    `;
+  }
+
+  /**
+   * Shared "Angle" row (slider + number box) used by every rotatable element.
+   * Centralizes the wrap-to-0..360 math and guards the number box against a
+   * cleared field — `Number("")` is 0 but `Number("abc")`/partial input is
+   * NaN, which previously got stored and broke the element's transform.
+   */
+  private _renderAngleRow(value: number, apply: (angle: number) => void): TemplateResult {
+    const current = Math.round(value);
+    return html`
+      <div class="row">
+        <label>Angle</label>
+        <input
+          type="range"
+          min="0"
+          max="360"
+          .value=${String(value)}
+          @input=${(e: Event) => apply(Number((e.target as HTMLInputElement).value))}
+        />
+        <input
+          class="num"
+          type="number"
+          min="0"
+          max="360"
+          .value=${String(current)}
+          @change=${(e: Event) => {
+            const input = e.target as HTMLInputElement;
+            const n = Number(input.value);
+            if (input.value !== "" && Number.isFinite(n)) apply(((n % 360) + 360) % 360);
+            else input.value = String(current);
+          }}
+        />
+      </div>
     `;
   }
 
@@ -1757,12 +2054,19 @@ export class FloorplanCardEditor extends LitElement {
           <label>Length</label>
           <input
             type="number"
+            min="1"
             .value=${String(o.length)}
-            @change=${(e: Event) =>
-              this._updateOpening(o.id, { length: Number((e.target as HTMLInputElement).value) })}
+            @change=${(e: Event) => {
+              const input = e.target as HTMLInputElement;
+              const n = Number(input.value);
+              // A cleared / invalid field would store 0 or NaN — an invisible
+              // opening that's impossible to click again. Keep the old length.
+              if (input.value !== "" && n >= 1) this._updateOpening(o.id, { length: n });
+              else input.value = String(o.length);
+            }}
           />
         </div>
-        <div class="row">
+        <div class="row wide">
           <label>Sensor</label>
           <ha-entity-picker
             .hass=${this.hass}
@@ -1804,29 +2108,7 @@ export class FloorplanCardEditor extends LitElement {
                 />
               </div>`
           : nothing}
-        <div class="row">
-          <label>Angle</label>
-          <input
-            type="range"
-            min="0"
-            max="360"
-            .value=${String(o.angle)}
-            @input=${(e: Event) =>
-              this._updateOpening(o.id, { angle: Number((e.target as HTMLInputElement).value) })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="0"
-            max="360"
-            step="1"
-            .value=${String(Math.round(o.angle))}
-            @change=${(e: Event) =>
-              this._updateOpening(o.id, {
-                angle: ((Number((e.target as HTMLInputElement).value) % 360) + 360) % 360,
-              })}
-          />
-        </div>
+        ${this._renderAngleRow(o.angle, (angle) => this._updateOpening(o.id, { angle }))}
       `;
     }
 
@@ -1834,7 +2116,7 @@ export class FloorplanCardEditor extends LitElement {
       const it = this._floor().items.find((x) => x.id === sel.id);
       if (!it) return html`${nothing}`;
       return html`
-        <div class="row">
+        <div class="row wide">
           <label>Entity</label>
           <ha-entity-picker
             .hass=${this.hass}
@@ -1846,7 +2128,7 @@ export class FloorplanCardEditor extends LitElement {
             }}
           ></ha-entity-picker>
         </div>
-        <div class="row">
+        <div class="row wide">
           <label>2nd entity</label>
           <ha-entity-picker
             .hass=${this.hass}
@@ -1858,7 +2140,7 @@ export class FloorplanCardEditor extends LitElement {
               })}
           ></ha-entity-picker>
         </div>
-        <div class="row">
+        <div class="row wide">
           <label>Icon</label>
           ${customElements.get("ha-icon-picker")
             ? html`<ha-icon-picker
@@ -1911,28 +2193,7 @@ export class FloorplanCardEditor extends LitElement {
               })}
           />
         </div>
-        <div class="row">
-          <label>Angle</label>
-          <input
-            type="range"
-            min="0"
-            max="360"
-            .value=${String(it.angle ?? 0)}
-            @input=${(e: Event) =>
-              this._updateItem(it.id, { angle: Number((e.target as HTMLInputElement).value) })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="0"
-            max="360"
-            .value=${String(Math.round(it.angle ?? 0))}
-            @change=${(e: Event) =>
-              this._updateItem(it.id, {
-                angle: ((Number((e.target as HTMLInputElement).value) % 360) + 360) % 360,
-              })}
-          />
-        </div>
+        ${this._renderAngleRow(it.angle ?? 0, (angle) => this._updateItem(it.id, { angle }))}
         <div class="row">
           <label>Display</label>
           <select
@@ -2067,28 +2328,7 @@ export class FloorplanCardEditor extends LitElement {
               this._updateText(t.id, { color: (e.target as HTMLInputElement).value || undefined })}
           />
         </div>
-        <div class="row">
-          <label>Angle</label>
-          <input
-            type="range"
-            min="0"
-            max="360"
-            .value=${String(t.angle ?? 0)}
-            @input=${(e: Event) =>
-              this._updateText(t.id, { angle: Number((e.target as HTMLInputElement).value) })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="0"
-            max="360"
-            .value=${String(Math.round(t.angle ?? 0))}
-            @change=${(e: Event) =>
-              this._updateText(t.id, {
-                angle: ((Number((e.target as HTMLInputElement).value) % 360) + 360) % 360,
-              })}
-          />
-        </div>
+        ${this._renderAngleRow(t.angle ?? 0, (angle) => this._updateText(t.id, { angle }))}
       `;
     }
 
@@ -2127,28 +2367,7 @@ export class FloorplanCardEditor extends LitElement {
               this._updateFurniture(f.id, { h: Number((e.target as HTMLInputElement).value) || f.h })}
           />
         </div>
-        <div class="row">
-          <label>Angle</label>
-          <input
-            type="range"
-            min="0"
-            max="360"
-            .value=${String(f.angle ?? 0)}
-            @input=${(e: Event) =>
-              this._updateFurniture(f.id, { angle: Number((e.target as HTMLInputElement).value) })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="0"
-            max="360"
-            .value=${String(Math.round(f.angle ?? 0))}
-            @change=${(e: Event) =>
-              this._updateFurniture(f.id, {
-                angle: ((Number((e.target as HTMLInputElement).value) % 360) + 360) % 360,
-              })}
-          />
-        </div>
+        ${this._renderAngleRow(f.angle ?? 0, (angle) => this._updateFurniture(f.id, { angle }))}
         <div class="row">
           <label>Color</label>
           <input
@@ -2216,28 +2435,7 @@ export class FloorplanCardEditor extends LitElement {
               this._updateTracker(tr.id, { y: Number((e.target as HTMLInputElement).value) })}
           />
         </div>
-        <div class="row">
-          <label>Angle</label>
-          <input
-            type="range"
-            min="0"
-            max="360"
-            .value=${String(tr.angle ?? 0)}
-            @input=${(e: Event) =>
-              this._updateTracker(tr.id, { angle: Number((e.target as HTMLInputElement).value) })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="0"
-            max="360"
-            .value=${String(Math.round(tr.angle ?? 0))}
-            @change=${(e: Event) =>
-              this._updateTracker(tr.id, {
-                angle: ((Number((e.target as HTMLInputElement).value) % 360) + 360) % 360,
-              })}
-          />
-        </div>
+        ${this._renderAngleRow(tr.angle ?? 0, (angle) => this._updateTracker(tr.id, { angle }))}
         <div class="row">
           <label>Color</label>
           <input
@@ -2285,11 +2483,71 @@ export class FloorplanCardEditor extends LitElement {
       `;
     }
 
-    // sel.kind === "wall" (or unknown) — no inline editor today; the user can
-    // drag the wall or its endpoint handles directly on the canvas.
-    return html`<span class="ctx-hint"
-      >Drag the line to move it, or the round handles to move an endpoint.</span
-    >`;
+    if (sel.kind === "wall") {
+      const w = this._floor().walls.find((x) => x.id === sel.id);
+      if (!w) return html`${nothing}`;
+      const length = Math.round(Math.hypot(w.x2 - w.x1, w.y2 - w.y1));
+      // One coordinate input; a cleared / invalid field restores the old value.
+      const coord = (value: number, apply: (n: number) => void) => html`
+        <input
+          class="num"
+          type="number"
+          .value=${String(Math.round(value))}
+          @change=${(e: Event) => {
+            const input = e.target as HTMLInputElement;
+            const n = Number(input.value);
+            if (input.value !== "" && Number.isFinite(n)) apply(n);
+            else input.value = String(Math.round(value));
+          }}
+        />
+      `;
+      return html`
+        <div class="row">
+          <label>Start X / Y</label>
+          ${coord(w.x1, (x1) => this._updateWall(w.id, { x1 }))}
+          ${coord(w.y1, (y1) => this._updateWall(w.id, { y1 }))}
+        </div>
+        <div class="row">
+          <label>End X / Y</label>
+          ${coord(w.x2, (x2) => this._updateWall(w.id, { x2 }))}
+          ${coord(w.y2, (y2) => this._updateWall(w.id, { y2 }))}
+        </div>
+        <div class="row">
+          <label>Length</label>
+          <input
+            class="num"
+            type="number"
+            min="1"
+            .value=${String(length)}
+            @change=${(e: Event) => {
+              const input = e.target as HTMLInputElement;
+              const n = Number(input.value);
+              if (input.value === "" || !(n >= 1)) {
+                input.value = String(length);
+                return;
+              }
+              // Resize from the start point along the wall's current
+              // direction (a zero-length wall extends horizontally).
+              const dx = w.x2 - w.x1;
+              const dy = w.y2 - w.y1;
+              const cur = Math.hypot(dx, dy);
+              const ux = cur > 0 ? dx / cur : 1;
+              const uy = cur > 0 ? dy / cur : 0;
+              this._updateWall(w.id, {
+                x2: Math.round(w.x1 + ux * n),
+                y2: Math.round(w.y1 + uy * n),
+              });
+            }}
+          />
+          <span class="hint">Resizes from the start point, keeping the direction.</span>
+        </div>
+        <p class="hint">
+          Or drag the line on the canvas to move it, and the round handles to move an endpoint.
+        </p>
+      `;
+    }
+
+    return html`${nothing}`;
   }
 
   /**
@@ -2304,7 +2562,7 @@ export class FloorplanCardEditor extends LitElement {
   ): TemplateResult {
     const s = tr[axis];
     return html`
-      <div class="row">
+      <div class="row wide">
         <label>${label}</label>
         <ha-entity-picker
           .hass=${this.hass}
@@ -2355,7 +2613,7 @@ export class FloorplanCardEditor extends LitElement {
               invert
             </label>
           </div>
-          <div class="row">
+          <div class="row wide">
             <label>${label} presence</label>
             <ha-entity-picker
               .hass=${this.hass}
@@ -2628,30 +2886,161 @@ export class FloorplanCardEditor extends LitElement {
       stroke-dasharray: 6 4;
       pointer-events: none;
     }
-    .zoom {
-      display: flex;
+    /* Toolbar icons sit inline with their labels; smaller than content icons. */
+    .toolbar ha-icon {
+      --mdc-icon-size: 16px;
+    }
+    .seg button {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    /* === Popovers (floor gear, + Add). The backdrop is a fixed transparent
+       layer below the popover that closes it on any outside click. === */
+    .pop-wrap {
+      position: relative;
+      display: inline-flex;
       align-items: center;
       gap: 4px;
     }
-    .zoom label {
+    .pop {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      z-index: 20;
+      min-width: 220px;
+      padding: 8px;
+      background: var(--card-background-color, #fff);
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    }
+    .pop.left {
+      left: 0;
+      right: auto;
+    }
+    .pop-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 19;
+    }
+    .pop-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .pop-row label {
+      flex: 0 0 60px;
       font-size: 12px;
       color: var(--secondary-text-color);
     }
-    .zoom input[type="range"] {
-      width: 90px;
-    }
-    .zoom-val {
-      font-size: 12px;
-      color: var(--secondary-text-color);
-      min-width: 34px;
-    }
-    .furn-add {
+    .pop-row input {
+      flex: 1;
+      min-width: 0;
+      padding: 4px 6px;
+      border-radius: 4px;
       border: 1px solid var(--divider-color, #ccc);
       background: var(--card-background-color, #fff);
       color: var(--primary-text-color);
-      border-radius: 6px;
+    }
+    .pop-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      justify-content: center;
+      font-size: 13px;
+    }
+    .add-pop {
+      min-width: 300px;
+    }
+    .add-entry {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      border: none;
+      background: none;
       padding: 6px 8px;
-      cursor: pointer;
+      border-radius: 6px;
+      text-align: left;
+      font-size: 13px;
+    }
+    .add-entry:hover {
+      background: var(--secondary-background-color, #f5f5f5);
+    }
+    .add-furn-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--divider-color, #eee);
+    }
+    .furn-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      border: none;
+      background: none;
+      padding: 6px 2px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: var(--secondary-text-color);
+      text-transform: none;
+    }
+    .furn-cell:hover {
+      background: var(--secondary-background-color, #f5f5f5);
+    }
+    .furn-cell svg {
+      position: static;
+      width: 38px;
+      height: 30px;
+      display: block;
+    }
+    /* === Canvas chrome: the zoom overlay and first-run hint live on a
+       relative wrapper OUTSIDE the scroll container so they don't scroll
+       away with the stage. === */
+    .canvas-outer {
+      position: relative;
+    }
+    .zoom-overlay {
+      position: absolute;
+      right: 26px;
+      bottom: 12px;
+      z-index: 2;
+      display: flex;
+      gap: 4px;
+    }
+    .zoom-overlay button {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 7px;
+      font-size: 12px;
+      background: var(--card-background-color, #fff);
+    }
+    .zoom-overlay ha-icon {
+      --mdc-icon-size: 15px;
+    }
+    .zoom-val-btn {
+      min-width: 46px;
+      justify-content: center;
+    }
+    .empty-hint {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 16px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--secondary-text-color);
+      /* Never block the first wall being drawn straight through the hint. */
+      pointer-events: none;
     }
     .floors {
       display: flex;
@@ -2921,6 +3310,79 @@ export class FloorplanCardEditor extends LitElement {
       text-transform: uppercase;
       letter-spacing: 0.06em;
       color: var(--secondary-text-color);
+    }
+    /* Element header: kind icon + summary + the selection's actions. */
+    .edit-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .edit-head ha-icon {
+      --mdc-icon-size: 18px;
+      color: var(--secondary-text-color);
+    }
+    .edit-head .edit-title {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .edit-head .head-spacer {
+      flex: 1;
+    }
+    .edit-head button {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+    }
+    .edit-head button ha-icon {
+      --mdc-icon-size: 16px;
+      color: inherit;
+    }
+    /* Collapsible Project section header. */
+    .section-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      border: none;
+      background: none;
+      padding: 2px 0;
+      margin: 0;
+      cursor: pointer;
+      color: var(--secondary-text-color);
+      text-align: left;
+    }
+    .section-toggle ha-icon {
+      --mdc-icon-size: 16px;
+    }
+    .section-toggle .section-title-inline {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .section-toggle .section-summary {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      opacity: 0.8;
+      text-transform: none;
+    }
+    .panel-body {
+      margin-top: 10px;
+    }
+    /* Field rows flow into responsive columns so the below-canvas sections
+       stay short at HA-dialog width (~700px fits two columns). Rows that
+       need the full width (entity pickers, long hints) opt out via .wide. */
+    .rows {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      column-gap: 16px;
+      align-items: start;
+    }
+    .rows .row.wide,
+    .rows > .hint,
+    .rows > p {
+      grid-column: 1 / -1;
     }
     .row {
       display: flex;
