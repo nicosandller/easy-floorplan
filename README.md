@@ -87,29 +87,37 @@ you're doing, the **canvas**, and two sections below — **Element** (per-elemen
 for the current selection) and **Project** (page-level settings like canvas size, grid,
 background):
 
-- **select** — the default tool. Click an element to select it; Shift/Ctrl-click or drag
+- **Select** — the default tool. Click an element to select it; Shift/Ctrl-click or drag
   a box to select several at once. Arrow keys nudge the selection (Shift+arrow jumps a
-  full grid cell), and **Ctrl/Cmd+C/V/D** copy / paste / duplicate. With a selection,
-  the context row offers **duplicate** and **delete**, and the **Element** section below
-  the canvas exposes the full property editor for whatever you have selected.
-- **wall** — drag to draw. Endpoints snap to nearby corners; start a new wall on an
+  full grid cell); **Ctrl/Cmd+C/V/D** copy / paste / duplicate; **Ctrl/Cmd+Z** undoes
+  (**Shift+Z** or **Ctrl+Y** redoes); **Escape** cancels an in-progress draw or clears
+  the selection. The **Element** section below the canvas names the selection
+  (e.g. *Door · 60 units*) and carries its **duplicate** / **delete** buttons along
+  with the full property editor.
+- **Wall** — drag to draw. Endpoints snap to nearby corners; start a new wall on an
   existing corner to continue the perimeter. The context row's **straighten** toggle
   keeps walls horizontal/vertical and corner-snapped (turn it off to draw freely), and
   the **Snap** segmented control (`On` / `Off` / `Custom`) governs snapping for *all*
   tools — `Custom` lets you snap to a percentage of the grid (e.g. 50% = half a cell).
-- **door / window** — click to drop; it snaps onto the nearest wall. The context row
+- **Door / Window** — click to drop; it snaps onto the nearest wall. The context row
   shows a **Length** field for the *next* opening you place, so you can size doors and
   windows before placing them. Assign a sensor after placement (in the **Element**
   section) to animate the opening open/closed — see **Doors & windows**.
-- **tracker** — drag to draw a rectangular tracked area, then bind one or two distance
+- **Tracker** — drag to draw a rectangular tracked area, then bind one or two distance
   sensors (X axis and/or Y axis) in the **Element** section to animate a live position
   marker inside the zone — see **Tracker**. The zone outline is visible only in the
   editor; the live card shows just the marker.
-- **+ device / + text / + furniture…** — drop a new element; the **Element** section
-  below the canvas shows its full property editor so you can configure it right away.
-- **floor** — add, rename, switch and delete floors.
+- **+ Add** — one popover for everything droppable: device, text, and all furniture
+  types shown as their actual glyphs (pick a sofa by seeing a sofa). The new element is
+  selected immediately so the **Element** section is ready for configuring it.
+- **floor** — switch floors with the dropdown, add one with **+**; rename and delete
+  live behind the gear button.
 
-Undo/redo and a zoom slider live at the right of the tools row.
+Undo/redo buttons sit at the right of the tools row. Zoom controls live on the canvas
+itself (bottom-right): **−** / **+** step, click the percentage to reset, the fit button
+snaps back to 100%, and **Ctrl/Cmd+scroll** zooms from the keyboard/trackpad. The
+**Project** section (canvas size, grid, background) is collapsed by default — click its
+header to expand.
 
 ## Elements
 

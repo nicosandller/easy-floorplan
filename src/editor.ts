@@ -91,6 +91,25 @@ type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker";
 type Sel = { kind: SelKind; id: string };
 type OverlaySel = { kind: "item" | "text"; id: string };
 
+/** Toolbar metadata per tool: mdi icon + label (icons make the modes scannable). */
+const TOOL_META: Record<Tool, { icon: string; label: string }> = {
+  select: { icon: "mdi:cursor-default", label: "Select" },
+  wall: { icon: "mdi:wall", label: "Wall" },
+  door: { icon: "mdi:door", label: "Door" },
+  window: { icon: "mdi:window-closed-variant", label: "Window" },
+  tracker: { icon: "mdi:crosshairs-gps", label: "Tracker" },
+};
+
+/** Icon shown in the Element header per selected element kind. */
+const SEL_KIND_ICON: Record<SelKind, string> = {
+  wall: "mdi:wall",
+  opening: "mdi:door",
+  item: "mdi:lightbulb-outline",
+  text: "mdi:format-text",
+  furniture: "mdi:sofa-outline",
+  tracker: "mdi:crosshairs-gps",
+};
+
 /** Snapshot of an element's position at drag start, for group translation. */
 type OrigPos =
   | { kind: "wall"; x1: number; y1: number; x2: number; y2: number }
@@ -153,8 +172,15 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _history: FloorplanCardConfig[] = [];
   @state() private _future: FloorplanCardConfig[] = [];
   @state() private _zoom = 1;
+  /** Floor gear popover (rename / delete floor) visibility. */
+  @state() private _floorMenuOpen = false;
+  /** "+ Add" popover (device / text / furniture glyphs) visibility. */
+  @state() private _addMenuOpen = false;
+  /** Project section expanded? Collapsed by default — page settings are touched rarely. */
+  @state() private _projectOpen = false;
 
   @query("svg") private _svg?: SVGSVGElement;
+  @query(".canvas-wrap") private _canvasWrap?: HTMLElement;
 
   private _drag: Drag | null = null;
   /** True when the active marquee should add to (rather than replace) the selection. */
@@ -488,9 +514,17 @@ export class FloorplanCardEditor extends LitElement {
       return;
     }
     if (ev.key === "Escape") {
-      // Cancel an in-progress draft / marquee first; otherwise clear the
-      // selection. Only swallow the key when it actually did something, so
-      // HA's dialog still closes on Escape when there's nothing to cancel.
+      // Close an open popover first, then cancel an in-progress draft /
+      // marquee, then clear the selection. Only swallow the key when it
+      // actually did something, so HA's dialog still closes on Escape when
+      // there's nothing to cancel.
+      if (this._floorMenuOpen || this._addMenuOpen) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this._floorMenuOpen = false;
+        this._addMenuOpen = false;
+        return;
+      }
       if (this._draft || this._draftTracker || this._marquee) {
         ev.preventDefault();
         ev.stopPropagation();
@@ -1148,6 +1182,61 @@ export class FloorplanCardEditor extends LitElement {
 
   // ---- rendering ----------------------------------------------------------
 
+  // ---- zoom ----------------------------------------------------------------
+
+  private _setZoom(z: number): void {
+    this._zoom = Math.min(3, Math.max(0.5, Math.round(z * 100) / 100));
+  }
+
+  /** Ctrl/Cmd + wheel zooms the canvas (also catches trackpad pinch); plain wheel scrolls. */
+  private _onCanvasWheel(ev: WheelEvent): void {
+    if (!ev.ctrlKey && !ev.metaKey) return;
+    ev.preventDefault();
+    this._setZoom(this._zoom - Math.sign(ev.deltaY) * 0.1);
+  }
+
+  /** Reset to 100% (where the stage fits the wrap width) and scroll home. */
+  private _fitView(): void {
+    this._setZoom(1);
+    this._canvasWrap?.scrollTo({ top: 0, left: 0 });
+  }
+
+  /** One-line description of the selected element for the Element header. */
+  private _selectionSummary(sel: Sel): string {
+    const f = this._floor();
+    switch (sel.kind) {
+      case "wall": {
+        const w = f.walls.find((x) => x.id === sel.id);
+        return w ? `Wall · ${Math.round(Math.hypot(w.x2 - w.x1, w.y2 - w.y1))} units` : "Wall";
+      }
+      case "opening": {
+        const o = f.openings.find((x) => x.id === sel.id);
+        if (!o) return "Opening";
+        return `${o.type === "door" ? "Door" : "Window"} · ${Math.round(o.length)} units`;
+      }
+      case "item": {
+        const it = f.items.find((x) => x.id === sel.id);
+        return it?.entity ? `Device · ${it.entity}` : "Device";
+      }
+      case "text": {
+        const t = f.texts.find((x) => x.id === sel.id);
+        const txt = t?.text ?? "";
+        if (!txt) return "Text";
+        return `Text · “${txt.length > 24 ? `${txt.slice(0, 24)}…` : txt}”`;
+      }
+      case "furniture": {
+        const fu = f.furniture.find((x) => x.id === sel.id);
+        if (!fu) return "Furniture";
+        const label = FURNITURE_LABELS[fu.type];
+        return `${label.charAt(0).toUpperCase()}${label.slice(1)} · ${Math.round(fu.w)}×${Math.round(fu.h)}`;
+      }
+      default: {
+        const tr = (f.trackers ?? []).find((x) => x.id === sel.id);
+        return tr ? `Tracker · ${Math.round(tr.w)}×${Math.round(tr.h)}` : "Tracker";
+      }
+    }
+  }
+
   /** Cached grid templates; rebuilding hundreds of lines on every render is wasteful. */
   private _gridCache: { key: string; lines: TemplateResult[] } | null = null;
 
@@ -1231,27 +1320,20 @@ export class FloorplanCardEditor extends LitElement {
         <span class="ctx-hint">Click on a wall to drop a ${t}; it snaps onto the wall.</span>
       `;
     } else {
-      // Selection actions only — the full per-element editor renders BELOW the
-      // canvas in its own area (so the context bar's height stays stable as
-      // selections change, and the canvas doesn't jump up and down).
+      // Tool hints only — the per-element editor AND its actions (duplicate /
+      // delete) live in the Element section below the canvas, so the bar's
+      // height stays stable and the selection has a single home.
       label = "Select";
       const n = this._selection.length;
-      if (n === 0) {
-        body = html`<span class="ctx-hint"
-          >Click an element to select it, or drag a box to select several.</span
-        >`;
-      } else {
-        body = html`
-          <span class="ctx-count">${n} selected</span>
-          <button title="Duplicate the selection" @click=${this._duplicate}>⧉ duplicate</button>
-          <button class="danger" title="Delete the selection" @click=${this._deleteSelected}>
-            🗑 delete
-          </button>
-          ${n > 1
-            ? html`<span class="ctx-hint">Edit elements one at a time.</span>`
-            : nothing}
-        `;
-      }
+      body =
+        n === 0
+          ? html`<span class="ctx-hint"
+              >Click an element to select it, or drag a box to select several.</span
+            >`
+          : html`
+              <span class="ctx-count">${n} selected</span>
+              <span class="ctx-hint">Properties and actions are in the Element section below.</span>
+            `;
     }
 
     return html`
@@ -1329,8 +1411,24 @@ export class FloorplanCardEditor extends LitElement {
     const c = this._config;
     const floor = this._floor();
     const floors = c.floors ?? [];
+    const floorEmpty =
+      !floor.walls.length &&
+      !floor.openings.length &&
+      !floor.items.length &&
+      !floor.texts.length &&
+      !floor.furniture.length &&
+      !(floor.trackers ?? []).length;
     return html`
       <div class="editor">
+        ${this._floorMenuOpen || this._addMenuOpen
+          ? html`<div
+              class="pop-backdrop"
+              @click=${() => {
+                this._floorMenuOpen = false;
+                this._addMenuOpen = false;
+              }}
+            ></div>`
+          : nothing}
         <div class="toolbar">
           <!-- Tools — modes; exactly one is active at a time -->
           <div class="seg" role="group" aria-label="Tool">
@@ -1339,52 +1437,51 @@ export class FloorplanCardEditor extends LitElement {
                 <button
                   class=${this._tool === t ? "active" : ""}
                   aria-pressed=${this._tool === t}
+                  title=${TOOL_META[t].label}
                   @click=${() => {
                     this._tool = t;
                     this._draft = null;
                     this._draftTracker = null;
                   }}
                 >
-                  ${t}
+                  <ha-icon icon=${TOOL_META[t].icon}></ha-icon>${TOOL_META[t].label}
                 </button>`
             )}
           </div>
 
           <span class="divider"></span>
 
-          <!-- Insert — one-shot: drops a new element on the active floor -->
-          <div class="group" aria-label="Insert">
-            <button @click=${() => this._addItem("generic")}>+ device</button>
-            <button @click=${this._addText}>+ text</button>
-            <select
-              class="furn-add"
-              @change=${(e: Event) => {
-                const v = (e.target as HTMLSelectElement).value as FurnitureType | "";
-                if (v) this._addFurniture(v);
-                (e.target as HTMLSelectElement).value = "";
+          <!-- Insert — one popover for everything droppable on the floor -->
+          <span class="pop-wrap">
+            <button
+              aria-haspopup="true"
+              aria-expanded=${this._addMenuOpen}
+              @click=${() => {
+                this._addMenuOpen = !this._addMenuOpen;
+                this._floorMenuOpen = false;
               }}
             >
-              <option value="">+ furniture…</option>
-              ${FURNITURE_TYPES.map((t) => html`<option value=${t}>${FURNITURE_LABELS[t]}</option>`)}
-            </select>
-          </div>
+              + Add
+            </button>
+            ${this._addMenuOpen ? this._renderAddMenu() : nothing}
+          </span>
 
           <span class="spacer"></span>
 
           <!-- History -->
           <div class="group">
-            <button aria-label="Undo" title="Undo" ?disabled=${!this._history.length} @click=${this._undo}>
-              ↶
+            <button aria-label="Undo" title="Undo (Ctrl/Cmd+Z)" ?disabled=${!this._history.length} @click=${this._undo}>
+              <ha-icon icon="mdi:undo"></ha-icon>
             </button>
-            <button aria-label="Redo" title="Redo" ?disabled=${!this._future.length} @click=${this._redo}>
-              ↷
+            <button aria-label="Redo" title="Redo (Ctrl/Cmd+Shift+Z)" ?disabled=${!this._future.length} @click=${this._redo}>
+              <ha-icon icon="mdi:redo"></ha-icon>
             </button>
           </div>
 
           <span class="divider"></span>
 
-          <!-- Floor -->
-          <span class="floors">
+          <!-- Floor — switch + add inline; rename/delete behind the gear -->
+          <span class="floors pop-wrap">
             <label>floor</label>
             <select @change=${(e: Event) => this._switchFloor((e.target as HTMLSelectElement).value)}>
               ${floors.map(
@@ -1392,47 +1489,50 @@ export class FloorplanCardEditor extends LitElement {
                   html`<option value=${f.id} ?selected=${f.id === this._activeFloorId}>${f.name}</option>`
               )}
             </select>
-            <input
-              class="floor-name"
-              type="text"
-              title="Rename floor"
-              .value=${floor?.name ?? ""}
-              @change=${(e: Event) =>
-                this._renameFloor(this._activeFloorId, (e.target as HTMLInputElement).value)}
-            />
-            <button title="Add a floor (copies the current walls)" @click=${this._addFloor}>+ floor</button>
+            <button title="Add a floor (copies the current walls)" @click=${this._addFloor}>+</button>
             <button
-              class="danger"
-              title="Delete the current floor"
-              ?disabled=${floors.length <= 1}
-              @click=${this._deleteFloor}
-            >
-              − floor
-            </button>
-          </span>
-
-          <span class="divider"></span>
-
-          <!-- Zoom -->
-          <span class="zoom">
-            <label>zoom</label>
-            <input
-              type="range"
-              min="0.5"
-              max="3"
-              step="0.1"
-              .value=${String(this._zoom)}
-              @input=${(e: Event) => {
-                this._zoom = Number((e.target as HTMLInputElement).value);
+              aria-label="Floor settings"
+              title="Rename or delete this floor"
+              aria-haspopup="true"
+              aria-expanded=${this._floorMenuOpen}
+              @click=${() => {
+                this._floorMenuOpen = !this._floorMenuOpen;
+                this._addMenuOpen = false;
               }}
-            />
-            <span class="zoom-val">${Math.round(this._zoom * 100)}%</span>
+            >
+              <ha-icon icon="mdi:cog-outline"></ha-icon>
+            </button>
+            ${this._floorMenuOpen
+              ? html`<div class="pop">
+                  <div class="pop-row">
+                    <label>Rename</label>
+                    <input
+                      class="floor-name"
+                      type="text"
+                      .value=${floor?.name ?? ""}
+                      @change=${(e: Event) =>
+                        this._renameFloor(this._activeFloorId, (e.target as HTMLInputElement).value)}
+                    />
+                  </div>
+                  <button
+                    class="danger pop-action"
+                    ?disabled=${floors.length <= 1}
+                    @click=${() => {
+                      this._deleteFloor();
+                      this._floorMenuOpen = false;
+                    }}
+                  >
+                    <ha-icon icon="mdi:delete-outline"></ha-icon> Delete this floor
+                  </button>
+                </div>`
+              : nothing}
           </span>
         </div>
 
         ${this._renderContextBar()}
 
-        <div class="canvas-wrap">
+        <div class="canvas-outer">
+        <div class="canvas-wrap" @wheel=${this._onCanvasWheel}>
           <div class="stage" style="aspect-ratio: ${c.width} / ${c.height}; width:${this._zoom * 100}%;">
             <svg
               viewBox="0 0 ${c.width} ${c.height}"
@@ -1493,9 +1593,85 @@ export class FloorplanCardEditor extends LitElement {
             </div>
           </div>
         </div>
+        ${floorEmpty && !this._draft && !this._draftTracker
+          ? html`<div class="empty-hint">
+              <div>
+                <b>Draw your first room:</b> pick the <b>Wall</b> tool and drag on the canvas.<br />
+                Then drop doors, windows and devices onto it.
+              </div>
+            </div>`
+          : nothing}
+        <div class="zoom-overlay">
+          <button aria-label="Zoom out" title="Zoom out" @click=${() => this._setZoom(this._zoom - 0.25)}>
+            <ha-icon icon="mdi:minus"></ha-icon>
+          </button>
+          <button class="zoom-val-btn" title="Reset zoom to 100%" @click=${() => this._setZoom(1)}>
+            ${Math.round(this._zoom * 100)}%
+          </button>
+          <button aria-label="Zoom in" title="Zoom in" @click=${() => this._setZoom(this._zoom + 0.25)}>
+            <ha-icon icon="mdi:plus"></ha-icon>
+          </button>
+          <button aria-label="Fit to view" title="Fit to view" @click=${this._fitView}>
+            <ha-icon icon="mdi:fit-to-screen-outline"></ha-icon>
+          </button>
+        </div>
+        </div>
 
         ${this._renderElementEdit()}
         ${this._renderPanel()}
+      </div>
+    `;
+  }
+
+  /** The "+ Add" popover: device, text, then every furniture type as its real glyph. */
+  private _renderAddMenu(): TemplateResult {
+    const close = () => {
+      this._addMenuOpen = false;
+    };
+    return html`
+      <div class="pop left add-pop">
+        <button
+          class="add-entry"
+          @click=${() => {
+            this._addItem("generic");
+            close();
+          }}
+        >
+          <ha-icon icon="mdi:lightbulb-outline"></ha-icon> Device
+        </button>
+        <button
+          class="add-entry"
+          @click=${() => {
+            this._addText();
+            close();
+          }}
+        >
+          <ha-icon icon="mdi:format-text"></ha-icon> Text
+        </button>
+        <div class="add-furn-grid">
+          ${FURNITURE_TYPES.map((t) => {
+            const size = FURNITURE_DEFAULT_SIZE[t];
+            // Glyphs are drawn centered at the origin; pad the viewBox a bit
+            // (tv draws its stand below the box, plants overflow slightly).
+            const pad = Math.max(size.w, size.h) * 0.25 + 6;
+            const vb = `${-size.w / 2 - pad} ${-size.h / 2 - pad} ${size.w + pad * 2} ${size.h + pad * 2}`;
+            return html`
+              <button
+                class="furn-cell"
+                title=${FURNITURE_LABELS[t]}
+                @click=${() => {
+                  this._addFurniture(t);
+                  close();
+                }}
+              >
+                <svg viewBox=${vb}>
+                  ${renderFurniture({ id: "preview", type: t, x: 0, y: 0, w: size.w, h: size.h })}
+                </svg>
+                <span>${FURNITURE_LABELS[t]}</span>
+              </button>
+            `;
+          })}
+        </div>
       </div>
     `;
   }
@@ -1508,21 +1684,37 @@ export class FloorplanCardEditor extends LitElement {
    */
   private _renderElementEdit(): TemplateResult {
     const n = this._selection.length;
-    let body: TemplateResult;
-    if (n === 0) {
-      body = html`<p class="hint">Select an element on the canvas to edit its properties here.</p>`;
-    } else if (n > 1) {
-      body = html`<p class="hint">
-        <b>${n} elements selected.</b> Edit them one at a time, or use the
-        Duplicate/Delete buttons in the context bar above.
-      </p>`;
-    } else {
-      body = this._renderSelectionEditor();
+    const sel = this._primary();
+    if (n === 0 || !sel) {
+      return html`
+        <section class="edit-area">
+          <h3 class="section-title">Element</h3>
+          <p class="hint">Select an element on the canvas to edit its properties here.</p>
+        </section>
+      `;
     }
+    // Header names the selection and carries its actions, so everything about
+    // the selected element lives in one place (the context bar stays tool-only).
+    const summary = n > 1 ? `${n} elements selected` : this._selectionSummary(sel);
+    const icon = n > 1 ? "mdi:select-group" : SEL_KIND_ICON[sel.kind];
     return html`
       <section class="edit-area">
-        <h3 class="section-title">Element</h3>
-        ${body}
+        <div class="edit-head">
+          <ha-icon icon=${icon}></ha-icon>
+          <span class="edit-title">${summary}</span>
+          <span class="head-spacer"></span>
+          <button aria-label="Duplicate" title="Duplicate (Ctrl/Cmd+D)" @click=${this._duplicate}>
+            <ha-icon icon="mdi:content-duplicate"></ha-icon>
+          </button>
+          <button class="danger" aria-label="Delete" title="Delete (Del)" @click=${this._deleteSelected}>
+            <ha-icon icon="mdi:delete-outline"></ha-icon>
+          </button>
+        </div>
+        ${n > 1
+          ? html`<p class="hint">
+              Edit elements one at a time. Drag any selected element to move the whole group.
+            </p>`
+          : html`<div class="rows">${this._renderSelectionEditor()}</div>`}
       </section>
     `;
   }
@@ -1679,9 +1871,33 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _renderPanel(): TemplateResult {
+    // Collapsed by default — page-level settings are touched rarely, and
+    // collapsing them keeps the Element editor close to the canvas.
     return html`
       <section class="panel">
-        <h3 class="section-title">Project</h3>
+        <button
+          class="section-toggle"
+          aria-expanded=${this._projectOpen}
+          @click=${() => {
+            this._projectOpen = !this._projectOpen;
+          }}
+        >
+          <ha-icon icon=${this._projectOpen ? "mdi:chevron-down" : "mdi:chevron-right"}></ha-icon>
+          <span class="section-title-inline">Project</span>
+          ${this._projectOpen
+            ? nothing
+            : html`<span class="section-summary"
+                >${this._config.title || "Untitled"} · ${this._config.width}×${this._config.height}</span
+              >`}
+        </button>
+        ${this._projectOpen ? this._renderPanelBody() : nothing}
+      </section>
+    `;
+  }
+
+  private _renderPanelBody(): TemplateResult {
+    return html`
+      <div class="rows panel-body">
         <div class="row">
           <label>Title</label>
           <input
@@ -1712,7 +1928,7 @@ export class FloorplanCardEditor extends LitElement {
               })}
           />
         </div>
-        <div class="row">
+        <div class="row wide">
           <label>Grid size</label>
           <input
             type="number"
@@ -1741,7 +1957,7 @@ export class FloorplanCardEditor extends LitElement {
               this._patchConfig({ background: (e.target as HTMLInputElement).value || undefined })}
           />
         </div>
-        <div class="row">
+        <div class="row wide">
           <label>Bg image</label>
           <input
             type="text"
@@ -1767,7 +1983,7 @@ export class FloorplanCardEditor extends LitElement {
               />
             </div>`
           : nothing}
-      </section>
+      </div>
     `;
   }
 
@@ -1850,7 +2066,7 @@ export class FloorplanCardEditor extends LitElement {
             }}
           />
         </div>
-        <div class="row">
+        <div class="row wide">
           <label>Sensor</label>
           <ha-entity-picker
             .hass=${this.hass}
@@ -1900,7 +2116,7 @@ export class FloorplanCardEditor extends LitElement {
       const it = this._floor().items.find((x) => x.id === sel.id);
       if (!it) return html`${nothing}`;
       return html`
-        <div class="row">
+        <div class="row wide">
           <label>Entity</label>
           <ha-entity-picker
             .hass=${this.hass}
@@ -1912,7 +2128,7 @@ export class FloorplanCardEditor extends LitElement {
             }}
           ></ha-entity-picker>
         </div>
-        <div class="row">
+        <div class="row wide">
           <label>2nd entity</label>
           <ha-entity-picker
             .hass=${this.hass}
@@ -1924,7 +2140,7 @@ export class FloorplanCardEditor extends LitElement {
               })}
           ></ha-entity-picker>
         </div>
-        <div class="row">
+        <div class="row wide">
           <label>Icon</label>
           ${customElements.get("ha-icon-picker")
             ? html`<ha-icon-picker
@@ -2346,7 +2562,7 @@ export class FloorplanCardEditor extends LitElement {
   ): TemplateResult {
     const s = tr[axis];
     return html`
-      <div class="row">
+      <div class="row wide">
         <label>${label}</label>
         <ha-entity-picker
           .hass=${this.hass}
@@ -2397,7 +2613,7 @@ export class FloorplanCardEditor extends LitElement {
               invert
             </label>
           </div>
-          <div class="row">
+          <div class="row wide">
             <label>${label} presence</label>
             <ha-entity-picker
               .hass=${this.hass}
@@ -2670,30 +2886,161 @@ export class FloorplanCardEditor extends LitElement {
       stroke-dasharray: 6 4;
       pointer-events: none;
     }
-    .zoom {
-      display: flex;
+    /* Toolbar icons sit inline with their labels; smaller than content icons. */
+    .toolbar ha-icon {
+      --mdc-icon-size: 16px;
+    }
+    .seg button {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+    /* === Popovers (floor gear, + Add). The backdrop is a fixed transparent
+       layer below the popover that closes it on any outside click. === */
+    .pop-wrap {
+      position: relative;
+      display: inline-flex;
       align-items: center;
       gap: 4px;
     }
-    .zoom label {
+    .pop {
+      position: absolute;
+      top: calc(100% + 6px);
+      right: 0;
+      z-index: 20;
+      min-width: 220px;
+      padding: 8px;
+      background: var(--card-background-color, #fff);
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.18);
+    }
+    .pop.left {
+      left: 0;
+      right: auto;
+    }
+    .pop-backdrop {
+      position: fixed;
+      inset: 0;
+      z-index: 19;
+    }
+    .pop-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 8px;
+    }
+    .pop-row label {
+      flex: 0 0 60px;
       font-size: 12px;
       color: var(--secondary-text-color);
     }
-    .zoom input[type="range"] {
-      width: 90px;
-    }
-    .zoom-val {
-      font-size: 12px;
-      color: var(--secondary-text-color);
-      min-width: 34px;
-    }
-    .furn-add {
+    .pop-row input {
+      flex: 1;
+      min-width: 0;
+      padding: 4px 6px;
+      border-radius: 4px;
       border: 1px solid var(--divider-color, #ccc);
       background: var(--card-background-color, #fff);
       color: var(--primary-text-color);
-      border-radius: 6px;
+    }
+    .pop-action {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      justify-content: center;
+      font-size: 13px;
+    }
+    .add-pop {
+      min-width: 300px;
+    }
+    .add-entry {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      width: 100%;
+      border: none;
+      background: none;
       padding: 6px 8px;
-      cursor: pointer;
+      border-radius: 6px;
+      text-align: left;
+      font-size: 13px;
+    }
+    .add-entry:hover {
+      background: var(--secondary-background-color, #f5f5f5);
+    }
+    .add-furn-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 4px;
+      margin-top: 8px;
+      padding-top: 8px;
+      border-top: 1px solid var(--divider-color, #eee);
+    }
+    .furn-cell {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 2px;
+      border: none;
+      background: none;
+      padding: 6px 2px;
+      border-radius: 6px;
+      font-size: 11px;
+      color: var(--secondary-text-color);
+      text-transform: none;
+    }
+    .furn-cell:hover {
+      background: var(--secondary-background-color, #f5f5f5);
+    }
+    .furn-cell svg {
+      position: static;
+      width: 38px;
+      height: 30px;
+      display: block;
+    }
+    /* === Canvas chrome: the zoom overlay and first-run hint live on a
+       relative wrapper OUTSIDE the scroll container so they don't scroll
+       away with the stage. === */
+    .canvas-outer {
+      position: relative;
+    }
+    .zoom-overlay {
+      position: absolute;
+      right: 26px;
+      bottom: 12px;
+      z-index: 2;
+      display: flex;
+      gap: 4px;
+    }
+    .zoom-overlay button {
+      display: inline-flex;
+      align-items: center;
+      padding: 3px 7px;
+      font-size: 12px;
+      background: var(--card-background-color, #fff);
+    }
+    .zoom-overlay ha-icon {
+      --mdc-icon-size: 15px;
+    }
+    .zoom-val-btn {
+      min-width: 46px;
+      justify-content: center;
+    }
+    .empty-hint {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-align: center;
+      padding: 16px;
+      font-size: 14px;
+      line-height: 1.6;
+      color: var(--secondary-text-color);
+      /* Never block the first wall being drawn straight through the hint. */
+      pointer-events: none;
     }
     .floors {
       display: flex;
@@ -2963,6 +3310,79 @@ export class FloorplanCardEditor extends LitElement {
       text-transform: uppercase;
       letter-spacing: 0.06em;
       color: var(--secondary-text-color);
+    }
+    /* Element header: kind icon + summary + the selection's actions. */
+    .edit-head {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 10px;
+    }
+    .edit-head ha-icon {
+      --mdc-icon-size: 18px;
+      color: var(--secondary-text-color);
+    }
+    .edit-head .edit-title {
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .edit-head .head-spacer {
+      flex: 1;
+    }
+    .edit-head button {
+      display: inline-flex;
+      align-items: center;
+      padding: 4px 8px;
+    }
+    .edit-head button ha-icon {
+      --mdc-icon-size: 16px;
+      color: inherit;
+    }
+    /* Collapsible Project section header. */
+    .section-toggle {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      border: none;
+      background: none;
+      padding: 2px 0;
+      margin: 0;
+      cursor: pointer;
+      color: var(--secondary-text-color);
+      text-align: left;
+    }
+    .section-toggle ha-icon {
+      --mdc-icon-size: 16px;
+    }
+    .section-toggle .section-title-inline {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .section-toggle .section-summary {
+      font-size: 12px;
+      color: var(--secondary-text-color);
+      opacity: 0.8;
+      text-transform: none;
+    }
+    .panel-body {
+      margin-top: 10px;
+    }
+    /* Field rows flow into responsive columns so the below-canvas sections
+       stay short at HA-dialog width (~700px fits two columns). Rows that
+       need the full width (entity pickers, long hints) opt out via .wide. */
+    .rows {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      column-gap: 16px;
+      align-items: start;
+    }
+    .rows .row.wide,
+    .rows > .hint,
+    .rows > p {
+      grid-column: 1 / -1;
     }
     .row {
       display: flex;
