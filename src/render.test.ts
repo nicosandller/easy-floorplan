@@ -156,6 +156,15 @@ describe("resolveOpeningOpen", () => {
     expect(resolveOpeningOpen({ ...door, invert: true }, "off")).toBe(true);
   });
 
+  it("fails closed on a sensor outage, even when inverted", () => {
+    // A stale "open" during unavailable/unknown is worse than showing closed —
+    // invert must not flip an outage into "open".
+    expect(resolveOpeningOpen(door, "unavailable")).toBe(false);
+    expect(resolveOpeningOpen(door, "unknown")).toBe(false);
+    expect(resolveOpeningOpen({ ...door, invert: true }, "unavailable")).toBe(false);
+    expect(resolveOpeningOpen({ ...door, invert: true }, "unknown")).toBe(false);
+  });
+
   it("falls back to the type default when no entity or unknown state", () => {
     expect(resolveOpeningOpen({ type: "door" } as Opening, undefined)).toBe(true);
     expect(resolveOpeningOpen({ type: "window" } as Opening, undefined)).toBe(false);
@@ -194,6 +203,21 @@ describe("resolveOpeningAmount", () => {
   it("uses the type default when there is no entity/state", () => {
     expect(resolveOpeningAmount({ type: "door" } as Opening, undefined)).toBe(1);
     expect(resolveOpeningAmount({ type: "door", motion: "slide" } as Opening, undefined)).toBe(0);
+  });
+
+  it("fails closed (0) on a sensor outage, ignoring any stale position", () => {
+    // A cover that goes unavailable can leave a stale current_position; it must
+    // not keep rendering open (and invert must not flip an outage into open).
+    expect(
+      resolveOpeningAmount(door, { state: "unavailable", attributes: { current_position: 100 } }),
+    ).toBe(0);
+    expect(resolveOpeningAmount(door, { state: "unknown" })).toBe(0);
+    expect(
+      resolveOpeningAmount({ ...door, invert: true }, {
+        state: "unavailable",
+        attributes: { current_position: 0 },
+      }),
+    ).toBe(0);
   });
 });
 

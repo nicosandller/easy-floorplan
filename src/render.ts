@@ -126,18 +126,30 @@ export function openingClickAction(
 }
 
 /**
+ * A sensor-outage state — we have no reliable reading, so callers must fail
+ * **closed** and, crucially, never let `invert` flip an outage into "open"
+ * (matches {@link trackerPresenceDetected}).
+ */
+function isSensorOutage(state: string | undefined): boolean {
+  return state === "unavailable" || state === "unknown";
+}
+
+/**
  * Resolve whether an opening should be drawn open, from the raw state string of
  * its bound entity (or `undefined` when it has no entity / no state yet). A
  * contact `binary_sensor` or `cover` reads open on `on`/`open`; `invert` flips
- * that. With no entity or an unavailable state we fall back to the type default
- * (see {@link openingDefaultOpen}). Shared by doors, windows and sliders — a
- * slider bound to a `cover` resolves exactly like a swing door.
+ * that. With no entity / no state yet we fall back to the type default (see
+ * {@link openingDefaultOpen}); an `unavailable`/`unknown` outage fails closed
+ * regardless of `invert`. Shared by doors, windows and sliders — a slider bound
+ * to a `cover` resolves exactly like a swing door.
  */
 export function resolveOpeningOpen(o: Opening, state: string | undefined): boolean {
   if (!o.entity || state === undefined) return openingDefaultOpen(o);
+  // Fail closed on an outage before applying invert — a stale "open" during a
+  // sensor dropout is worse than showing closed.
+  if (isSensorOutage(state)) return false;
   // `opening`/`closing` are transient cover states: the cover is in motion and
-  // not fully closed, so draw it open. Anything else (closed/off/unavailable/…)
-  // reads closed.
+  // not fully closed, so draw it open. Anything else (closed/off/…) reads closed.
   const open =
     state === "on" || state === "open" || state === "opening" || state === "closing";
   return o.invert ? !open : open;
@@ -149,13 +161,17 @@ export function resolveOpeningOpen(o: Opening, state: string | undefined): boole
  * numeric `current_position` (0–100) that maps linearly to the fraction (with
  * `invert` flipping it); otherwise it collapses to the binary
  * {@link resolveOpeningOpen} (0 or 1). With no entity/state it uses the type
- * default.
+ * default; an `unavailable`/`unknown` outage fails closed (0), ignoring any
+ * stale position.
  */
 export function resolveOpeningAmount(
   o: Opening,
   state: { state: string; attributes?: Record<string, unknown> } | undefined,
 ): number {
   if (!o.entity || !state) return openingDefaultOpen(o) ? 1 : 0;
+  // Fail closed on an outage before reading position — a cover that dropped out
+  // can leave a stale current_position that would otherwise render it open.
+  if (isSensorOutage(state.state)) return 0;
   const pos = state.attributes?.current_position;
   if (typeof pos === "number" && Number.isFinite(pos)) {
     const frac = Math.max(0, Math.min(1, pos / 100));
