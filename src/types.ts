@@ -1,6 +1,33 @@
-import type { HomeAssistant, LovelaceCardConfig } from "custom-card-helpers";
+import type { HomeAssistant as BaseHomeAssistant, LovelaceCardConfig } from "custom-card-helpers";
 
-export type { HomeAssistant };
+/**
+ * A single entity's state object. Reached by indexed access off the base `hass`
+ * so we don't take a direct dependency on `home-assistant-js-websocket`, which
+ * is only a transitive dep via `custom-card-helpers`.
+ */
+export type HassEntity = BaseHomeAssistant["states"][string];
+
+/**
+ * `custom-card-helpers` 1.9 predates `formatEntityState`, which real HA has
+ * carried since 2023.9 and which this card relies on. Declare it rather than
+ * casting at every use.
+ */
+export interface HomeAssistant extends BaseHomeAssistant {
+  /**
+   * HA's own state formatter. It applies the entity registry's display
+   * precision, the locale's number format, the blank before a unit and the
+   * wording of `unavailable` — none of which live on the state object. HA
+   * hands out a placeholder that echoes the raw state until translations and
+   * the registry load, then replaces the function whenever an input changes.
+   */
+  formatEntityState(stateObj: HassEntity, state?: string): string;
+}
+
+/** The slice of `hass` the card draws from. */
+export interface RenderHass {
+  states: Record<string, HassEntity | undefined>;
+  formatEntityState(stateObj: HassEntity): string;
+}
 
 /** A straight wall segment in virtual coordinate space. */
 export interface Wall {

@@ -137,8 +137,10 @@ By default it shows an icon badge:
 - **Tap to act** — lights, switches, covers, fans and `input_boolean`s toggle on tap;
   any other entity opens its more-info dialog.
 - **Live look** — the badge highlights when the entity is "on". Turn on **Show state**
-  to display the current value next to it. Add a **2nd entity** to show two readings in
-  one element — e.g. a temperature and a humidity sensor render together as `21 °C · 45 %`.
+  to display the current value next to it, formatted exactly as Home Assistant would —
+  including the entity's configured display precision. Add a **2nd entity** to show two
+  readings in one element — e.g. a temperature and a humidity sensor render together as
+  `21.5 °C · 45%`.
 - **Follows "show as"** — the icon and state label respect the entity's
   **device class** (HA's *show as* setting): a `binary_sensor` shown as a Lock renders
   `mdi:lock` / `mdi:lock-open` and reads "Locked" / "Unlocked", a door contact gets
