@@ -155,6 +155,11 @@ export function resolveOpeningOpen(o: Opening, state: string | undefined): boole
   return o.invert ? !open : open;
 }
 
+/** A `cover` in transit. Its `current_position` may not have caught up yet. */
+export function openingInMotion(state: string | undefined): boolean {
+  return state === "opening" || state === "closing";
+}
+
 /**
  * How far open an opening should be drawn, as a fraction 0..1, driving partial
  * swing / slide for position-aware `cover` entities. When the entity exposes a
@@ -163,6 +168,11 @@ export function resolveOpeningOpen(o: Opening, state: string | undefined): boole
  * {@link resolveOpeningOpen} (0 or 1). With no entity/state it uses the type
  * default; an `unavailable`/`unknown` outage fails closed (0), ignoring any
  * stale position.
+ *
+ * A live position wins over the `opening`/`closing` state even when the two
+ * disagree: a cover that has begun opening genuinely still sits at 0, and
+ * overriding that would snap the leaf open and back on every cover that streams
+ * its position. {@link openingIsActive} carries the motion instead.
  */
 export function resolveOpeningAmount(
   o: Opening,
@@ -178,6 +188,22 @@ export function resolveOpeningAmount(
     return o.invert ? 1 - frac : frac;
   }
   return resolveOpeningOpen(o, state.state) ? 1 : 0;
+}
+
+/**
+ * Whether an entity-bound opening should wear its accent colour. Drawn-open
+ * covers do, and so does one still in transit: a cover reports `opening` at
+ * position 0 for as long as it takes to move — a full second on a garage door,
+ * the whole travel on a cover that only publishes position at rest. Without
+ * this the leaf sits shut and unaccented and a tap reads as having done
+ * nothing. An outage is never active (see {@link isSensorOutage}).
+ */
+export function openingIsActive(
+  o: Opening,
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+): boolean {
+  if (!o.entity || !state || isSensorOutage(state.state)) return false;
+  return openingInMotion(state.state) || resolveOpeningAmount(o, state) > 0;
 }
 
 /** Style options for {@link renderOpening}. */

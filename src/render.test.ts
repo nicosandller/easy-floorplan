@@ -12,6 +12,8 @@ import {
   kindFromEntity,
   defaultIcon,
   trackerSensorReading,
+  openingInMotion,
+  openingIsActive,
 } from "./render";
 import type { Opening } from "./types";
 
@@ -256,5 +258,70 @@ describe("defaultIcon", () => {
     expect(defaultIcon("light")).toBe("mdi:lightbulb");
     expect(defaultIcon("cover")).toBe("mdi:window-shutter");
     expect(defaultIcon("generic")).toBe("mdi:circle");
+  });
+});
+
+describe("openingInMotion", () => {
+  it("reads the transient cover states as motion", () => {
+    expect(openingInMotion("opening")).toBe(true);
+    expect(openingInMotion("closing")).toBe(true);
+  });
+  it("reads settled, absent and outage states as still", () => {
+    expect(openingInMotion("open")).toBe(false);
+    expect(openingInMotion("closed")).toBe(false);
+    expect(openingInMotion("on")).toBe(false);
+    expect(openingInMotion(undefined)).toBe(false);
+    expect(openingInMotion("unavailable")).toBe(false);
+  });
+});
+
+describe("openingIsActive", () => {
+  const cover = { type: "door", entity: "cover.garage" } as Opening;
+
+  it("accents a cover that is open", () => {
+    expect(openingIsActive(cover, { state: "open", attributes: { current_position: 100 } })).toBe(
+      true,
+    );
+  });
+
+  it("accents a cover that has begun opening but not yet moved", () => {
+    // A real garage door reports opening at position 0 for a full second, and a
+    // rest-only-position cover reports it for the whole travel. Drawn shut, it
+    // must still read as in motion, or a tap looks like it did nothing.
+    expect(openingIsActive(cover, { state: "opening", attributes: { current_position: 0 } })).toBe(
+      true,
+    );
+  });
+
+  it("accents a cover that is closing but still reports itself fully open", () => {
+    expect(openingIsActive(cover, { state: "closing", attributes: { current_position: 100 } })).toBe(
+      true,
+    );
+  });
+
+  it("leaves a settled closed cover unaccented", () => {
+    expect(openingIsActive(cover, { state: "closed", attributes: { current_position: 0 } })).toBe(
+      false,
+    );
+  });
+
+  it("never accents during a sensor outage, even with a stale open position", () => {
+    expect(
+      openingIsActive(cover, { state: "unavailable", attributes: { current_position: 100 } }),
+    ).toBe(false);
+  });
+
+  it("leaves an opening with no entity unaccented", () => {
+    expect(openingIsActive({ type: "door" } as Opening, undefined)).toBe(false);
+  });
+});
+
+describe("resolveOpeningAmount keeps trusting a live position", () => {
+  const cover = { type: "door", entity: "cover.garage" } as Opening;
+  it("does not snap a live-position cover open the moment it starts moving", () => {
+    // Regression guard: overriding a mid-travel position with the binary state
+    // would jump 0 -> 1 -> 0.07 on covers that stream position every second.
+    expect(resolveOpeningAmount(cover, { state: "opening", attributes: { current_position: 0 } })).toBe(0);
+    expect(resolveOpeningAmount(cover, { state: "opening", attributes: { current_position: 7 } })).toBeCloseTo(0.07);
   });
 });
