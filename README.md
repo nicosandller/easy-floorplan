@@ -163,19 +163,63 @@ Drop a **door** or **window** from the toolbar and it snaps onto the nearest wal
 own a door is drawn open (the familiar swing arc) and a window closed — a static floor
 plan, just like before.
 
-Select the opening and bind a **Sensor** entity in the **Element** section below the canvas —
-a contact `binary_sensor` or a `cover` — to make the opening track its real state:
+Select the opening and bind an **Entity** in the **Element** section below the canvas — a
+contact `binary_sensor` or a `cover` (Home Assistant's domain for anything that opens: doors,
+gates, garages, blinds, shades, shutters, curtains…) — to make the opening track its real
+state. When you bind an entity the card reads its HA **`device_class`** and sets a sensible
+`type`/`motion` for you (a `window` cover → a window; a `garage` roller → a sliding door);
+adjust either afterwards. Once bound, the opening tracks state:
 
 - **Open / closed** — the opening is drawn open when the entity is `on` / `open`, closed
   otherwise. A door's leaf swings around its hinge; a window's two leaves swing outward
   from the middle. When closed the swing arc is hidden; as the opening moves, the arc
   **draws on**, tracing the path of the leaf edge — animated smoothly.
+- **Partial (position covers)** — if the bound `cover` reports a `current_position`
+  (0–100), the opening is drawn **partly open** to match — a door swings partway, a
+  slider slides partway — and it tracks the position live as the cover moves. Covers
+  without a position, and `binary_sensor`s, use the on/off open/closed behavior above.
+  `Invert` flips the percentage too.
 - **Active color** — while actively open, the leaf/sash and arc take an accent color (the
   same idea as presence ripples) so an open door is easy to spot. Defaults to the primary
   color; pick your own per opening.
 - **Invert** — flip the open/closed interpretation for sensors wired the other way.
+- **Tap to control** — tapping an opening bound to a controllable `cover` toggles it
+  (`cover.toggle`); read-only `binary_sensor`s (and position-only covers) open the entity's
+  more-info dialog instead.
 
-Openings without a sensor keep the static look.
+Openings without an entity keep the static look.
+
+> **Future enhancement — tilt.** HA covers for venetian blinds / shutters also report
+> `current_tilt_position` (0–100, the louvre angle) with its own `*_tilt` services. A
+> top-down plan can't show a swing/slide for tilt, but it could render the closed panel as
+> angled slats (or vary a hatch density) driven by the tilt position, and route taps to the
+> tilt services when only tilt is supported. Not implemented yet — tracked as a follow-up.
+
+**Orientation.** A swing door defaults to hinging at the left jamb and opening toward
+one side of the wall. Use **Hinge** (left / right) and **Opens** (this side / other side)
+in the **Element** section to face it any of the four ways — or set `flipH` / `flipV`
+directly in YAML. These are pure mirrors, so the open/closed animation follows.
+
+**Sliding doors & windows.** Set **Motion → slide** on a door or window and it travels
+*along* the wall instead of swinging — a sliding door (solid panels) or a sliding window
+(thin glass panels). Then pick a **Style**:
+
+- **single** — one panel slides aside into the wall (pocket / barn / single patio).
+- **bypass** — two panels on parallel tracks; one slides behind the other (patio-door style).
+- **biparting** — two panels meet in the middle and part, each recessing into the wall on
+  its own side.
+
+**Slide** (to left / to right) sets the direction (`flipH`; ignored for biparting, which is
+symmetric). Bind a `cover` / `binary_sensor` just like a swing opening and the panel(s) slide
+open and closed with the state (or partly, from a cover's `current_position`).
+
+```yaml
+openings:
+  # sliding window, patio-door style, driven by a cover
+  - { id: patio, type: window, motion: slide, sliderStyle: biparting, x: 640, y: 500, length: 160, angle: 0, entity: cover.patio_door }
+  # a swing door hinged on the right, opening into the other room
+  - { id: hall, type: door, x: 300, y: 100, length: 80, angle: 0, flipH: true, flipV: true }
+```
 
 <img width="540" height="304" alt="door_window_demo" src="https://github.com/user-attachments/assets/091b3c89-5202-4025-8a0f-0fe867276be2" />
 
@@ -283,7 +327,7 @@ The editor writes this config for you; manual editing is optional.
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see **Floors**).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
 | `walls`      | Wall[]   | `[]`               | Wall segments (single-floor / floor 1).      |
-| `openings`   | Opening[]| `[]`               | Doors and windows.                           |
+| `openings`   | Opening[]| `[]`               | Doors and windows (swing or sliding).        |
 | `items`      | Item[]   | `[]`               | Entity devices.                              |
 | `texts`      | Text[]   | `[]`               | Free text labels.                            |
 | `furniture`  | Furniture[]| `[]`             | Gray furniture/fixture diagrams.             |
@@ -310,16 +354,20 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 
 ### Opening (door / window)
 
-| Field         | Type                | Description                                            |
-| ------------- | ------------------- | ------------------------------------------------------ |
-| `id`          | string              | Unique id.                                             |
-| `type`        | `door` \| `window`  | Symbol drawn.                                          |
-| `x`, `y`      | number              | Center position.                                       |
-| `length`      | number              | Length along the wall.                                 |
-| `angle`       | number              | Rotation in degrees.                                   |
-| `entity`      | string              | Optional contact `binary_sensor` / `cover` driving open/closed. |
-| `invert`      | boolean             | Flip the open/closed interpretation.                   |
-| `activeColor` | string              | Leaf/arc color while actively open (default primary).  |
+| Field         | Type                        | Description                                            |
+| ------------- | --------------------------- | ------------------------------------------------------ |
+| `id`          | string                      | Unique id.                                             |
+| `type`        | `door` \| `window`          | The kind of opening.                                   |
+| `motion`      | `swing` \| `slide`          | How it moves. `swing` (default) hinged door / casement window; `slide` sliding panels. |
+| `x`, `y`      | number                      | Center position.                                       |
+| `length`      | number                      | Length along the wall.                                 |
+| `angle`       | number                      | Rotation in degrees.                                   |
+| `entity`      | string                      | Optional contact `binary_sensor` / `cover` driving open/closed (or `current_position` for partial). |
+| `invert`      | boolean                     | Flip the open/closed interpretation.                   |
+| `activeColor` | string                      | Leaf/arc color while actively open (default primary).  |
+| `flipH`       | boolean                     | Mirror left↔right. Swing door: hinge jamb. Sliding: slide direction. |
+| `flipV`       | boolean                     | Mirror across the wall so a swing opening faces the other room. |
+| `sliderStyle` | `single` \| `bypass` \| `biparting` | When `motion: slide`: `single` (default) one panel; `bypass` two stacking panels; `biparting` two centre-parting panels. |
 
 ### Item (device)
 

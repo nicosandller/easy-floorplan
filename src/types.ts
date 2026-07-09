@@ -19,7 +19,14 @@ export type OpeningType = "door" | "window";
  */
 export interface Opening {
   id: string;
+  /** The kind of opening: a `door` (single leaf) or a `window` (two leaves / glass). */
   type: OpeningType;
+  /**
+   * How the opening moves. `swing` (default) is a hinged door / casement window;
+   * `slide` is a sliding door / sliding window whose panel(s) travel along the
+   * wall (see {@link sliderStyle}).
+   */
+  motion?: "swing" | "slide";
   x: number;
   y: number;
   /** Length along the wall, in virtual units. */
@@ -36,6 +43,27 @@ export interface Opening {
   invert?: boolean;
   /** Color of the leaf/sash and swing arc while actively open. Falls back to the primary color. */
   activeColor?: string;
+  /**
+   * Mirror the symbol left↔right in the opening's local frame. For a swing door
+   * this moves the hinge to the other jamb; for a slider it reverses the slide
+   * direction. Absent = the default orientation (hinge/anchor at the left jamb).
+   */
+  flipH?: boolean;
+  /**
+   * Mirror the symbol across the wall line, so the door opens into the room on
+   * the other side. Absent = the default (swings toward the −y / "near" side).
+   */
+  flipV?: boolean;
+  /**
+   * Sliding openings only (`motion: "slide"`): how the panels are arranged.
+   * - `single` (default) — one panel slides aside into the wall.
+   * - `bypass` — two panels on parallel tracks; one slides behind the other
+   *   (patio-door style).
+   * - `biparting` — two panels meet in the middle and part, each recessing into
+   *   the wall on its own side.
+   * Ignored for swinging openings.
+   */
+  sliderStyle?: "single" | "bypass" | "biparting";
 }
 
 export type ItemKind = "light" | "switch" | "sensor" | "binary_sensor" | "climate" | "cover" | "generic";

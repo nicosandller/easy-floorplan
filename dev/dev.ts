@@ -6,10 +6,10 @@
  *
  * Run with: `npm run serve` (opens /dev/ on the Vite dev server).
  *
- * Only two HA-provided custom elements are needed at runtime: <ha-card> and
- * <ha-icon>. The entity/icon pickers are already guarded behind
- * `customElements.get(...)` in the editor and fall back to plain inputs, so we
- * don't stub them here.
+ * A few HA-provided custom elements are stubbed below: <ha-card>, <ha-icon> and
+ * <ha-entity-picker>. The icon picker already falls back to a plain input in the
+ * editor when unregistered, but the entity picker does not, so we stub it here
+ * so Sensor / entity fields are usable outside HA.
  */
 import type { FloorplanCardConfig, Tracker, TrackerSensor } from "../src/types";
 
@@ -67,6 +67,45 @@ if (!customElements.get("ha-icon")) {
     }
   }
   customElements.define("ha-icon", HaIconStub);
+}
+
+if (!customElements.get("ha-entity-picker")) {
+  // The editor normally pulls <ha-entity-picker> in via loadCardHelpers(), which
+  // only exists inside HA. Outside HA that load no-ops and the picker renders as
+  // an empty unknown element (no way to bind a Sensor). Stub it with a plain text
+  // input that emits the same `value-changed` event the editor listens for.
+  class HaEntityPickerStub extends HTMLElement {
+    private _value = "";
+    private _input?: HTMLInputElement;
+    set value(v: string) {
+      this._value = v ?? "";
+      if (this._input) this._input.value = this._value;
+    }
+    get value(): string {
+      return this._value;
+    }
+    connectedCallback() {
+      if (this._input) return;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.placeholder = "entity id (dev stub)";
+      input.value = this._value;
+      input.style.width = "100%";
+      input.addEventListener("change", () => {
+        this._value = input.value;
+        this.dispatchEvent(
+          new CustomEvent("value-changed", {
+            detail: { value: input.value },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      });
+      this._input = input;
+      this.appendChild(input);
+    }
+  }
+  customElements.define("ha-entity-picker", HaEntityPickerStub);
 }
 
 // ---- register the real card + editor --------------------------------------
@@ -179,6 +218,7 @@ editor.addEventListener("config-changed", (e: Event) => {
   card.setConfig(next);
   editor.setConfig(next);
   refreshTrackerEmu(next);
+  refreshOpeningEmu(next);
 });
 
 // ---- tracker emulator -------------------------------------------------------
@@ -208,6 +248,102 @@ function setHassBinary(entity: string, on: boolean) {
   const nextHass = { ...hass, states: { ...baseStates } };
   card.hass = nextHass;
   editor.hass = nextHass;
+}
+
+/**
+ * Drive an opening's bound entity so the door/window/slider animates open and
+ * closed. Uses `cover` open/closed states for cover entities and on/off for
+ * everything else (contact `binary_sensor`, `input_boolean`, …) — the card
+ * treats `on`/`open` as open either way.
+ */
+function setOpeningState(entity: string, open: boolean) {
+  const domain = entity.split(".")[0];
+  const state = domain === "cover" ? (open ? "open" : "closed") : open ? "on" : "off";
+  baseStates[entity] = { state };
+  const nextHass = { ...hass, states: { ...baseStates } };
+  card.hass = nextHass;
+  editor.hass = nextHass;
+}
+
+/** Drive a cover's `current_position` (0–100) so partial-open renders in realtime. */
+function setCoverPosition(entity: string, pos: number) {
+  baseStates[entity] = {
+    state: pos > 0 ? "open" : "closed",
+    attributes: { current_position: pos },
+  };
+  const nextHass = { ...hass, states: { ...baseStates } };
+  card.hass = nextHass;
+  editor.hass = nextHass;
+}
+
+/**
+ * Opening emulator: one open/closed toggle per entity-bound opening in the
+ * config, so the swing/slide animation can be exercised without Home Assistant.
+ * (The card only animates openings that carry a `Sensor` entity — bind one in
+ * the editor and its toggle appears here.)
+ */
+function refreshOpeningEmu(cfg: FloorplanCardConfig) {
+  const host = document.getElementById("opening-emu")!;
+  const pane = document.getElementById("opening-emu-pane")!;
+  const openings = (cfg.floors ?? []).flatMap((f) => f.openings ?? []).filter((o) => o.entity);
+  if (!openings.length) {
+    pane.style.display = "none";
+    host.replaceChildren();
+    return;
+  }
+  pane.style.display = "block";
+
+  const frag = document.createDocumentFragment();
+  const seen = new Set<string>();
+  for (const o of openings) {
+    const entity = o.entity!;
+    if (seen.has(entity)) continue; // one control per entity, even if reused
+    seen.add(entity);
+
+    const row = document.createElement("div");
+    row.className = "op-row";
+    const label = document.createElement("span");
+    label.className = "ent";
+    label.textContent = `${o.type}: ${entity}`;
+    row.appendChild(label);
+
+    if (entity.split(".")[0] === "cover") {
+      // Position-aware cover: a 0–100 slider drives partial-open in realtime.
+      const wrap = document.createElement("label");
+      wrap.className = "op-toggle";
+      const slider = document.createElement("input");
+      slider.type = "range";
+      slider.min = "0";
+      slider.max = "100";
+      const curPos = baseStates[entity]?.attributes?.current_position;
+      slider.value = String(typeof curPos === "number" ? curPos : 0);
+      const valLbl = document.createElement("span");
+      valLbl.textContent = `${slider.value}%`;
+      slider.addEventListener("input", () => {
+        setCoverPosition(entity, Number(slider.value));
+        valLbl.textContent = `${slider.value}%`;
+      });
+      wrap.append(slider, valLbl);
+      row.appendChild(wrap);
+    } else {
+      const toggleWrap = document.createElement("label");
+      toggleWrap.className = "op-toggle";
+      const chk = document.createElement("input");
+      chk.type = "checkbox";
+      const cur = baseStates[entity]?.state;
+      chk.checked = cur === "on" || cur === "open";
+      const stateLbl = document.createElement("span");
+      stateLbl.textContent = chk.checked ? "open" : "closed";
+      chk.addEventListener("change", () => {
+        setOpeningState(entity, chk.checked);
+        stateLbl.textContent = chk.checked ? "open" : "closed";
+      });
+      toggleWrap.append(chk, stateLbl);
+      row.appendChild(toggleWrap);
+    }
+    frag.appendChild(row);
+  }
+  host.replaceChildren(frag);
 }
 
 const orbitState = new Map<string, { rafId: number | null }>();
@@ -362,8 +498,10 @@ function round2(v: number): number {
   return Math.round(v * 100) / 100;
 }
 
-// Initial render — covers the case where the starter config already has trackers.
+// Initial render — covers the case where the starter config already has trackers
+// or entity-bound openings.
 refreshTrackerEmu(config);
+refreshOpeningEmu(config);
 
 // Clear the hosts before mounting so re-running this module (HMR, etc.) can
 // never stack a second editor/card on top of the first — duplicate mounts make

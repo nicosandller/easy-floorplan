@@ -41,12 +41,143 @@ export function kindFromEntity(entity: string): ItemKind {
 }
 
 /**
- * Default open/closed state for an opening with no associated entity: doors are
- * drawn open (the familiar swing symbol), windows closed (intact glass). This
- * preserves the look of a static floor plan.
+ * How an opening moves — `swing` (hinged door / casement window) or `slide`
+ * (panels travelling along the wall). Defaults to `swing`.
+ */
+export function openingMotion(o: Opening): "swing" | "slide" {
+  return o.motion ?? "swing";
+}
+
+/**
+ * Default open/closed state for an opening with no associated entity: only a
+ * swing door is drawn open (the familiar swing symbol); windows and sliding
+ * openings are drawn closed (intact glass / panels filling the gap). This
+ * preserves the look of a static floor plan — a slider drawn open would read as
+ * a hole rather than a door.
  */
 export function openingDefaultOpen(o: Opening): boolean {
-  return o.type === "door";
+  return o.type === "door" && openingMotion(o) === "swing";
+}
+
+/**
+ * Scale factors that mirror an opening within its own local frame: `flipH`
+ * reflects across the wall's length (hinge jamb / slide direction), `flipV`
+ * across the wall line (which room the door opens into). Applied as a single
+ * `scale(sx sy)` wrapper so the base symbol is drawn once and reused for all
+ * four orientations.
+ */
+export function openingMirror(o: Opening): { sx: 1 | -1; sy: 1 | -1 } {
+  return { sx: o.flipH ? -1 : 1, sy: o.flipV ? -1 : 1 };
+}
+
+/**
+ * Resolve a sliding opening's panel arrangement. Only meaningful while sliding
+ * (swinging openings always resolve to `single`), defaulting to `single`.
+ */
+export function sliderStyleOf(o: Opening): "single" | "bypass" | "biparting" {
+  return openingMotion(o) === "slide" ? (o.sliderStyle ?? "single") : "single";
+}
+
+/** HA `cover` / `binary_sensor` device classes that read as a window (glass). */
+const WINDOW_DEVICE_CLASSES = new Set(["window", "blind", "shade", "shutter", "curtain", "awning"]);
+/** Device classes that roll / slide rather than swing. */
+const SLIDING_DEVICE_CLASSES = new Set([
+  "garage",
+  "garage_door",
+  "blind",
+  "shade",
+  "shutter",
+  "curtain",
+]);
+
+/**
+ * Default opening `type` and `motion` inferred from a bound entity's HA
+ * `device_class` (mirrors how HA itself picks icons/behaviour from it). Window-
+ * like classes render as a window; rolling/sliding classes default to `slide`.
+ * Unknown / missing classes fall back to a swing door. `motion: undefined`
+ * means swing (the default).
+ */
+export function openingFromDeviceClass(deviceClass: string | undefined): {
+  type: Opening["type"];
+  motion: "slide" | undefined;
+} {
+  return {
+    type: WINDOW_DEVICE_CLASSES.has(deviceClass ?? "") ? "window" : "door",
+    motion: SLIDING_DEVICE_CLASSES.has(deviceClass ?? "") ? "slide" : undefined,
+  };
+}
+
+/** Cover feature bits: OPEN = 1, CLOSE = 2 (a cover with either can be toggled). */
+const COVER_OPEN_CLOSE = 0b11;
+
+/**
+ * What tapping an entity-bound opening should do: `cover-toggle` for a `cover`
+ * that supports open/close, otherwise `more-info` (read-only `binary_sensor`s
+ * and position-only covers open the entity dialog instead of a blind toggle).
+ */
+export function openingClickAction(
+  entityId: string,
+  supportedFeatures: number,
+): "cover-toggle" | "more-info" {
+  const domain = entityId.split(".")[0];
+  return domain === "cover" && (supportedFeatures & COVER_OPEN_CLOSE) !== 0
+    ? "cover-toggle"
+    : "more-info";
+}
+
+/**
+ * A sensor-outage state — we have no reliable reading, so callers must fail
+ * **closed** and, crucially, never let `invert` flip an outage into "open"
+ * (matches {@link trackerPresenceDetected}).
+ */
+function isSensorOutage(state: string | undefined): boolean {
+  return state === "unavailable" || state === "unknown";
+}
+
+/**
+ * Resolve whether an opening should be drawn open, from the raw state string of
+ * its bound entity (or `undefined` when it has no entity / no state yet). A
+ * contact `binary_sensor` or `cover` reads open on `on`/`open`; `invert` flips
+ * that. With no entity / no state yet we fall back to the type default (see
+ * {@link openingDefaultOpen}); an `unavailable`/`unknown` outage fails closed
+ * regardless of `invert`. Shared by doors, windows and sliders — a slider bound
+ * to a `cover` resolves exactly like a swing door.
+ */
+export function resolveOpeningOpen(o: Opening, state: string | undefined): boolean {
+  if (!o.entity || state === undefined) return openingDefaultOpen(o);
+  // Fail closed on an outage before applying invert — a stale "open" during a
+  // sensor dropout is worse than showing closed.
+  if (isSensorOutage(state)) return false;
+  // `opening`/`closing` are transient cover states: the cover is in motion and
+  // not fully closed, so draw it open. Anything else (closed/off/…) reads closed.
+  const open =
+    state === "on" || state === "open" || state === "opening" || state === "closing";
+  return o.invert ? !open : open;
+}
+
+/**
+ * How far open an opening should be drawn, as a fraction 0..1, driving partial
+ * swing / slide for position-aware `cover` entities. When the entity exposes a
+ * numeric `current_position` (0–100) that maps linearly to the fraction (with
+ * `invert` flipping it); otherwise it collapses to the binary
+ * {@link resolveOpeningOpen} (0 or 1). With no entity/state it uses the type
+ * default; an `unavailable`/`unknown` outage fails closed (0), ignoring any
+ * stale position.
+ */
+export function resolveOpeningAmount(
+  o: Opening,
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+): number {
+  if (!o.entity || !state) return openingDefaultOpen(o) ? 1 : 0;
+  // Fail closed on an outage before reading position — a cover that dropped out
+  // can leave a stale current_position that would otherwise render it open.
+  if (isSensorOutage(state.state)) return 0;
+  const pos = state.attributes?.current_position;
+  if (typeof pos === "number" && Number.isFinite(pos)) {
+    const frac = Math.max(0, Math.min(1, pos / 100));
+    return o.invert ? 1 - frac : frac;
+  }
+  return resolveOpeningOpen(o, state.state) ? 1 : 0;
 }
 
 /** Style options for {@link renderOpening}. */
@@ -55,6 +186,12 @@ export interface OpeningStyle {
   color: string;
   /** Whether the opening is drawn open (default `true`). */
   open?: boolean;
+  /**
+   * How far open, 0..1, for partial rendering from a position-aware `cover`.
+   * When omitted it falls back to the binary `open` (1 when open, else 0), so
+   * existing callers are unaffected. See {@link resolveOpeningAmount}.
+   */
+  amount?: number;
   /** Entity-driven "actively open" state: tints the moving parts with `accent`. */
   active?: boolean;
   /** Accent color used while `active` (default the HA primary color). */
@@ -74,9 +211,12 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   const cutH = WALL_THICKNESS + 4;
   // The moving parts take the accent color when actively open (sensor-driven).
   const tone = active ? accent : color;
+  // Fraction open (0..1) drives partial swing/slide. Defaults to the binary
+  // `open` so callers that don't pass `amount` render exactly as before.
+  const amt = Math.max(0, Math.min(1, style.amount ?? (open ? 1 : 0)));
 
   let body: SVGTemplateResult;
-  if (o.type === "window") {
+  if (o.type === "window" && openingMotion(o) === "swing") {
     // Two casement leaves hinged at each jamb. Closed, they meet in the middle
     // along the wall; open, they swing outward (up) like double doors, each
     // tracing a quarter-circle arc (radius = half) that draws on as it opens.
@@ -90,27 +230,85 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
         <!-- swing arcs, drawn from the middle outward -->
         <path class="fp-door-arc" d="M 0 0 A ${half} ${half} 0 0 0 ${-half} ${-half}"
               fill="none" stroke-width="1.5" stroke-dasharray=${arcLen}
-              style="stroke:${tone};stroke-dashoffset:${open ? 0 : arcLen};" />
+              style="stroke:${tone};stroke-dashoffset:${arcLen * (1 - amt)};" />
         <path class="fp-door-arc" d="M 0 0 A ${half} ${half} 0 0 1 ${half} ${-half}"
               fill="none" stroke-width="1.5" stroke-dasharray=${arcLen}
-              style="stroke:${tone};stroke-dashoffset:${open ? 0 : arcLen};" />
+              style="stroke:${tone};stroke-dashoffset:${arcLen * (1 - amt)};" />
         <!-- left leaf, hinged at left jamb -->
         <g transform="translate(${-half} 0)">
-          <g class="fp-door-leaf" style="transform:rotate(${open ? -90 : 0}deg);">
+          <g class="fp-door-leaf" style="transform:rotate(${-90 * amt}deg);">
             <rect x="0" y="-1.25" width=${half} height="2.5" style="fill:${tone};" />
           </g>
         </g>
         <!-- right leaf, hinged at right jamb -->
         <g transform="translate(${half} 0)">
-          <g class="fp-leaf-r" style="transform:rotate(${open ? 90 : 0}deg);">
+          <g class="fp-leaf-r" style="transform:rotate(${90 * amt}deg);">
             <rect x=${-half} y="-1.25" width=${half} height="2.5" style="fill:${tone};" />
           </g>
         </g>
       `;
+  } else if (openingMotion(o) === "slide") {
+    // A sliding door / window: panel(s) sit in the opening and travel *along* the
+    // wall. Closed, they fill the gap; open, they slide aside (single), stack
+    // (bypass) or part (biparting). No swing arc. A sliding *window*'s panels are
+    // drawn as a thin glass line so it reads as glass rather than a solid door.
+    const t = o.type === "window" ? 1.5 : 2.5; // glass vs solid panel
+    const jambs = svg`
+        <line x1=${-half} y1=${-cutH / 2} x2=${-half} y2=${cutH / 2}
+              stroke=${color} stroke-width="2" />
+        <line x1=${half} y1=${-cutH / 2} x2=${half} y2=${cutH / 2}
+              stroke=${color} stroke-width="2" />`;
+    const sliderStyle = sliderStyleOf(o);
+    if (sliderStyle === "bypass") {
+      // Double bypass: two half-width panels on parallel tracks. The moving
+      // (back) panel slides left to stack behind the fixed (front) panel.
+      const off = 1.75; // half the gap between the two tracks
+      const shift = -half * amt;
+      body = svg`
+        ${jambs}
+        <!-- tracks -->
+        <line x1=${-half} y1=${-off} x2=${half} y2=${-off}
+              stroke=${color} stroke-width="0.75" opacity="0.6" />
+        <line x1=${-half} y1=${off} x2=${half} y2=${off}
+              stroke=${color} stroke-width="0.75" opacity="0.6" />
+        <!-- fixed panel: left half, front track -->
+        <rect x=${-half} y=${off - t / 2} width=${half} height=${t} style="fill:${tone};" />
+        <!-- moving panel: right half, back track -->
+        <g class="fp-slide-panel" style="transform:translateX(${shift}px);">
+          <rect x="0" y=${-off - t / 2} width=${half} height=${t} style="fill:${tone};" />
+        </g>`;
+    } else if (sliderStyle === "biparting") {
+      // Biparting: two half-width panels meet at the centre and part, each
+      // recessing into the wall on its own side (left panel → left, right → right).
+      const shift = half * amt;
+      body = svg`
+        ${jambs}
+        <!-- track -->
+        <line x1=${-half} y1="0" x2=${half} y2="0"
+              stroke=${color} stroke-width="0.75" opacity="0.6" />
+        <g class="fp-slide-panel" style="transform:translateX(${-shift}px);">
+          <rect x=${-half} y=${-t / 2} width=${half} height=${t} style="fill:${tone};" />
+        </g>
+        <g class="fp-slide-panel" style="transform:translateX(${shift}px);">
+          <rect x="0" y=${-t / 2} width=${half} height=${t} style="fill:${tone};" />
+        </g>`;
+    } else {
+      // Single panel: fills the opening closed, slides fully aside when open.
+      const shift = o.length * amt;
+      body = svg`
+        ${jambs}
+        <!-- track -->
+        <line x1=${-half} y1="0" x2=${half} y2="0"
+              stroke=${color} stroke-width="0.75" opacity="0.6" />
+        <g class="fp-slide-panel" style="transform:translateX(${shift}px);">
+          <rect x=${-half} y=${-t / 2} width=${o.length} height=${t} style="fill:${tone};" />
+        </g>`;
+    }
   } else {
     // Door leaf hinged at the left jamb: lies along the wall when closed,
-    // swings up (−90°) when open. The leaf is drawn closed and rotated via CSS.
-    const angle = open ? -90 : 0;
+    // swings up (−90° when fully open) by `amt`. The leaf is drawn closed and
+    // rotated via CSS.
+    const angle = -90 * amt;
     // Swing arc revealed via stroke-dashoffset so it "draws on" as the door opens.
     // Path runs from the closed-leaf tip toward the open-leaf tip, so it traces
     // the door edge. arcLen is the quarter-circle length (radius = o.length).
@@ -120,7 +318,7 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
         <path class="fp-door-arc"
               d="M ${half} 0 A ${o.length} ${o.length} 0 0 0 ${-half} ${-o.length}"
               fill="none" stroke-width="1.5" stroke-dasharray=${arcLen}
-              style="stroke:${tone};stroke-dashoffset:${open ? 0 : arcLen};" />
+              style="stroke:${tone};stroke-dashoffset:${arcLen * (1 - amt)};" />
         <!-- door leaf, hinged at left jamb -->
         <g transform="translate(${-half} 0)">
           <g class="fp-door-leaf" style="transform:rotate(${angle}deg);">
@@ -129,7 +327,13 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
         </g>
       `;
   }
-  return svg`<g transform="translate(${o.x} ${o.y}) rotate(${o.angle})">${body}</g>`;
+  // Orientation mirrors are applied as a single scale wrapper inside the
+  // place-into-position transform, so the base symbol (drawn once, centered at
+  // the origin) reflects into any of the four hinge/swing orientations.
+  const { sx, sy } = openingMirror(o);
+  return svg`<g transform="translate(${o.x} ${o.y}) rotate(${o.angle})">
+      <g transform="scale(${sx} ${sy})">${body}</g>
+    </g>`;
 }
 
 /**

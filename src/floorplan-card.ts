@@ -14,7 +14,8 @@ import {
   WALL_THICKNESS,
   renderOpening,
   renderWallMask,
-  openingDefaultOpen,
+  resolveOpeningAmount,
+  openingClickAction,
   renderRipple,
   renderFurniture,
   renderTracker,
@@ -106,14 +107,10 @@ export class FloorplanCard extends LitElement {
     return st === "on" || st === "open" || st === "home" || st === "playing";
   }
 
-  /** Whether an opening should be drawn open, from its entity state (or the default). */
-  private _openingIsOpen(o: Opening): boolean {
-    if (!o.entity) return openingDefaultOpen(o);
-    const st = this.hass?.states[o.entity]?.state;
-    if (st === undefined) return openingDefaultOpen(o);
-    // A contact sensor / cover is "open" when on/open; everything else is closed.
-    const open = st === "on" || st === "open";
-    return o.invert ? !open : open;
+  /** How far open an opening should be drawn (0..1), from its entity (or default). */
+  private _openingAmount(o: Opening): number {
+    const state = o.entity ? this.hass?.states[o.entity] : undefined;
+    return resolveOpeningAmount(o, state);
   }
 
   /** Formatted "state unit" for a single entity, or "—" when unavailable. */
@@ -152,6 +149,27 @@ export class FloorplanCard extends LitElement {
       this.dispatchEvent(
         new CustomEvent("hass-more-info", {
           detail: { entityId: item.entity },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
+  }
+
+  /**
+   * Tapping an entity-bound opening: toggle a controllable `cover`, otherwise
+   * open the entity's more-info dialog (read-only `binary_sensor`s and
+   * position-only covers). See {@link openingClickAction}.
+   */
+  private _onOpeningClick(o: Opening): void {
+    if (!this.hass || !o.entity) return;
+    const features = (this.hass.states[o.entity]?.attributes?.supported_features as number) ?? 0;
+    if (openingClickAction(o.entity, features) === "cover-toggle") {
+      this.hass.callService("cover", "toggle", { entity_id: o.entity });
+    } else {
+      this.dispatchEvent(
+        new CustomEvent("hass-more-info", {
+          detail: { entityId: o.entity },
           bubbles: true,
           composed: true,
         })
@@ -251,13 +269,26 @@ export class FloorplanCard extends LitElement {
               )}
             </g>
             ${active.openings.map((o) => {
-              const isOpen = this._openingIsOpen(o);
-              return renderOpening(o, {
+              const amount = this._openingAmount(o);
+              const symbol = renderOpening(o, {
                 color: "var(--primary-text-color)",
-                open: isOpen,
-                active: !!o.entity && isOpen,
+                open: amount > 0,
+                amount,
+                active: !!o.entity && amount > 0,
                 accent: o.activeColor ?? "var(--primary-color, #03a9f4)",
               });
+              if (!o.entity) return symbol;
+              // Entity-bound openings are tappable — a transparent rect over the
+              // opening's wall gap gives a reliable hit target beyond the thin
+              // leaf/panel strokes.
+              const half = o.length / 2;
+              const cutH = WALL_THICKNESS + 4;
+              return svg`<g class="fp-opening" @click=${() => this._onOpeningClick(o)}>
+                  ${symbol}
+                  <rect class="fp-opening-hit" x=${o.x - half} y=${o.y - cutH / 2}
+                        width=${o.length} height=${cutH}
+                        transform="rotate(${o.angle} ${o.x} ${o.y})" />
+                </g>`;
             })}
             ${(active.trackers ?? []).map((tr) =>
               renderTracker(tr, {
@@ -367,6 +398,20 @@ export class FloorplanCard extends LitElement {
     }
     .fp-door-arc {
       transition: stroke-dashoffset 0.5s ease, stroke 0.5s ease;
+    }
+    .fp-opening {
+      cursor: pointer;
+    }
+    .fp-opening-hit {
+      fill: transparent;
+      pointer-events: all;
+    }
+    .fp-slide-panel {
+      transform-box: fill-box;
+      transition: transform 0.5s ease;
+    }
+    .fp-slide-panel rect {
+      transition: fill 0.5s ease;
     }
     .items {
       position: absolute;

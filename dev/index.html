@@ -45,7 +45,11 @@
         color: #607d8b;
         margin: 0 0 8px;
       }
-      #editor-host, #card-host, #tracker-emu { background: #fff; border-radius: 8px; }
+      #editor-host, #card-host, #tracker-emu, #opening-emu { background: #fff; border-radius: 8px; }
+      #opening-emu { padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+      #opening-emu .op-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+      #opening-emu .op-row .ent { color: #607d8b; font-family: ui-monospace, monospace; font-size: 12px; }
+      #opening-emu label.op-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: #455a64; }
       #card-host { padding: 12px; }
       #tracker-emu {
         padding: 12px;
@@ -89,6 +93,10 @@
     <div class="pane" id="card-pane">
       <h2>Live card preview</h2>
       <div id="card-host"></div>
+    </div>
+    <div class="pane" id="opening-emu-pane" style="max-width:720px;display:none;">
+      <h2>Opening emulator (dev only)</h2>
+      <div id="opening-emu"></div>
     </div>
     <div class="pane" id="tracker-emu-pane" style="max-width:720px;display:none;">
       <h2>Tracker emulator (dev only)</h2>

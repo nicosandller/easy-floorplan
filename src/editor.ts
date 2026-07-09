@@ -40,6 +40,9 @@ import {
   renderOpening,
   renderWallMask,
   openingDefaultOpen,
+  openingMotion,
+  sliderStyleOf,
+  openingFromDeviceClass,
   renderRipple,
   renderFurniture,
   renderTracker,
@@ -1752,6 +1755,10 @@ export class FloorplanCardEditor extends LitElement {
         ${renderOpening(o, {
           color: selected ? "var(--primary-color, #03a9f4)" : "var(--primary-text-color)",
           open: openingDefaultOpen(o),
+          // Draw sliding openings partly open in the editor so the slide
+          // direction and panel style are visible — a closed slider looks
+          // symmetric, which would make the Slide / Style controls appear inert.
+          amount: openingMotion(o) === "slide" ? 0.55 : undefined,
         })}
       </g>`;
   }
@@ -2051,6 +2058,24 @@ export class FloorplanCardEditor extends LitElement {
           </select>
         </div>
         <div class="row">
+          <label>Motion</label>
+          <select
+            .value=${openingMotion(o)}
+            @change=${(e: Event) => {
+              const motion = (e.target as HTMLSelectElement).value as "swing" | "slide";
+              // sliderStyle only applies while sliding — drop it when switching
+              // back to swing so the config stays clean.
+              this._updateOpening(o.id, {
+                motion: motion === "slide" ? "slide" : undefined,
+                ...(motion === "swing" ? { sliderStyle: undefined } : {}),
+              });
+            }}
+          >
+            <option value="swing">swing</option>
+            <option value="slide">slide</option>
+          </select>
+        </div>
+        <div class="row">
           <label>Length</label>
           <input
             type="number"
@@ -2066,15 +2091,91 @@ export class FloorplanCardEditor extends LitElement {
             }}
           />
         </div>
+        ${o.type === "door" && openingMotion(o) === "swing"
+          ? html`
+              <div class="row">
+                <label>Hinge</label>
+                <select
+                  .value=${o.flipH ? "right" : "left"}
+                  @change=${(e: Event) =>
+                    this._updateOpening(o.id, {
+                      flipH: (e.target as HTMLSelectElement).value === "right" || undefined,
+                    })}
+                >
+                  <option value="left">left</option>
+                  <option value="right">right</option>
+                </select>
+              </div>`
+          : nothing}
+        ${openingMotion(o) === "swing"
+          ? html`
+              <div class="row">
+                <label>Opens</label>
+                <select
+                  .value=${o.flipV ? "other" : "this"}
+                  @change=${(e: Event) =>
+                    this._updateOpening(o.id, {
+                      flipV: (e.target as HTMLSelectElement).value === "other" || undefined,
+                    })}
+                >
+                  <option value="this">this side</option>
+                  <option value="other">other side</option>
+                </select>
+              </div>`
+          : nothing}
+        ${openingMotion(o) === "slide"
+          ? html`
+              ${sliderStyleOf(o) !== "biparting"
+                ? html`
+                    <div class="row">
+                      <label>Slide</label>
+                      <select
+                        .value=${o.flipH ? "right" : "left"}
+                        @change=${(e: Event) =>
+                          this._updateOpening(o.id, {
+                            flipH: (e.target as HTMLSelectElement).value === "right" || undefined,
+                          })}
+                      >
+                        <option value="left">to left</option>
+                        <option value="right">to right</option>
+                      </select>
+                    </div>`
+                : nothing}
+              <div class="row">
+                <label>Style</label>
+                <select
+                  .value=${sliderStyleOf(o)}
+                  @change=${(e: Event) => {
+                    const v = (e.target as HTMLSelectElement).value;
+                    this._updateOpening(o.id, {
+                      sliderStyle: v === "single" ? undefined : (v as "bypass" | "biparting"),
+                    });
+                  }}
+                >
+                  <option value="single">single</option>
+                  <option value="bypass">bypass (stack)</option>
+                  <option value="biparting">biparting (split)</option>
+                </select>
+              </div>`
+          : nothing}
         <div class="row wide">
-          <label>Sensor</label>
+          <label>Entity</label>
           <ha-entity-picker
             .hass=${this.hass}
             .value=${o.entity ?? ""}
             .includeDomains=${["binary_sensor", "cover"]}
             allow-custom-entity
-            @value-changed=${(e: CustomEvent) =>
-              this._updateOpening(o.id, { entity: (e.detail.value as string) || undefined })}
+            @value-changed=${(e: CustomEvent) => {
+              const entity = (e.detail.value as string) || undefined;
+              // Infer type/motion from the entity's HA device_class (e.g. a
+              // `cover` with device_class `window` → a window; a `garage`
+              // roller → a sliding door). Only when the class is known, so we
+              // never clobber a hand-set type with a guess.
+              const dc = entity
+                ? (this.hass?.states[entity]?.attributes?.device_class as string | undefined)
+                : undefined;
+              this._updateOpening(o.id, { entity, ...(dc ? openingFromDeviceClass(dc) : {}) });
+            }}
           ></ha-entity-picker>
         </div>
         ${o.entity
