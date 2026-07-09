@@ -232,6 +232,13 @@ export interface Floor {
   id: string;
   name: string;
   /**
+   * Optional link to a Home Assistant floor (its registry `floor_id`).
+   * Selecting one in the editor names this floor after it; the id is kept so
+   * future features (e.g. area filtering, per-floor entity defaults) can use
+   * the association. Purely additive — nothing renders differently today.
+   */
+  haFloor?: string;
+  /**
    * Optional background image URL (e.g. `/local/floorplan.png` or an external
    * URL) drawn behind the elements — handy for tracing over a real floor plan.
    * It fills the virtual canvas, so match the canvas width/height to the image
@@ -322,6 +329,29 @@ export function snapToGridPercent(snap: number, grid: number): number {
  */
 export function gridPercentToSnap(percent: number, grid: number): number {
   return Math.max(1, Math.round((grid * percent) / 100));
+}
+
+/** A Home Assistant floor-registry entry (the subset this card uses). */
+export interface HaFloorInfo {
+  floor_id: string;
+  name: string;
+  /** Vertical ordering in HA (ground = 0, upstairs = 1, basement = -1, …). */
+  level?: number | null;
+}
+
+/**
+ * List the Home Assistant floors from a `hass` object, sorted by level then
+ * name. Older HA versions (before the floor registry was exposed on `hass`)
+ * and the dev harness simply yield `[]`, so callers can hide the control when
+ * there is nothing to link to. Typed loosely because `custom-card-helpers`'
+ * HomeAssistant type predates `hass.floors`.
+ */
+export function haFloorsOf(hass: unknown): HaFloorInfo[] {
+  const floors = (hass as { floors?: Record<string, HaFloorInfo> } | null | undefined)?.floors;
+  if (!floors || typeof floors !== "object") return [];
+  return Object.values(floors)
+    .filter((f): f is HaFloorInfo => !!f && typeof f.floor_id === "string" && typeof f.name === "string")
+    .sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || a.name.localeCompare(b.name));
 }
 
 export function emptyConfig(type: string): FloorplanCardConfig {
