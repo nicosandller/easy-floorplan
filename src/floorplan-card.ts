@@ -425,7 +425,20 @@ export class FloorplanCard extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 2px;
+    }
+    /*
+     * The item's x/y anchors its icon, not its icon-plus-label. Were the label
+     * in flow, it would make the column taller and the translate would
+     * push the icon up by half the label's height -- so an item showing state
+     * would sit higher than a bare one beside it, at the same y. The label hangs
+     * below instead, out of flow, and every icon lands on its own y.
+     */
+    .item > .label {
+      position: absolute;
+      top: calc(100% + 2px);
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
     }
     .badge {
       width: 34px;
