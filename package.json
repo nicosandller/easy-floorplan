@@ -1,6 +1,6 @@
 {
   "name": "easy-floorplan-card",
-  "version": "0.4.2",
+  "version": "0.7.2",
   "description": "Interactive floorplan card for Home Assistant with a visual editor for walls, doors, windows, furniture, text and device/light controls",
   "type": "module",
   "scripts": {
