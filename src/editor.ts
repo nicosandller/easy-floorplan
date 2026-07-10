@@ -140,6 +140,8 @@ interface Drag {
   moved?: boolean;
   /** The exact history entry this drag pushed, so cancel can remove it by identity. */
   snapshot?: FloorplanCardConfig;
+  /** The redo stack as it stood before the drag's history push cleared it. */
+  priorFuture?: FloorplanCardConfig[];
 }
 
 type Marquee = Rect;
@@ -798,6 +800,9 @@ export class FloorplanCardEditor extends LitElement {
     if (drag?.moved && drag.snapshot) {
       this._history = this._history.filter((c) => c !== drag.snapshot);
       this._emit(drag.snapshot);
+      // The push at first movement cleared the redo stack; a canceled drag
+      // must be a complete no-op, so put it back.
+      this._future = drag.priorFuture ?? [];
     }
   }
 
@@ -956,6 +961,7 @@ export class FloorplanCardEditor extends LitElement {
     if (!drag.moved) {
       if (Math.hypot(p.x - drag.start.x, p.y - drag.start.y) <= 4) return;
       drag.moved = true;
+      drag.priorFuture = this._future;
       this._pushHistory();
       drag.snapshot = this._history[this._history.length - 1];
     }
