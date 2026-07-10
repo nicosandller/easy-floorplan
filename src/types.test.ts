@@ -10,6 +10,7 @@ import {
   trackerPresenceDetected,
   haFloorsOf,
   uid,
+  configsEqual,
 } from "./types";
 import type { FloorplanCardConfig, TrackerSensor } from "./types";
 
@@ -271,5 +272,28 @@ describe("uid", () => {
   it("prefixes the id and stays unique", () => {
     expect(uid("wall")).toMatch(/^wall_/);
     expect(uid("x")).not.toBe(uid("x"));
+  });
+});
+
+describe("configsEqual", () => {
+  it("treats missing key and undefined value as equal", () => {
+    expect(configsEqual({ a: 1, b: undefined }, { a: 1 })).toBe(true);
+  });
+
+  it("compares nested arrays/objects structurally", () => {
+    expect(configsEqual({ f: [{ x: 1 }] }, { f: [{ x: 1 }] })).toBe(true);
+    expect(configsEqual({ f: [{ x: 1 }] }, { f: [{ x: 2 }] })).toBe(false);
+  });
+
+  it("detects added/removed keys and length changes", () => {
+    expect(configsEqual({ a: 1 }, { a: 1, b: 2 })).toBe(false);
+    expect(configsEqual({ f: [1] }, { f: [1, 2] })).toBe(false);
+  });
+
+  it("handles primitives and nulls", () => {
+    expect(configsEqual(1, 1)).toBe(true);
+    expect(configsEqual(null, null)).toBe(true);
+    expect(configsEqual(null, {})).toBe(false);
+    expect(configsEqual("a", "b")).toBe(false);
   });
 });

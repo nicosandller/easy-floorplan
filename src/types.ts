@@ -428,6 +428,26 @@ export function uid(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 9)}`;
 }
 
+/**
+ * Structural equality for JSON-shaped config data. A missing key and an
+ * `undefined` value compare equal, because a YAML round-trip through HA's
+ * dialog drops undefined-valued keys.
+ */
+export function configsEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true;
+  if (Array.isArray(a) || Array.isArray(b)) {
+    if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+    return a.every((v, i) => configsEqual(v, b[i]));
+  }
+  if (typeof a !== "object" || typeof b !== "object" || a === null || b === null) return false;
+  const ra = a as Record<string, unknown>;
+  const rb = b as Record<string, unknown>;
+  for (const k of new Set([...Object.keys(ra), ...Object.keys(rb)])) {
+    if (!configsEqual(ra[k], rb[k])) return false;
+  }
+  return true;
+}
+
 /** A fresh, empty floor (optionally seeded with walls). */
 export function makeFloor(name: string, walls: Wall[] = []): Floor {
   return {

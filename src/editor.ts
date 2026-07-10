@@ -26,6 +26,7 @@ import {
   DEFAULT_RIPPLE_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
   FURNITURE_DEFAULT_SIZE,
+  configsEqual,
   emptyConfig,
   getFloors,
   gridPercentToSnap,
@@ -129,6 +130,8 @@ interface Drag {
   orig: Map<string, OrigPos>;
   /** Set when dragging a single wall endpoint handle. */
   endpoint?: 1 | 2;
+  /** Set once the drag actually moved something (history snapshots lazily). */
+  moved?: boolean;
 }
 
 interface Marquee {
@@ -196,19 +199,29 @@ export class FloorplanCardEditor extends LitElement {
   @query(".canvas-wrap") private _canvasWrap?: HTMLElement;
 
   private _drag: Drag | null = null;
+  /** Pointer driving the current gesture; others are ignored while it's active. */
+  private _gesturePointer: number | null = null;
   /** True when the active marquee should add to (rather than replace) the selection. */
   private _marqueeAdd = false;
   private _clipboard: Clipboard | null = null;
   private _onKeyDown = (ev: KeyboardEvent) => this._handleKeyDown(ev);
+  private _onFocusIn = (ev: FocusEvent) => {
+    // While the fullscreen popover is up, anything that pulls focus outside the
+    // editor (Tab past the last control, a dialog opening above) lands on UI
+    // hidden behind the top layer. Collapse instead of leaving the user blind.
+    if (this._fullscreen && !ev.composedPath().includes(this)) this._fullscreen = false;
+  };
 
   public connectedCallback(): void {
     super.connectedCallback();
     // Capture phase so HA's dialog can't swallow the arrow keys before we see them.
     window.addEventListener("keydown", this._onKeyDown, true);
+    window.addEventListener("focusin", this._onFocusIn);
   }
 
   public disconnectedCallback(): void {
     window.removeEventListener("keydown", this._onKeyDown, true);
+    window.removeEventListener("focusin", this._onFocusIn);
     super.disconnectedCallback();
   }
 
@@ -232,6 +245,14 @@ export class FloorplanCardEditor extends LitElement {
         base.defaultFloor && floors.some((f) => f.id === base.defaultFloor)
           ? base.defaultFloor
           : floors[0].id;
+    }
+    // A setConfig that isn't the echo of our own emission is an external change
+    // (YAML-tab edit, a different card loaded into the dialog): stale undo/redo
+    // snapshots would silently revert it, so drop them.
+    if (this._lastEmitted && config !== this._lastEmitted && !configsEqual(config, this._lastEmitted)) {
+      this._history = [];
+      this._future = [];
+      this._liveEditKey = null;
     }
   }
 
@@ -411,16 +432,24 @@ export class FloorplanCardEditor extends LitElement {
 
   // ---- config mutation + history ----------------------------------------
 
+  /** The config most recently dispatched, to recognize HA's setConfig echo. */
+  private _lastEmitted?: FloorplanCardConfig;
+
   private _emit(config: FloorplanCardConfig): void {
     this._config = config;
+    this._lastEmitted = config;
     this.dispatchEvent(
       new CustomEvent("config-changed", { detail: { config }, bubbles: true, composed: true })
     );
   }
 
-  private _pushHistory(): void {
+  /** Key of the in-progress live-edit burst (one history snapshot per burst). */
+  private _liveEditKey: string | null = null;
+
+  private _pushHistory(burstKey: string | null = null): void {
     this._history = [...this._history, structuredClone(this._config)].slice(-HISTORY_MAX);
     this._future = [];
+    this._liveEditKey = burstKey;
   }
 
   /** Discrete change: snapshot for undo, then emit. */
@@ -430,6 +459,7 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _undo(): void {
+    this._liveEditKey = null;
     if (!this._history.length) return;
     this._future = [structuredClone(this._config), ...this._future];
     const prev = this._history[this._history.length - 1];
@@ -439,6 +469,7 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _redo(): void {
+    this._liveEditKey = null;
     if (!this._future.length) return;
     this._history = [...this._history, structuredClone(this._config)];
     const next = this._future[0];
@@ -496,21 +527,37 @@ export class FloorplanCardEditor extends LitElement {
     // so ignore the event unless this editor is actually visible.
     const checkVisibility = (this as { checkVisibility?: () => boolean }).checkVisibility;
     if (checkVisibility && !checkVisibility.call(this)) return;
-    // Don't hijack keys while typing in a field / picker.
     const path = ev.composedPath();
-    if (
-      path.some((el) => {
-        const tag = (el as HTMLElement).tagName?.toLowerCase();
-        return (
-          tag === "input" ||
-          tag === "textarea" ||
-          tag === "select" ||
-          tag === "ha-entity-picker" ||
-          tag === "ha-icon-picker"
-        );
-      })
-    )
+    // Only react while the user is actually working in the editor — the event
+    // must originate inside it (the canvas is focusable, so canvas work counts).
+    // A window-level listener sees every key on the page; without this, keys
+    // leak in from HA UI stacked above (more-info dialog, quick-bar).
+    if (!path.includes(this)) return;
+    // Don't hijack keys while typing in a field / picker.
+    const typing = path.some((el) => {
+      const node = el as HTMLElement;
+      const tag = node.tagName?.toLowerCase();
+      return (
+        tag === "input" ||
+        tag === "textarea" ||
+        tag === "select" ||
+        tag === "ha-entity-picker" ||
+        tag === "ha-icon-picker" ||
+        node.isContentEditable === true
+      );
+    });
+    if (typing) {
+      // While fullscreen, Escape must never fall through to HA's dialog — it
+      // would close it underneath the top-layer workspace (and a dirty config
+      // pops an invisible confirm behind it). First Esc leaves the field; the
+      // next one runs the normal cascade below.
+      if (ev.key === "Escape" && this._fullscreen) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        (path[0] as HTMLElement | undefined)?.blur?.();
+      }
       return;
+    }
 
     const mod = ev.ctrlKey || ev.metaKey;
     const key = ev.key.toLowerCase();
@@ -538,12 +585,15 @@ export class FloorplanCardEditor extends LitElement {
     // Undo / redo — the toolbar buttons exist, but the keyboard is what
     // everyone reaches for first. Ctrl/Cmd+Z, Shift for redo, plus Ctrl+Y.
     if (mod && key === "z") {
+      // Mid-gesture undo would emit on top of the restored config — ignore.
+      if (this._drag || this._draft || this._draftTracker || this._marquee) return;
       ev.preventDefault();
       if (ev.shiftKey) this._redo();
       else this._undo();
       return;
     }
     if (mod && key === "y") {
+      if (this._drag || this._draft || this._draftTracker || this._marquee) return;
       ev.preventDefault();
       this._redo();
       return;
@@ -560,12 +610,10 @@ export class FloorplanCardEditor extends LitElement {
         this._addMenuOpen = false;
         return;
       }
-      if (this._draft || this._draftTracker || this._marquee) {
+      if (this._draft || this._draftTracker || this._marquee || this._drag) {
         ev.preventDefault();
         ev.stopPropagation();
-        this._draft = null;
-        this._draftTracker = null;
-        this._marquee = null;
+        this._cancelGesture();
       } else if (this._selection.length) {
         ev.preventDefault();
         ev.stopPropagation();
@@ -656,6 +704,9 @@ export class FloorplanCardEditor extends LitElement {
 
   private _onCanvasDown(ev: PointerEvent): void {
     if (ev.button !== 0) return;
+    // One gesture at a time: a second touch must not hijack the state machine.
+    if (this._gesturePointer !== null) return;
+    this._canvasWrap?.focus();
     const raw = this._toVirtual(ev, false);
 
     if (this._tool === "wall") {
@@ -663,6 +714,7 @@ export class FloorplanCardEditor extends LitElement {
         ? { x: this._snap(raw.x), y: this._snap(raw.y) }
         : this._snapWallPoint(raw.x, raw.y);
       this._draft = { x1: s.x, y1: s.y, x2: s.x, y2: s.y };
+      this._gesturePointer = ev.pointerId;
       this._capturePointer(ev);
       return;
     }
@@ -674,16 +726,55 @@ export class FloorplanCardEditor extends LitElement {
       const x = this._snap(raw.x);
       const y = this._snap(raw.y);
       this._draftTracker = { x0: x, y0: y, x1: x, y1: y };
+      this._gesturePointer = ev.pointerId;
       this._capturePointer(ev);
       return;
     }
     // Select tool, empty canvas: start a marquee (rubber-band) selection.
     this._marqueeAdd = ev.shiftKey || ev.ctrlKey || ev.metaKey;
     this._marquee = { x0: raw.x, y0: raw.y, x1: raw.x, y1: raw.y };
+    this._gesturePointer = ev.pointerId;
     this._capturePointer(ev);
   }
 
+  /**
+   * Abort any in-progress gesture. A moved drag is rolled back to the exact
+   * pre-drag config (restoring wall-snap angle changes too) and its history
+   * snapshot is dropped — a canceled drag leaves no trace in undo.
+   */
+  private _cancelGesture(): void {
+    this._gesturePointer = null;
+    this._draft = null;
+    this._draftTracker = null;
+    this._marquee = null;
+    const drag = this._drag;
+    this._drag = null;
+    if (drag?.moved) {
+      const prev = this._history[this._history.length - 1];
+      this._history = this._history.slice(0, -1);
+      if (prev) this._emit(prev);
+    }
+  }
+
+  private _onPointerCancel(ev: PointerEvent): void {
+    if (this._gesturePointer !== null && ev.pointerId !== this._gesturePointer) return;
+    this._cancelGesture();
+  }
+
+  /** True when this event belongs to a pointer other than the gesture's. */
+  private _foreignPointer(ev: PointerEvent): boolean {
+    return this._gesturePointer !== null && ev.pointerId !== this._gesturePointer;
+  }
+
   private _onCanvasMove(ev: PointerEvent): void {
+    if (this._foreignPointer(ev)) return;
+    // A gesture with no buttons held means pointerup never reached us
+    // (alt-tab, dialog retarget) — treat it as canceled instead of letting
+    // the element chase the hovering mouse.
+    if (ev.buttons === 0 && (this._drag || this._draft || this._draftTracker || this._marquee)) {
+      this._cancelGesture();
+      return;
+    }
     if (this._tool === "wall" && this._draft) {
       const raw = this._toVirtual(ev, false);
       const s = this._snapWallEnd(this._draft.x1, this._draft.y1, raw.x, raw.y);
@@ -708,6 +799,8 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _onCanvasUp(ev: PointerEvent): void {
+    if (this._foreignPointer(ev)) return;
+    this._gesturePointer = null;
     if (this._tool === "wall" && this._draft) {
       const d = this._draft;
       this._draft = null;
@@ -778,6 +871,8 @@ export class FloorplanCardEditor extends LitElement {
   private _startDrag(ev: PointerEvent, sel: Sel, endpoint?: 1 | 2): void {
     if (this._tool !== "select") return;
     ev.stopPropagation();
+    if (this._gesturePointer !== null) return;
+    this._canvasWrap?.focus();
     // Endpoint handles always operate on that single wall.
     if (endpoint) this._selectOne(sel);
     else this._selectForPointer(ev, sel);
@@ -787,7 +882,7 @@ export class FloorplanCardEditor extends LitElement {
       orig: this._snapshotSelection(),
       endpoint,
     };
-    this._pushHistory();
+    this._gesturePointer = ev.pointerId;
     this._capturePointer(ev);
   }
 
@@ -822,6 +917,12 @@ export class FloorplanCardEditor extends LitElement {
 
   private _applyDrag(ev: PointerEvent): void {
     const drag = this._drag!;
+    // First actual movement: snapshot for undo now, not at pointerdown, so a
+    // plain selection click doesn't spam history or wipe the redo stack.
+    if (!drag.moved) {
+      drag.moved = true;
+      this._pushHistory();
+    }
     const p = this._toVirtual(ev, false);
     const f = this._floor();
 
@@ -906,22 +1007,33 @@ export class FloorplanCardEditor extends LitElement {
   private _onOverlayDown(ev: PointerEvent, sel: OverlaySel): void {
     if (this._tool !== "select") return;
     ev.stopPropagation();
+    // preventDefault suppresses native mousedown focusing, so focus explicitly.
     ev.preventDefault();
+    if (this._gesturePointer !== null) return;
+    this._canvasWrap?.focus();
     this._selectForPointer(ev, sel);
     this._drag = {
       primary: sel,
       start: this._toVirtual(ev, false),
       orig: this._snapshotSelection(),
     };
-    this._pushHistory();
+    this._gesturePointer = ev.pointerId;
     this._capturePointer(ev, ev.currentTarget as Element);
   }
 
   private _onOverlayMove(ev: PointerEvent): void {
+    if (this._foreignPointer(ev)) return;
+    if (ev.buttons === 0 && this._drag) {
+      // Missed pointerup (see _onCanvasMove) — cancel rather than chase.
+      this._cancelGesture();
+      return;
+    }
     if (this._drag) this._applyDrag(ev);
   }
 
   private _onOverlayUp(ev: PointerEvent): void {
+    if (this._foreignPointer(ev)) return;
+    this._gesturePointer = null;
     if (this._drag) {
       this._drag = null;
       this._releasePointer(ev, ev.currentTarget as Element);
@@ -1260,6 +1372,61 @@ export class FloorplanCardEditor extends LitElement {
 
   private _patchConfig(partial: Partial<FloorplanCardConfig>): void {
     this._commit({ ...this._config, ...partial });
+  }
+
+  /**
+   * Live variants for continuous controls (sliders, color pickers, typing):
+   * one undo snapshot per edit burst — keyed by element and fields — then
+   * plain emits, instead of a full-config clone per input event.
+   */
+  private _beginLive(kind: string, id: string, partial: object): void {
+    const key = `${kind}:${id}:${Object.keys(partial).sort().join(",")}`;
+    if (this._liveEditKey !== key) this._pushHistory(key);
+  }
+
+  private _updateOpeningLive(id: string, partial: Partial<Opening>): void {
+    this._beginLive("opening", id, partial);
+    this._emitFloor({
+      openings: this._floor().openings.map((o) => (o.id === id ? { ...o, ...partial } : o)),
+    });
+  }
+
+  private _updateItemLive(id: string, partial: Partial<FloorItem>): void {
+    this._beginLive("item", id, partial);
+    this._emitFloor({
+      items: this._floor().items.map((it) => (it.id === id ? { ...it, ...partial } : it)),
+    });
+  }
+
+  private _updateTextLive(id: string, partial: Partial<FloorText>): void {
+    this._beginLive("text", id, partial);
+    this._emitFloor({
+      texts: this._floor().texts.map((t) => (t.id === id ? { ...t, ...partial } : t)),
+    });
+  }
+
+  private _updateFurnitureLive(id: string, partial: Partial<Furniture>): void {
+    this._beginLive("furniture", id, partial);
+    this._emitFloor({
+      furniture: this._floor().furniture.map((f) => (f.id === id ? { ...f, ...partial } : f)),
+    });
+  }
+
+  private _updateTrackerLive(id: string, partial: Partial<Tracker>): void {
+    this._beginLive("tracker", id, partial);
+    this._emitFloor({
+      trackers: (this._floor().trackers ?? []).map((t) => (t.id === id ? { ...t, ...partial } : t)),
+    });
+  }
+
+  private _patchConfigLive(partial: Partial<FloorplanCardConfig>): void {
+    this._beginLive("config", "", partial);
+    this._emit({ ...this._config, ...partial });
+  }
+
+  private _patchFloorLive(partial: Partial<Floor>): void {
+    this._beginLive("floor", this._activeFloorId, partial);
+    this._emitFloor(partial);
   }
 
   // ---- rendering ----------------------------------------------------------
@@ -1634,7 +1801,7 @@ export class FloorplanCardEditor extends LitElement {
 
         <div class="workspace">
         <div class="canvas-outer">
-        <div class="canvas-wrap" @wheel=${this._onCanvasWheel}>
+        <div class="canvas-wrap" tabindex="0" @wheel=${this._onCanvasWheel}>
           <div class="stage" style="aspect-ratio: ${c.width} / ${c.height}; width:${this._zoom * 100}%;">
             <svg
               viewBox="0 0 ${c.width} ${c.height}"
@@ -1643,6 +1810,7 @@ export class FloorplanCardEditor extends LitElement {
               @pointerdown=${this._onCanvasDown}
               @pointermove=${this._onCanvasMove}
               @pointerup=${this._onCanvasUp}
+              @pointercancel=${this._onPointerCancel}
             >
               <rect
                 x="0"
@@ -1971,6 +2139,7 @@ export class FloorplanCardEditor extends LitElement {
         @pointerdown=${(e: PointerEvent) => this._onOverlayDown(e, { kind: "item", id: it.id })}
         @pointermove=${this._onOverlayMove}
         @pointerup=${this._onOverlayUp}
+        @pointercancel=${this._onPointerCancel}
       >
         ${visual}
         <span class="ilabel">${label}</span>
@@ -1990,6 +2159,7 @@ export class FloorplanCardEditor extends LitElement {
         @pointerdown=${(e: PointerEvent) => this._onOverlayDown(e, { kind: "text", id: t.id })}
         @pointermove=${this._onOverlayMove}
         @pointerup=${this._onOverlayUp}
+        @pointercancel=${this._onPointerCancel}
       >
         ${t.text || "…"}
       </div>
@@ -2073,7 +2243,8 @@ export class FloorplanCardEditor extends LitElement {
           <input
             type="color"
             .value=${this._config.background ?? "#ffffff"}
-            @input=${(e: Event) => this._patchConfig({ background: (e.target as HTMLInputElement).value })}
+            @input=${(e: Event) =>
+              this._patchConfigLive({ background: (e.target as HTMLInputElement).value })}
           />
           <input
             type="text"
@@ -2103,7 +2274,7 @@ export class FloorplanCardEditor extends LitElement {
                 step="0.05"
                 .value=${String(this._floor()?.imageOpacity ?? 1)}
                 @input=${(e: Event) =>
-                  this._commitFloor({
+                  this._patchFloorLive({
                     imageOpacity: Number((e.target as HTMLInputElement).value),
                   })}
               />
@@ -2119,7 +2290,11 @@ export class FloorplanCardEditor extends LitElement {
    * cleared field — `Number("")` is 0 but `Number("abc")`/partial input is
    * NaN, which previously got stored and broke the element's transform.
    */
-  private _renderAngleRow(value: number, apply: (angle: number) => void): TemplateResult {
+  private _renderAngleRow(
+    value: number,
+    apply: (angle: number) => void,
+    applyLive: (angle: number) => void = apply
+  ): TemplateResult {
     const current = Math.round(value);
     return html`
       <div class="row">
@@ -2129,7 +2304,7 @@ export class FloorplanCardEditor extends LitElement {
           min="0"
           max="360"
           .value=${String(value)}
-          @input=${(e: Event) => apply(Number((e.target as HTMLInputElement).value))}
+          @input=${(e: Event) => applyLive(Number((e.target as HTMLInputElement).value))}
         />
         <input
           class="num"
@@ -2315,7 +2490,9 @@ export class FloorplanCardEditor extends LitElement {
                   type="color"
                   .value=${o.activeColor ?? "#03a9f4"}
                   @input=${(e: Event) =>
-                    this._updateOpening(o.id, { activeColor: (e.target as HTMLInputElement).value })}
+                    this._updateOpeningLive(o.id, {
+                      activeColor: (e.target as HTMLInputElement).value,
+                    })}
                 />
                 <input
                   type="text"
@@ -2328,7 +2505,11 @@ export class FloorplanCardEditor extends LitElement {
                 />
               </div>`
           : nothing}
-        ${this._renderAngleRow(o.angle, (angle) => this._updateOpening(o.id, { angle }))}
+        ${this._renderAngleRow(
+          o.angle,
+          (angle) => this._updateOpening(o.id, { angle }),
+          (angle) => this._updateOpeningLive(o.id, { angle })
+        )}
       `;
     }
 
@@ -2399,7 +2580,7 @@ export class FloorplanCardEditor extends LitElement {
             step="2"
             .value=${String(it.size ?? DEFAULT_ITEM_SIZE)}
             @input=${(e: Event) =>
-              this._updateItem(it.id, { size: Number((e.target as HTMLInputElement).value) })}
+              this._updateItemLive(it.id, { size: Number((e.target as HTMLInputElement).value) })}
           />
           <input
             class="num"
@@ -2413,7 +2594,11 @@ export class FloorplanCardEditor extends LitElement {
               })}
           />
         </div>
-        ${this._renderAngleRow(it.angle ?? 0, (angle) => this._updateItem(it.id, { angle }))}
+        ${this._renderAngleRow(
+          it.angle ?? 0,
+          (angle) => this._updateItem(it.id, { angle }),
+          (angle) => this._updateItemLive(it.id, { angle })
+        )}
         <div class="row">
           <label>Display</label>
           <select
@@ -2436,7 +2621,9 @@ export class FloorplanCardEditor extends LitElement {
                   type="color"
                   .value=${it.rippleColor ?? "#03a9f4"}
                   @input=${(e: Event) =>
-                    this._updateItem(it.id, { rippleColor: (e.target as HTMLInputElement).value })}
+                    this._updateItemLive(it.id, {
+                      rippleColor: (e.target as HTMLInputElement).value,
+                    })}
                 />
                 <input
                   type="text"
@@ -2457,7 +2644,7 @@ export class FloorplanCardEditor extends LitElement {
                   step="4"
                   .value=${String(it.rippleSize ?? DEFAULT_RIPPLE_SIZE)}
                   @input=${(e: Event) =>
-                    this._updateItem(it.id, {
+                    this._updateItemLive(it.id, {
                       rippleSize: Number((e.target as HTMLInputElement).value),
                     })}
                 />
@@ -2507,7 +2694,7 @@ export class FloorplanCardEditor extends LitElement {
             type="text"
             .value=${t.text}
             @input=${(e: Event) =>
-              this._updateText(t.id, { text: (e.target as HTMLInputElement).value })}
+              this._updateTextLive(t.id, { text: (e.target as HTMLInputElement).value })}
           />
         </div>
         <div class="row">
@@ -2518,7 +2705,7 @@ export class FloorplanCardEditor extends LitElement {
             max="80"
             .value=${String(t.size ?? DEFAULT_TEXT_SIZE)}
             @input=${(e: Event) =>
-              this._updateText(t.id, { size: Number((e.target as HTMLInputElement).value) })}
+              this._updateTextLive(t.id, { size: Number((e.target as HTMLInputElement).value) })}
           />
           <input
             class="num"
@@ -2538,7 +2725,7 @@ export class FloorplanCardEditor extends LitElement {
             type="color"
             .value=${t.color ?? "#000000"}
             @input=${(e: Event) =>
-              this._updateText(t.id, { color: (e.target as HTMLInputElement).value })}
+              this._updateTextLive(t.id, { color: (e.target as HTMLInputElement).value })}
           />
           <input
             type="text"
@@ -2548,7 +2735,11 @@ export class FloorplanCardEditor extends LitElement {
               this._updateText(t.id, { color: (e.target as HTMLInputElement).value || undefined })}
           />
         </div>
-        ${this._renderAngleRow(t.angle ?? 0, (angle) => this._updateText(t.id, { angle }))}
+        ${this._renderAngleRow(
+          t.angle ?? 0,
+          (angle) => this._updateText(t.id, { angle }),
+          (angle) => this._updateTextLive(t.id, { angle })
+        )}
       `;
     }
 
@@ -2587,14 +2778,18 @@ export class FloorplanCardEditor extends LitElement {
               this._updateFurniture(f.id, { h: Number((e.target as HTMLInputElement).value) || f.h })}
           />
         </div>
-        ${this._renderAngleRow(f.angle ?? 0, (angle) => this._updateFurniture(f.id, { angle }))}
+        ${this._renderAngleRow(
+          f.angle ?? 0,
+          (angle) => this._updateFurniture(f.id, { angle }),
+          (angle) => this._updateFurnitureLive(f.id, { angle })
+        )}
         <div class="row">
           <label>Color</label>
           <input
             type="color"
             .value=${f.color ?? "#9e9e9e"}
             @input=${(e: Event) =>
-              this._updateFurniture(f.id, { color: (e.target as HTMLInputElement).value })}
+              this._updateFurnitureLive(f.id, { color: (e.target as HTMLInputElement).value })}
           />
           <input
             type="text"
@@ -2655,14 +2850,18 @@ export class FloorplanCardEditor extends LitElement {
               this._updateTracker(tr.id, { y: Number((e.target as HTMLInputElement).value) })}
           />
         </div>
-        ${this._renderAngleRow(tr.angle ?? 0, (angle) => this._updateTracker(tr.id, { angle }))}
+        ${this._renderAngleRow(
+          tr.angle ?? 0,
+          (angle) => this._updateTracker(tr.id, { angle }),
+          (angle) => this._updateTrackerLive(tr.id, { angle })
+        )}
         <div class="row">
           <label>Color</label>
           <input
             type="color"
             .value=${tr.color ?? "#03a9f4"}
             @input=${(e: Event) =>
-              this._updateTracker(tr.id, { color: (e.target as HTMLInputElement).value })}
+              this._updateTrackerLive(tr.id, { color: (e.target as HTMLInputElement).value })}
           />
           <input
             type="text"
@@ -2683,7 +2882,7 @@ export class FloorplanCardEditor extends LitElement {
             step="1"
             .value=${String(tr.dotSize ?? DEFAULT_TRACKER_DOT_SIZE)}
             @input=${(e: Event) =>
-              this._updateTracker(tr.id, {
+              this._updateTrackerLive(tr.id, {
                 dotSize: Number((e.target as HTMLInputElement).value),
               })}
           />
@@ -3084,6 +3283,15 @@ export class FloorplanCardEditor extends LitElement {
     button[disabled] {
       opacity: 0.4;
       cursor: not-allowed;
+    }
+    /* The canvas is focusable so keyboard shortcuts only fire while working in
+       the editor; only show the ring for keyboard focus, not pointer clicks. */
+    .canvas-wrap:focus {
+      outline: none;
+    }
+    .canvas-wrap:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: -2px;
     }
     .canvas-wrap {
       border: 1px solid var(--divider-color, #ccc);
