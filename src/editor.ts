@@ -12,15 +12,12 @@ import type {
   Furniture,
   FurnitureType,
   ItemKind,
-  ItemDisplay,
   Tracker,
   TrackerSensor,
 } from "./types";
 import {
   DEFAULT_CUSTOM_PERCENT,
   DEFAULT_GRID,
-  DEFAULT_HEIGHT,
-  DEFAULT_WIDTH,
   DEFAULT_ITEM_SIZE,
   DEFAULT_TEXT_SIZE,
   DEFAULT_RIPPLE_SIZE,
@@ -43,13 +40,11 @@ import {
   renderWallMask,
   openingDefaultOpen,
   openingMotion,
-  sliderStyleOf,
   openingFromDeviceClass,
   renderRipple,
   renderFurniture,
   renderTracker,
   trackerSensorReading,
-  defaultIcon,
   kindFromEntity,
   resolveItemIcon,
   snapToWall,
@@ -67,43 +62,26 @@ import {
   type Sel,
   type SelKind,
 } from "./editor-geometry";
+import {
+  FURNITURE_LABELS,
+  FURNITURE_TYPES,
+  diffFormValue,
+  floorImageForm,
+  furnitureForm,
+  isLiveField,
+  itemForm,
+  normalizeFormPatch,
+  openingForm,
+  projectForm,
+  textForm,
+  trackerForm,
+  wallForm,
+  type FormField,
+  type FormSpec,
+} from "./editor-forms";
 
-const FURNITURE_TYPES: FurnitureType[] = [
-  "table",
-  "roundTable",
-  "desk",
-  "chair",
-  "sofa",
-  "bed",
-  "wardrobe",
-  "rug",
-  "plant",
-  "fridge",
-  "stove",
-  "sink",
-  "toilet",
-  "stairs",
-  "tv",
-];
-
-/** User-facing labels for furniture types (the enum uses camelCase). */
-const FURNITURE_LABELS: Record<FurnitureType, string> = {
-  table: "table",
-  roundTable: "round table",
-  desk: "desk",
-  chair: "chair",
-  sofa: "sofa",
-  bed: "bed",
-  wardrobe: "wardrobe",
-  rug: "rug",
-  plant: "plant",
-  fridge: "fridge",
-  stove: "stove",
-  sink: "sink",
-  toilet: "toilet",
-  stairs: "stairs",
-  tv: "tv",
-};
+const formLabel = (s: FormField): string => s.label;
+const formHelper = (s: FormField): string | undefined => s.helper;
 
 type Tool = "select" | "wall" | "door" | "window" | "tracker";
 type OverlaySel = { kind: "item" | "text"; id: string };
@@ -306,10 +284,10 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   protected firstUpdated(): void {
-    void this._ensurePickers();
-    // Upgrade the plain-input fallbacks in place whenever a picker element
-    // gets defined later (by us or by another editor the user opened).
-    for (const tag of ["ha-entity-picker", "ha-icon-picker"]) {
+    void this._ensureHaComponents();
+    // Upgrade the plain-input fallbacks in place whenever a component gets
+    // defined later (by us or by another editor the user opened).
+    for (const tag of ["ha-form", "ha-entity-picker", "ha-icon-picker"]) {
       if (!customElements.get(tag)) {
         void customElements.whenDefined(tag).then(() => this.requestUpdate());
       }
@@ -342,16 +320,25 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
-   * `ha-entity-picker` / `ha-icon-picker` are only defined after HA loads an
-   * entities-card editor. Force that load so both pickers work inside our editor.
+   * `ha-form` and the pickers are only defined once HA loads an editor that
+   * imports them. The button-card editor statically imports ha-form (and the
+   * ui_action selector chain); the entities editor defines ha-entity-picker
+   * for the custom tracker rows. Every selector rendered by ha-form
+   * lazy-loads its own picker after that.
    */
-  private async _ensurePickers(): Promise<void> {
-    if (customElements.get("ha-entity-picker") && customElements.get("ha-icon-picker")) return;
+  private async _ensureHaComponents(): Promise<void> {
+    if (customElements.get("ha-form") && customElements.get("ha-entity-picker")) return;
     const helpers = await (window as unknown as { loadCardHelpers?: () => Promise<any> })
       .loadCardHelpers?.();
     if (!helpers) return;
-    const card = await helpers.createCardElement({ type: "entities", entities: [] });
-    await card.constructor?.getConfigElement?.();
+    for (const config of [{ type: "button" }, { type: "entities", entities: [] }]) {
+      try {
+        const card = await helpers.createCardElement(config);
+        await card?.constructor?.getConfigElement?.();
+      } catch {
+        // Fall back to plain inputs; the whenDefined hooks upgrade late arrivals.
+      }
+    }
     this.requestUpdate();
   }
 
@@ -1448,9 +1435,51 @@ export class FloorplanCardEditor extends LitElement {
     this._emit({ ...this._config, ...partial });
   }
 
+  private _updateWallLive(id: string, partial: Partial<Wall>): void {
+    this._beginLive("wall", id, partial);
+    this._emitFloor({
+      walls: this._floor().walls.map((w) => (w.id === id ? { ...w, ...partial } : w)),
+    });
+  }
+
   private _patchFloorLive(partial: Partial<Floor>): void {
     this._beginLive("floor", this._activeFloorId, partial);
     this._emitFloor(partial);
+  }
+
+  /** Route a form patch to the right per-kind update helper (commit or burst). */
+  private _applyElementPatch(
+    kind: "opening" | "item" | "text" | "furniture" | "tracker" | "wall",
+    id: string,
+    patch: Record<string, unknown>,
+    live: boolean
+  ): void {
+    switch (kind) {
+      case "opening":
+        if (live) this._updateOpeningLive(id, patch);
+        else this._updateOpening(id, patch);
+        break;
+      case "item":
+        if (live) this._updateItemLive(id, patch);
+        else this._updateItem(id, patch);
+        break;
+      case "text":
+        if (live) this._updateTextLive(id, patch);
+        else this._updateText(id, patch);
+        break;
+      case "furniture":
+        if (live) this._updateFurnitureLive(id, patch);
+        else this._updateFurniture(id, patch);
+        break;
+      case "tracker":
+        if (live) this._updateTrackerLive(id, patch);
+        else this._updateTracker(id, patch);
+        break;
+      case "wall":
+        if (live) this._updateWallLive(id, patch);
+        else this._updateWall(id, patch);
+        break;
+    }
   }
 
   // ---- rendering ----------------------------------------------------------
@@ -1932,6 +1961,160 @@ export class FloorplanCardEditor extends LitElement {
    * the icon-picker fallback so entity binding never silently dead-ends when
    * the helper load fails or the editor runs outside HA.
    */
+  /**
+   * Render a FormSpec: real `<ha-form>` (native HA selectors) when the
+   * element is defined, otherwise the same schema through plain inputs.
+   * Patches route through `apply(patch, live)` — `live` marks continuous
+   * fields (typing, sliders) for the burst-history path.
+   */
+  private _renderForm(
+    spec: FormSpec,
+    apply: (patch: Record<string, unknown>, live: boolean) => void
+  ): TemplateResult {
+    if (customElements.get("ha-form")) {
+      return html`<ha-form
+        .hass=${this.hass}
+        .data=${spec.data}
+        .schema=${spec.fields}
+        .computeLabel=${formLabel}
+        .computeHelper=${formHelper}
+        @value-changed=${(ev: CustomEvent) => {
+          // ha-form re-fires a consolidated event (detail.value = full data
+          // object); keep it from bubbling out into HA's dialog.
+          ev.stopPropagation();
+          const raw = diffFormValue(spec.data, ev.detail.value as Record<string, unknown>, spec.fields);
+          const patch = normalizeFormPatch(raw, spec.fields);
+          const names = Object.keys(patch);
+          if (!names.length) return;
+          const live =
+            names.length === 1 && isLiveField(spec.fields.find((f) => f.name === names[0])!);
+          apply(spec.toPatch(patch), live);
+        }}
+      ></ha-form>`;
+    }
+    return html`${spec.fields.map((f) => this._renderFallbackField(spec, f, apply))}`;
+  }
+
+  private _applyFallback(
+    spec: FormSpec,
+    field: FormField,
+    value: unknown,
+    live: boolean,
+    apply: (patch: Record<string, unknown>, live: boolean) => void
+  ): void {
+    const patch = normalizeFormPatch({ [field.name]: value }, spec.fields);
+    if (field.name in patch) apply(spec.toPatch(patch), live && isLiveField(field));
+  }
+
+  /** One plain-input row per schema field — the outside-HA / load-failure path. */
+  private _renderFallbackField(
+    spec: FormSpec,
+    f: FormField,
+    apply: (patch: Record<string, unknown>, live: boolean) => void
+  ): TemplateResult {
+    const value = spec.data[f.name];
+    const sel = f.selector;
+    if ("select" in sel) {
+      const options = (sel.select as { options: { value: string; label: string }[] }).options;
+      return html`<div class="row">
+        <label>${f.label}</label>
+        <select
+          .value=${String(value ?? "")}
+          @change=${(e: Event) =>
+            this._applyFallback(spec, f, (e.target as HTMLSelectElement).value, false, apply)}
+        >
+          ${options.map(
+            (o) => html`<option value=${o.value} ?selected=${o.value === value}>${o.label}</option>`
+          )}
+        </select>
+      </div>`;
+    }
+    if ("boolean" in sel) {
+      return html`<div class="row">
+        <label>${f.label}</label>
+        <input
+          type="checkbox"
+          .checked=${!!value}
+          @change=${(e: Event) =>
+            this._applyFallback(spec, f, (e.target as HTMLInputElement).checked, false, apply)}
+        />
+      </div>`;
+    }
+    if ("number" in sel) {
+      const n = sel.number as { min?: number; max?: number; step?: number; mode?: string };
+      const slider = n.mode === "slider";
+      return html`<div class="row">
+        <label>${f.label}</label>
+        ${slider
+          ? html`<input
+              type="range"
+              min=${n.min ?? 0}
+              max=${n.max ?? 100}
+              step=${n.step ?? 1}
+              .value=${String(value ?? n.min ?? 0)}
+              @input=${(e: Event) =>
+                this._applyFallback(spec, f, Number((e.target as HTMLInputElement).value), true, apply)}
+            />`
+          : nothing}
+        <input
+          class="num"
+          type="number"
+          min=${n.min ?? nothing}
+          max=${n.max ?? nothing}
+          step=${n.step ?? nothing}
+          .value=${String(value ?? "")}
+          @change=${(e: Event) => {
+            const input = e.target as HTMLInputElement;
+            this._applyFallback(
+              spec,
+              f,
+              input.value === "" ? undefined : Number(input.value),
+              false,
+              apply
+            );
+            // An invalid required value is dropped by normalizeFormPatch —
+            // re-sync the box so it never shows a value that wasn't stored.
+            input.value = String(spec.data[f.name] ?? "");
+          }}
+        />
+      </div>`;
+    }
+    if ("entity" in sel) {
+      const filter = (sel.entity as { filter?: { domain?: string[] }[] }).filter;
+      return html`<div class="row wide">
+        <label>${f.label}</label>
+        ${this._renderEntityPicker(
+          String(value ?? ""),
+          (v) => this._applyFallback(spec, f, v, false, apply),
+          filter?.[0]?.domain
+        )}
+      </div>`;
+    }
+    if ("icon" in sel) {
+      return html`<div class="row wide">
+        <label>${f.label}</label>
+        <input
+          type="text"
+          placeholder=${(sel.icon as { placeholder?: string }).placeholder ?? "mdi:…"}
+          .value=${String(value ?? "")}
+          @change=${(e: Event) =>
+            this._applyFallback(spec, f, (e.target as HTMLInputElement).value, false, apply)}
+        />
+      </div>`;
+    }
+    // Actions need HA's action editor — configurable via YAML outside HA.
+    if ("ui_action" in sel) return html`${nothing}`;
+    return html`<div class="row">
+      <label>${f.label}</label>
+      <input
+        type="text"
+        .value=${String(value ?? "")}
+        @input=${(e: Event) =>
+          this._applyFallback(spec, f, (e.target as HTMLInputElement).value, true, apply)}
+      />
+    </div>`;
+  }
+
   private _renderEntityPicker(
     value: string,
     onChange: (entity: string) => void,
@@ -2250,50 +2433,15 @@ export class FloorplanCardEditor extends LitElement {
   private _renderPanelBody(): TemplateResult {
     return html`
       <div class="rows panel-body">
-        <div class="row">
-          <label>Title</label>
-          <input
-            type="text"
-            .value=${this._config.title ?? ""}
-            @change=${(e: Event) =>
-              this._patchConfig({ title: (e.target as HTMLInputElement).value || undefined })}
-          />
-        </div>
-        <div class="row">
-          <label>Canvas W / H</label>
-          <input
-            type="number"
-            min="1"
-            .value=${String(this._config.width)}
-            @change=${(e: Event) =>
-              this._patchConfig({
-                width: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_WIDTH),
-              })}
-          />
-          <input
-            type="number"
-            min="1"
-            .value=${String(this._config.height)}
-            @change=${(e: Event) =>
-              this._patchConfig({
-                height: Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_HEIGHT),
-              })}
-          />
-        </div>
-        <div class="row wide">
-          <label>Grid size</label>
-          <input
-            type="number"
-            min="1"
-            .value=${String(this.grid)}
-            @change=${(e: Event) =>
-              this._setGrid(Math.max(1, Number((e.target as HTMLInputElement).value) || DEFAULT_GRID))}
-          />
-          <span class="hint">
-            Gap between grid lines, in canvas units (canvas is ${this._config.width}×${this._config
-              .height}). Smaller = finer grid, more lines.
-          </span>
-        </div>
+        ${this._renderForm(projectForm(this._config), (patch, live) => {
+          if ("grid" in patch && typeof patch.grid === "number") {
+            // The grid change rescales a custom snap step — its own path.
+            this._setGrid(patch.grid);
+            return;
+          }
+          if (live) this._patchConfigLive(patch as Partial<FloorplanCardConfig>);
+          else this._patchConfig(patch as Partial<FloorplanCardConfig>);
+        })}
         <div class="row">
           <label>Background</label>
           <input
@@ -2310,71 +2458,10 @@ export class FloorplanCardEditor extends LitElement {
               this._patchConfig({ background: (e.target as HTMLInputElement).value || undefined })}
           />
         </div>
-        <div class="row wide">
-          <label>Bg image</label>
-          <input
-            type="text"
-            placeholder="/local/floorplan.png or URL"
-            .value=${this._floor()?.image ?? ""}
-            @change=${(e: Event) =>
-              this._commitFloor({ image: (e.target as HTMLInputElement).value || undefined })}
-          />
-        </div>
-        ${this._floor()?.image
-          ? html`<div class="row">
-              <label>Image opacity</label>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.05"
-                .value=${String(this._floor()?.imageOpacity ?? 1)}
-                @input=${(e: Event) =>
-                  this._patchFloorLive({
-                    imageOpacity: Number((e.target as HTMLInputElement).value),
-                  })}
-              />
-            </div>`
-          : nothing}
-      </div>
-    `;
-  }
-
-  /**
-   * Shared "Angle" row (slider + number box) used by every rotatable element.
-   * Centralizes the wrap-to-0..360 math and guards the number box against a
-   * cleared field — `Number("")` is 0 but `Number("abc")`/partial input is
-   * NaN, which previously got stored and broke the element's transform.
-   */
-  private _renderAngleRow(
-    value: number,
-    apply: (angle: number) => void,
-    applyLive: (angle: number) => void = apply
-  ): TemplateResult {
-    const current = Math.round(value);
-    return html`
-      <div class="row">
-        <label>Angle</label>
-        <input
-          type="range"
-          min="0"
-          max="360"
-          .value=${String(value)}
-          @input=${(e: Event) => applyLive(Number((e.target as HTMLInputElement).value))}
-        />
-        <input
-          class="num"
-          type="number"
-          min="0"
-          max="360"
-          .value=${String(current)}
-          @change=${(e: Event) => {
-            const input = e.target as HTMLInputElement;
-            const n = Number(input.value);
-            if (input.value !== "" && Number.isFinite(n)) apply(((n % 360) + 360) % 360);
-            else input.value = String(current);
-          }}
-        />
+        ${this._renderForm(floorImageForm(this._floor()), (patch, live) => {
+          if (live) this._patchFloorLive(patch as Partial<Floor>);
+          else this._commitFloor(patch as Partial<Floor>);
+        })}
       </div>
     `;
   }
@@ -2393,176 +2480,42 @@ export class FloorplanCardEditor extends LitElement {
       const o = this._floor().openings.find((x) => x.id === sel.id);
       if (!o) return html`${nothing}`;
       return html`
-        <div class="row">
-          <label>Type</label>
-          <select
-            .value=${o.type}
-            @change=${(e: Event) =>
-              this._updateOpening(o.id, {
-                type: (e.target as HTMLSelectElement).value as OpeningType,
-              })}
-          >
-            <option value="door">door</option>
-            <option value="window">window</option>
-          </select>
-        </div>
-        <div class="row">
-          <label>Motion</label>
-          <select
-            .value=${openingMotion(o)}
-            @change=${(e: Event) => {
-              const motion = (e.target as HTMLSelectElement).value as "swing" | "slide";
-              // sliderStyle only applies while sliding — drop it when switching
-              // back to swing so the config stays clean.
-              this._updateOpening(o.id, {
-                motion: motion === "slide" ? "slide" : undefined,
-                ...(motion === "swing" ? { sliderStyle: undefined } : {}),
-              });
-            }}
-          >
-            <option value="swing">swing</option>
-            <option value="slide">slide</option>
-          </select>
-        </div>
-        <div class="row">
-          <label>Length</label>
-          <input
-            type="number"
-            min="1"
-            .value=${String(o.length)}
-            @change=${(e: Event) => {
-              const input = e.target as HTMLInputElement;
-              const n = Number(input.value);
-              // A cleared / invalid field would store 0 or NaN — an invisible
-              // opening that's impossible to click again. Keep the old length.
-              if (input.value !== "" && n >= 1) this._updateOpening(o.id, { length: n });
-              else input.value = String(o.length);
-            }}
-          />
-        </div>
-        ${o.type === "door" && openingMotion(o) === "swing"
-          ? html`
-              <div class="row">
-                <label>Hinge</label>
-                <select
-                  .value=${o.flipH ? "right" : "left"}
-                  @change=${(e: Event) =>
-                    this._updateOpening(o.id, {
-                      flipH: (e.target as HTMLSelectElement).value === "right" || undefined,
-                    })}
-                >
-                  <option value="left">left</option>
-                  <option value="right">right</option>
-                </select>
-              </div>`
-          : nothing}
-        ${openingMotion(o) === "swing"
-          ? html`
-              <div class="row">
-                <label>Opens</label>
-                <select
-                  .value=${o.flipV ? "other" : "this"}
-                  @change=${(e: Event) =>
-                    this._updateOpening(o.id, {
-                      flipV: (e.target as HTMLSelectElement).value === "other" || undefined,
-                    })}
-                >
-                  <option value="this">this side</option>
-                  <option value="other">other side</option>
-                </select>
-              </div>`
-          : nothing}
-        ${openingMotion(o) === "slide"
-          ? html`
-              ${sliderStyleOf(o) !== "biparting"
-                ? html`
-                    <div class="row">
-                      <label>Slide</label>
-                      <select
-                        .value=${o.flipH ? "right" : "left"}
-                        @change=${(e: Event) =>
-                          this._updateOpening(o.id, {
-                            flipH: (e.target as HTMLSelectElement).value === "right" || undefined,
-                          })}
-                      >
-                        <option value="left">to left</option>
-                        <option value="right">to right</option>
-                      </select>
-                    </div>`
-                : nothing}
-              <div class="row">
-                <label>Style</label>
-                <select
-                  .value=${sliderStyleOf(o)}
-                  @change=${(e: Event) => {
-                    const v = (e.target as HTMLSelectElement).value;
-                    this._updateOpening(o.id, {
-                      sliderStyle: v === "single" ? undefined : (v as "bypass" | "biparting"),
-                    });
-                  }}
-                >
-                  <option value="single">single</option>
-                  <option value="bypass">bypass (stack)</option>
-                  <option value="biparting">biparting (split)</option>
-                </select>
-              </div>`
-          : nothing}
-        <div class="row wide">
-          <label>Entity</label>
-          ${this._renderEntityPicker(
-            o.entity ?? "",
-            (value) => {
-              const entity = value || undefined;
-              // Infer type/motion from the entity's HA device_class (e.g. a
-              // `cover` with device_class `window` → a window; a `garage`
-              // roller → a sliding door). Only when the class is known, so we
-              // never clobber a hand-set type with a guess.
-              const dc = entity
-                ? (this.hass?.states[entity]?.attributes?.device_class as string | undefined)
-                : undefined;
-              this._updateOpening(o.id, { entity, ...(dc ? openingFromDeviceClass(dc) : {}) });
-            },
-            ["binary_sensor", "cover"]
-          )}
-        </div>
+        ${this._renderForm(openingForm(o), (patch, live) => {
+          if ("entity" in patch) {
+            // Infer type/motion from the entity's HA device_class (e.g. a
+            // `cover` with device_class `window` → a window; a `garage`
+            // roller → a sliding door). Only when the class is known, so we
+            // never clobber a hand-set type with a guess.
+            const entity = patch.entity as string | undefined;
+            const dc = entity
+              ? (this.hass?.states[entity]?.attributes?.device_class as string | undefined)
+              : undefined;
+            patch = { ...patch, ...(dc ? openingFromDeviceClass(dc) : {}) };
+          }
+          this._applyElementPatch("opening", o.id, patch, live);
+        })}
         ${o.entity
           ? html`<div class="row">
-                <label>Invert</label>
-                <input
-                  type="checkbox"
-                  .checked=${o.invert ?? false}
-                  @change=${(e: Event) =>
-                    this._updateOpening(o.id, {
-                      invert: (e.target as HTMLInputElement).checked || undefined,
-                    })}
-                />
-              </div>
-              <div class="row">
-                <label>Active color</label>
-                <input
-                  type="color"
-                  .value=${o.activeColor ?? "#03a9f4"}
-                  @input=${(e: Event) =>
-                    this._updateOpeningLive(o.id, {
-                      activeColor: (e.target as HTMLInputElement).value,
-                    })}
-                />
-                <input
-                  type="text"
-                  placeholder="(primary)"
-                  .value=${o.activeColor ?? ""}
-                  @change=${(e: Event) =>
-                    this._updateOpening(o.id, {
-                      activeColor: (e.target as HTMLInputElement).value || undefined,
-                    })}
-                />
-              </div>`
+              <label>Active color</label>
+              <input
+                type="color"
+                .value=${o.activeColor ?? "#03a9f4"}
+                @input=${(e: Event) =>
+                  this._updateOpeningLive(o.id, {
+                    activeColor: (e.target as HTMLInputElement).value,
+                  })}
+              />
+              <input
+                type="text"
+                placeholder="(primary)"
+                .value=${o.activeColor ?? ""}
+                @change=${(e: Event) =>
+                  this._updateOpening(o.id, {
+                    activeColor: (e.target as HTMLInputElement).value || undefined,
+                  })}
+              />
+            </div>`
           : nothing}
-        ${this._renderAngleRow(
-          o.angle,
-          (angle) => this._updateOpening(o.id, { angle }),
-          (angle) => this._updateOpeningLive(o.id, { angle })
-        )}
       `;
     }
 
@@ -2570,158 +2523,35 @@ export class FloorplanCardEditor extends LitElement {
       const it = this._floor().items.find((x) => x.id === sel.id);
       if (!it) return html`${nothing}`;
       return html`
-        <div class="row wide">
-          <label>Entity</label>
-          ${this._renderEntityPicker(it.entity, (entity) =>
-            this._updateItem(it.id, { entity, kind: kindFromEntity(entity) })
-          )}
-        </div>
-        <div class="row wide">
-          <label>2nd entity</label>
-          ${this._renderEntityPicker(it.secondaryEntity ?? "", (value) =>
-            this._updateItem(it.id, { secondaryEntity: value || undefined })
-          )}
-        </div>
-        <div class="row wide">
-          <label>Icon</label>
-          ${customElements.get("ha-icon-picker")
-            ? html`<ha-icon-picker
-                .hass=${this.hass}
-                .value=${it.icon ?? ""}
-                placeholder=${defaultIcon(it.kind)}
-                @value-changed=${(e: CustomEvent) =>
-                  this._updateItem(it.id, { icon: (e.detail.value as string) || undefined })}
-              ></ha-icon-picker>`
-            : html`<input
+        ${this._renderForm(itemForm(it), (patch, live) => {
+          // Binding a new entity re-derives the item kind (icon defaults etc.).
+          if ("entity" in patch && typeof patch.entity === "string" && patch.entity) {
+            patch = { ...patch, kind: kindFromEntity(patch.entity) };
+          }
+          this._applyElementPatch("item", it.id, patch, live);
+        })}
+        ${(it.display ?? "badge") !== "badge"
+          ? html`<div class="row">
+              <label>Ripple color</label>
+              <input
+                type="color"
+                .value=${it.rippleColor ?? "#03a9f4"}
+                @input=${(e: Event) =>
+                  this._updateItemLive(it.id, {
+                    rippleColor: (e.target as HTMLInputElement).value,
+                  })}
+              />
+              <input
                 type="text"
-                placeholder="mdi:lightbulb (optional)"
-                .value=${it.icon ?? ""}
+                placeholder="(primary)"
+                .value=${it.rippleColor ?? ""}
                 @change=${(e: Event) =>
                   this._updateItem(it.id, {
-                    icon: (e.target as HTMLInputElement).value || undefined,
+                    rippleColor: (e.target as HTMLInputElement).value || undefined,
                   })}
-              />`}
-        </div>
-        <div class="row">
-          <label>Name</label>
-          <input
-            type="text"
-            placeholder="(optional)"
-            .value=${it.name ?? ""}
-            @change=${(e: Event) =>
-              this._updateItem(it.id, { name: (e.target as HTMLInputElement).value || undefined })}
-          />
-        </div>
-        <div class="row">
-          <label>Size</label>
-          <input
-            type="range"
-            min="16"
-            max="96"
-            step="2"
-            .value=${String(it.size ?? DEFAULT_ITEM_SIZE)}
-            @input=${(e: Event) =>
-              this._updateItemLive(it.id, { size: Number((e.target as HTMLInputElement).value) })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="16"
-            max="160"
-            .value=${String(it.size ?? DEFAULT_ITEM_SIZE)}
-            @change=${(e: Event) =>
-              this._updateItem(it.id, {
-                size: Number((e.target as HTMLInputElement).value) || DEFAULT_ITEM_SIZE,
-              })}
-          />
-        </div>
-        ${this._renderAngleRow(
-          it.angle ?? 0,
-          (angle) => this._updateItem(it.id, { angle }),
-          (angle) => this._updateItemLive(it.id, { angle })
-        )}
-        <div class="row">
-          <label>Display</label>
-          <select
-            .value=${it.display ?? "badge"}
-            @change=${(e: Event) =>
-              this._updateItem(it.id, {
-                display: (e.target as HTMLSelectElement).value as ItemDisplay,
-              })}
-          >
-            <option value="badge">Icon badge</option>
-            <option value="ripple">Ripple</option>
-            <option value="iconRipple">Icon + ripple</option>
-          </select>
-        </div>
-        ${(it.display ?? "badge") !== "badge"
-          ? html`
-              <div class="row">
-                <label>Ripple color</label>
-                <input
-                  type="color"
-                  .value=${it.rippleColor ?? "#03a9f4"}
-                  @input=${(e: Event) =>
-                    this._updateItemLive(it.id, {
-                      rippleColor: (e.target as HTMLInputElement).value,
-                    })}
-                />
-                <input
-                  type="text"
-                  placeholder="(primary)"
-                  .value=${it.rippleColor ?? ""}
-                  @change=${(e: Event) =>
-                    this._updateItem(it.id, {
-                      rippleColor: (e.target as HTMLInputElement).value || undefined,
-                    })}
-                />
-              </div>
-              <div class="row">
-                <label>Ripple size</label>
-                <input
-                  type="range"
-                  min="40"
-                  max="240"
-                  step="4"
-                  .value=${String(it.rippleSize ?? DEFAULT_RIPPLE_SIZE)}
-                  @input=${(e: Event) =>
-                    this._updateItemLive(it.id, {
-                      rippleSize: Number((e.target as HTMLInputElement).value),
-                    })}
-                />
-                <input
-                  class="num"
-                  type="number"
-                  min="40"
-                  max="400"
-                  .value=${String(it.rippleSize ?? DEFAULT_RIPPLE_SIZE)}
-                  @change=${(e: Event) =>
-                    this._updateItem(it.id, {
-                      rippleSize:
-                        Number((e.target as HTMLInputElement).value) || DEFAULT_RIPPLE_SIZE,
-                    })}
-                />
-              </div>
-            `
+              />
+            </div>`
           : nothing}
-        <div class="row">
-          <label>Show icon</label>
-          <input
-            type="checkbox"
-            .checked=${it.showIcon ?? true}
-            @change=${(e: Event) =>
-              this._updateItem(it.id, { showIcon: (e.target as HTMLInputElement).checked })}
-          />
-        </div>
-        <div class="row">
-          <label>Show state</label>
-          <input
-            type="checkbox"
-            .checked=${it.showState ?? false}
-            @change=${(e: Event) =>
-              this._updateItem(it.id, { showState: (e.target as HTMLInputElement).checked })}
-          />
-        </div>
       `;
     }
 
@@ -2729,37 +2559,9 @@ export class FloorplanCardEditor extends LitElement {
       const t = this._floor().texts.find((x) => x.id === sel.id);
       if (!t) return html`${nothing}`;
       return html`
-        <div class="row">
-          <label>Text</label>
-          <input
-            type="text"
-            .value=${t.text}
-            @input=${(e: Event) =>
-              this._updateTextLive(t.id, { text: (e.target as HTMLInputElement).value })}
-          />
-        </div>
-        <div class="row">
-          <label>Size</label>
-          <input
-            type="range"
-            min="8"
-            max="80"
-            .value=${String(t.size ?? DEFAULT_TEXT_SIZE)}
-            @input=${(e: Event) =>
-              this._updateTextLive(t.id, { size: Number((e.target as HTMLInputElement).value) })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="8"
-            max="200"
-            .value=${String(t.size ?? DEFAULT_TEXT_SIZE)}
-            @change=${(e: Event) =>
-              this._updateText(t.id, {
-                size: Number((e.target as HTMLInputElement).value) || DEFAULT_TEXT_SIZE,
-              })}
-          />
-        </div>
+        ${this._renderForm(textForm(t), (patch, live) =>
+          this._applyElementPatch("text", t.id, patch, live)
+        )}
         <div class="row">
           <label>Color</label>
           <input
@@ -2776,11 +2578,6 @@ export class FloorplanCardEditor extends LitElement {
               this._updateText(t.id, { color: (e.target as HTMLInputElement).value || undefined })}
           />
         </div>
-        ${this._renderAngleRow(
-          t.angle ?? 0,
-          (angle) => this._updateText(t.id, { angle }),
-          (angle) => this._updateTextLive(t.id, { angle })
-        )}
       `;
     }
 
@@ -2788,41 +2585,8 @@ export class FloorplanCardEditor extends LitElement {
       const f = this._floor().furniture.find((x) => x.id === sel.id);
       if (!f) return html`${nothing}`;
       return html`
-        <div class="row">
-          <label>Type</label>
-          <select
-            .value=${f.type}
-            @change=${(e: Event) =>
-              this._updateFurniture(f.id, {
-                type: (e.target as HTMLSelectElement).value as FurnitureType,
-              })}
-          >
-            ${FURNITURE_TYPES.map((t) => html`<option value=${t}>${FURNITURE_LABELS[t]}</option>`)}
-          </select>
-        </div>
-        <div class="row">
-          <label>Width / Height</label>
-          <input
-            class="num"
-            type="number"
-            min="10"
-            .value=${String(f.w)}
-            @change=${(e: Event) =>
-              this._updateFurniture(f.id, { w: Number((e.target as HTMLInputElement).value) || f.w })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="10"
-            .value=${String(f.h)}
-            @change=${(e: Event) =>
-              this._updateFurniture(f.id, { h: Number((e.target as HTMLInputElement).value) || f.h })}
-          />
-        </div>
-        ${this._renderAngleRow(
-          f.angle ?? 0,
-          (angle) => this._updateFurniture(f.id, { angle }),
-          (angle) => this._updateFurnitureLive(f.id, { angle })
+        ${this._renderForm(furnitureForm(f), (patch, live) =>
+          this._applyElementPatch("furniture", f.id, patch, live)
         )}
         <div class="row">
           <label>Color</label>
@@ -2851,59 +2615,8 @@ export class FloorplanCardEditor extends LitElement {
       return html`
         ${this._renderTrackerSensorRows(tr, "xSensor", "X sensor")}
         ${this._renderTrackerSensorRows(tr, "ySensor", "Y sensor")}
-        <div class="row">
-          <label>Width / Height</label>
-          <input
-            class="num"
-            type="number"
-            min="10"
-            .value=${String(tr.w)}
-            @change=${(e: Event) =>
-              this._updateTracker(tr.id, {
-                w: Math.max(10, Number((e.target as HTMLInputElement).value) || tr.w),
-              })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="10"
-            .value=${String(tr.h)}
-            @change=${(e: Event) =>
-              this._updateTracker(tr.id, {
-                h: Math.max(10, Number((e.target as HTMLInputElement).value) || tr.h),
-              })}
-          />
-        </div>
-        <div class="row">
-          <label>Position</label>
-          <input
-            class="num"
-            type="number"
-            .value=${String(Math.round(tr.x))}
-            @change=${(e: Event) => {
-              const input = e.target as HTMLInputElement;
-              const n = Number(input.value);
-              // A cleared/garbled field must not teleport the tracker to 0.
-              if (input.value !== "" && Number.isFinite(n)) this._updateTracker(tr.id, { x: n });
-              else input.value = String(Math.round(tr.x));
-            }}
-          />
-          <input
-            class="num"
-            type="number"
-            .value=${String(Math.round(tr.y))}
-            @change=${(e: Event) => {
-              const input = e.target as HTMLInputElement;
-              const n = Number(input.value);
-              if (input.value !== "" && Number.isFinite(n)) this._updateTracker(tr.id, { y: n });
-              else input.value = String(Math.round(tr.y));
-            }}
-          />
-        </div>
-        ${this._renderAngleRow(
-          tr.angle ?? 0,
-          (angle) => this._updateTracker(tr.id, { angle }),
-          (angle) => this._updateTrackerLive(tr.id, { angle })
+        ${this._renderForm(trackerForm(tr), (patch, live) =>
+          this._applyElementPatch("tracker", tr.id, patch, live)
         )}
         <div class="row">
           <label>Color</label>
@@ -2923,32 +2636,6 @@ export class FloorplanCardEditor extends LitElement {
               })}
           />
         </div>
-        <div class="row">
-          <label>Dot size</label>
-          <input
-            type="range"
-            min="6"
-            max="40"
-            step="1"
-            .value=${String(tr.dotSize ?? DEFAULT_TRACKER_DOT_SIZE)}
-            @input=${(e: Event) =>
-              this._updateTrackerLive(tr.id, {
-                dotSize: Number((e.target as HTMLInputElement).value),
-              })}
-          />
-          <input
-            class="num"
-            type="number"
-            min="6"
-            max="80"
-            .value=${String(tr.dotSize ?? DEFAULT_TRACKER_DOT_SIZE)}
-            @change=${(e: Event) =>
-              this._updateTracker(tr.id, {
-                dotSize:
-                  Number((e.target as HTMLInputElement).value) || DEFAULT_TRACKER_DOT_SIZE,
-              })}
-          />
-        </div>
       `;
     }
 
@@ -2956,31 +2643,10 @@ export class FloorplanCardEditor extends LitElement {
       const w = this._floor().walls.find((x) => x.id === sel.id);
       if (!w) return html`${nothing}`;
       const length = Math.round(Math.hypot(w.x2 - w.x1, w.y2 - w.y1));
-      // One coordinate input; a cleared / invalid field restores the old value.
-      const coord = (value: number, apply: (n: number) => void) => html`
-        <input
-          class="num"
-          type="number"
-          .value=${String(Math.round(value))}
-          @change=${(e: Event) => {
-            const input = e.target as HTMLInputElement;
-            const n = Number(input.value);
-            if (input.value !== "" && Number.isFinite(n)) apply(n);
-            else input.value = String(Math.round(value));
-          }}
-        />
-      `;
       return html`
-        <div class="row">
-          <label>Start X / Y</label>
-          ${coord(w.x1, (x1) => this._updateWall(w.id, { x1 }))}
-          ${coord(w.y1, (y1) => this._updateWall(w.id, { y1 }))}
-        </div>
-        <div class="row">
-          <label>End X / Y</label>
-          ${coord(w.x2, (x2) => this._updateWall(w.id, { x2 }))}
-          ${coord(w.y2, (y2) => this._updateWall(w.id, { y2 }))}
-        </div>
+        ${this._renderForm(wallForm(w), (patch, live) =>
+          this._applyElementPatch("wall", w.id, patch, live)
+        )}
         <div class="row">
           <label>Length</label>
           <input
