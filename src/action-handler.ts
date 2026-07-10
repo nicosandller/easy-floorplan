@@ -37,6 +37,9 @@ class ActionHandler extends HTMLElement {
 
   protected held = false;
 
+  /** Set when the gesture turned into a scroll/drag — suppresses the tap. */
+  private cancelled = false;
+
   private dblClickTimeout?: number;
 
   public connectedCallback(): void {
@@ -50,6 +53,7 @@ class ActionHandler extends HTMLElement {
         document.addEventListener(
           ev,
           () => {
+            this.cancelled = true;
             if (this.timer) {
               clearTimeout(this.timer);
               this.timer = undefined;
@@ -82,6 +86,7 @@ class ActionHandler extends HTMLElement {
     if (options.disabled) return;
 
     element.actionHandler.start = () => {
+      this.cancelled = false;
       this.held = false;
       if (options.hasHold) {
         this.timer = window.setTimeout(() => {
@@ -91,6 +96,12 @@ class ActionHandler extends HTMLElement {
     };
 
     element.actionHandler.end = (ev: Event) => {
+      // A gesture that scrolled/dragged since start is not a tap.
+      if (["touchend", "touchcancel"].includes(ev.type) && this.cancelled) {
+        if (this.timer) clearTimeout(this.timer);
+        this.timer = undefined;
+        return;
+      }
       // Prevent the mouse event a touch tap synthesizes from double-firing.
       if (ev.type === "touchend" || ev.type === "touchcancel") {
         if (ev.cancelable) ev.preventDefault();
@@ -125,6 +136,8 @@ class ActionHandler extends HTMLElement {
 
     element.actionHandler.handleKeyDown = (ev: KeyboardEvent) => {
       if (!["Enter", " "].includes(ev.key)) return;
+      // Space must activate, not scroll the dashboard.
+      ev.preventDefault();
       (ev.currentTarget as ActionHandlerElement).actionHandler!.end!(ev);
     };
 

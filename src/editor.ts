@@ -378,14 +378,14 @@ export class FloorplanCardEditor extends LitElement {
     }
   }
 
-  /** Update the grid; rescale a custom snap so its percentage of the grid is preserved. */
-  private _setGrid(newGrid: number): void {
+  /** Grid update plus a custom-snap rescale so its percentage of the grid is preserved. */
+  private _gridPatch(newGrid: number): Partial<FloorplanCardConfig> {
     const patch: Partial<FloorplanCardConfig> = { grid: newGrid };
     if (this._snapMode === "custom") {
       const pct = snapToGridPercent(this._config.snap as number, this.grid);
       patch.snap = gridPercentToSnap(pct, newGrid);
     }
-    this._patchConfig(patch);
+    return patch;
   }
 
   private _snap(v: number): number {
@@ -563,7 +563,9 @@ export class FloorplanCardEditor extends LitElement {
       }
       return;
     }
-    // Don't hijack keys while typing in a field / picker.
+    // Don't hijack keys while typing in a field / picker. ha-form covers all
+    // its inner controls — ha-select dropdowns have no native input in the
+    // event path, so arrows/Escape/Delete would otherwise reach the canvas.
     const typing = path.some((el) => {
       const node = el as HTMLElement;
       const tag = node.tagName?.toLowerCase();
@@ -571,6 +573,7 @@ export class FloorplanCardEditor extends LitElement {
         tag === "input" ||
         tag === "textarea" ||
         tag === "select" ||
+        tag === "ha-form" ||
         tag === "ha-entity-picker" ||
         tag === "ha-icon-picker" ||
         node.isContentEditable === true
@@ -2435,9 +2438,10 @@ export class FloorplanCardEditor extends LitElement {
       <div class="rows panel-body">
         ${this._renderForm(projectForm(this._config), (patch, live) => {
           if ("grid" in patch && typeof patch.grid === "number") {
-            // The grid change rescales a custom snap step — its own path.
-            this._setGrid(patch.grid);
-            return;
+            // The grid change rescales a custom snap step. ha-form's number
+            // box fires per keystroke — respect the burst path so typing
+            // "24" isn't two history commits (grid=2, then grid=24).
+            patch = { ...patch, ...this._gridPatch(patch.grid) };
           }
           if (live) this._patchConfigLive(patch as Partial<FloorplanCardConfig>);
           else this._patchConfig(patch as Partial<FloorplanCardConfig>);
@@ -2524,8 +2528,9 @@ export class FloorplanCardEditor extends LitElement {
       if (!it) return html`${nothing}`;
       return html`
         ${this._renderForm(itemForm(it), (patch, live) => {
-          // Binding a new entity re-derives the item kind (icon defaults etc.).
-          if ("entity" in patch && typeof patch.entity === "string" && patch.entity) {
+          // Any entity change re-derives the item kind (icon defaults etc.) —
+          // including clearing it, which resets kind to "generic".
+          if ("entity" in patch && typeof patch.entity === "string") {
             patch = { ...patch, kind: kindFromEntity(patch.entity) };
           }
           this._applyElementPatch("item", it.id, patch, live);
