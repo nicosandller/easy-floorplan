@@ -28,8 +28,8 @@ import {
   resolveItemIcon,
 } from "./render";
 import type { Opening } from "./types";
-
-const ACTIVE_DOMAINS = new Set(["light", "switch", "cover", "fan", "input_boolean"]);
+import { actionForGesture, executeAction, hasAction } from "./actions";
+import { actionHandler } from "./action-handler";
 
 @customElement("easy-floorplan-card")
 export class FloorplanCard extends LitElement {
@@ -129,20 +129,12 @@ export class FloorplanCard extends LitElement {
     );
   }
 
-  private _onItemClick(item: FloorItem): void {
-    if (!this.hass || !item.entity) return;
-    const domain = item.entity.split(".")[0];
-    if (ACTIVE_DOMAINS.has(domain)) {
-      this.hass.callService("homeassistant", "toggle", { entity_id: item.entity });
-    } else {
-      this.dispatchEvent(
-        new CustomEvent("hass-more-info", {
-          detail: { entityId: item.entity },
-          bubbles: true,
-          composed: true,
-        })
-      );
-    }
+  private _handleItemAction(
+    ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>,
+    item: FloorItem
+  ): void {
+    if (!this.hass) return;
+    executeAction(this, this.hass, item, actionForGesture(item, ev.detail.action));
   }
 
   /**
@@ -206,7 +198,14 @@ export class FloorplanCard extends LitElement {
         class="item ${on ? "on" : "off"}"
         style="left:${(item.x / c.width) * 100}%; top:${(item.y / c.height) * 100}%;"
         title=${this._label(item)}
-        @click=${() => this._onItemClick(item)}
+        role="button"
+        tabindex="0"
+        @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
+          this._handleItemAction(ev, item)}
+        .actionHandler=${actionHandler({
+          hasHold: hasAction(item.hold_action),
+          hasDoubleClick: hasAction(item.double_tap_action),
+        })}
       >
         ${visual}
         ${showState ? html`<span class="label">${itemStateText(this.hass, item)}</span>` : nothing}
