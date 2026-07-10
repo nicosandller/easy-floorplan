@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import type { ItemKind } from "./types";
 import {
   snapToWall,
   openingDefaultOpen,
@@ -233,9 +234,51 @@ describe("kindFromEntity", () => {
     expect(kindFromEntity("binary_sensor.door")).toBe("binary_sensor");
     expect(kindFromEntity("cover.garage")).toBe("cover");
   });
+  it("maps the domains that carry their own meaning", () => {
+    expect(kindFromEntity("media_player.tv")).toBe("media_player");
+    expect(kindFromEntity("fan.ceiling")).toBe("fan");
+    expect(kindFromEntity("camera.doorbell")).toBe("camera");
+    expect(kindFromEntity("lock.front")).toBe("lock");
+    expect(kindFromEntity("humidifier.dehumidifier")).toBe("humidifier");
+    expect(kindFromEntity("vacuum.roomba")).toBe("vacuum");
+  });
   it("falls back to generic for unknown domains", () => {
-    expect(kindFromEntity("media_player.tv")).toBe("generic");
+    expect(kindFromEntity("automation.morning")).toBe("generic");
+    expect(kindFromEntity("scene.movie")).toBe("generic");
     expect(kindFromEntity("weird")).toBe("generic");
+  });
+});
+
+describe("defaultIcon", () => {
+  it("gives every kind an icon that is not the generic circle", () => {
+    const kinds: ItemKind[] = [
+      "light", "switch", "sensor", "binary_sensor", "climate", "cover",
+      "media_player", "fan", "camera", "lock", "humidifier", "vacuum",
+    ];
+    for (const k of kinds) {
+      expect(defaultIcon(k), k).toMatch(/^mdi:/);
+      expect(defaultIcon(k), k).not.toBe("mdi:circle");
+    }
+    expect(defaultIcon("generic")).toBe("mdi:circle");
+  });
+});
+
+describe("entityDefaultIcon for domains without a device class", () => {
+  it("distinguishes a television from a doorbell", () => {
+    // Both have no device class. Before, both rendered mdi:circle.
+    expect(entityDefaultIcon("media_player.tv", undefined, true)).toBe("mdi:television-play");
+    expect(entityDefaultIcon("media_player.tv", undefined, false)).toBe("mdi:television-off");
+    expect(entityDefaultIcon("camera.doorbell", undefined, true)).toBe("mdi:cctv");
+  });
+  it("shows a lock as open when it is unlocked", () => {
+    expect(entityDefaultIcon("lock.front", undefined, true)).toBe("mdi:lock-open-variant");
+    expect(entityDefaultIcon("lock.front", undefined, false)).toBe("mdi:lock");
+  });
+  it("still returns undefined for a domain it knows nothing about", () => {
+    expect(entityDefaultIcon("automation.x", undefined, true)).toBeUndefined();
+  });
+  it("does not shadow a binary_sensor's device-class icon", () => {
+    expect(entityDefaultIcon("binary_sensor.d", "door", true)).toBe("mdi:door-open");
   });
 });
 

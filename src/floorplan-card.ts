@@ -253,7 +253,12 @@ export class FloorplanCard extends LitElement {
           style="aspect-ratio: ${c.width} / ${c.height}; background:${c.background ??
           "var(--card-background-color, #fff)"};"
         >
-          <svg viewBox="0 0 ${c.width} ${c.height}" preserveAspectRatio="none">
+          <!-- "none" stretches the plan whenever the container's shape differs
+               from the canvas: a square room becomes a rectangle and a round
+               table becomes an ellipse. .stage sets aspect-ratio inline, so it
+               only bites once something overrides that height (card-mod, a grid
+               layout, a narrow phone) -- which is exactly when you notice. -->
+          <svg viewBox="0 0 ${c.width} ${c.height}" preserveAspectRatio="xMidYMid meet">
             ${active.image
               ? svg`<image href=${active.image} x="0" y="0" width=${c.width} height=${c.height}
                           preserveAspectRatio="none" opacity=${active.imageOpacity ?? 1} />`

@@ -70,10 +70,36 @@ export function defaultIcon(kind: ItemKind): string {
       return "mdi:thermostat";
     case "cover":
       return "mdi:window-shutter";
+    case "media_player":
+      return "mdi:television";
+    case "fan":
+      return "mdi:fan";
+    case "camera":
+      return "mdi:cctv";
+    case "lock":
+      return "mdi:lock";
+    case "humidifier":
+      return "mdi:air-humidifier";
+    case "vacuum":
+      return "mdi:robot-vacuum";
     default:
       return "mdi:circle";
   }
 }
+
+/**
+ * State-aware icons for domains that carry their meaning in the domain rather
+ * than in a device class. A `media_player` has no device class, so without this
+ * a television and a doorbell both render `mdi:circle`.
+ */
+const DOMAIN_STATE_ICONS: Record<string, { on: string; off: string }> = {
+  media_player: { on: "mdi:television-play", off: "mdi:television-off" },
+  fan: { on: "mdi:fan", off: "mdi:fan-off" },
+  lock: { on: "mdi:lock-open-variant", off: "mdi:lock" },
+  camera: { on: "mdi:cctv", off: "mdi:cctv-off" },
+  humidifier: { on: "mdi:air-humidifier", off: "mdi:air-humidifier-off" },
+  vacuum: { on: "mdi:robot-vacuum", off: "mdi:robot-vacuum-variant" },
+};
 
 /**
  * State-aware icons per `binary_sensor` device class ("show as" in the HA UI),
@@ -152,8 +178,13 @@ export function entityDefaultIcon(
   deviceClass: string | undefined,
   on: boolean,
 ): string | undefined {
-  if (!deviceClass) return undefined;
   const domain = entityId.split(".")[0];
+  // These domains carry their meaning in the domain, not a device class, so the
+  // device-class guard below would skip them entirely.
+  const byDomain = DOMAIN_STATE_ICONS[domain];
+  if (byDomain) return on ? byDomain.on : byDomain.off;
+
+  if (!deviceClass) return undefined;
   if (domain === "binary_sensor") {
     const m = BINARY_SENSOR_CLASS_ICONS[deviceClass];
     return m ? (on ? m.on : m.off) : undefined;
@@ -176,6 +207,12 @@ export function kindFromEntity(entity: string): ItemKind {
     case "binary_sensor":
     case "climate":
     case "cover":
+    case "media_player":
+    case "fan":
+    case "camera":
+    case "lock":
+    case "humidifier":
+    case "vacuum":
       return domain as ItemKind;
     default:
       return "generic";

@@ -93,7 +93,20 @@ export interface Opening {
   sliderStyle?: "single" | "bypass" | "biparting";
 }
 
-export type ItemKind = "light" | "switch" | "sensor" | "binary_sensor" | "climate" | "cover" | "generic";
+export type ItemKind =
+  | "light"
+  | "switch"
+  | "sensor"
+  | "binary_sensor"
+  | "climate"
+  | "cover"
+  | "media_player"
+  | "fan"
+  | "camera"
+  | "lock"
+  | "humidifier"
+  | "vacuum"
+  | "generic";
 
 /** An entity icon placed on the plan. */
 export interface FloorItem {
