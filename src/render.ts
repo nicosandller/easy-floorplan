@@ -1,8 +1,59 @@
 import { svg, html, type SVGTemplateResult, type TemplateResult } from "lit";
-import type { Opening, ItemKind, Furniture, Tracker } from "./types";
+import type { Opening, ItemKind, Furniture, Tracker, RenderHass } from "./types";
 import { FURNITURE_COLOR, DEFAULT_TRACKER_DOT_SIZE, trackerAxisFraction } from "./types";
 
 export const WALL_THICKNESS = 8;
+
+/** Shown in place of a reading when an entity is unset or absent from `hass`. */
+const NO_STATE = "—";
+
+/**
+ * An entity's state as HA itself would render it, or "—" when there is none.
+ *
+ * A state carries the sensor's full precision; the decimals to display live in
+ * the entity registry, as do the locale's number format, the blank before a
+ * unit, and the wording of `unavailable`. Only HA can resolve all of that.
+ */
+export function entityStateText(
+  hass: RenderHass | undefined,
+  entityId: string | undefined,
+): string {
+  if (!entityId || !hass) return NO_STATE;
+  const stateObj = hass.states[entityId];
+  if (!stateObj) return NO_STATE;
+  return hass.formatEntityState(stateObj);
+}
+
+/**
+ * Whether a fresh `hass` can change anything this plan draws.
+ *
+ * Readings are worded by `hass.formatEntityState`, which HA rebuilds — as a new
+ * function, on a later tick — whenever the registry, locale, translations or
+ * config change. Its identity is the signal that arrives *with* the new
+ * wording; watching the registry instead would render while the formatter is
+ * still the old one, then skip the update that carries the new one.
+ */
+export function hassRenderInputsChanged(
+  prev: RenderHass,
+  next: RenderHass,
+  watchedEntities: Iterable<string>,
+): boolean {
+  if (prev.formatEntityState !== next.formatEntityState) return true;
+  for (const id of watchedEntities) {
+    if (prev.states[id] !== next.states[id]) return true;
+  }
+  return false;
+}
+
+/** State text for an item: primary entity, plus secondary (e.g. humidity) when set. */
+export function itemStateText(
+  hass: RenderHass | undefined,
+  item: { entity: string; secondaryEntity?: string },
+): string {
+  const primary = entityStateText(hass, item.entity);
+  if (!item.secondaryEntity) return primary;
+  return `${primary} · ${entityStateText(hass, item.secondaryEntity)}`;
+}
 
 /** Default mdi icon per item kind, used when neither config nor entity supplies one. */
 export function defaultIcon(kind: ItemKind): string {

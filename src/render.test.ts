@@ -15,8 +15,11 @@ import {
   trackerSensorReading,
   openingInMotion,
   openingIsActive,
+  entityStateText,
+  itemStateText,
+  hassRenderInputsChanged,
 } from "./render";
-import type { Opening } from "./types";
+import type { Opening, RenderHass } from "./types";
 
 describe("snapToWall", () => {
   const hWall = { x1: 0, y1: 0, x2: 100, y2: 0 }; // horizontal
@@ -355,5 +358,128 @@ describe("resolveOpeningAmount keeps trusting a live position", () => {
     // would jump 0 -> 1 -> 0.07 on covers that stream position every second.
     expect(resolveOpeningAmount(cover, { state: "opening", attributes: { current_position: 0 } })).toBe(0);
     expect(resolveOpeningAmount(cover, { state: "opening", attributes: { current_position: 7 } })).toBeCloseTo(0.07);
+  });
+});
+
+// Stand-in for the real `hass`: `formatEntityState` rounds to the entity's
+// configured precision and applies HA's unit spacing, and states are seeded raw
+// — so a card that renders `stateObj.state` directly cannot pass these tests.
+function fakeHass(
+  entities: { entity_id: string; state: string; unit?: string }[],
+  displayPrecision: Record<string, number> = {},
+): RenderHass {
+  const states: Record<string, { entity_id: string; state: string; attributes: object }> = {};
+  for (const e of entities) {
+    states[e.entity_id] = {
+      entity_id: e.entity_id,
+      state: e.state,
+      attributes: e.unit ? { unit_of_measurement: e.unit } : {},
+    };
+  }
+  const formatEntityState = (stateObj: { entity_id: string; state: string; attributes: any }) => {
+    const raw = stateObj.state;
+    if (raw === "unavailable") return "Unavailable";
+    if (raw === "unknown") return "Unknown";
+    const dp = displayPrecision[stateObj.entity_id];
+    const num = Number(raw);
+    const body = dp != null && Number.isFinite(num) ? num.toFixed(dp) : raw;
+    const unit: string | undefined = stateObj.attributes.unit_of_measurement;
+    if (!unit) return body;
+    return unit === "%" || unit === "°" ? `${body}${unit}` : `${body} ${unit}`;
+  };
+  return { states, formatEntityState } as unknown as RenderHass;
+}
+
+// Real sensors: raw two-decimal states, both configured to display one.
+const TEMP = "sensor.living_area_sensor_temperature";
+const HUMIDITY = "sensor.living_area_sensor_humidity";
+const livingArea = () =>
+  fakeHass(
+    [
+      { entity_id: TEMP, state: "17.94", unit: "°C" },
+      { entity_id: HUMIDITY, state: "49.31", unit: "%" },
+    ],
+    { [TEMP]: 1, [HUMIDITY]: 1 },
+  );
+
+describe("entityStateText", () => {
+  it("renders a sensor at the precision HA is configured to display", () => {
+    expect(entityStateText(livingArea(), TEMP)).toBe("17.9 °C");
+  });
+
+  it("lets HA decide the spacing between value and unit", () => {
+    expect(entityStateText(livingArea(), HUMIDITY)).toBe("49.3%");
+  });
+
+  it("renders an unavailable entity the way HA does, with no unit appended", () => {
+    const hass = fakeHass([{ entity_id: TEMP, state: "unavailable", unit: "°C" }], { [TEMP]: 1 });
+    expect(entityStateText(hass, TEMP)).toBe("Unavailable");
+  });
+
+  it("leaves a state HA has no precision for untouched", () => {
+    const hass = fakeHass([{ entity_id: "sensor.raw", state: "17.94", unit: "°C" }]);
+    expect(entityStateText(hass, "sensor.raw")).toBe("17.94 °C");
+  });
+
+  it("shows an em dash when the entity is absent, unset, or hass has not arrived", () => {
+    expect(entityStateText(livingArea(), "sensor.missing")).toBe("—");
+    expect(entityStateText(livingArea(), undefined)).toBe("—");
+    expect(entityStateText(undefined, TEMP)).toBe("—");
+  });
+});
+
+describe("itemStateText", () => {
+  it("renders the primary entity alone when no secondary is paired", () => {
+    expect(itemStateText(livingArea(), { entity: TEMP })).toBe("17.9 °C");
+  });
+
+  it("pairs a temperature entity with its humidity entity", () => {
+    expect(itemStateText(livingArea(), { entity: TEMP, secondaryEntity: HUMIDITY })).toBe(
+      "17.9 °C · 49.3%",
+    );
+  });
+
+  it("still renders the primary when the secondary entity is missing", () => {
+    expect(itemStateText(livingArea(), { entity: TEMP, secondaryEntity: "sensor.gone" })).toBe(
+      "17.9 °C · —",
+    );
+  });
+});
+
+describe("hassRenderInputsChanged", () => {
+  const watched = [TEMP];
+  const tempState = { entity_id: TEMP, state: "17.94" };
+  // HA starts with a placeholder that echoes the raw state, then swaps in the real one.
+  const rawFormatter = (s: { state: string }) => s.state;
+  const preciseFormatter = () => "17.9 °C";
+  const base = () =>
+    ({ states: { [TEMP]: tempState }, formatEntityState: preciseFormatter }) as any;
+
+  it("ignores a tick where nothing this plan draws has moved", () => {
+    const next = { ...base(), states: { [TEMP]: tempState, "light.elsewhere": { state: "on" } } };
+    expect(hassRenderInputsChanged(base(), next, watched)).toBe(false);
+  });
+
+  it("notices a watched entity's new state object", () => {
+    const next = { ...base(), states: { [TEMP]: { entity_id: TEMP, state: "18.02" } } };
+    expect(hassRenderInputsChanged(base(), next, watched)).toBe(true);
+  });
+
+  it("notices HA swapping its startup formatter for the real one", () => {
+    // Until this lands the card shows raw states, and no state object moves with it.
+    const prev = { ...base(), formatEntityState: rawFormatter };
+    expect(hassRenderInputsChanged(prev, base(), watched)).toBe(true);
+  });
+
+  it("notices HA rebuilding the formatter after a precision or locale edit", () => {
+    // HA rebuilds it asynchronously as a new function, so its identity — not
+    // `entities` or `locale` — is what signals that a reading's text changed.
+    const next = { ...base(), formatEntityState: () => "17.94 °C" };
+    expect(hassRenderInputsChanged(base(), next, watched)).toBe(true);
+  });
+
+  it("ignores entities the plan does not watch", () => {
+    const next = { ...base(), states: { [TEMP]: tempState, [HUMIDITY]: { state: "50.0" } } };
+    expect(hassRenderInputsChanged(base(), next, watched)).toBe(false);
   });
 });
