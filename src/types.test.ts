@@ -8,6 +8,7 @@ import {
   gridPercentToSnap,
   trackerAxisFraction,
   trackerPresenceDetected,
+  haFloorsOf,
   uid,
 } from "./types";
 import type { FloorplanCardConfig, TrackerSensor } from "./types";
@@ -226,6 +227,43 @@ describe("getFloors", () => {
     expect(f.image).toBe("/local/plan.png");
     expect(f.imageOpacity).toBe(0.5);
     expect(f.trackers).toEqual([]);
+  });
+});
+
+describe("haFloorsOf", () => {
+  const hass = {
+    floors: {
+      up: { floor_id: "up", name: "Upstairs", level: 1 },
+      ground: { floor_id: "ground", name: "Ground floor", level: 0 },
+      cellar: { floor_id: "cellar", name: "Cellar", level: -1 },
+    },
+  };
+
+  it("lists HA floors sorted by level then name", () => {
+    expect(haFloorsOf(hass).map((f) => f.floor_id)).toEqual(["cellar", "ground", "up"]);
+  });
+
+  it("sorts same-level floors by name and tolerates a missing level", () => {
+    const h = {
+      floors: {
+        b: { floor_id: "b", name: "B wing" },
+        a: { floor_id: "a", name: "A wing" },
+      },
+    };
+    expect(haFloorsOf(h).map((f) => f.name)).toEqual(["A wing", "B wing"]);
+  });
+
+  it("returns [] for hass objects without a floor registry (older HA, dev harness)", () => {
+    expect(haFloorsOf({})).toEqual([]);
+    expect(haFloorsOf(undefined)).toEqual([]);
+    expect(haFloorsOf(null)).toEqual([]);
+    expect(haFloorsOf({ floors: "bogus" })).toEqual([]);
+  });
+
+  it("drops malformed registry entries", () => {
+    expect(haFloorsOf({ floors: { x: { floor_id: "x" }, ok: { floor_id: "ok", name: "Ok" } } })).toEqual([
+      { floor_id: "ok", name: "Ok" },
+    ]);
   });
 });
 

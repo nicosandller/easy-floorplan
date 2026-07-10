@@ -119,6 +119,13 @@ const hass = {
   },
   locale: { language: "en" },
   themes: { darkMode: false },
+  // HA floor registry mock so the editor's "HA floor" link (issue #24) is
+  // exercisable outside HA.
+  floors: {
+    ground: { floor_id: "ground", name: "Ground floor", level: 0 },
+    upstairs: { floor_id: "upstairs", name: "Upstairs", level: 1 },
+    basement: { floor_id: "basement", name: "Basement", level: -1 },
+  },
   callService: (...args: unknown[]) => console.log("[mock hass] callService", ...args),
   formatEntityState: (s: { state: string }) => s.state,
   localize: (k: string) => k,

@@ -30,6 +30,7 @@ import {
   getFloors,
   gridPercentToSnap,
   makeFloor,
+  haFloorsOf,
   resolveSnap,
   snapToGridPercent,
   trackerPresenceDetected,
@@ -1115,6 +1116,47 @@ export class FloorplanCardEditor extends LitElement {
     });
   }
 
+  /**
+   * Link the active floor to a Home Assistant floor (issue #24). Linking also
+   * names the floor after the HA floor — the point of the association — while
+   * a later manual rename sticks (we never re-sync silently). Unlinking keeps
+   * the current name.
+   */
+  private _linkHaFloor(haFloorId: string): void {
+    const ha = haFloorsOf(this.hass).find((f) => f.floor_id === haFloorId);
+    this._commit({
+      ...this._config,
+      floors: (this._config.floors ?? []).map((f) =>
+        f.id === this._activeFloorId
+          ? { ...f, haFloor: ha?.floor_id, ...(ha ? { name: ha.name } : {}) }
+          : f
+      ),
+    });
+  }
+
+  /** HA-floor link row for the floor gear popover; hidden when HA exposes no floors. */
+  private _renderHaFloorRow(floor: Floor): TemplateResult {
+    const haFloors = haFloorsOf(this.hass);
+    if (!haFloors.length) return html`${nothing}`;
+    return html`
+      <div class="pop-row">
+        <label>HA floor</label>
+        <select
+          .value=${floor?.haFloor ?? ""}
+          @change=${(e: Event) => this._linkHaFloor((e.target as HTMLSelectElement).value)}
+        >
+          <option value="" ?selected=${!floor?.haFloor}>(not linked)</option>
+          ${haFloors.map(
+            (f) =>
+              html`<option value=${f.floor_id} ?selected=${floor?.haFloor === f.floor_id}>
+                ${f.name}
+              </option>`
+          )}
+        </select>
+      </div>
+    `;
+  }
+
   private _deleteFloor(): void {
     const floors = this._config.floors ?? [];
     if (floors.length <= 1) return;
@@ -1507,6 +1549,7 @@ export class FloorplanCardEditor extends LitElement {
             </button>
             ${this._floorMenuOpen
               ? html`<div class="pop">
+                  ${this._renderHaFloorRow(floor)}
                   <div class="pop-row">
                     <label>Rename</label>
                     <input
@@ -3036,7 +3079,8 @@ export class FloorplanCardEditor extends LitElement {
       font-size: 12px;
       color: var(--secondary-text-color);
     }
-    .pop-row input {
+    .pop-row input,
+    .pop-row select {
       flex: 1;
       min-width: 0;
       padding: 4px 6px;
