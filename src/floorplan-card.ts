@@ -48,12 +48,14 @@ export class FloorplanCard extends LitElement {
     // instead of a render crash deep inside the SVG.
     if (!config || typeof config !== "object") throw new Error("Invalid configuration");
     const raw = config as Record<string, unknown>;
+    // A key with an empty YAML value ("trackers:") parses to null — treat it
+    // as unset like the ?? defaults always have, not as malformed.
     for (const key of ["walls", "openings", "items", "texts", "furniture", "trackers", "floors"]) {
-      if (raw[key] !== undefined && !Array.isArray(raw[key]))
+      if (raw[key] != null && !Array.isArray(raw[key]))
         throw new Error(`Invalid configuration: "${key}" must be a list`);
     }
     for (const key of ["width", "height", "grid"]) {
-      if (raw[key] !== undefined && typeof raw[key] !== "number")
+      if (raw[key] != null && typeof raw[key] !== "number")
         throw new Error(`Invalid configuration: "${key}" must be a number`);
     }
     this._config = {

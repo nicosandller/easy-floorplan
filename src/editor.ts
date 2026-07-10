@@ -1382,6 +1382,17 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
+   * Every new pointer interaction ends the current live-edit burst, so two
+   * separate drags of the same slider (or two picker sessions on the same
+   * color field) become two undo steps instead of silently merging into one.
+   * Canvas gestures stop propagation before reaching this, but they snapshot
+   * history themselves. `_liveEditKey` is non-reactive — no render triggered.
+   */
+  private _onEditorPointerDown = (): void => {
+    this._liveEditKey = null;
+  };
+
+  /**
    * Live variants for continuous controls (sliders, color pickers, typing):
    * one undo snapshot per edit burst — keyed by element and fields — then
    * plain emits, instead of a full-config clone per input event.
@@ -1678,6 +1689,7 @@ export class FloorplanCardEditor extends LitElement {
       <div
         class="editor ${this._fullscreen ? "fullscreen" : ""}"
         popover=${this._fullscreen ? "manual" : nothing}
+        @pointerdown=${this._onEditorPointerDown}
       >
         ${this._floorMenuOpen || this._addMenuOpen
           ? html`<div
