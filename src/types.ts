@@ -126,9 +126,32 @@ export interface FloorItem {
   rippleColor?: string;
   /** Max ripple ring diameter in pixels. Default 80. */
   rippleSize?: number;
+  /** Lovelace actions. Defaults: tap = toggle (controllable domains) or more-info; hold/double = none. */
+  tap_action?: ActionConfig;
+  hold_action?: ActionConfig;
+  double_tap_action?: ActionConfig;
 }
 
 export type ItemDisplay = "badge" | "ripple" | "iconRipple";
+
+/**
+ * A Lovelace action (tap/hold/double_tap). Typed loosely on purpose: HA has
+ * renamed fields over time (call-service→perform-action, service_data→data)
+ * and unknown fields must pass through the card untouched.
+ */
+export interface ActionConfig {
+  action: string;
+  entity?: string;
+  navigation_path?: string;
+  url_path?: string;
+  perform_action?: string;
+  service?: string;
+  data?: Record<string, unknown>;
+  service_data?: Record<string, unknown>;
+  target?: Record<string, unknown>;
+  confirmation?: { text?: string } | boolean;
+  [key: string]: unknown;
+}
 
 /** A free text label placed on the plan. */
 export interface FloorText {
