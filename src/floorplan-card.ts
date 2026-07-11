@@ -23,6 +23,7 @@ import {
   trackerSensorReading,
   defaultIcon,
   entityDefaultIcon,
+  entityIsActive,
   itemStateText,
   hassRenderInputsChanged,
 } from "./render";
@@ -102,8 +103,7 @@ export class FloorplanCard extends LitElement {
   }
 
   private _isOn(item: FloorItem): boolean {
-    const st = this.hass?.states[item.entity]?.state;
-    return st === "on" || st === "open" || st === "home" || st === "playing";
+    return entityIsActive(item.entity, this.hass?.states[item.entity]?.state);
   }
 
   /** How far open an opening should be drawn (0..1), from its entity (or default). */

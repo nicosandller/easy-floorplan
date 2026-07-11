@@ -24,6 +24,8 @@ import {
   entityStateText,
   itemStateText,
   hassRenderInputsChanged,
+  isEntityOn,
+  entityIsActive,
 } from "./render";
 import type { Opening, RenderHass } from "./types";
 
@@ -623,5 +625,62 @@ describe("every furniture type renders and has a default size", () => {
         renderFurniture({ id: "s", type: "sectional", x: 0, y: 0, w: 230, h: 180, hand }),
       ).not.toThrow();
     }
+  });
+});
+
+describe("isEntityOn", () => {
+  it("is on, open, home, or playing — nothing else", () => {
+    for (const s of ["on", "open", "home", "playing"]) expect(isEntityOn(s), s).toBe(true);
+    for (const s of ["off", "closed", "away", "paused", undefined]) expect(isEntityOn(s), s).toBe(false);
+  });
+});
+
+describe("entityIsActive — domains that never say \"on\"", () => {
+  it("a lock is active when it is not locked", () => {
+    expect(entityIsActive("lock.front", "unlocked")).toBe(true);
+    expect(entityIsActive("lock.front", "unlocking")).toBe(true);
+    expect(entityIsActive("lock.front", "locked")).toBe(false);
+  });
+
+  it("a vacuum is active while it is working, not while it is docked", () => {
+    expect(entityIsActive("vacuum.roomba", "cleaning")).toBe(true);
+    expect(entityIsActive("vacuum.roomba", "returning")).toBe(true);
+    for (const s of ["docked", "idle", "paused"]) {
+      expect(entityIsActive("vacuum.roomba", s), s).toBe(false);
+    }
+  });
+
+  it("a camera is active while recording or streaming", () => {
+    expect(entityIsActive("camera.door", "recording")).toBe(true);
+    expect(entityIsActive("camera.door", "idle")).toBe(false);
+  });
+
+  it("falls back to the generic on/off test for every other domain", () => {
+    expect(entityIsActive("light.a", "on")).toBe(true);
+    expect(entityIsActive("binary_sensor.a", "off")).toBe(false);
+    expect(entityIsActive("device_tracker.a", "home")).toBe(true);
+    expect(entityIsActive(undefined, "on")).toBe(true);
+  });
+
+  it("an outage is never active, whatever the domain says", () => {
+    for (const e of ["lock.a", "vacuum.a", "light.a"]) {
+      expect(entityIsActive(e, "unavailable"), e).toBe(false);
+      expect(entityIsActive(e, "unknown"), e).toBe(false);
+      expect(entityIsActive(e, undefined), e).toBe(false);
+    }
+  });
+
+  // The bug: DOMAIN_STATE_ICONS gives lock/vacuum/camera an `on` icon that the
+  // generic predicate (isEntityOn) could never reach, so they were frozen on
+  // their off icon. This branch has no resolveItemIcon wrapper — floorplan-card's
+  // _itemIcon calls entityDefaultIcon(entity, deviceClass, on) directly — so the
+  // integration is exercised here instead of through a wrapper.
+  it("an unlocked lock now reaches its open icon", () => {
+    expect(entityDefaultIcon("lock.front", undefined, entityIsActive("lock.front", "unlocked"))).toBe(
+      "mdi:lock-open-variant",
+    );
+    expect(entityDefaultIcon("lock.front", undefined, entityIsActive("lock.front", "locked"))).toBe(
+      "mdi:lock",
+    );
   });
 });

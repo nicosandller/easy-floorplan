@@ -166,6 +166,40 @@ const COVER_CLASS_ICONS: Record<string, { on: string; off: string }> = {
   awning: { on: "mdi:awning-outline", off: "mdi:awning-outline" },
 };
 
+/** The generic on/off test: state is `on`, `open`, `home`, or `playing`. */
+export function isEntityOn(state: string | undefined): boolean {
+  return state === "on" || state === "open" || state === "home" || state === "playing";
+}
+
+/**
+ * States that mean "this thing is doing something", for the domains that do not
+ * say `on`.
+ *
+ * A lock is `locked` / `unlocked`; a vacuum is `docked` / `cleaning`; a camera is
+ * `idle` / `recording`. None of them ever reads `on`, so the generic on/off test
+ * calls every one of them off, forever — and their state-dependent icons
+ * (`DOMAIN_STATE_ICONS`, above) can never show their active half.
+ */
+const ACTIVE_STATES: Record<string, ReadonlySet<string>> = {
+  lock: new Set(["unlocked", "unlocking", "open", "opening"]),
+  vacuum: new Set(["cleaning", "returning"]),
+  camera: new Set(["recording", "streaming"]),
+};
+
+/**
+ * Whether an entity is in its active state, by the rules of its own domain.
+ * Every domain not in {@link ACTIVE_STATES} falls back to the generic on/off
+ * test, unchanged. An unavailable or unknown state is never active, whatever
+ * the domain — a stale "unlocked" during a sensor dropout is worse than
+ * showing locked.
+ */
+export function entityIsActive(entityId: string | undefined, state: string | undefined): boolean {
+  if (!state || state === "unavailable" || state === "unknown") return false;
+  const domain = entityId?.split(".")[0] ?? "";
+  const active = ACTIVE_STATES[domain];
+  return active ? active.has(state) : isEntityOn(state);
+}
+
 /**
  * Icon implied by an entity's `device_class` — HA's "show as" setting (issue
  * #29). A `binary_sensor` shown as a Lock gets `mdi:lock` / `mdi:lock-open`,
