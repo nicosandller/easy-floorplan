@@ -253,12 +253,21 @@ export class FloorplanCard extends LitElement {
           style="aspect-ratio: ${c.width} / ${c.height}; background:${c.background ??
           "var(--card-background-color, #fff)"};"
         >
-          <!-- "none" stretches the plan whenever the container's shape differs
-               from the canvas: a square room becomes a rectangle and a round
-               table becomes an ellipse. .stage sets aspect-ratio inline, so it
-               only bites once something overrides that height (card-mod, a grid
-               layout, a narrow phone) -- which is exactly when you notice. -->
-          <svg viewBox="0 0 ${c.width} ${c.height}" preserveAspectRatio="xMidYMid meet">
+<!-- preserveAspectRatio="none" is correct here, and it took a wrong fix to
+               see why. .stage pins aspect-ratio: width / height inline, so the
+               SVG's box already matches its viewBox and "none" never distorts.
+
+               "meet" letterboxes the SVG inside its box. The .items overlay is
+               HTML, positioned with raw left/top percentages of .stage, and it
+               does not letterbox. So the moment anything overrides the stage's
+               ratio (card-mod, a grid row count) the drawing shrinks away from
+               the badges and every icon drifts off the wall it was placed on.
+               "none" stretches both layers identically: distorted, but aligned.
+
+               The real fix letterboxes both layers together -- wrap the svg and
+               the overlay in one aspect-ratio box and centre it. Until then, do
+               not "fix" this line. -->
+          <svg viewBox="0 0 ${c.width} ${c.height}" preserveAspectRatio="none">
             ${active.image
               ? svg`<image href=${active.image} x="0" y="0" width=${c.width} height=${c.height}
                           preserveAspectRatio="none" opacity=${active.imageOpacity ?? 1} />`
