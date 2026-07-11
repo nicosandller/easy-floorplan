@@ -93,7 +93,20 @@ export interface Opening {
   sliderStyle?: "single" | "bypass" | "biparting";
 }
 
-export type ItemKind = "light" | "switch" | "sensor" | "binary_sensor" | "climate" | "cover" | "generic";
+export type ItemKind =
+  | "light"
+  | "switch"
+  | "sensor"
+  | "binary_sensor"
+  | "climate"
+  | "cover"
+  | "media_player"
+  | "fan"
+  | "camera"
+  | "lock"
+  | "humidifier"
+  | "vacuum"
+  | "generic";
 
 /** An entity icon placed on the plan. */
 export interface FloorItem {
@@ -159,12 +172,28 @@ export type FurnitureType =
   | "sink"
   | "toilet"
   | "stairs"
-  | "tv";
+  | "tv"
+  | "washer"
+  | "dryer"
+  | "dishwasher"
+  | "waterHeater"
+  | "airHandler"
+  | "bathtub"
+  | "vanity"
+  | "sectional";
+
+/**
+ * Which end of an L-shaped sectional the chaise sits on, facing the sofa from
+ * the front. Only meaningful for `type: "sectional"`; defaults to `"right"`.
+ */
+export type SectionalHand = "left" | "right";
 
 /** A gray furniture/fixture diagram placed on the plan. */
 export interface Furniture {
   id: string;
   type: FurnitureType;
+  /** L-shaped sectional only: which side the chaise extends on. Default `right`. */
+  hand?: SectionalHand;
   x: number;
   y: number;
   /** Width / height in virtual units. */
@@ -277,6 +306,14 @@ export const FURNITURE_DEFAULT_SIZE: Record<FurnitureType, { w: number; h: numbe
   toilet: { w: 48, h: 68 },
   stairs: { w: 90, h: 170 },
   tv: { w: 110, h: 18 },
+  washer: { w: 60, h: 62 },
+  dryer: { w: 60, h: 62 },
+  dishwasher: { w: 60, h: 60 },
+  waterHeater: { w: 52, h: 52 },
+  airHandler: { w: 60, h: 56 },
+  bathtub: { w: 150, h: 76 },
+  vanity: { w: 110, h: 55 },
+  sectional: { w: 230, h: 180 },
 };
 
 /**
