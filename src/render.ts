@@ -1,5 +1,6 @@
 import { svg, html, type SVGTemplateResult, type TemplateResult } from "lit";
-import type { Opening, ItemKind, Furniture, Tracker, RenderHass } from "./types";
+import type {
+  SectionalHand, Opening, ItemKind, Furniture, Tracker, RenderHass } from "./types";
 import { FURNITURE_COLOR, DEFAULT_TRACKER_DOT_SIZE, trackerAxisFraction } from "./types";
 
 export const WALL_THICKNESS = 8;
@@ -70,10 +71,36 @@ export function defaultIcon(kind: ItemKind): string {
       return "mdi:thermostat";
     case "cover":
       return "mdi:window-shutter";
+    case "media_player":
+      return "mdi:television";
+    case "fan":
+      return "mdi:fan";
+    case "camera":
+      return "mdi:cctv";
+    case "lock":
+      return "mdi:lock";
+    case "humidifier":
+      return "mdi:air-humidifier";
+    case "vacuum":
+      return "mdi:robot-vacuum";
     default:
       return "mdi:circle";
   }
 }
+
+/**
+ * State-aware icons for domains that carry their meaning in the domain rather
+ * than in a device class. A `media_player` has no device class, so without this
+ * a television and a doorbell both render `mdi:circle`.
+ */
+const DOMAIN_STATE_ICONS: Record<string, { on: string; off: string }> = {
+  media_player: { on: "mdi:television-play", off: "mdi:television-off" },
+  fan: { on: "mdi:fan", off: "mdi:fan-off" },
+  lock: { on: "mdi:lock-open-variant", off: "mdi:lock" },
+  camera: { on: "mdi:cctv", off: "mdi:cctv-off" },
+  humidifier: { on: "mdi:air-humidifier", off: "mdi:air-humidifier-off" },
+  vacuum: { on: "mdi:robot-vacuum", off: "mdi:robot-vacuum-variant" },
+};
 
 /**
  * State-aware icons per `binary_sensor` device class ("show as" in the HA UI),
@@ -139,6 +166,40 @@ const COVER_CLASS_ICONS: Record<string, { on: string; off: string }> = {
   awning: { on: "mdi:awning-outline", off: "mdi:awning-outline" },
 };
 
+/** The generic on/off test: state is `on`, `open`, `home`, or `playing`. */
+export function isEntityOn(state: string | undefined): boolean {
+  return state === "on" || state === "open" || state === "home" || state === "playing";
+}
+
+/**
+ * States that mean "this thing is doing something", for the domains that do not
+ * say `on`.
+ *
+ * A lock is `locked` / `unlocked`; a vacuum is `docked` / `cleaning`; a camera is
+ * `idle` / `recording`. None of them ever reads `on`, so the generic on/off test
+ * calls every one of them off, forever — and their state-dependent icons
+ * (`DOMAIN_STATE_ICONS`, above) can never show their active half.
+ */
+const ACTIVE_STATES: Record<string, ReadonlySet<string>> = {
+  lock: new Set(["unlocked", "unlocking", "open", "opening"]),
+  vacuum: new Set(["cleaning", "returning"]),
+  camera: new Set(["recording", "streaming"]),
+};
+
+/**
+ * Whether an entity is in its active state, by the rules of its own domain.
+ * Every domain not in {@link ACTIVE_STATES} falls back to the generic on/off
+ * test, unchanged. An unavailable or unknown state is never active, whatever
+ * the domain — a stale "unlocked" during a sensor dropout is worse than
+ * showing locked.
+ */
+export function entityIsActive(entityId: string | undefined, state: string | undefined): boolean {
+  if (!state || state === "unavailable" || state === "unknown") return false;
+  const domain = entityId?.split(".")[0] ?? "";
+  const active = ACTIVE_STATES[domain];
+  return active ? active.has(state) : isEntityOn(state);
+}
+
 /**
  * Icon implied by an entity's `device_class` — HA's "show as" setting (issue
  * #29). A `binary_sensor` shown as a Lock gets `mdi:lock` / `mdi:lock-open`,
@@ -152,8 +213,13 @@ export function entityDefaultIcon(
   deviceClass: string | undefined,
   on: boolean,
 ): string | undefined {
-  if (!deviceClass) return undefined;
   const domain = entityId.split(".")[0];
+  // These domains carry their meaning in the domain, not a device class, so the
+  // device-class guard below would skip them entirely.
+  const byDomain = DOMAIN_STATE_ICONS[domain];
+  if (byDomain) return on ? byDomain.on : byDomain.off;
+
+  if (!deviceClass) return undefined;
   if (domain === "binary_sensor") {
     const m = BINARY_SENSOR_CLASS_ICONS[deviceClass];
     return m ? (on ? m.on : m.off) : undefined;
@@ -176,6 +242,12 @@ export function kindFromEntity(entity: string): ItemKind {
     case "binary_sensor":
     case "climate":
     case "cover":
+    case "media_player":
+    case "fan":
+    case "camera":
+    case "lock":
+    case "humidifier":
+    case "vacuum":
       return domain as ItemKind;
     default:
       return "generic";
@@ -537,6 +609,45 @@ export function renderWallMask(
  * origin, then translated and rotated into place. Defaults to gray so it reads
  * differently from black walls.
  */
+/** Fraction of the bounding box the chaise occupies, and the main seat's depth. */
+export const SECTIONAL_CHAISE_FRACTION = 0.42;
+export const SECTIONAL_SEAT_FRACTION = 0.55;
+
+/**
+ * The six corners of an L-shaped sectional, centred on the origin, back at -y.
+ *
+ * `hand` is read facing the sofa from the front: a `right` sectional puts the
+ * chaise on your right, extending toward you. Mirroring across x gives `left`,
+ * so the two hands are the same polygon reflected -- not two separate shapes.
+ */
+export function sectionalPoints(
+  w: number,
+  h: number,
+  hand: SectionalHand = "right",
+): Array<[number, number]> {
+  const hw = w / 2;
+  const hh = h / 2;
+  const seat = h * SECTIONAL_SEAT_FRACTION;   // depth of the main run, from the back
+  const chaise = w * SECTIONAL_CHAISE_FRACTION;
+
+  //  back  ( -y )
+  //  +-----------------+
+  //  |                 |
+  //  |         +-------+   <- chaise, on the right
+  //  |         |
+  //  +---------+
+  //  front ( +y )
+  const pts: Array<[number, number]> = [
+    [-hw, -hh],
+    [hw, -hh],
+    [hw, hh],
+    [hw - chaise, hh],
+    [hw - chaise, -hh + seat],
+    [-hw, -hh + seat],
+  ];
+  return hand === "left" ? pts.map(([x, y]) => [-x, y] as [number, number]) : pts;
+}
+
 export function renderFurniture(f: Furniture): SVGTemplateResult {
   const color = f.color ?? FURNITURE_COLOR;
   const w = f.w;
@@ -544,8 +655,13 @@ export function renderFurniture(f: Furniture): SVGTemplateResult {
   const hw = w / 2;
   const hh = h / 2;
 
-  const roundBase = f.type === "roundTable" || f.type === "plant";
-  const base = roundBase
+  const roundBase =
+    f.type === "roundTable" || f.type === "plant" || f.type === "waterHeater";
+  const base = f.type === "sectional"
+    ? svg`<polygon points=${sectionalPoints(w, h, f.hand).map((p) => p.join(",")).join(" ")}
+                   fill=${color} fill-opacity="0.12" stroke=${color} stroke-width="2"
+                   stroke-linejoin="round" />`
+    : roundBase
     ? svg`<ellipse cx="0" cy="0" rx=${hw} ry=${hh}
                    fill=${color} fill-opacity="0.12" stroke=${color} stroke-width="2" />`
     : f.type === "rug"
@@ -655,6 +771,65 @@ export function renderFurniture(f: Furniture): SVGTemplateResult {
                          rx=${Math.min(w, h) * 0.08} fill="none" stroke=${color}
                          stroke-width="1.5" opacity="0.6" />`;
       break;
+    case "washer":
+    case "dryer": {
+      const r = Math.min(w, h) * 0.3;
+      detail = svg`
+        <line x1=${-hw + w * 0.06} y1=${-hh + h * 0.18} x2=${hw - w * 0.06} y2=${-hh + h * 0.18}
+              stroke=${color} stroke-width="1.5" opacity="0.7" />
+        <circle cx="0" cy=${h * 0.06} r=${r} fill="none" stroke=${color} stroke-width="2" />
+        ${f.type === "dryer"
+          ? svg`<circle cx="0" cy=${h * 0.06} r=${r * 0.45}
+                        fill="none" stroke=${color} stroke-width="1.5" opacity="0.7" />`
+          : svg`<circle cx=${-hw + w * 0.16} cy=${-hh + h * 0.09} r=${Math.min(w, h) * 0.045}
+                        fill="none" stroke=${color} stroke-width="1.5" />`}`;
+      break;
+    }
+    case "dishwasher":
+      detail = svg`
+        <rect x=${-hw + w * 0.1} y=${-hh + h * 0.24} width=${w * 0.8} height=${h * 0.62} rx="3"
+              fill="none" stroke=${color} stroke-width="1.5" opacity="0.8" />
+        <line x1=${-hw + w * 0.06} y1=${hh - h * 0.12} x2=${hw - w * 0.06} y2=${hh - h * 0.12}
+              stroke=${color} stroke-width="2" />`;
+      break;
+    case "waterHeater":
+      detail = svg`
+        <circle cx="0" cy="0" r=${Math.min(hw, hh) * 0.34}
+                fill="none" stroke=${color} stroke-width="1.5" />`;
+      break;
+    case "airHandler":
+      detail = svg`
+        <line x1=${-hw + w * 0.08} y1=${-hh + h * 0.08} x2=${hw - w * 0.08} y2=${hh - h * 0.08}
+              stroke=${color} stroke-width="1.5" opacity="0.8" />
+        <line x1=${-hw + w * 0.08} y1=${hh - h * 0.08} x2=${hw - w * 0.08} y2=${-hh + h * 0.08}
+              stroke=${color} stroke-width="1.5" opacity="0.8" />`;
+      break;
+    case "bathtub":
+      detail = svg`
+        <rect x=${-hw + w * 0.06} y=${-hh + h * 0.12} width=${w * 0.88} height=${h * 0.76}
+              rx=${Math.min(w, h) * 0.12} fill="none" stroke=${color} stroke-width="2" />
+        <circle cx=${-hw + w * 0.14} cy="0" r=${Math.min(w, h) * 0.055}
+                fill="none" stroke=${color} stroke-width="1.5" />`;
+      break;
+    case "vanity":
+      detail = svg`
+        <ellipse cx="0" cy=${h * 0.06} rx=${w * 0.2} ry=${h * 0.26}
+                 fill="none" stroke=${color} stroke-width="2" />
+        <circle cx="0" cy=${-hh + h * 0.14} r=${Math.min(w, h) * 0.05}
+                fill="none" stroke=${color} stroke-width="1.5" />`;
+      break;
+    case "sectional": {
+      const pts = sectionalPoints(w, h, f.hand);
+      const seatY = pts[4][1];               // where the chaise meets the main run
+      const backY = -hh + h * 0.16;
+      const divX = pts[3][0];                // the chaise's inner edge
+      const armX = f.hand === "left" ? hw - w * 0.09 : -hw + w * 0.09;
+      detail = svg`
+        <line x1=${-hw} y1=${backY} x2=${hw} y2=${backY} stroke=${color} stroke-width="2" />
+        <line x1=${armX} y1=${backY} x2=${armX} y2=${seatY} stroke=${color} stroke-width="2" />
+        <line x1=${divX} y1=${backY} x2=${divX} y2=${hh} stroke=${color} stroke-width="2" />`;
+      break;
+    }
     case "table":
     case "roundTable":
     default:

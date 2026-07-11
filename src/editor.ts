@@ -11,6 +11,7 @@ import type {
   FloorText,
   Furniture,
   FurnitureType,
+  SectionalHand,
   ItemKind,
   ItemDisplay,
   Tracker,
@@ -70,6 +71,14 @@ const FURNITURE_TYPES: FurnitureType[] = [
   "toilet",
   "stairs",
   "tv",
+  "sectional",
+  "washer",
+  "dryer",
+  "dishwasher",
+  "bathtub",
+  "vanity",
+  "waterHeater",
+  "airHandler",
 ];
 
 /** User-facing labels for furniture types (the enum uses camelCase). */
@@ -89,6 +98,14 @@ const FURNITURE_LABELS: Record<FurnitureType, string> = {
   toilet: "toilet",
   stairs: "stairs",
   tv: "tv",
+  sectional: "sectional (L)",
+  washer: "washer",
+  dryer: "dryer",
+  dishwasher: "dishwasher",
+  bathtub: "bathtub",
+  vanity: "vanity",
+  waterHeater: "water heater",
+  airHandler: "air handler",
 };
 
 type Tool = "select" | "wall" | "door" | "window" | "tracker";
@@ -2502,6 +2519,25 @@ export class FloorplanCardEditor extends LitElement {
             ${FURNITURE_TYPES.map((t) => html`<option value=${t}>${FURNITURE_LABELS[t]}</option>`)}
           </select>
         </div>
+        ${f.type === "sectional"
+          ? html`
+              <div class="row">
+                <label title="Which side the chaise extends on, facing the sofa from the front">
+                  Chaise side
+                </label>
+                <select
+                  .value=${f.hand ?? "right"}
+                  @change=${(e: Event) =>
+                    this._updateFurniture(f.id, {
+                      hand: (e.target as HTMLSelectElement).value as SectionalHand,
+                    })}
+                >
+                  <option value="right">right</option>
+                  <option value="left">left</option>
+                </select>
+              </div>
+            `
+          : nothing}
         <div class="row">
           <label>Width / Height</label>
           <input

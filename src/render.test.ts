@@ -1,4 +1,6 @@
 import { describe, it, expect } from "vitest";
+import type { FurnitureType, ItemKind } from "./types";
+import { FURNITURE_DEFAULT_SIZE } from "./types";
 import {
   snapToWall,
   openingDefaultOpen,
@@ -11,6 +13,10 @@ import {
   resolveOpeningAmount,
   kindFromEntity,
   defaultIcon,
+  renderFurniture,
+  sectionalPoints,
+  SECTIONAL_CHAISE_FRACTION,
+  SECTIONAL_SEAT_FRACTION,
   entityDefaultIcon,
   trackerSensorReading,
   openingInMotion,
@@ -18,6 +24,8 @@ import {
   entityStateText,
   itemStateText,
   hassRenderInputsChanged,
+  isEntityOn,
+  entityIsActive,
 } from "./render";
 import type { Opening, RenderHass } from "./types";
 
@@ -233,9 +241,51 @@ describe("kindFromEntity", () => {
     expect(kindFromEntity("binary_sensor.door")).toBe("binary_sensor");
     expect(kindFromEntity("cover.garage")).toBe("cover");
   });
+  it("maps the domains that carry their own meaning", () => {
+    expect(kindFromEntity("media_player.tv")).toBe("media_player");
+    expect(kindFromEntity("fan.ceiling")).toBe("fan");
+    expect(kindFromEntity("camera.doorbell")).toBe("camera");
+    expect(kindFromEntity("lock.front")).toBe("lock");
+    expect(kindFromEntity("humidifier.dehumidifier")).toBe("humidifier");
+    expect(kindFromEntity("vacuum.roomba")).toBe("vacuum");
+  });
   it("falls back to generic for unknown domains", () => {
-    expect(kindFromEntity("media_player.tv")).toBe("generic");
+    expect(kindFromEntity("automation.morning")).toBe("generic");
+    expect(kindFromEntity("scene.movie")).toBe("generic");
     expect(kindFromEntity("weird")).toBe("generic");
+  });
+});
+
+describe("defaultIcon", () => {
+  it("gives every kind an icon that is not the generic circle", () => {
+    const kinds: ItemKind[] = [
+      "light", "switch", "sensor", "binary_sensor", "climate", "cover",
+      "media_player", "fan", "camera", "lock", "humidifier", "vacuum",
+    ];
+    for (const k of kinds) {
+      expect(defaultIcon(k), k).toMatch(/^mdi:/);
+      expect(defaultIcon(k), k).not.toBe("mdi:circle");
+    }
+    expect(defaultIcon("generic")).toBe("mdi:circle");
+  });
+});
+
+describe("entityDefaultIcon for domains without a device class", () => {
+  it("distinguishes a television from a doorbell", () => {
+    // Both have no device class. Before, both rendered mdi:circle.
+    expect(entityDefaultIcon("media_player.tv", undefined, true)).toBe("mdi:television-play");
+    expect(entityDefaultIcon("media_player.tv", undefined, false)).toBe("mdi:television-off");
+    expect(entityDefaultIcon("camera.doorbell", undefined, true)).toBe("mdi:cctv");
+  });
+  it("shows a lock as open when it is unlocked", () => {
+    expect(entityDefaultIcon("lock.front", undefined, true)).toBe("mdi:lock-open-variant");
+    expect(entityDefaultIcon("lock.front", undefined, false)).toBe("mdi:lock");
+  });
+  it("still returns undefined for a domain it knows nothing about", () => {
+    expect(entityDefaultIcon("automation.x", undefined, true)).toBeUndefined();
+  });
+  it("does not shadow a binary_sensor's device-class icon", () => {
+    expect(entityDefaultIcon("binary_sensor.d", "door", true)).toBe("mdi:door-open");
   });
 });
 
@@ -481,5 +531,156 @@ describe("hassRenderInputsChanged", () => {
   it("ignores entities the plan does not watch", () => {
     const next = { ...base(), states: { [TEMP]: tempState, [HUMIDITY]: { state: "50.0" } } };
     expect(hassRenderInputsChanged(base(), next, watched)).toBe(false);
+  });
+});
+
+describe("sectionalPoints", () => {
+  const w = 200;
+  const h = 160;
+
+  function area(pts: Array<[number, number]>): number {
+    let a = 0;
+    for (let i = 0; i < pts.length; i++) {
+      const [x1, y1] = pts[i];
+      const [x2, y2] = pts[(i + 1) % pts.length];
+      a += x1 * y2 - x2 * y1;
+    }
+    return Math.abs(a) / 2;
+  }
+
+  it("is an L: six corners, not a rectangle", () => {
+    expect(sectionalPoints(w, h, "right")).toHaveLength(6);
+  });
+
+  it("fills the bounding box minus the notch", () => {
+    const chaise = w * SECTIONAL_CHAISE_FRACTION;
+    const seat = h * SECTIONAL_SEAT_FRACTION;
+    const expected = w * h - (w - chaise) * (h - seat);
+    expect(area(sectionalPoints(w, h, "right"))).toBeCloseTo(expected, 6);
+  });
+
+  it("puts the chaise on the right when hand is right", () => {
+    const pts = sectionalPoints(w, h, "right");
+    // the front edge (max y) should only be occupied on the right half
+    const front = pts.filter(([, y]) => y === h / 2).map(([x]) => x);
+    expect(Math.min(...front)).toBeGreaterThan(0);
+    expect(Math.max(...front)).toBeCloseTo(w / 2, 6);
+  });
+
+  it("puts the chaise on the left when hand is left", () => {
+    const pts = sectionalPoints(w, h, "left");
+    const front = pts.filter(([, y]) => y === h / 2).map(([x]) => x);
+    expect(Math.max(...front)).toBeLessThan(0);
+    expect(Math.min(...front)).toBeCloseTo(-w / 2, 6);
+  });
+
+  it("left is right mirrored across x, not a different shape", () => {
+    const r = sectionalPoints(w, h, "right");
+    const l = sectionalPoints(w, h, "left");
+    expect(area(l)).toBeCloseTo(area(r), 6);
+    expect(l.map(([x, y]) => [-x, y])).toEqual(r);
+  });
+
+  it("defaults to right-handed", () => {
+    expect(sectionalPoints(w, h)).toEqual(sectionalPoints(w, h, "right"));
+  });
+
+  it("stays inside its bounding box", () => {
+    for (const hand of ["left", "right"] as const) {
+      for (const [x, y] of sectionalPoints(w, h, hand)) {
+        expect(Math.abs(x)).toBeLessThanOrEqual(w / 2 + 1e-9);
+        expect(Math.abs(y)).toBeLessThanOrEqual(h / 2 + 1e-9);
+      }
+    }
+  });
+});
+
+describe("every furniture type renders and has a default size", () => {
+  const types: FurnitureType[] = [
+    "table", "roundTable", "desk", "chair", "sofa", "bed", "wardrobe", "rug",
+    "plant", "fridge", "stove", "sink", "toilet", "stairs", "tv",
+    "washer", "dryer", "dishwasher", "waterHeater", "airHandler", "bathtub",
+    "vanity", "sectional",
+  ];
+
+  it("has a default size for each", () => {
+    for (const t of types) {
+      const s = FURNITURE_DEFAULT_SIZE[t];
+      expect(s, t).toBeTruthy();
+      expect(s.w, t).toBeGreaterThan(0);
+      expect(s.h, t).toBeGreaterThan(0);
+    }
+  });
+
+  it("renders each without throwing", () => {
+    for (const t of types) {
+      const { w, h } = FURNITURE_DEFAULT_SIZE[t];
+      expect(() => renderFurniture({ id: t, type: t, x: 0, y: 0, w, h }), t).not.toThrow();
+    }
+  });
+
+  it("renders a sectional of each hand", () => {
+    for (const hand of ["left", "right"] as const) {
+      expect(() =>
+        renderFurniture({ id: "s", type: "sectional", x: 0, y: 0, w: 230, h: 180, hand }),
+      ).not.toThrow();
+    }
+  });
+});
+
+describe("isEntityOn", () => {
+  it("is on, open, home, or playing — nothing else", () => {
+    for (const s of ["on", "open", "home", "playing"]) expect(isEntityOn(s), s).toBe(true);
+    for (const s of ["off", "closed", "away", "paused", undefined]) expect(isEntityOn(s), s).toBe(false);
+  });
+});
+
+describe("entityIsActive — domains that never say \"on\"", () => {
+  it("a lock is active when it is not locked", () => {
+    expect(entityIsActive("lock.front", "unlocked")).toBe(true);
+    expect(entityIsActive("lock.front", "unlocking")).toBe(true);
+    expect(entityIsActive("lock.front", "locked")).toBe(false);
+  });
+
+  it("a vacuum is active while it is working, not while it is docked", () => {
+    expect(entityIsActive("vacuum.roomba", "cleaning")).toBe(true);
+    expect(entityIsActive("vacuum.roomba", "returning")).toBe(true);
+    for (const s of ["docked", "idle", "paused"]) {
+      expect(entityIsActive("vacuum.roomba", s), s).toBe(false);
+    }
+  });
+
+  it("a camera is active while recording or streaming", () => {
+    expect(entityIsActive("camera.door", "recording")).toBe(true);
+    expect(entityIsActive("camera.door", "idle")).toBe(false);
+  });
+
+  it("falls back to the generic on/off test for every other domain", () => {
+    expect(entityIsActive("light.a", "on")).toBe(true);
+    expect(entityIsActive("binary_sensor.a", "off")).toBe(false);
+    expect(entityIsActive("device_tracker.a", "home")).toBe(true);
+    expect(entityIsActive(undefined, "on")).toBe(true);
+  });
+
+  it("an outage is never active, whatever the domain says", () => {
+    for (const e of ["lock.a", "vacuum.a", "light.a"]) {
+      expect(entityIsActive(e, "unavailable"), e).toBe(false);
+      expect(entityIsActive(e, "unknown"), e).toBe(false);
+      expect(entityIsActive(e, undefined), e).toBe(false);
+    }
+  });
+
+  // The bug: DOMAIN_STATE_ICONS gives lock/vacuum/camera an `on` icon that the
+  // generic predicate (isEntityOn) could never reach, so they were frozen on
+  // their off icon. This branch has no resolveItemIcon wrapper — floorplan-card's
+  // _itemIcon calls entityDefaultIcon(entity, deviceClass, on) directly — so the
+  // integration is exercised here instead of through a wrapper.
+  it("an unlocked lock now reaches its open icon", () => {
+    expect(entityDefaultIcon("lock.front", undefined, entityIsActive("lock.front", "unlocked"))).toBe(
+      "mdi:lock-open-variant",
+    );
+    expect(entityDefaultIcon("lock.front", undefined, entityIsActive("lock.front", "locked"))).toBe(
+      "mdi:lock",
+    );
   });
 });

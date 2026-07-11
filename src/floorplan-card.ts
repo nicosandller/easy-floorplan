@@ -23,6 +23,7 @@ import {
   trackerSensorReading,
   defaultIcon,
   entityDefaultIcon,
+  entityIsActive,
   itemStateText,
   hassRenderInputsChanged,
 } from "./render";
@@ -102,8 +103,7 @@ export class FloorplanCard extends LitElement {
   }
 
   private _isOn(item: FloorItem): boolean {
-    const st = this.hass?.states[item.entity]?.state;
-    return st === "on" || st === "open" || st === "home" || st === "playing";
+    return entityIsActive(item.entity, this.hass?.states[item.entity]?.state);
   }
 
   /** How far open an opening should be drawn (0..1), from its entity (or default). */
@@ -253,6 +253,20 @@ export class FloorplanCard extends LitElement {
           style="aspect-ratio: ${c.width} / ${c.height}; background:${c.background ??
           "var(--card-background-color, #fff)"};"
         >
+<!-- preserveAspectRatio="none" is correct here, and it took a wrong fix to
+               see why. .stage pins aspect-ratio: width / height inline, so the
+               SVG's box already matches its viewBox and "none" never distorts.
+
+               "meet" letterboxes the SVG inside its box. The .items overlay is
+               HTML, positioned with raw left/top percentages of .stage, and it
+               does not letterbox. So the moment anything overrides the stage's
+               ratio (card-mod, a grid row count) the drawing shrinks away from
+               the badges and every icon drifts off the wall it was placed on.
+               "none" stretches both layers identically: distorted, but aligned.
+
+               The real fix letterboxes both layers together -- wrap the svg and
+               the overlay in one aspect-ratio box and centre it. Until then, do
+               not "fix" this line. -->
           <svg viewBox="0 0 ${c.width} ${c.height}" preserveAspectRatio="none">
             ${active.image
               ? svg`<image href=${active.image} x="0" y="0" width=${c.width} height=${c.height}
