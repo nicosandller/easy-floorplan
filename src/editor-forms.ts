@@ -127,6 +127,14 @@ export const FURNITURE_TYPES: FurnitureType[] = [
   "toilet",
   "stairs",
   "tv",
+  "sectional",
+  "washer",
+  "dryer",
+  "dishwasher",
+  "bathtub",
+  "vanity",
+  "waterHeater",
+  "airHandler",
 ];
 
 /** User-facing labels for furniture types (the enum uses camelCase). */
@@ -146,6 +154,14 @@ export const FURNITURE_LABELS: Record<FurnitureType, string> = {
   toilet: "toilet",
   stairs: "stairs",
   tv: "tv",
+  sectional: "sectional (L)",
+  washer: "washer",
+  dryer: "dryer",
+  dishwasher: "dishwasher",
+  bathtub: "bathtub",
+  vanity: "vanity",
+  waterHeater: "water heater",
+  airHandler: "air handler",
 };
 
 export function openingForm(o: Opening): FormSpec {
@@ -328,11 +344,27 @@ export function furnitureForm(f: Furniture): FormSpec {
           },
         },
       },
+      // L-shaped sectional only (#40): which side the chaise extends on,
+      // facing the sofa from the front. Conditional, in the same shape
+      // openingForm uses for its hinge / slide fields.
+      ...(f.type === "sectional"
+        ? [
+            {
+              name: "hand",
+              label: "Chaise side",
+              helper: "Facing the sofa from the front",
+              selector: dropdown(opt("right", "right"), opt("left", "left")),
+            },
+          ]
+        : []),
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
       angleField(),
     ],
-    data: { type: f.type, w: f.w, h: f.h, angle: f.angle ?? 0 },
+    data:
+      f.type === "sectional"
+        ? { type: f.type, hand: f.hand ?? "right", w: f.w, h: f.h, angle: f.angle ?? 0 }
+        : { type: f.type, w: f.w, h: f.h, angle: f.angle ?? 0 },
     toPatch: identity,
   };
 }
