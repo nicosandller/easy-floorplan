@@ -156,6 +156,19 @@ describe("itemForm", () => {
     ).toContain("rippleSize");
   });
 
+  it("offers the icon-animation dropdown defaulting to auto", () => {
+    const f = itemForm(item).fields.find((x) => x.name === "iconAnimation");
+    expect(f).toBeDefined();
+    const opts = (f!.selector as { select: { options: { value: string }[] } }).select.options.map(
+      (o) => o.value
+    );
+    expect(opts).toEqual(["auto", "none", "spin", "pulse"]);
+    expect(itemForm(item).data.iconAnimation).toBe("auto");
+    expect(itemForm({ ...item, iconAnimation: "spin" } as FloorItem).data.iconAnimation).toBe(
+      "spin"
+    );
+  });
+
   it("offers the three action fields with behavior-preserving defaults", () => {
     const fs = itemForm(item).fields;
     expect(fs.find((x) => x.name === "tap_action")!.selector).toEqual({

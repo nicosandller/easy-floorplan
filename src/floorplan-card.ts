@@ -26,6 +26,7 @@ import {
   hassRenderInputsChanged,
   collectWatchedEntities,
   resolveItemIcon,
+  resolveIconAnimation,
 } from "./render";
 import type { Opening } from "./types";
 import { actionForGesture, executeAction, hasAction } from "./actions";
@@ -165,12 +166,17 @@ export class FloorplanCard extends LitElement {
 
   private _renderBadge(item: FloorItem): TemplateResult {
     const size = item.size ?? DEFAULT_ITEM_SIZE;
+    // Animation goes on the inner ha-icon, not the badge: the badge carries
+    // the user's `angle` rotation, and a spin on the same element would
+    // overwrite it.
+    const anim = resolveIconAnimation(item, this.hass?.states[item.entity]?.state);
     return html`
       <div
         class="badge"
         style="width:${size}px;height:${size}px;transform:rotate(${item.angle ?? 0}deg);"
       >
         <ha-icon
+          class=${anim ? `anim-${anim}` : ""}
           icon=${this._itemIcon(item)}
           style="--mdc-icon-size:${Math.round(size * 0.62)}px;"
         ></ha-icon>
@@ -454,6 +460,36 @@ export class FloorplanCard extends LitElement {
     }
     ha-icon {
       --mdc-icon-size: 22px;
+    }
+    /* Icon motion while the entity is active (issue #48). */
+    ha-icon.anim-spin {
+      animation: fp-icon-spin 2s linear infinite;
+    }
+    ha-icon.anim-pulse {
+      animation: fp-icon-pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes fp-icon-spin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    @keyframes fp-icon-pulse {
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.4;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      ha-icon.anim-spin,
+      ha-icon.anim-pulse {
+        animation: none;
+      }
     }
     .label {
       font-size: 12px;
