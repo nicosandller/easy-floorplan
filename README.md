@@ -89,7 +89,8 @@ background):
 
 - **Select** — the default tool. Click an element to select it; Shift/Ctrl-click or drag
   a box to select several at once. Arrow keys nudge the selection (Shift+arrow jumps a
-  full grid cell); **Ctrl/Cmd+C/V/D** copy / paste / duplicate; **Ctrl/Cmd+Z** undoes
+  full grid cell); **Ctrl/Cmd+C/V/D** copy / paste / duplicate — pasting also works
+  across floors (copy, switch floor, paste); **Ctrl/Cmd+Z** undoes
   (**Shift+Z** or **Ctrl+Y** redoes); **Escape** cancels an in-progress draw or clears
   the selection. The **Element** section below the canvas names the selection
   (e.g. *Door · 60 units*) and carries its **duplicate** / **delete** buttons along
@@ -99,6 +100,10 @@ background):
   keeps walls horizontal/vertical and corner-snapped (turn it off to draw freely), and
   the **Snap** segmented control (`On` / `Off` / `Custom`) governs snapping for *all*
   tools — `Custom` lets you snap to a percentage of the grid (e.g. 50% = half a cell).
+  Rooms **stretch** instead of tearing: dragging a wall — or one of its corner
+  handles — carries every wall corner that touches it, so you can widen a room by
+  just pulling its wall. Hold **Alt** while dragging to detach and move only the
+  grabbed wall.
 - **Door / Window** — click to drop; it snaps onto the nearest wall. The context row
   shows a **Length** field for the *next* opening you place, so you can size doors and
   windows before placing them. Assign a sensor after placement (in the **Element**
@@ -117,9 +122,10 @@ background):
 
 Undo/redo buttons sit at the right of the tools row. Zoom controls live on the canvas
 itself (bottom-right): **−** / **+** step, click the percentage to reset, the fit button
-snaps back to 100%, and **Ctrl/Cmd+scroll** zooms from the keyboard/trackpad. The
-**Project** section (canvas size, grid, background) is collapsed by default — click its
-header to expand.
+snaps back to 100%, and **Ctrl/Cmd+scroll** zooms from the keyboard/trackpad. On touch
+screens, **pinch** directly on the canvas — it zooms just the plan (anchored between
+your fingers), not the whole editor. The **Project** section (canvas size, grid,
+background) is collapsed by default — click its header to expand.
 
 ## Elements
 
@@ -149,6 +155,10 @@ By default it shows an icon badge:
   still wins.
 - **Make it yours** — override the **icon** (with autocomplete + live preview), set a
   custom **name**, change the **size**, **rotate** it, or hide the icon entirely.
+- **No entity? Still on the map** — a device with no entity bound renders as a plain
+  badge (its icon override or kind default), so hardware that has no Home Assistant
+  entity — a dumb smoke detector, a wired doorbell — can still be marked on the plan.
+  It never highlights and tapping does nothing.
 
 ### Presence ripples
 
@@ -388,7 +398,7 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | Field         | Type                                   | Default      | Description                                            |
 | ------------- | -------------------------------------- | ------------ | ------------------------------------------------------ |
 | `id`          | string                                 | —            | Unique id.                                             |
-| `entity`      | string                                 | —            | Entity id to bind.                                     |
+| `entity`      | string                                 | —            | Entity id to bind. Optional: without one the device renders as a static badge. |
 | `secondaryEntity` | string                             | —            | Optional 2nd entity shown alongside (e.g. humidity).   |
 | `x`, `y`      | number                                 | —            | Position.                                              |
 | `kind`        | light/switch/sensor/binary_sensor/climate/cover/generic | inferred | Used for the default icon.            |

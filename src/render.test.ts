@@ -28,6 +28,7 @@ import {
   isEntityOn,
   entityIsActive,
   resolveItemIcon,
+  itemIconSize,
 } from "./render";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
 
@@ -745,5 +746,38 @@ describe("entityIsActive — domains that never say \"on\"", () => {
     expect(entityDefaultIcon("lock.front", undefined, entityIsActive("lock.front", "locked"))).toBe(
       "mdi:lock",
     );
+  });
+});
+
+describe("resolveItemIcon without an entity (issue #39)", () => {
+  it("falls back to the kind default when no entity is bound", () => {
+    expect(resolveItemIcon({ entity: "", kind: "sensor" }, undefined)).toBe(
+      defaultIcon("sensor"),
+    );
+    expect(resolveItemIcon({ kind: "light" }, undefined)).toBe(defaultIcon("light"));
+  });
+
+  it("still honors an explicit icon override", () => {
+    expect(resolveItemIcon({ entity: "", kind: "sensor", icon: "mdi:smoke-detector" }, undefined)).toBe(
+      "mdi:smoke-detector",
+    );
+  });
+});
+
+describe("itemIconSize (issue #39: off-center glyphs at small sizes)", () => {
+  it("keeps the familiar 22px icon for the 34px default badge", () => {
+    expect(itemIconSize(34)).toBe(22);
+  });
+
+  it("matches the badge's parity so centering slack is a whole pixel per side", () => {
+    for (const badge of [16, 18, 20, 24, 28, 34, 48]) {
+      expect((badge - itemIconSize(badge)) % 2, `badge ${badge}`).toBe(0);
+    }
+    // 18px badge: naive round(18 * 0.62) = 11 leaves a half-pixel; we want 12.
+    expect(itemIconSize(18)).toBe(12);
+  });
+
+  it("never collapses below 2px", () => {
+    expect(itemIconSize(1)).toBeGreaterThanOrEqual(2);
   });
 });

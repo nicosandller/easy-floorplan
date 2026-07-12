@@ -1,5 +1,6 @@
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor } from "./types";
 import {
   DEFAULT_WIDTH,
@@ -26,6 +27,7 @@ import {
   hassRenderInputsChanged,
   collectWatchedEntities,
   resolveItemIcon,
+  itemIconSize,
 } from "./render";
 import type { Opening } from "./types";
 import { actionForGesture, executeAction, hasAction } from "./actions";
@@ -172,7 +174,7 @@ export class FloorplanCard extends LitElement {
       >
         <ha-icon
           icon=${this._itemIcon(item)}
-          style="--mdc-icon-size:${Math.round(size * 0.62)}px;"
+          style="--mdc-icon-size:${itemIconSize(size)}px;"
         ></ha-icon>
       </div>
     `;
@@ -180,7 +182,8 @@ export class FloorplanCard extends LitElement {
 
   private _renderItem(item: FloorItem, c: FloorplanCardConfig): TemplateResult {
     const on = this._isOn(item);
-    const showState = item.showState ?? item.kind === "sensor";
+    // No entity, no state line — the badge alone marks the device (issue #39).
+    const showState = !!item.entity && (item.showState ?? item.kind === "sensor");
     const showIcon = item.showIcon ?? true;
     const display = item.display ?? "badge";
     const rippleColor = item.rippleColor ?? "var(--primary-color, #03a9f4)";
@@ -213,7 +216,11 @@ export class FloorplanCard extends LitElement {
         })}
       >
         ${visual}
-        ${showState ? html`<span class="label">${itemStateText(this.hass, item)}</span>` : nothing}
+        ${showState
+          ? html`<span class="label ${visual === nothing ? "inflow" : ""}"
+              >${itemStateText(this.hass, item)}</span
+            >`
+          : nothing}
       </div>
     `;
   }
@@ -275,7 +282,14 @@ export class FloorplanCard extends LitElement {
                       class="wall" stroke-width=${WALL_THICKNESS} stroke-linecap="round" />`
               )}
             </g>
-            ${active.openings.map((o) => {
+            ${repeat(
+              // Keyed by id: switching floors must create fresh DOM nodes.
+              // Unkeyed, Lit morphs floor A's openings into floor B's, and the
+              // 0.5s leaf/panel transitions animate the leftover state — a
+              // window briefly plays a door swing (issue #50).
+              active.openings,
+              (o) => o.id,
+              (o) => {
               const amount = this._openingAmount(o);
               const symbol = renderOpening(o, {
                 color: "var(--primary-text-color)",
@@ -297,7 +311,10 @@ export class FloorplanCard extends LitElement {
                         transform="rotate(${o.angle} ${o.x} ${o.y})" />
                 </g>`;
             })}
-            ${(active.trackers ?? []).map((tr) =>
+            ${repeat(
+              active.trackers ?? [],
+              (tr) => tr.id,
+              (tr) =>
               renderTracker(tr, {
                 editing: false,
                 xReading: trackerSensorReading(this.hass?.states, tr.xSensor?.entity),
@@ -309,7 +326,14 @@ export class FloorplanCard extends LitElement {
           </svg>
           <div class="items">
             ${active.texts.map((t) => this._renderText(t, c))}
-            ${active.items.filter((it) => it.entity).map((it) => this._renderItem(it, c))}
+            ${repeat(
+              // No entity filter: devices that exist physically but have no HA
+              // entity still deserve their badge (issue #39). Keyed by id so a
+              // floor switch builds fresh DOM (see the openings comment).
+              active.items,
+              (it) => it.id,
+              (it) => this._renderItem(it, c)
+            )}
           </div>
           ${floors.length > 1 ? this._renderFloorSwitcher(floors, active) : nothing}
         </div>
@@ -456,6 +480,13 @@ export class FloorplanCard extends LitElement {
       --mdc-icon-size: 22px;
     }
     .label {
+      /* Out of flow, hanging below the badge: the state line must not change
+         the item's box, so the badge — not the badge+label column — centers
+         on (x, y). Items with and without a state stay aligned (issue #34). */
+      position: absolute;
+      top: calc(100% + 2px);
+      left: 50%;
+      transform: translateX(-50%);
       font-size: 12px;
       line-height: 1;
       padding: 1px 4px;
@@ -463,6 +494,12 @@ export class FloorplanCard extends LitElement {
       background: var(--card-background-color, #fff);
       color: var(--primary-text-color);
       white-space: nowrap;
+    }
+    /* Label-only items (showIcon: false) have no badge to hang under — let
+       the label itself be the box so it centers on (x, y) as before. */
+    .label.inflow {
+      position: static;
+      transform: none;
     }
     .text {
       position: absolute;

@@ -26,6 +26,56 @@ type WallSegment = Pick<Wall, "x1" | "y1" | "x2" | "y2">;
 /** Snap distance (virtual units) for wall endpoints onto each other. */
 export const ENDPOINT_SNAP = 26;
 
+/**
+ * Corners of different walls at most this far apart count as the same room
+ * corner for stretch-dragging (issue #30). Kept tight so only genuinely
+ * shared corners travel together — walls that merely pass near each other
+ * don't get grabbed.
+ */
+export const CORNER_ATTACH_EPS = 0.75;
+
+/** An endpoint of another wall that shares a corner with a dragged wall. */
+export interface AttachedCorner {
+  id: string;
+  /** Which endpoint of the attached wall coincides. */
+  end: 1 | 2;
+  /** Which endpoint of the dragged wall it follows. */
+  which: 1 | 2;
+  /** Position at drag start (for whole-wall translation). */
+  x0: number;
+  y0: number;
+}
+
+/**
+ * Endpoints of other walls sharing a corner with the grabbed wall (issue
+ * #30): dragging a corner or a whole wall stretches the room instead of
+ * tearing it open. Scans only the grabbed endpoint's corner for an
+ * endpoint-handle drag; both corners for a whole-wall drag.
+ */
+export function attachedCorners(
+  walls: readonly Wall[],
+  wallId: string,
+  endpoint?: 1 | 2,
+  eps = CORNER_ATTACH_EPS
+): AttachedCorner[] | undefined {
+  const w = walls.find((x) => x.id === wallId);
+  if (!w) return undefined;
+  const anchors: { x: number; y: number; which: 1 | 2 }[] = [];
+  if (endpoint !== 2) anchors.push({ x: w.x1, y: w.y1, which: 1 });
+  if (endpoint !== 1) anchors.push({ x: w.x2, y: w.y2, which: 2 });
+  const attached: AttachedCorner[] = [];
+  for (const other of walls) {
+    if (other.id === w.id) continue;
+    for (const end of [1, 2] as const) {
+      const px = end === 1 ? other.x1 : other.x2;
+      const py = end === 1 ? other.y1 : other.y2;
+      const a = anchors.find((an) => Math.hypot(px - an.x, py - an.y) <= eps);
+      if (a) attached.push({ id: other.id, end, which: a.which, x0: px, y0: py });
+    }
+  }
+  return attached.length ? attached : undefined;
+}
+
 /** Nearest existing wall endpoint within `maxDist`, or null. */
 export function nearestCorner(
   walls: readonly WallSegment[],

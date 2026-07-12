@@ -265,10 +265,13 @@ export function entityDefaultIcon(
  * "on" (lock/vacuum/camera) reach their active icons here too.
  */
 export function resolveItemIcon(
-  item: { entity: string; kind: ItemKind; icon?: string },
+  item: { entity?: string; kind: ItemKind; icon?: string },
   st: { state: string; attributes: Record<string, unknown> } | undefined,
 ): string {
   if (item.icon) return item.icon;
+  // No entity bound (issue #39: devices that exist physically but not in HA):
+  // nothing to derive from, fall straight through to the kind default.
+  if (!item.entity) return defaultIcon(item.kind);
   const attrIcon = st?.attributes?.icon as string | undefined;
   if (attrIcon) return attrIcon;
   return (
@@ -278,6 +281,20 @@ export function resolveItemIcon(
       entityIsActive(item.entity, st?.state),
     ) ?? defaultIcon(item.kind)
   );
+}
+
+/**
+ * Icon size for an item badge, shared by card and editor. ~62% of the badge,
+ * nudged to the badge's parity so the flex-centering slack on each side is a
+ * whole pixel — an 11px icon in an 18px badge sits on a half-pixel and the
+ * glyph renders visibly off-center at small sizes (issue #39). The 34px
+ * default badge still gets its familiar 22px icon.
+ */
+export function itemIconSize(badgeSize: number): number {
+  const b = Math.round(badgeSize);
+  let s = Math.round(b * 0.62);
+  if (s % 2 !== b % 2) s += 1;
+  return Math.max(2, s);
 }
 
 /** Infer a sensible item kind from an entity id's domain. */
