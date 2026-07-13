@@ -23,6 +23,7 @@ import {
   openingIsActive,
   entityStateText,
   itemStateText,
+  itemBadgeLabel,
   hassRenderInputsChanged,
   collectWatchedEntities,
   isEntityOn,
@@ -495,6 +496,50 @@ describe("itemStateText", () => {
     expect(itemStateText(livingArea(), { entity: TEMP, secondaryEntity: "sensor.gone" })).toBe(
       "17.9 °C · —",
     );
+  });
+});
+
+describe("itemBadgeLabel (issues #61, #59)", () => {
+  const named = () => {
+    const h = livingArea();
+    (h.states[TEMP]!.attributes as Record<string, unknown>).friendly_name = "Living Temp";
+    return h;
+  };
+
+  it("keeps the historic default: sensors show state, nothing else shows", () => {
+    expect(itemBadgeLabel(named(), { entity: TEMP, kind: "sensor" })).toBe("17.9 °C");
+    expect(itemBadgeLabel(named(), { entity: TEMP, kind: "light" })).toBe("");
+  });
+
+  it("showName renders the friendly name; a config name override wins", () => {
+    expect(itemBadgeLabel(named(), { entity: TEMP, kind: "light", showName: true })).toBe(
+      "Living Temp",
+    );
+    expect(
+      itemBadgeLabel(named(), { entity: TEMP, kind: "light", showName: true, name: "Lamp" }),
+    ).toBe("Lamp");
+  });
+
+  it("falls back to the entity id when there is no friendly name", () => {
+    expect(itemBadgeLabel(livingArea(), { entity: TEMP, kind: "light", showName: true })).toBe(
+      TEMP,
+    );
+  });
+
+  it("name and state combine as one line", () => {
+    expect(itemBadgeLabel(named(), { entity: TEMP, kind: "sensor", showName: true })).toBe(
+      "Living Temp · 17.9 °C",
+    );
+    expect(
+      itemBadgeLabel(named(), { entity: TEMP, kind: "light", showName: true, showState: true }),
+    ).toBe("Living Temp · 17.9 °C");
+  });
+
+  it("showState: false silences even a sensor; name alone still shows", () => {
+    expect(itemBadgeLabel(named(), { entity: TEMP, kind: "sensor", showState: false })).toBe("");
+    expect(
+      itemBadgeLabel(named(), { entity: TEMP, kind: "sensor", showState: false, showName: true }),
+    ).toBe("Living Temp");
   });
 });
 

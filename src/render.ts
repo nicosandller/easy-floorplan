@@ -82,6 +82,35 @@ export function itemStateText(
   return `${primary} · ${entityStateText(hass, item.secondaryEntity)}`;
 }
 
+/** Default label font size (px) for an item's name/state line. */
+export const DEFAULT_LABEL_SIZE = 12;
+
+/**
+ * The label line under an item's badge, or "" for none: the name (issue #61)
+ * and/or the state, per the item's toggles. `showState` keeps its historic
+ * default (sensors only); `showName` defaults off. Both together read
+ * "Name · state".
+ */
+export function itemBadgeLabel(
+  hass: RenderHass | undefined,
+  item: {
+    entity: string;
+    secondaryEntity?: string;
+    name?: string;
+    kind: ItemKind;
+    showName?: boolean;
+    showState?: boolean;
+  },
+): string {
+  const parts: string[] = [];
+  if (item.showName) {
+    const friendly = hass?.states[item.entity]?.attributes?.friendly_name as string | undefined;
+    parts.push(item.name || friendly || item.entity);
+  }
+  if (item.showState ?? item.kind === "sensor") parts.push(itemStateText(hass, item));
+  return parts.join(" · ");
+}
+
 /** Default mdi icon per item kind, used when neither config nor entity supplies one. */
 export function defaultIcon(kind: ItemKind): string {
   switch (kind) {

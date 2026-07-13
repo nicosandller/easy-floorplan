@@ -23,7 +23,7 @@ import {
   DEFAULT_TEXT_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
 } from "./types";
-import { defaultIcon, openingMotion, sliderStyleOf } from "./render";
+import { DEFAULT_LABEL_SIZE, defaultIcon, openingMotion, sliderStyleOf } from "./render";
 import { defaultItemAction } from "./actions";
 
 /** One ha-form schema item, extended with our label/helper (read by computeLabel). */
@@ -283,6 +283,22 @@ export function itemForm(it: FloorItem): FormSpec {
     { name: "showIcon", label: "Show icon", selector: { boolean: {} } },
     { name: "showState", label: "Show state", selector: { boolean: {} } },
     {
+      name: "showName",
+      label: "Show name",
+      helper: "Adds the device's name to the label line",
+      selector: { boolean: {} },
+    }
+  );
+  // Label size only matters while a label line renders.
+  if (it.showName || (it.showState ?? it.kind === "sensor")) {
+    fields.push({
+      name: "labelSize",
+      label: "Label size",
+      selector: { number: { min: 8, max: 40, step: 1, mode: "slider", unit_of_measurement: "px" } },
+    });
+  }
+  fields.push(
+    {
       name: "tap_action",
       label: "Tap action",
       selector: { ui_action: { default_action: defaultItemAction(it.entity).action } },
@@ -307,6 +323,8 @@ export function itemForm(it: FloorItem): FormSpec {
       rippleSize: it.rippleSize ?? DEFAULT_RIPPLE_SIZE,
       showIcon: it.showIcon ?? true,
       showState: it.showState ?? false,
+      showName: it.showName ?? false,
+      labelSize: it.labelSize ?? DEFAULT_LABEL_SIZE,
       tap_action: it.tap_action,
       hold_action: it.hold_action,
       double_tap_action: it.double_tap_action,

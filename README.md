@@ -149,6 +149,10 @@ By default it shows an icon badge:
   still wins.
 - **Make it yours** — override the **icon** (with autocomplete + live preview), set a
   custom **name**, change the **size**, **rotate** it, or hide the icon entirely.
+- **Label line** — **Show state** displays the live value (sensors do this by
+  default); **Show name** adds the device's name — handy for a panel of look-alike
+  buttons where a state would say nothing. Both together read `Name · state`, and
+  **Label size** adjusts the line's font size.
 
 ### Presence ripples
 
@@ -400,7 +404,9 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | `rippleColor` | string                                 | primary color| Ripple ring color (ripple modes).                     |
 | `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
 | `showIcon`    | boolean                                | `true`       | Show the icon badge.                                   |
-| `showState`   | boolean                                | sensors only | Show the entity state label.                           |
+| `showState`   | boolean                                | sensors only | Show the entity state in the label line.               |
+| `showName`    | boolean                                | `false`      | Show the device's name in the label line (`Name · state` when combined). |
+| `labelSize`   | number                                 | `12`         | Label line font size (px).                             |
 
 Clicking a `light`, `switch`, `cover`, `fan` or `input_boolean` toggles it; other
 domains open the more-info dialog.

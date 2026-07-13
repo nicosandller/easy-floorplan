@@ -127,6 +127,14 @@ export interface FloorItem {
   name?: string;
   /** Show the entity state next to the icon. */
   showState?: boolean;
+  /**
+   * Show the device's name in the label line (issue #61) — the `name`
+   * override, else the entity's friendly name. Combines with `showState` as
+   * "Name · state". Default false.
+   */
+  showName?: boolean;
+  /** Label line font size in pixels (issue #59). Default 12. */
+  labelSize?: number;
   /** Show the icon badge. When false only the state/label shows. Default true. */
   showIcon?: boolean;
   /** Badge diameter in pixels. Default 34. */

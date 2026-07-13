@@ -22,7 +22,8 @@ import {
   renderTracker,
   trackerSensorReading,
   entityIsActive,
-  itemStateText,
+  itemBadgeLabel,
+  DEFAULT_LABEL_SIZE,
   hassRenderInputsChanged,
   collectWatchedEntities,
   resolveItemIcon,
@@ -180,7 +181,7 @@ export class FloorplanCard extends LitElement {
 
   private _renderItem(item: FloorItem, c: FloorplanCardConfig): TemplateResult {
     const on = this._isOn(item);
-    const showState = item.showState ?? item.kind === "sensor";
+    const labelText = itemBadgeLabel(this.hass, item);
     const showIcon = item.showIcon ?? true;
     const display = item.display ?? "badge";
     const rippleColor = item.rippleColor ?? "var(--primary-color, #03a9f4)";
@@ -213,7 +214,11 @@ export class FloorplanCard extends LitElement {
         })}
       >
         ${visual}
-        ${showState ? html`<span class="label">${itemStateText(this.hass, item)}</span>` : nothing}
+        ${labelText
+          ? html`<span class="label" style="font-size:${item.labelSize ?? DEFAULT_LABEL_SIZE}px;"
+              >${labelText}</span
+            >`
+          : nothing}
       </div>
     `;
   }
