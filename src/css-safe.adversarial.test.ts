@@ -26,6 +26,8 @@ describe("cssColor — adversarial: exotic breakout attempts all rejected", () =
     "URL(//evil)",
     "image-set(//evil)",
     "var(--x, url(//evil))",
+    "var(--a, var(--b, url(//evil)))", // url hidden inside a nested var fallback
+    "var(--a, var(--b, red);position:fixed))", // breakout inside a nested fallback
     "rgb(0,0,0);background:url(//evil)",
     "expression(alert(1))",
     "EXPRESSION(1)",
@@ -36,9 +38,7 @@ describe("cssColor — adversarial: exotic breakout attempts all rejected", () =
     "red !important;x:1",
     "rgb(0,0,0) ;evil",
     "#fff;--x:url(//evil)",
-    // nested / doubled parens (where url could hide)
-    "rgb(rgb(0,0,0))",
-    "hsl(calc(1) 0 0)",
+    // breakout hidden inside otherwise-safe nesting
     "var(--x, rgb(0,0,0); z:1)",
     // whitespace-obfuscated
     "red ; position : fixed",
@@ -87,17 +87,26 @@ describe("cssColor — INVARIANT: nothing accepted can break out of a style decl
     }
     cases.push(s);
   }
-  it("no accepted value contains ; { } or a nested paren / url(", () => {
+  it("no accepted value can break out of a style declaration", () => {
+    // Nested functions are allowed, so an accepted value may contain several
+    // balanced parens — but never a declaration break (`;` `{` `}`) and never a
+    // fetch/execute function, since those aren't on the SAFE_FUNCS allowlist.
+    const FORBIDDEN = ["url(", "image(", "image-set(", "-webkit-image-set(",
+      "cross-fade(", "element(", "paint(", "expression(", "attr("];
     let accepted = 0;
     for (const c of cases) {
       const out = cssColor(c);
       if (out === undefined) continue;
       accepted++;
       expect(out).not.toMatch(/[;{}]/);
-      expect((out.match(/\(/g) ?? []).length).toBeLessThanOrEqual(1);
-      expect((out.match(/\)/g) ?? []).length).toBeLessThanOrEqual(1);
-      expect(out.toLowerCase()).not.toContain("url(");
-      expect(out.toLowerCase()).not.toContain("expression(");
+      // balanced parens
+      let d = 0;
+      for (const ch of out) { if (ch === "(") d++; else if (ch === ")") d--; expect(d).toBeGreaterThanOrEqual(0); }
+      expect(d).toBe(0);
+      const lower = out.toLowerCase();
+      for (const bad of FORBIDDEN) expect(lower).not.toContain(bad);
+      // no quotes, colons, semicolons, escapes, or bangs survived
+      expect(out).not.toMatch(/["':@\\!]/);
     }
     // sanity: the legit seeds really were accepted (so the invariant isn't vacuous)
     expect(accepted).toBeGreaterThanOrEqual(6);

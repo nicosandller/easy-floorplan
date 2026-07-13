@@ -14,6 +14,21 @@ describe("cssColor — accepts the colours real users actually type", () => {
     "var(--card-background-color, #fff)",
     "var(--primary-text-color)",
     "var(  --primary-color , red )", // sloppy whitespace
+    // nested var() fallback chains — valid CSS, common in HA themes (Codex #65 P2)
+    "var(--ha-card-background, var(--card-background-color, #fff))",
+    "var(--x, var(--y, var(--z, red)))",
+    "var(--accent, rgb(3, 169, 244))", // function fallback
+    // THE core HA idiom: colours stored as bare "r, g, b" triplets, read back
+    // wrapped in rgb()/rgba() (HA default themes since 2022.12).
+    "rgb(var(--rgb-primary-color))",
+    "rgba(var(--rgb-primary-color), 0.5)",
+    "rgb(var(--rgb-card-background-color))",
+    "rgba(var(--rgb-primary-color), 0.35)",
+    "hsl(var(--h), var(--s), var(--l))",
+    // modern mixing + gradients (valid for a background)
+    "color-mix(in srgb, var(--primary-color), transparent 40%)",
+    "linear-gradient(to right, var(--primary-color), transparent)",
+    "hsl(calc(200 + 10) 90% 48%)", // maths inside a colour component
     // hex, all valid lengths + case
     "#fff",
     "#FFF",
@@ -56,6 +71,30 @@ describe("cssColor — accepts the colours real users actually type", () => {
     it(`accepts ${v}`, () => {
       expect(cssColor(v)).toBe(v.trim());
     });
+  }
+});
+
+describe("cssColor — accepts HA theme colours across every version/era", () => {
+  // A config outlives any one HA release, so the allowlist must accept the colour
+  // forms from all eras, not just current. Each must round-trip unchanged.
+  const HA_ERAS = [
+    // docs examples / named (all versions)
+    "pink", "orange",
+    // traditional hex + rgb/hsl literals (pre-2022.12 default themes)
+    "#ffffff", "#03a9f480", "rgb(255, 255, 255)", "rgba(0,0,0,0.5)", "hsl(200,90%,48%)",
+    // traditional var() references (all versions)
+    "var(--primary-color)", "var(--card-background-color)", "var(--state-active-color)",
+    // old Polymer/paper era + MDC era variables
+    "var(--paper-item-icon-color)", "var(--mdc-theme-primary)",
+    // 2022.12+ RGB-triplet idiom, incl. nested var in the alpha slot
+    "rgb(var(--rgb-primary-color))", "rgba(var(--rgb-primary-color), 0.5)",
+    "rgba(var(--rgb-accent-color), var(--opacity, 0.3))",
+    // fallback chains + modern functions (2024+)
+    "var(--ha-card-border-color, var(--divider-color))",
+    "color-mix(in srgb, var(--primary-color), transparent 40%)", "light-dark(#fff, #000)",
+  ];
+  for (const v of HA_ERAS) {
+    it(`accepts ${v}`, () => expect(cssColor(v)).toBe(v));
   }
 });
 

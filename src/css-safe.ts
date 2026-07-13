@@ -14,34 +14,68 @@
  * declaration there to break out of — so those sinks are intentionally left alone.
  */
 
-// #rgb #rgba #rrggbb #rrggbbaa
-const HEX = /^#(?:[0-9a-f]{3,4}|[0-9a-f]{6}|[0-9a-f]{8})$/i;
-// named keywords and CSS-wide keywords: red, transparent, currentColor, inherit…
-const KEYWORD = /^[a-z]+$/i;
-// The colour functions CSS actually has — rgb/hsl plus the modern spaces
-// (oklch is now the default output of many pickers). Only numbers, the angle/
-// space keywords those functions take, separators, %, / and whitespace inside;
-// no nested `(`, so url()/expression()/calc() can never form.
-const FUNC =
-  /^(?:rgba?|hsla?|hwb|lab|lch|oklab|oklch|color)\([a-z0-9.,%/\s-]+\)$/i;
-// var(--token) with an optional simple fallback restricted to the characters a
-// colour value uses — no `;` `{` `}` `(` `)` and no injection-adjacent punctuation,
-// e.g. var(--primary, #03a9f4). Tighter than "anything but delimiters".
-const VAR = /^var\(\s*--[a-z0-9-]+\s*(?:,\s*[a-z0-9\s.,%/#-]*)?\)$/i;
+/**
+ * Functions that are inert as a CSS *value*: colour, gradient, `var()`/`env()`
+ * and maths. This is an **allowlist** and we fail closed — anything not listed
+ * (`url()`, `image-set()`, `cross-fade()`, `element()`, `paint()`, `attr()`,
+ * legacy `expression()`, …) is rejected, so a resource fetch or worklet can never
+ * appear, even nested. Home Assistant themes lean on nesting heavily — colours are
+ * stored as bare `r, g, b` triplets and read back as `rgb(var(--rgb-primary-color))`,
+ * and fallbacks chain as `var(--a, var(--b, #fff))` — so nesting must be allowed.
+ */
+const SAFE_FUNCS = new Set([
+  // colour
+  "rgb", "rgba", "hsl", "hsla", "hwb", "lab", "lch", "oklab", "oklch",
+  "color", "color-mix", "light-dark",
+  // custom properties / environment
+  "var", "env",
+  // maths (calc & friends can appear inside colour components)
+  "calc", "clamp", "min", "max", "abs", "round", "mod", "rem",
+  "sin", "cos", "tan", "asin", "acos", "atan", "atan2", "pow", "sqrt", "hypot", "log", "exp",
+  // gradients (valid for the stage `background`)
+  "linear-gradient", "radial-gradient", "conic-gradient",
+  "repeating-linear-gradient", "repeating-radial-gradient", "repeating-conic-gradient",
+]);
+
+// The characters a colour / gradient value is built from. Deliberately excludes
+// `;` `{` `}` (declaration/rule breakout), `"` `'` `:` `@` `\` `!` and every
+// control char — so an accepted value can neither end its declaration, start a
+// new one, carry a quoted or `data:` URL, nor use an escape or `!important`.
+const SAFE_CHARS = /^[a-z0-9#%.,/_() +*-]+$/i;
+// A function call is an identifier (optionally hyphenated) immediately before `(`.
+const FUNC_CALL = /([a-z][a-z0-9-]*)\s*\(/gi;
 
 /**
  * The colour if it is safe to place in a `style` attribute, else `undefined`.
- * An allowlist, deliberately: a denylist ("reject `;` `url(` …") invites the one
- * vector you forgot. A value is dropped unless it is recognisably one of the
- * colour forms CSS actually uses. Whitespace is trimmed; empty and non-strings
- * return `undefined`.
+ *
+ * Fail-closed and structural rather than a fixed set of regexes, so it accepts the
+ * full range of real values (hex, named/CSS-wide keywords, `rgb/hsl/oklch/…`,
+ * `color-mix`, gradients, and arbitrarily nested `var()` / `rgb(var(--…))`) while
+ * still guaranteeing no breakout: allowed characters only, balanced parens, and
+ * every function on the {@link SAFE_FUNCS} allowlist. Whitespace is trimmed; empty
+ * and non-strings return `undefined`.
  */
 export function cssColor(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const v = value.trim();
   if (!v) return undefined;
-  if (HEX.test(v) || KEYWORD.test(v) || FUNC.test(v) || VAR.test(v)) return v;
-  return undefined;
+  if (!SAFE_CHARS.test(v)) return undefined;
+  if (v.includes("/*") || v.includes("*/")) return undefined; // no comments
+  if (!/^[a-z#]/i.test(v)) return undefined; // must read as a colour/keyword/function
+  // Balanced parens, never dropping below zero.
+  let depth = 0;
+  for (let i = 0; i < v.length; i++) {
+    const c = v[i];
+    if (c === "(") depth++;
+    else if (c === ")" && --depth < 0) return undefined;
+  }
+  if (depth !== 0) return undefined;
+  // Every function call must be inert (fail closed on anything unknown).
+  const funcs = new RegExp(FUNC_CALL.source, "gi");
+  for (let m: RegExpExecArray | null; (m = funcs.exec(v)); ) {
+    if (!SAFE_FUNCS.has(m[1].toLowerCase())) return undefined;
+  }
+  return v;
 }
 
 /**
