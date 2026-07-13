@@ -21,6 +21,13 @@ export interface HomeAssistant extends BaseHomeAssistant {
    * the registry load, then replaces the function whenever an input changes.
    */
   formatEntityState(stateObj: HassEntity, state?: string): string;
+  /**
+   * The entity registry as the frontend exposes it. `custom-card-helpers` does
+   * not declare it, though HA has handed it to cards since 2023.4. It carries
+   * the user's per-entity icon override, which never appears in the state's
+   * `attributes`.
+   */
+  entities?: Record<string, { icon?: string } | undefined>;
 }
 
 /** The slice of `hass` the card draws from. */

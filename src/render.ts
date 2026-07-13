@@ -259,19 +259,27 @@ export function entityDefaultIcon(
 }
 
 /**
- * Icon precedence shared by card and editor: config override → entity's
- * explicit icon → device_class-implied icon ("show as") → the kind default.
- * The on-state comes from {@link entityIsActive}, so domains that never say
- * "on" (lock/vacuum/camera) reach their active icons here too.
+ * Icon precedence shared by card and editor: config override → the user's
+ * entity-registry icon → entity's explicit icon → device_class-implied icon
+ * ("show as") → the kind default. The on-state comes from {@link entityIsActive},
+ * so domains that never say "on" (lock/vacuum/camera) reach their active icons here.
+ *
+ * The registry override lives at `hass.entities[id].icon` and never reaches
+ * `attributes.icon`, so a user who set an icon in Settings → Entities sees it
+ * everywhere in HA except here. HA's own `entityIcon()` prefers it over the
+ * integration's icon; so must we. `registryIcon` is passed in because this helper
+ * takes the state object, not `hass`.
  */
 export function resolveItemIcon(
   item: { entity?: string; kind: ItemKind; icon?: string },
   st: { state: string; attributes: Record<string, unknown> } | undefined,
+  registryIcon?: string,
 ): string {
   if (item.icon) return item.icon;
   // No entity bound (issue #39: devices that exist physically but not in HA):
   // nothing to derive from, fall straight through to the kind default.
   if (!item.entity) return defaultIcon(item.kind);
+  if (registryIcon) return registryIcon;
   const attrIcon = st?.attributes?.icon as string | undefined;
   if (attrIcon) return attrIcon;
   return (

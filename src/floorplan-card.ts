@@ -127,7 +127,11 @@ export class FloorplanCard extends LitElement {
   }
 
   private _itemIcon(item: FloorItem): string {
-    return resolveItemIcon(item, this.hass?.states[item.entity]);
+    return resolveItemIcon(
+      item,
+      this.hass?.states[item.entity],
+      this.hass?.entities?.[item.entity]?.icon,
+    );
   }
 
   private _label(item: FloorItem): string {
@@ -457,7 +461,27 @@ export class FloorplanCard extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 2px;
+    }
+    /*
+     * The item's x/y anchors its icon, not its icon-plus-label. Were the label
+     * in flow, it would make the column taller and the translate would
+     * push the icon up by half the label's height -- so an item showing state
+     * would sit higher than a bare one beside it, at the same y. The label hangs
+     * below instead, out of flow, and every icon lands on its own y.
+     */
+    .item > .label {
+      position: absolute;
+      top: calc(100% + 2px);
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+    /* Label-only items (showIcon: false) have no badge to hang under, so the
+       absolute label would drop to y + 2px on a zero-height item. Put it back
+       in flow so it becomes the item's box and centers on (x, y) as before. */
+    .label.inflow {
+      position: static;
+      transform: none;
     }
     .badge {
       width: 34px;
@@ -480,13 +504,8 @@ export class FloorplanCard extends LitElement {
       --mdc-icon-size: 22px;
     }
     .label {
-      /* Out of flow, hanging below the badge: the state line must not change
-         the item's box, so the badge — not the badge+label column — centers
-         on (x, y). Items with and without a state stay aligned (issue #34). */
-      position: absolute;
-      top: calc(100% + 2px);
-      left: 50%;
-      transform: translateX(-50%);
+      /* Positioning (out-of-flow anchor + inflow fallback) lives in the
+         .item > .label rules above, from #41. */
       font-size: 12px;
       line-height: 1;
       padding: 1px 4px;
@@ -494,12 +513,6 @@ export class FloorplanCard extends LitElement {
       background: var(--card-background-color, #fff);
       color: var(--primary-text-color);
       white-space: nowrap;
-    }
-    /* Label-only items (showIcon: false) have no badge to hang under — let
-       the label itself be the box so it centers on (x, y) as before. */
-    .label.inflow {
-      position: static;
-      transform: none;
     }
     .text {
       position: absolute;
