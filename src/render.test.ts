@@ -553,6 +553,26 @@ describe("isEntityOn / resolveItemIcon", () => {
     ).toBe(entityDefaultIcon("binary_sensor.a", "door", true));
     expect(resolveItemIcon(item, undefined)).toBe(defaultIcon("sensor"));
   });
+
+  it("honours the entity-registry icon: config override → registry → entity attr", () => {
+    const item = { entity: "binary_sensor.a", kind: "sensor" as const };
+    // Registry icon wins when there's no config override.
+    expect(resolveItemIcon(item, { state: "on", attributes: {} }, "mdi:from-registry")).toBe(
+      "mdi:from-registry"
+    );
+    // A config icon still beats the registry.
+    expect(
+      resolveItemIcon({ ...item, icon: "mdi:config" }, undefined, "mdi:from-registry")
+    ).toBe("mdi:config");
+    // The registry beats the entity's own attribute icon.
+    expect(
+      resolveItemIcon(item, { state: "on", attributes: { icon: "mdi:from-entity" } }, "mdi:from-registry")
+    ).toBe("mdi:from-registry");
+    // Absent registry icon: unchanged behaviour.
+    expect(
+      resolveItemIcon(item, { state: "on", attributes: { icon: "mdi:from-entity" } }, undefined)
+    ).toBe("mdi:from-entity");
+  });
 });
 
 describe("collectWatchedEntities", () => {

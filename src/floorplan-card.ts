@@ -125,7 +125,11 @@ export class FloorplanCard extends LitElement {
   }
 
   private _itemIcon(item: FloorItem): string {
-    return resolveItemIcon(item, this.hass?.states[item.entity]);
+    return resolveItemIcon(
+      item,
+      this.hass?.states[item.entity],
+      this.hass?.entities?.[item.entity]?.icon,
+    );
   }
 
   private _label(item: FloorItem): string {
