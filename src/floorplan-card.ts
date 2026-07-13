@@ -1,6 +1,7 @@
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor } from "./types";
+import { cssColorOr, cssNumber } from "./css-safe";
 import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
@@ -173,11 +174,11 @@ export class FloorplanCard extends LitElement {
   }
 
   private _renderBadge(item: FloorItem): TemplateResult {
-    const size = item.size ?? DEFAULT_ITEM_SIZE;
+    const size = cssNumber(item.size, DEFAULT_ITEM_SIZE);
     return html`
       <div
         class="badge"
-        style="width:${size}px;height:${size}px;transform:rotate(${item.angle ?? 0}deg);"
+        style="width:${size}px;height:${size}px;transform:rotate(${cssNumber(item.angle, 0)}deg);"
       >
         <ha-icon
           icon=${this._itemIcon(item)}
@@ -242,9 +243,9 @@ export class FloorplanCard extends LitElement {
       <div
         class="text"
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
-               font-size:${t.size ?? DEFAULT_TEXT_SIZE}px;
-               color:${t.color ?? "var(--primary-text-color)"};
-               transform:translate(-50%,-50%) rotate(${t.angle ?? 0}deg);"
+               font-size:${cssNumber(t.size, DEFAULT_TEXT_SIZE)}px;
+               color:${cssColorOr(t.color, "var(--primary-text-color)")};
+               transform:translate(-50%,-50%) rotate(${cssNumber(t.angle, 0)}deg);"
       >
         ${t.text}
       </div>
@@ -269,8 +270,8 @@ export class FloorplanCard extends LitElement {
       <ha-card .header=${c.title ?? nothing}>
         <div
           class="stage"
-          style="aspect-ratio: ${dims.w} / ${dims.h}; background:${c.background ??
-          "var(--card-background-color, #fff)"};"
+          style="aspect-ratio: ${dims.w} / ${dims.h}; background:${cssColorOr(
+          c.background, "var(--card-background-color, #fff)")};"
         >
 <!-- preserveAspectRatio="none" is correct here, and it took a wrong fix to
                see why. .stage pins aspect-ratio: width / height inline, so the

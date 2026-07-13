@@ -1,0 +1,123 @@
+import { describe, it, expect } from "vitest";
+import { cssColor, cssColorOr, cssNumber } from "./css-safe";
+
+describe("cssColor — accepts the colours real users actually type", () => {
+  // Every value a Home Assistant floorplan user would plausibly put in a config.
+  const LEGIT = [
+    // HA theme variables — by far the most common in HA cards
+    "var(--primary-color)",
+    "var(--primary-color, #03a9f4)",
+    "var(--error-color)",
+    "var(--success-color)",
+    "var(--state-active-color)",
+    "var(--disabled-text-color)",
+    "var(--card-background-color, #fff)",
+    "var(--primary-text-color)",
+    "var(  --primary-color , red )", // sloppy whitespace
+    // hex, all valid lengths + case
+    "#fff",
+    "#FFF",
+    "#03a9f4",
+    "#03A9F4",
+    "#ff000080", // 8-digit (alpha)
+    "#f00a", // 4-digit
+    // named + CSS-wide keywords
+    "red",
+    "blue",
+    "white",
+    "transparent",
+    "currentColor",
+    "rebeccapurple",
+    "cornflowerblue",
+    "inherit",
+    "initial",
+    "unset",
+    // rgb / rgba — legacy comma and modern space syntaxes
+    "rgb(3,169,244)",
+    "rgb(3, 169, 244)",
+    "rgba(3,169,244,0.5)",
+    "rgba(3, 169, 244, .5)",
+    "rgb(3 169 244)",
+    "rgb(3 169 244 / 50%)",
+    "rgb(100%, 0%, 0%)",
+    // hsl / hsla
+    "hsl(200, 90%, 48%)",
+    "hsla(200, 90%, 48%, 0.5)",
+    "hsl(200deg 90% 48%)",
+    // modern colour spaces (picker output)
+    "oklch(70% 0.1 200)",
+    "oklab(0.7 -0.1 0.1)",
+    "lab(52% 40 60)",
+    "lch(52% 60 40)",
+    "hwb(200 10% 20%)",
+    "color(display-p3 1 0 0)",
+  ];
+  for (const v of LEGIT) {
+    it(`accepts ${v}`, () => {
+      expect(cssColor(v)).toBe(v.trim());
+    });
+  }
+});
+
+describe("cssColor — rejects style-attribute breakouts", () => {
+  const MALICIOUS = [
+    "red;position:fixed;inset:0;z-index:99999",
+    "red;background-image:url(https://evil.example/x)",
+    "#fff;background:url(//evil/x)",
+    "red}body{display:none",
+    "url(https://evil/x)",
+    "rgb(0,0,0);pointer-events:none",
+    "expression(alert(1))",
+    "var(--x); position:fixed",
+    "var(--x, url(//evil))",
+    "10px;position:fixed", // a size string sneaking into a colour slot
+  ];
+  for (const v of MALICIOUS) {
+    it(`rejects ${JSON.stringify(v)}`, () => {
+      expect(cssColor(v)).toBeUndefined();
+    });
+  }
+  it("rejects empty / non-strings", () => {
+    expect(cssColor("")).toBeUndefined();
+    expect(cssColor("   ")).toBeUndefined();
+    expect(cssColor(undefined)).toBeUndefined();
+    expect(cssColor(null)).toBeUndefined();
+    expect(cssColor(42)).toBeUndefined();
+    expect(cssColor({})).toBeUndefined();
+  });
+});
+
+describe("cssColorOr — falls back on unsafe or missing", () => {
+  it("keeps a safe value", () => {
+    expect(cssColorOr("#03a9f4", "red")).toBe("#03a9f4");
+  });
+  it("falls back on an injection", () => {
+    expect(cssColorOr("red;position:fixed", "var(--primary-color)")).toBe("var(--primary-color)");
+  });
+  it("falls back on undefined", () => {
+    expect(cssColorOr(undefined, "var(--primary-color)")).toBe("var(--primary-color)");
+  });
+});
+
+describe("cssNumber — coerces size/angle fields, blocks breakouts", () => {
+  it("passes finite numbers", () => {
+    expect(cssNumber(16, 34)).toBe(16);
+    expect(cssNumber(0, 34)).toBe(0);
+    expect(cssNumber(-90, 0)).toBe(-90);
+    expect(cssNumber(12.5, 0)).toBe(12.5);
+  });
+  it("coerces numeric strings (YAML often yields strings)", () => {
+    expect(cssNumber("16", 34)).toBe(16);
+    expect(cssNumber("12.5", 0)).toBe(12.5);
+  });
+  it("falls back on null/undefined like the old ?? default", () => {
+    expect(cssNumber(undefined, 34)).toBe(34);
+    expect(cssNumber(null, 34)).toBe(34);
+  });
+  it("rejects a breakout string in a size field", () => {
+    expect(cssNumber("1;position:fixed;inset:0", 16)).toBe(16);
+    expect(cssNumber("16px;color:red", 16)).toBe(16);
+    expect(cssNumber(NaN, 16)).toBe(16);
+    expect(cssNumber(Infinity, 16)).toBe(16);
+  });
+});

@@ -8,7 +8,8 @@ import type {
   Tracker,
   RenderHass,
 } from "./types";
-import { FURNITURE_COLOR, DEFAULT_TRACKER_DOT_SIZE, getFloors, trackerAxisFraction } from "./types";
+import { FURNITURE_COLOR, DEFAULT_TRACKER_DOT_SIZE, DEFAULT_RIPPLE_SIZE, getFloors, trackerAxisFraction } from "./types";
+import { cssColorOr, cssNumber } from "./css-safe";
 
 export const WALL_THICKNESS = 8;
 
@@ -506,7 +507,8 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   const half = o.length / 2;
   const cutH = WALL_THICKNESS + 4;
   // The moving parts take the accent color when actively open (sensor-driven).
-  const tone = active ? accent : color;
+  // Sanitised: color/accent are config-supplied and land in `style="stroke/fill:…"`.
+  const tone = cssColorOr(active ? accent : color, "var(--primary-color, #03a9f4)");
   // Fraction open (0..1) drives partial swing/slide. Defaults to the binary
   // `open` so callers that don't pass `amount` render exactly as before.
   const amt = Math.max(0, Math.min(1, style.amount ?? (open ? 1 : 0)));
@@ -974,7 +976,7 @@ export function renderRipple(
   return html`
     <div
       class="ripple ${active ? "active" : ""}"
-      style="width:${sizePx}px;height:${sizePx}px;--fp-ripple-color:${color};"
+      style="width:${cssNumber(sizePx, DEFAULT_RIPPLE_SIZE)}px;height:${cssNumber(sizePx, DEFAULT_RIPPLE_SIZE)}px;--fp-ripple-color:${cssColorOr(color, "var(--primary-color, #03a9f4)")};"
     >
       <span class="dot"></span>
       ${Array.from(
