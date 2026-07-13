@@ -2302,10 +2302,10 @@ export class FloorplanCardEditor extends LitElement {
         ${renderOpening(o, {
           color: selected ? "var(--primary-color, #03a9f4)" : "var(--primary-text-color)",
           open: openingDefaultOpen(o),
-          // Draw sliding openings partly open in the editor so the slide
-          // direction and panel style are visible — a closed slider looks
-          // symmetric, which would make the Slide / Style controls appear inert.
-          amount: openingMotion(o) === "slide" ? 0.55 : undefined,
+          // Draw sliding / rolling openings partly open in the editor so the
+          // motion is visible — closed, both look like a plain band, which
+          // would make the Motion / Slide / Style controls appear inert.
+          amount: openingMotion(o) !== "swing" ? 0.55 : undefined,
         })}
       </g>`;
   }
@@ -3119,6 +3119,12 @@ export class FloorplanCardEditor extends LitElement {
     }
     .fp-door-arc {
       transition: stroke-dashoffset 0.5s ease, stroke 0.5s ease;
+    }
+    /* Roll-up curtain: scaleY must shrink onto the band's own centerline
+       (the track), not the SVG origin. */
+    .fp-roll-curtain {
+      transform-box: fill-box;
+      transform-origin: center;
     }
     .wall-hit {
       stroke: transparent;

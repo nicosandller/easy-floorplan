@@ -1,7 +1,13 @@
 import type { ActionConfig, HomeAssistant } from "./types";
 
-/** Domains where a bare tap toggles instead of opening more-info (legacy card behavior). */
-const TOGGLE_DOMAINS = new Set(["light", "switch", "cover", "fan", "input_boolean"]);
+/**
+ * Domains where a bare tap toggles instead of opening more-info (legacy card
+ * behavior). `cover` is deliberately absent (issue #47): an accidental tap on
+ * a shutter icon used to physically move the shutter — real hardware, slow to
+ * undo. Covers now open more-info like HA's Tile card; users who want the old
+ * behavior set `tap_action: { action: toggle }` on the item.
+ */
+const TOGGLE_DOMAINS = new Set(["light", "switch", "fan", "input_boolean"]);
 
 /** The action an item performs when no tap_action is configured. */
 export function defaultItemAction(entity: string | undefined): ActionConfig {

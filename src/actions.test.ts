@@ -30,12 +30,18 @@ const makeHass = () => {
 
 describe("defaultItemAction", () => {
   it("toggles controllable domains, more-info otherwise", () => {
-    for (const e of ["light.a", "switch.a", "cover.a", "fan.a", "input_boolean.a"]) {
+    for (const e of ["light.a", "switch.a", "fan.a", "input_boolean.a"]) {
       expect(defaultItemAction(e)).toEqual({ action: "toggle" });
     }
     expect(defaultItemAction("sensor.a")).toEqual({ action: "more-info" });
     expect(defaultItemAction("binary_sensor.a")).toEqual({ action: "more-info" });
     expect(defaultItemAction(undefined)).toEqual({ action: "more-info" });
+  });
+
+  it("covers open more-info, never a blind toggle (issue #47)", () => {
+    // A tap that physically moves a shutter is too destructive for a default;
+    // tap_action: toggle remains available as an explicit opt-in.
+    expect(defaultItemAction("cover.shutter")).toEqual({ action: "more-info" });
   });
 });
 
