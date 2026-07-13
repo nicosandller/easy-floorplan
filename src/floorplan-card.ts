@@ -219,7 +219,11 @@ export class FloorplanCard extends LitElement {
         @click=${() => this._onItemClick(item)}
       >
         ${visual}
-        ${showState ? html`<span class="label">${itemStateText(this.hass, item)}</span>` : nothing}
+        ${showState
+          ? html`<span class="label ${visual === nothing ? "inflow" : ""}"
+              >${itemStateText(this.hass, item)}</span
+            >`
+          : nothing}
       </div>
     `;
   }
@@ -439,6 +443,13 @@ export class FloorplanCard extends LitElement {
       left: 50%;
       transform: translateX(-50%);
       white-space: nowrap;
+    }
+    /* Label-only items (showIcon: false) have no badge to hang under, so the
+       absolute label would drop to y + 2px on a zero-height item. Put it back
+       in flow so it becomes the item's box and centers on (x, y) as before. */
+    .label.inflow {
+      position: static;
+      transform: none;
     }
     .badge {
       width: 34px;
