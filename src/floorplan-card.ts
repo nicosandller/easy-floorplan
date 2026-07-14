@@ -1,5 +1,6 @@
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor } from "./types";
 import {
   DEFAULT_WIDTH,
@@ -26,6 +27,7 @@ import {
   hassRenderInputsChanged,
   collectWatchedEntities,
   resolveItemIcon,
+  itemIconSize,
   normalizePlanRotation,
   rotatedCanvasSize,
   rotatePlanPoint,
@@ -181,7 +183,7 @@ export class FloorplanCard extends LitElement {
       >
         <ha-icon
           icon=${this._itemIcon(item)}
-          style="--mdc-icon-size:${Math.round(size * 0.62)}px;"
+          style="--mdc-icon-size:${itemIconSize(size)}px;"
         ></ha-icon>
       </div>
     `;
@@ -189,7 +191,8 @@ export class FloorplanCard extends LitElement {
 
   private _renderItem(item: FloorItem, c: FloorplanCardConfig, rot: PlanRotation): TemplateResult {
     const on = this._isOn(item);
-    const showState = item.showState ?? item.kind === "sensor";
+    // No entity, no state line — the badge alone marks the device (issue #39).
+    const showState = !!item.entity && (item.showState ?? item.kind === "sensor");
     const showIcon = item.showIcon ?? true;
     const display = item.display ?? "badge";
     const rippleColor = item.rippleColor ?? "var(--primary-color, #03a9f4)";
@@ -301,7 +304,14 @@ export class FloorplanCard extends LitElement {
                       class="wall" stroke-width=${WALL_THICKNESS} stroke-linecap="round" />`
               )}
             </g>
-            ${active.openings.map((o) => {
+            ${repeat(
+              // Keyed by id: switching floors must create fresh DOM nodes.
+              // Unkeyed, Lit morphs floor A's openings into floor B's, and the
+              // 0.5s leaf/panel transitions animate the leftover state — a
+              // window briefly plays a door swing (issue #50).
+              active.openings,
+              (o, i) => o.id || i,
+              (o) => {
               const amount = this._openingAmount(o);
               const symbol = renderOpening(o, {
                 color: "var(--primary-text-color)",
@@ -323,7 +333,10 @@ export class FloorplanCard extends LitElement {
                         transform="rotate(${o.angle} ${o.x} ${o.y})" />
                 </g>`;
             })}
-            ${(active.trackers ?? []).map((tr) =>
+            ${repeat(
+              active.trackers ?? [],
+              (tr, i) => tr.id || i,
+              (tr) =>
               renderTracker(tr, {
                 editing: false,
                 xReading: trackerSensorReading(this.hass?.states, tr.xSensor?.entity),
@@ -336,7 +349,14 @@ export class FloorplanCard extends LitElement {
           </svg>
           <div class="items">
             ${active.texts.map((t) => this._renderText(t, c, rot))}
-            ${active.items.filter((it) => it.entity).map((it) => this._renderItem(it, c, rot))}
+            ${repeat(
+              // No entity filter: devices that exist physically but have no HA
+              // entity still deserve their badge (issue #39). Keyed by id so a
+              // floor switch builds fresh DOM (see the openings comment).
+              active.items,
+              (it, i) => it.id || i,
+              (it) => this._renderItem(it, c, rot)
+            )}
           </div>
           ${floors.length > 1 ? this._renderFloorSwitcher(floors, active) : nothing}
         </div>
@@ -503,6 +523,8 @@ export class FloorplanCard extends LitElement {
       --mdc-icon-size: 22px;
     }
     .label {
+      /* Positioning (out-of-flow anchor + inflow fallback) lives in the
+         .item > .label rules above, from #41. */
       font-size: 12px;
       line-height: 1;
       padding: 1px 4px;
