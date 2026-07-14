@@ -89,7 +89,8 @@ export const DEFAULT_LABEL_SIZE = 12;
  * The label line under an item's badge, or "" for none: the name (issue #61)
  * and/or the state, per the item's toggles. `showState` keeps its historic
  * default (sensors only); `showName` defaults off. Both together read
- * "Name · state".
+ * "Name · state". No entity, no state line (issue #39) — an unbound device's
+ * label can only be its configured name.
  */
 export function itemBadgeLabel(
   hass: RenderHass | undefined,
@@ -105,10 +106,25 @@ export function itemBadgeLabel(
   const parts: string[] = [];
   if (item.showName) {
     const friendly = hass?.states[item.entity]?.attributes?.friendly_name as string | undefined;
-    parts.push(item.name || friendly || item.entity);
+    const name = item.name || friendly || item.entity;
+    if (name) parts.push(name);
   }
-  if (item.showState ?? item.kind === "sensor") parts.push(itemStateText(hass, item));
+  if (!!item.entity && (item.showState ?? item.kind === "sensor"))
+    parts.push(itemStateText(hass, item));
   return parts.join(" · ");
+}
+
+/**
+ * Clamp a config `labelSize` to the editor's 8–40 px range at the render
+ * sink. The editor already clamps, but a hand-edited / imported config
+ * bypasses it — and this value lands in an inline `style` attribute, so a
+ * string like `"20px;color:red"` must coerce to a plain number, never pass
+ * through (review feedback on #62; same surface #65 hardens).
+ */
+export function itemLabelSize(v: unknown): number {
+  const n = typeof v === "string" && v !== "" ? Number(v) : (v as number | undefined);
+  if (typeof n !== "number" || !Number.isFinite(n)) return DEFAULT_LABEL_SIZE;
+  return Math.min(40, Math.max(8, n));
 }
 
 /** Default mdi icon per item kind, used when neither config nor entity supplies one. */
@@ -288,16 +304,27 @@ export function entityDefaultIcon(
 }
 
 /**
- * Icon precedence shared by card and editor: config override → entity's
- * explicit icon → device_class-implied icon ("show as") → the kind default.
- * The on-state comes from {@link entityIsActive}, so domains that never say
- * "on" (lock/vacuum/camera) reach their active icons here too.
+ * Icon precedence shared by card and editor: config override → the user's
+ * entity-registry icon → entity's explicit icon → device_class-implied icon
+ * ("show as") → the kind default. The on-state comes from {@link entityIsActive},
+ * so domains that never say "on" (lock/vacuum/camera) reach their active icons here.
+ *
+ * The registry override lives at `hass.entities[id].icon` and never reaches
+ * `attributes.icon`, so a user who set an icon in Settings → Entities sees it
+ * everywhere in HA except here. HA's own `entityIcon()` prefers it over the
+ * integration's icon; so must we. `registryIcon` is passed in because this helper
+ * takes the state object, not `hass`.
  */
 export function resolveItemIcon(
-  item: { entity: string; kind: ItemKind; icon?: string },
+  item: { entity?: string; kind: ItemKind; icon?: string },
   st: { state: string; attributes: Record<string, unknown> } | undefined,
+  registryIcon?: string,
 ): string {
   if (item.icon) return item.icon;
+  // No entity bound (issue #39: devices that exist physically but not in HA):
+  // nothing to derive from, fall straight through to the kind default.
+  if (!item.entity) return defaultIcon(item.kind);
+  if (registryIcon) return registryIcon;
   const attrIcon = st?.attributes?.icon as string | undefined;
   if (attrIcon) return attrIcon;
   return (
@@ -307,6 +334,20 @@ export function resolveItemIcon(
       entityIsActive(item.entity, st?.state),
     ) ?? defaultIcon(item.kind)
   );
+}
+
+/**
+ * Icon size for an item badge, shared by card and editor. ~62% of the badge,
+ * nudged to the badge's parity so the flex-centering slack on each side is a
+ * whole pixel — an 11px icon in an 18px badge sits on a half-pixel and the
+ * glyph renders visibly off-center at small sizes (issue #39). The 34px
+ * default badge still gets its familiar 22px icon.
+ */
+export function itemIconSize(badgeSize: number): number {
+  const b = Math.round(badgeSize);
+  let s = Math.round(b * 0.62);
+  if (s % 2 !== b % 2) s += 1;
+  return Math.max(2, s);
 }
 
 /** Infer a sensible item kind from an entity id's domain. */
@@ -651,6 +692,71 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   return svg`<g transform="translate(${o.x} ${o.y}) rotate(${o.angle})">
       <g transform="scale(${sx} ${sy})">${body}</g>
     </g>`;
+}
+
+// ---- whole-plan rotation (issue #33) ---------------------------------------
+//
+// The card can display the plan rotated in 90° steps — a landscape plan on a
+// portrait wall tablet — without touching any stored coordinate. The SVG
+// layers rotate via one group transform; the HTML overlay (badges, labels,
+// text) is repositioned point-by-point instead, so icons and text stay
+// upright. The editor always shows the plan as drawn.
+
+export type PlanRotation = 0 | 90 | 180 | 270;
+
+/** Coerce a config `rotation` to a supported step; anything else means 0. */
+export function normalizePlanRotation(v: unknown): PlanRotation {
+  if (typeof v !== "number" || !Number.isFinite(v)) return 0;
+  const r = ((v % 360) + 360) % 360;
+  return r === 90 || r === 180 || r === 270 ? r : 0;
+}
+
+/** Canvas size as displayed: 90°/270° swap width and height. */
+export function rotatedCanvasSize(
+  w: number,
+  h: number,
+  rot: PlanRotation
+): { w: number; h: number } {
+  return rot === 90 || rot === 270 ? { w: h, h: w } : { w, h };
+}
+
+/** Map a plan point into the rotated (displayed) frame. */
+export function rotatePlanPoint(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  rot: PlanRotation
+): { x: number; y: number } {
+  switch (rot) {
+    case 90:
+      return { x: h - y, y: x };
+    case 180:
+      return { x: w - x, y: h - y };
+    case 270:
+      return { x: y, y: w - x };
+    default:
+      return { x, y };
+  }
+}
+
+/**
+ * SVG group transform realizing {@link rotatePlanPoint} for whole layers, or
+ * "" for the unrotated plan. Matches the point mapping exactly — the overlay
+ * (HTML, remapped per point) and the drawing (SVG, one transform) must land
+ * on the same pixels or badges drift off their walls.
+ */
+export function planRotationTransform(w: number, h: number, rot: PlanRotation): string {
+  switch (rot) {
+    case 90:
+      return `translate(${h} 0) rotate(90)`;
+    case 180:
+      return `translate(${w} ${h}) rotate(180)`;
+    case 270:
+      return `translate(0 ${w}) rotate(-90)`;
+    default:
+      return "";
+  }
 }
 
 /**
