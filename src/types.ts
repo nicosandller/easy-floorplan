@@ -21,6 +21,13 @@ export interface HomeAssistant extends BaseHomeAssistant {
    * the registry load, then replaces the function whenever an input changes.
    */
   formatEntityState(stateObj: HassEntity, state?: string): string;
+  /**
+   * The entity registry as the frontend exposes it. `custom-card-helpers` does
+   * not declare it, though HA has handed it to cards since 2023.4. It carries
+   * the user's per-entity icon override, which never appears in the state's
+   * `attributes`.
+   */
+  entities?: Record<string, { icon?: string } | undefined>;
 }
 
 /** The slice of `hass` the card draws from. */
@@ -127,6 +134,14 @@ export interface FloorItem {
   name?: string;
   /** Show the entity state next to the icon. */
   showState?: boolean;
+  /**
+   * Show the device's name in the label line (issue #61) — the `name`
+   * override, else the entity's friendly name. Combines with `showState` as
+   * "Name · state". Default false.
+   */
+  showName?: boolean;
+  /** Label line font size in pixels (issue #59). Default 12. */
+  labelSize?: number;
   /** Show the icon badge. When false only the state/label shows. Default true. */
   showIcon?: boolean;
   /** Badge diameter in pixels. Default 34. */
@@ -137,9 +152,11 @@ export interface FloorItem {
   display?: ItemDisplay;
   /**
    * Animate the icon while the entity is active (issue #48). "auto" (the
-   * default) applies HA-like defaults per domain — a running fan spins, a
-   * playing media player pulses; "spin"/"pulse" force that animation (still
-   * only while active); "none" disables it.
+   * default) applies HA-like defaults per domain — a running fan spins; a
+   * media player or vacuum pulses while active (for a media player that
+   * means `playing` or plain `on`, matching the badge highlight);
+   * "spin"/"pulse" force that animation (still only while active); "none"
+   * disables it.
    */
   iconAnimation?: IconAnimation;
   /** Ripple ring color (CSS/hex). Falls back to the primary color. */
@@ -398,6 +415,13 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * absolute. Resolve with {@link resolveSnap}.
    */
   snap?: number;
+  /**
+   * Rotate the *displayed* card in 90° steps (issue #33), e.g. to show a
+   * landscape plan on a portrait wall tablet. Coordinates stay unrotated —
+   * the editor always shows the plan as drawn. Values other than
+   * 0/90/180/270 are normalized (see normalizePlanRotation).
+   */
+  rotation?: number;
   /** Canvas background color (CSS / hex). Falls back to the card background. */
   background?: string;
   /**

@@ -10,6 +10,7 @@ import {
   trackerForm,
   wallForm,
   projectForm,
+  projectRotationForm,
   floorImageForm,
 } from "./editor-forms";
 import type { FormField } from "./editor-forms";
@@ -169,6 +170,23 @@ describe("itemForm", () => {
     );
   });
 
+  it("offers Show name, and Label size only while a label line renders (#61, #59)", () => {
+    // A light shows no label by default → no size slider.
+    const light = itemForm(item);
+    expect(light.fields.map((x) => x.name)).toContain("showName");
+    expect(light.fields.map((x) => x.name)).not.toContain("labelSize");
+    // Sensors label by default; showName or showState also reveal the slider.
+    const sensor = itemForm({ ...item, entity: "sensor.a", kind: "sensor" } as FloorItem);
+    expect(sensor.fields.map((x) => x.name)).toContain("labelSize");
+    const namedLight = itemForm({ ...item, showName: true } as FloorItem);
+    expect(namedLight.fields.map((x) => x.name)).toContain("labelSize");
+    expect(namedLight.data.showName).toBe(true);
+    expect(namedLight.data.labelSize).toBe(12);
+    expect(
+      itemForm({ ...item, showName: true, labelSize: 20 } as FloorItem).data.labelSize
+    ).toBe(20);
+  });
+
   it("offers the three action fields with behavior-preserving defaults", () => {
     const fs = itemForm(item).fields;
     expect(fs.find((x) => x.name === "tap_action")!.selector).toEqual({
@@ -222,6 +240,22 @@ describe("wallForm / projectForm / floorImageForm", () => {
     const width = form.fields.find((x) => x.name === "width")!;
     expect(width.required).toBe(true);
     expect((width.selector.number as { min: number }).min).toBe(1);
+  });
+
+  it("rotation lives in its own bottom-row form, defaults to 0°, and patches as a number", () => {
+    const form = projectRotationForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
+    expect(form.fields.map((x) => x.name)).toEqual(["rotation"]);
+    expect(form.data.rotation).toBe("0");
+    // 0 comes back as undefined so an unrotated plan stays out of the YAML.
+    expect(form.toPatch({ rotation: "0" })).toEqual({ rotation: undefined });
+    expect(form.toPatch({ rotation: "90" })).toEqual({ rotation: 90 });
+    const rotated = projectRotationForm({
+      type: "t",
+      width: 1000,
+      height: 600,
+      rotation: 270,
+    } as FloorplanCardConfig);
+    expect(rotated.data.rotation).toBe("270");
   });
 
   it("image opacity appears only when an image is set", () => {

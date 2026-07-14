@@ -1,5 +1,6 @@
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
+import { repeat } from "lit/directives/repeat.js";
 import type {
   HomeAssistant,
   FloorplanCardConfig,
@@ -48,6 +49,8 @@ import {
   kindFromEntity,
   resolveItemIcon,
   resolveIconAnimation,
+  itemIconSize,
+  itemLabelSize,
   snapToWall,
   collectWatchedEntities,
   hassRenderInputsChanged,
@@ -55,9 +58,11 @@ import {
 import {
   ENDPOINT_SNAP,
   applyDelta,
+  attachedCorners,
   elementsInRect,
   nearestCorner,
   snapWallEnd,
+  type AttachedCorner,
   type OrigPos,
   type Rect,
   type Sel,
@@ -74,6 +79,7 @@ import {
   normalizeFormPatch,
   openingForm,
   projectForm,
+  projectRotationForm,
   textForm,
   trackerForm,
   wallForm,
@@ -115,6 +121,12 @@ interface Drag {
   orig: Map<string, OrigPos>;
   /** Set when dragging a single wall endpoint handle. */
   endpoint?: 1 | 2;
+  /**
+   * Endpoints of *other* walls that coincide with the dragged wall's
+   * corner(s) and stretch along with it (issue #30). Hold Alt to detach and
+   * move just the grabbed wall.
+   */
+  attached?: AttachedCorner[];
   /** Set once the drag actually moved something (history snapshots lazily). */
   moved?: boolean;
   /** The exact history entry this drag pushed, so cancel can remove it by identity. */
@@ -206,6 +218,10 @@ export class FloorplanCardEditor extends LitElement {
   @query(".canvas-wrap") private _canvasWrap?: HTMLElement;
 
   private _drag: Drag | null = null;
+  /** Live touch points on the canvas wrap, for pinch-zoom (issue #38). */
+  private _pinchPts = new Map<number, { x: number; y: number }>();
+  /** Pinch baseline: finger distance, zoom, and centroid (content coords) at pinch start. */
+  private _pinch: { d0: number; z0: number; cx: number; cy: number } | null = null;
   /** Pointer driving the current gesture; others are ignored while it's active. */
   private _gesturePointer: number | null = null;
   /** True when the active marquee should add to (rather than replace) the selection. */
@@ -248,6 +264,7 @@ export class FloorplanCardEditor extends LitElement {
     window.removeEventListener("keydown", this._onKeyDown, true);
     this.removeEventListener("keydown", this._onHostKeyDown);
     window.removeEventListener("focusin", this._onFocusIn);
+    this._resetPinch();
     super.disconnectedCallback();
   }
 
@@ -334,7 +351,88 @@ export class FloorplanCardEditor extends LitElement {
         void customElements.whenDefined(tag).then(() => this.requestUpdate());
       }
     }
+    // Pinch-zoom (issue #38): capture phase, because element handlers on the
+    // canvas (item badges, endpoint handles) stopPropagation and would hide a
+    // finger that lands on them from the pinch tracker.
+    const wrap = this._canvasWrap;
+    if (wrap) {
+      wrap.addEventListener("pointerdown", this._onWrapPointerDown, { capture: true });
+      wrap.addEventListener("pointermove", this._onWrapPointerMove, { capture: true });
+      wrap.addEventListener("pointerup", this._onWrapPointerEnd, { capture: true });
+      wrap.addEventListener("pointercancel", this._onWrapPointerEnd, { capture: true });
+      // Safari routes trackpad/touch pinch through proprietary gesture events
+      // and zooms the whole page (the entire visual editor) unless they're
+      // canceled — touch-action does not cover this path.
+      for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
+        wrap.addEventListener(type, this._preventGesture);
+      }
+    }
   }
+
+  /**
+   * Defensive pinch-state reset (review feedback on #57). The listeners
+   * themselves stay attached on purpose: they live on an element inside our
+   * own shadow root (no leak — they die with the instance), and HA's dialog
+   * reparents the editor, which fires disconnected/connected without a second
+   * firstUpdated — removing them here would permanently kill pinch after a
+   * reparent. Clearing the *points* is what matters: a pointerup lost to the
+   * reparent would leave a stale entry behind, and the next single tap would
+   * read as a phantom second finger.
+   */
+  private _resetPinch(): void {
+    this._pinchPts.clear();
+    this._pinch = null;
+  }
+
+  private _preventGesture = (e: Event): void => e.preventDefault();
+
+  // ---- pinch-zoom on the canvas (issue #38) -------------------------------
+
+  private _onWrapPointerDown = (ev: PointerEvent): void => {
+    if (ev.pointerType !== "touch") return;
+    this._pinchPts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (this._pinchPts.size !== 2) return;
+    // A second finger turns the gesture into a pinch: abort any draw/drag so
+    // the canvas doesn't draw a wall while the user is only trying to zoom.
+    this._cancelGesture();
+    const wrap = this._canvasWrap;
+    const rect = wrap?.getBoundingClientRect();
+    const [a, b] = [...this._pinchPts.values()];
+    this._pinch = {
+      d0: Math.max(Math.hypot(b.x - a.x, b.y - a.y), 1),
+      z0: this._zoom,
+      cx: (a.x + b.x) / 2 - (rect?.left ?? 0) + (wrap?.scrollLeft ?? 0),
+      cy: (a.y + b.y) / 2 - (rect?.top ?? 0) + (wrap?.scrollTop ?? 0),
+    };
+    ev.stopPropagation();
+  };
+
+  private _onWrapPointerMove = (ev: PointerEvent): void => {
+    if (!this._pinch || !this._pinchPts.has(ev.pointerId)) return;
+    this._pinchPts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+    if (this._pinchPts.size < 2) return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    const [a, b] = [...this._pinchPts.values()];
+    const pinch = this._pinch;
+    this._setZoom(pinch.z0 * (Math.hypot(b.x - a.x, b.y - a.y) / pinch.d0));
+    // Keep the content point under the fingers stationary: the stage scales
+    // with _zoom on the next render, so re-derive the scroll offset after it.
+    void this.updateComplete.then(() => {
+      const wrap = this._canvasWrap;
+      if (!wrap || this._pinch !== pinch) return;
+      const rect = wrap.getBoundingClientRect();
+      const scale = this._zoom / pinch.z0;
+      wrap.scrollLeft = pinch.cx * scale - ((a.x + b.x) / 2 - rect.left);
+      wrap.scrollTop = pinch.cy * scale - ((a.y + b.y) / 2 - rect.top);
+    });
+  };
+
+  private _onWrapPointerEnd = (ev: PointerEvent): void => {
+    if (ev.pointerType !== "touch") return;
+    this._pinchPts.delete(ev.pointerId);
+    if (this._pinchPts.size < 2) this._pinch = null;
+  };
 
   /**
    * Promote the expanded editor into the top layer. `position: fixed` alone is
@@ -451,6 +549,33 @@ export class FloorplanCardEditor extends LitElement {
   /** Snap a raw point to a nearby existing wall endpoint, else to the snap step. */
   private _snapWallPoint(rawX: number, rawY: number): { x: number; y: number } {
     return this._nearestCorner(rawX, rawY) ?? { x: this._snap(rawX), y: this._snap(rawY) };
+  }
+
+  /**
+   * Like {@link _snapWallPoint}, but ignores endpoints in `moving` (keys
+   * `${wallId}:${end}`) — the corner cluster being dragged must not attract
+   * itself.
+   */
+  private _snapWallPointExcluding(
+    rawX: number,
+    rawY: number,
+    moving: ReadonlySet<string>
+  ): { x: number; y: number } {
+    let best: { x: number; y: number } | null = null;
+    let bestDist = ENDPOINT_SNAP;
+    for (const w of this._floor().walls) {
+      for (const end of [1, 2] as const) {
+        if (moving.has(`${w.id}:${end}`)) continue;
+        const x = end === 1 ? w.x1 : w.x2;
+        const y = end === 1 ? w.y1 : w.y2;
+        const d = Math.hypot(rawX - x, rawY - y);
+        if (d < bestDist) {
+          bestDist = d;
+          best = { x, y };
+        }
+      }
+    }
+    return best ?? { x: this._snap(rawX), y: this._snap(rawY) };
   }
 
   /** See {@link snapWallEnd}: corners win, then axis gravity, then the snap step. */
@@ -928,8 +1053,14 @@ export class FloorplanCardEditor extends LitElement {
       orig: this._snapshotSelection(),
       endpoint,
     };
+    if (sel.kind === "wall") this._drag.attached = this._attachedCorners(sel.id, endpoint);
     this._gesturePointer = ev.pointerId;
     this._capturePointer(ev);
+  }
+
+  /** See {@link attachedCorners}: shared room corners that stretch with this wall. */
+  private _attachedCorners(wallId: string, endpoint?: 1 | 2): Drag["attached"] {
+    return attachedCorners(this._floor().walls, wallId, endpoint);
   }
 
   /** Capture the start positions of every selected element on the active floor. */
@@ -977,14 +1108,31 @@ export class FloorplanCardEditor extends LitElement {
     }
     const f = this._floor();
 
-    // Single wall endpoint handle: snaps to nearby wall corners.
+    // Single wall endpoint handle: snaps to nearby wall corners. Coincident
+    // corners of other walls travel along (Alt detaches), so dragging a room
+    // corner stretches the room (issue #30).
     if (drag.endpoint) {
-      const target = this._snapWallPoint(p.x, p.y);
+      const attach = ev.altKey ? [] : (drag.attached ?? []);
+      // The moving cluster must not be a snap candidate for itself — the
+      // dragged corner would stick to its own last emitted position.
+      const moving = new Set<string>([
+        `${drag.primary.id}:${drag.endpoint}`,
+        ...attach.map((a) => `${a.id}:${a.end}`),
+      ]);
+      const target = this._snapWallPointExcluding(p.x, p.y, moving);
       const walls = f.walls.map((w) => {
-        if (w.id !== drag.primary.id) return w;
-        return drag.endpoint === 1
-          ? { ...w, x1: target.x, y1: target.y }
-          : { ...w, x2: target.x, y2: target.y };
+        let out = w;
+        if (w.id === drag.primary.id)
+          out = drag.endpoint === 1
+            ? { ...out, x1: target.x, y1: target.y }
+            : { ...out, x2: target.x, y2: target.y };
+        for (const a of attach) {
+          if (a.id !== w.id) continue;
+          out = a.end === 1
+            ? { ...out, x1: target.x, y1: target.y }
+            : { ...out, x2: target.x, y2: target.y };
+        }
+        return out;
       });
       this._emitFloor({ walls });
       return;
@@ -1017,7 +1165,24 @@ export class FloorplanCardEditor extends LitElement {
     const refY = ref.kind === "wall" ? ref.y1 : ref.y;
     const dx = this._snap(refX + (p.x - drag.start.x)) - refX;
     const dy = this._snap(refY + (p.y - drag.start.y)) - refY;
-    this._emitFloor(this._applyDelta(dx, dy, drag.orig));
+    let patch = this._applyDelta(dx, dy, drag.orig);
+    // Whole-wall drag: shared corners of neighboring walls follow (issue #30),
+    // unless Alt detaches or the neighbor is itself part of the selection
+    // (then it already translated with the group).
+    if (drag.attached?.length && !ev.altKey) {
+      const walls = (patch.walls ?? f.walls).map((w) => {
+        let out = w;
+        for (const a of drag.attached!) {
+          if (a.id !== w.id || drag.orig.has(`wall:${a.id}`)) continue;
+          out = a.end === 1
+            ? { ...out, x1: a.x0 + dx, y1: a.y0 + dy }
+            : { ...out, x2: a.x0 + dx, y2: a.y0 + dy };
+        }
+        return out;
+      });
+      patch = { ...patch, walls };
+    }
+    this._emitFloor(patch);
   }
 
   /** Translate every snapshotted element by (dx, dy). */
@@ -1827,7 +1992,15 @@ export class FloorplanCardEditor extends LitElement {
           <!-- Floor — switch + add inline; rename/delete behind the gear -->
           <span class="floors pop-wrap">
             <label>floor</label>
-            <select @change=${(e: Event) => this._switchFloor((e.target as HTMLSelectElement).value)}>
+            <select
+              @change=${(e: Event) => {
+                this._switchFloor((e.target as HTMLSelectElement).value);
+                // Hand focus back to the canvas: while the <select> keeps it,
+                // isTypingPath swallows every shortcut — most visibly Ctrl+V
+                // after a cross-floor copy (issue #37).
+                this._canvasWrap?.focus();
+              }}
+            >
               ${floors.map(
                 (f) =>
                   html`<option value=${f.id} ?selected=${f.id === this._activeFloorId}>${f.name}</option>`
@@ -1910,8 +2083,19 @@ export class FloorplanCardEditor extends LitElement {
               ${floor.furniture.map((f) => this._renderFurnitureSel(f))}
               ${renderWallMask(floor.openings, c.width, c.height, this._wallMaskId)}
               ${floor.walls.map((w) => this._renderWall(w))}
-              ${floor.openings.map((o) => this._renderOpeningSel(o))}
-              ${(floor.trackers ?? []).map((tr) => this._renderTrackerSel(tr))}
+              ${repeat(
+                // Keyed by id: switching floors must create fresh DOM. Reused
+                // nodes would CSS-transition from the previous floor's opening
+                // state — a window briefly plays a door swing (issue #50).
+                floor.openings,
+                (o, i) => o.id || i,
+                (o) => this._renderOpeningSel(o)
+              )}
+              ${repeat(
+                floor.trackers ?? [],
+                (tr, i) => tr.id || i,
+                (tr) => this._renderTrackerSel(tr)
+              )}
               ${
                 this._draftTracker
                   ? svg`<rect class="tracker-draft"
@@ -2366,7 +2550,8 @@ export class FloorplanCardEditor extends LitElement {
   private _renderItemOverlay(it: FloorItem, c: FloorplanCardConfig): TemplateResult {
     const selected = this._isSel("item", it.id);
     const st = it.entity ? this.hass?.states[it.entity] : undefined;
-    const icon = resolveItemIcon(it, st);
+    // Pass the registry icon here too, so the editor preview matches the card.
+    const icon = resolveItemIcon(it, st, it.entity ? this.hass?.entities?.[it.entity]?.icon : undefined);
     const label = it.name || it.entity || it.kind;
     const size = it.size ?? DEFAULT_ITEM_SIZE;
     const showIcon = it.showIcon ?? true;
@@ -2385,7 +2570,7 @@ export class FloorplanCardEditor extends LitElement {
       <ha-icon
         class=${anim ? `anim-${anim}` : ""}
         icon=${icon}
-        style="--mdc-icon-size:${Math.round(size * 0.62)}px;"
+        style="--mdc-icon-size:${itemIconSize(size)}px;"
       ></ha-icon>
     </div>`;
 
@@ -2412,7 +2597,9 @@ export class FloorplanCardEditor extends LitElement {
         @pointercancel=${this._onPointerCancel}
       >
         ${visual}
-        <span class="ilabel">${label}</span>
+        <!-- The editor label always shows (identification while editing);
+             only its size previews the card's labelSize (issue #59). -->
+        <span class="ilabel" style="font-size:${it.labelSize != null ? itemLabelSize(it.labelSize) : 11}px;">${label}</span>
       </div>
     `;
   }
@@ -2494,6 +2681,9 @@ export class FloorplanCardEditor extends LitElement {
           if (live) this._patchFloorLive(patch as Partial<Floor>);
           else this._commitFloor(patch as Partial<Floor>);
         })}
+        ${this._renderForm(projectRotationForm(this._config), (patch) =>
+          this._patchConfig(patch as Partial<FloorplanCardConfig>)
+        )}
       </div>
     `;
   }
@@ -3351,7 +3541,6 @@ export class FloorplanCardEditor extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 2px;
       touch-action: none;
     }
     .badge {
@@ -3576,6 +3765,13 @@ export class FloorplanCardEditor extends LitElement {
       }
     }
     .ilabel {
+      /* Out of flow, hanging below the badge: the label must not change the
+         element's box, so badges anchor on (x, y) whether or not a label
+         renders — icons stay aligned (issue #34) and match the card. */
+      position: absolute;
+      top: calc(100% + 2px);
+      left: 50%;
+      transform: translateX(-50%);
       font-size: 11px;
       line-height: 1;
       padding: 1px 4px;

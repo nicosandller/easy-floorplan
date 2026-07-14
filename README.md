@@ -89,7 +89,8 @@ background):
 
 - **Select** — the default tool. Click an element to select it; Shift/Ctrl-click or drag
   a box to select several at once. Arrow keys nudge the selection (Shift+arrow jumps a
-  full grid cell); **Ctrl/Cmd+C/V/D** copy / paste / duplicate; **Ctrl/Cmd+Z** undoes
+  full grid cell); **Ctrl/Cmd+C/V/D** copy / paste / duplicate — pasting also works
+  across floors (copy, switch floor, paste); **Ctrl/Cmd+Z** undoes
   (**Shift+Z** or **Ctrl+Y** redoes); **Escape** cancels an in-progress draw or clears
   the selection. The **Element** section below the canvas names the selection
   (e.g. *Door · 60 units*) and carries its **duplicate** / **delete** buttons along
@@ -99,6 +100,10 @@ background):
   keeps walls horizontal/vertical and corner-snapped (turn it off to draw freely), and
   the **Snap** segmented control (`On` / `Off` / `Custom`) governs snapping for *all*
   tools — `Custom` lets you snap to a percentage of the grid (e.g. 50% = half a cell).
+  Rooms **stretch** instead of tearing: dragging a wall — or one of its corner
+  handles — carries every wall corner that touches it, so you can widen a room by
+  just pulling its wall. Hold **Alt** while dragging to detach and move only the
+  grabbed wall.
 - **Door / Window** — click to drop; it snaps onto the nearest wall. The context row
   shows a **Length** field for the *next* opening you place, so you can size doors and
   windows before placing them. Assign a sensor after placement (in the **Element**
@@ -117,9 +122,13 @@ background):
 
 Undo/redo buttons sit at the right of the tools row. Zoom controls live on the canvas
 itself (bottom-right): **−** / **+** step, click the percentage to reset, the fit button
-snaps back to 100%, and **Ctrl/Cmd+scroll** zooms from the keyboard/trackpad. The
-**Project** section (canvas size, grid, background) is collapsed by default — click its
-header to expand.
+snaps back to 100%, and **Ctrl/Cmd+scroll** zooms from the keyboard/trackpad. On touch
+screens, **pinch** directly on the canvas — it zooms just the plan (anchored between
+your fingers), not the whole editor. The **Project** section (canvas size, grid,
+background) is collapsed by default — click its header to expand. Its last row,
+**Rotate display**, turns the *live card* in 90° steps for portrait wall tablets — the
+editor keeps showing the plan as drawn, and icons and labels stay upright at any
+rotation.
 
 ## Elements
 
@@ -150,11 +159,20 @@ By default it shows an icon badge:
 - **Make it yours** — override the **icon** (with autocomplete + live preview), set a
   custom **name**, change the **size**, **rotate** it, or hide the icon entirely.
 - **Icons that move** — while an entity is active its icon can animate, the way
-  Home Assistant's own Tile card does it: by default a running **fan spins** and a
-  playing **media player** or cleaning **vacuum pulses**. The **Animate icon**
+  Home Assistant's own Tile card does it: by default a running **fan spins** and an
+  active **media player** (playing, or simply on) or **vacuum** (cleaning /
+  returning) **pulses**. The **Animate icon**
   dropdown per device switches to `none`, or forces `spin` / `pulse` on any entity
   (a spinning icon still only plays while the entity is actually active — an
   unavailable fan never spins). Respects the OS *reduced motion* preference.
+- **Label line** — **Show state** displays the live value (sensors do this by
+  default); **Show name** adds the device's name — handy for a panel of look-alike
+  buttons where a state would say nothing. Both together read `Name · state`, and
+  **Label size** adjusts the line's font size.
+- **No entity? Still on the map** — a device with no entity bound renders as a plain
+  badge (its icon override or kind default), so hardware that has no Home Assistant
+  entity — a dumb smoke detector, a wired doorbell — can still be marked on the plan.
+  It never highlights and tapping does nothing.
 
 ### Presence ripples
 
@@ -339,6 +357,7 @@ The editor writes this config for you; manual editing is optional.
 | `height`     | number   | `600`              | Virtual canvas height, in canvas units.      |
 | `grid`       | number   | `20`               | Gap between grid lines, in canvas units (so on a 1000-wide canvas, `20` ≈ 50 columns). A **smaller** number means a **finer** grid with more lines. |
 | `snap`       | number   | follows `grid`     | Snap step for placement / drag / nudge / wall drawing, in canvas units. Omit to snap to the visible grid; set `0` for free placement; set any other number for a custom step. The editor shows a custom step as a **percentage of the grid** (e.g. `50` % of a `20` grid is stored here as `10`), but the value here is always absolute. |
+| `rotation`   | number   | `0`                | Rotate the displayed card by `90`, `180` or `270` degrees — e.g. a landscape plan on a portrait wall tablet. Editing always shows the plan as drawn. Icons and labels stay upright. |
 | `background` | string   | card background    | Canvas background color (CSS / hex).         |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see **Floors**).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
@@ -394,7 +413,7 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | Field         | Type                                   | Default      | Description                                            |
 | ------------- | -------------------------------------- | ------------ | ------------------------------------------------------ |
 | `id`          | string                                 | —            | Unique id.                                             |
-| `entity`      | string                                 | —            | Entity id to bind.                                     |
+| `entity`      | string                                 | —            | Entity id to bind. Optional: without one the device renders as a static badge. |
 | `secondaryEntity` | string                             | —            | Optional 2nd entity shown alongside (e.g. humidity).   |
 | `x`, `y`      | number                                 | —            | Position.                                              |
 | `kind`        | light/switch/sensor/binary_sensor/climate/cover/generic | inferred | Used for the default icon.            |
@@ -407,7 +426,9 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | `rippleColor` | string                                 | primary color| Ripple ring color (ripple modes).                     |
 | `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
 | `showIcon`    | boolean                                | `true`       | Show the icon badge.                                   |
-| `showState`   | boolean                                | sensors only | Show the entity state label.                           |
+| `showState`   | boolean                                | sensors only | Show the entity state in the label line.               |
+| `showName`    | boolean                                | `false`      | Show the device's name in the label line (`Name · state` when combined). |
+| `labelSize`   | number                                 | `12`         | Label line font size (px).                             |
 
 Clicking a `light`, `switch`, `cover`, `fan` or `input_boolean` toggles it; other
 domains open the more-info dialog.
