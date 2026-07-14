@@ -23,7 +23,7 @@ import {
   DEFAULT_TEXT_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
 } from "./types";
-import { defaultIcon, openingMotion, sliderStyleOf } from "./render";
+import { defaultIcon, normalizePlanRotation, openingMotion, sliderStyleOf } from "./render";
 import { defaultItemAction } from "./actions";
 
 /** One ha-form schema item, extended with our label/helper (read by computeLabel). */
@@ -425,6 +425,30 @@ export function projectForm(c: FloorplanCardConfig): FormSpec {
     ],
     data: { title: c.title ?? "", width: c.width, height: c.height, grid: c.grid ?? DEFAULT_GRID },
     toPatch: identity,
+  };
+}
+
+/**
+ * Display rotation (issue #33), a separate one-field form so the editor can
+ * render it as the very last Project row — it's a set-once option for wall
+ * tablets, not day-to-day editing, so it stays out of the way.
+ */
+export function projectRotationForm(c: FloorplanCardConfig): FormSpec {
+  return {
+    fields: [
+      {
+        name: "rotation",
+        label: "Rotate display",
+        helper: "Rotates the live card only — editing stays as drawn",
+        selector: dropdown(opt("0", "0°"), opt("90", "90°"), opt("180", "180°"), opt("270", "270°")),
+      },
+    ],
+    data: { rotation: String(normalizePlanRotation(c.rotation)) },
+    toPatch: (p) =>
+      "rotation" in p
+        ? // Stored as a number; 0 means "not rotated", so keep it out of the YAML.
+          { ...p, rotation: p.rotation === "0" ? undefined : Number(p.rotation) }
+        : p,
   };
 }
 

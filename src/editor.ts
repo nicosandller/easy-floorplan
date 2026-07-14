@@ -77,6 +77,7 @@ import {
   normalizeFormPatch,
   openingForm,
   projectForm,
+  projectRotationForm,
   textForm,
   trackerForm,
   wallForm,
@@ -261,6 +262,7 @@ export class FloorplanCardEditor extends LitElement {
     window.removeEventListener("keydown", this._onKeyDown, true);
     this.removeEventListener("keydown", this._onHostKeyDown);
     window.removeEventListener("focusin", this._onFocusIn);
+    this._resetPinch();
     super.disconnectedCallback();
   }
 
@@ -360,10 +362,27 @@ export class FloorplanCardEditor extends LitElement {
       // and zooms the whole page (the entire visual editor) unless they're
       // canceled — touch-action does not cover this path.
       for (const type of ["gesturestart", "gesturechange", "gestureend"]) {
-        wrap.addEventListener(type, (e: Event) => e.preventDefault());
+        wrap.addEventListener(type, this._preventGesture);
       }
     }
   }
+
+  /**
+   * Defensive pinch-state reset (review feedback on #57). The listeners
+   * themselves stay attached on purpose: they live on an element inside our
+   * own shadow root (no leak — they die with the instance), and HA's dialog
+   * reparents the editor, which fires disconnected/connected without a second
+   * firstUpdated — removing them here would permanently kill pinch after a
+   * reparent. Clearing the *points* is what matters: a pointerup lost to the
+   * reparent would leave a stale entry behind, and the next single tap would
+   * read as a phantom second finger.
+   */
+  private _resetPinch(): void {
+    this._pinchPts.clear();
+    this._pinch = null;
+  }
+
+  private _preventGesture = (e: Event): void => e.preventDefault();
 
   // ---- pinch-zoom on the canvas (issue #38) -------------------------------
 
@@ -2067,12 +2086,12 @@ export class FloorplanCardEditor extends LitElement {
                 // nodes would CSS-transition from the previous floor's opening
                 // state — a window briefly plays a door swing (issue #50).
                 floor.openings,
-                (o) => o.id,
+                (o, i) => o.id || i,
                 (o) => this._renderOpeningSel(o)
               )}
               ${repeat(
                 floor.trackers ?? [],
-                (tr) => tr.id,
+                (tr, i) => tr.id || i,
                 (tr) => this._renderTrackerSel(tr)
               )}
               ${
@@ -2650,6 +2669,9 @@ export class FloorplanCardEditor extends LitElement {
           if (live) this._patchFloorLive(patch as Partial<Floor>);
           else this._commitFloor(patch as Partial<Floor>);
         })}
+        ${this._renderForm(projectRotationForm(this._config), (patch) =>
+          this._patchConfig(patch as Partial<FloorplanCardConfig>)
+        )}
       </div>
     `;
   }

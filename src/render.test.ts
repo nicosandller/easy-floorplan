@@ -29,6 +29,10 @@ import {
   entityIsActive,
   resolveItemIcon,
   itemIconSize,
+  normalizePlanRotation,
+  rotatedCanvasSize,
+  rotatePlanPoint,
+  planRotationTransform,
 } from "./render";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
 
@@ -799,5 +803,77 @@ describe("itemIconSize (issue #39: off-center glyphs at small sizes)", () => {
 
   it("never collapses below 2px", () => {
     expect(itemIconSize(1)).toBeGreaterThanOrEqual(2);
+  });
+});
+
+describe("plan rotation (issue #33)", () => {
+  const W = 1000;
+  const H = 600;
+
+  it("normalizes to the four supported steps, defaulting everything else to 0", () => {
+    expect(normalizePlanRotation(undefined)).toBe(0);
+    expect(normalizePlanRotation(90)).toBe(90);
+    expect(normalizePlanRotation(450)).toBe(90);
+    expect(normalizePlanRotation(-90)).toBe(270);
+    expect(normalizePlanRotation(360)).toBe(0);
+    expect(normalizePlanRotation(45)).toBe(0);
+    expect(normalizePlanRotation("90" as unknown)).toBe(0);
+    expect(normalizePlanRotation(Number.NaN)).toBe(0);
+  });
+
+  it("swaps the displayed canvas size for quarter turns only", () => {
+    expect(rotatedCanvasSize(W, H, 0)).toEqual({ w: W, h: H });
+    expect(rotatedCanvasSize(W, H, 90)).toEqual({ w: H, h: W });
+    expect(rotatedCanvasSize(W, H, 180)).toEqual({ w: W, h: H });
+    expect(rotatedCanvasSize(W, H, 270)).toEqual({ w: H, h: W });
+  });
+
+  it("maps corners of the plan onto corners of the rotated frame", () => {
+    // Top-left of the plan…
+    expect(rotatePlanPoint(0, 0, W, H, 0)).toEqual({ x: 0, y: 0 });
+    expect(rotatePlanPoint(0, 0, W, H, 90)).toEqual({ x: H, y: 0 }); // …top-right
+    expect(rotatePlanPoint(0, 0, W, H, 180)).toEqual({ x: W, y: H }); // …bottom-right
+    expect(rotatePlanPoint(0, 0, W, H, 270)).toEqual({ x: 0, y: W }); // …bottom-left
+    // An interior point keeps its distances to the edges it rotates onto.
+    expect(rotatePlanPoint(100, 50, W, H, 90)).toEqual({ x: H - 50, y: 100 });
+    expect(rotatePlanPoint(100, 50, W, H, 270)).toEqual({ x: 50, y: W - 100 });
+  });
+
+  it("rotating four quarter turns is the identity", () => {
+    let p = { x: 123, y: 456 };
+    let w = W;
+    let h = H;
+    for (let i = 0; i < 4; i++) {
+      p = rotatePlanPoint(p.x, p.y, w, h, 90);
+      [w, h] = [h, w];
+    }
+    expect(p).toEqual({ x: 123, y: 456 });
+  });
+
+  it("group transform matches the point mapping", () => {
+    // Apply the SVG transform math manually and compare with rotatePlanPoint.
+    const apply = (t: string, x: number, y: number) => {
+      const m = t.match(/translate\((-?\d+) (-?\d+)\) rotate\((-?\d+)\)/);
+      if (!m) return { x, y };
+      const [tx, ty, deg] = [Number(m[1]), Number(m[2]), Number(m[3])];
+      const rad = (deg * Math.PI) / 180;
+      return {
+        x: Math.round(tx + x * Math.cos(rad) - y * Math.sin(rad)) + 0,
+        y: Math.round(ty + x * Math.sin(rad) + y * Math.cos(rad)) + 0,
+      };
+    };
+    for (const rot of [90, 180, 270] as const) {
+      const t = planRotationTransform(W, H, rot);
+      for (const [x, y] of [
+        [0, 0],
+        [W, H],
+        [123, 456],
+      ]) {
+        expect(apply(t, x, y), `rot ${rot} point ${x},${y}`).toEqual(
+          rotatePlanPoint(x, y, W, H, rot),
+        );
+      }
+    }
+    expect(planRotationTransform(W, H, 0)).toBe("");
   });
 });

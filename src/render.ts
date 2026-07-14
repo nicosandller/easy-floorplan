@@ -649,6 +649,71 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
     </g>`;
 }
 
+// ---- whole-plan rotation (issue #33) ---------------------------------------
+//
+// The card can display the plan rotated in 90° steps — a landscape plan on a
+// portrait wall tablet — without touching any stored coordinate. The SVG
+// layers rotate via one group transform; the HTML overlay (badges, labels,
+// text) is repositioned point-by-point instead, so icons and text stay
+// upright. The editor always shows the plan as drawn.
+
+export type PlanRotation = 0 | 90 | 180 | 270;
+
+/** Coerce a config `rotation` to a supported step; anything else means 0. */
+export function normalizePlanRotation(v: unknown): PlanRotation {
+  if (typeof v !== "number" || !Number.isFinite(v)) return 0;
+  const r = ((v % 360) + 360) % 360;
+  return r === 90 || r === 180 || r === 270 ? r : 0;
+}
+
+/** Canvas size as displayed: 90°/270° swap width and height. */
+export function rotatedCanvasSize(
+  w: number,
+  h: number,
+  rot: PlanRotation
+): { w: number; h: number } {
+  return rot === 90 || rot === 270 ? { w: h, h: w } : { w, h };
+}
+
+/** Map a plan point into the rotated (displayed) frame. */
+export function rotatePlanPoint(
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  rot: PlanRotation
+): { x: number; y: number } {
+  switch (rot) {
+    case 90:
+      return { x: h - y, y: x };
+    case 180:
+      return { x: w - x, y: h - y };
+    case 270:
+      return { x: y, y: w - x };
+    default:
+      return { x, y };
+  }
+}
+
+/**
+ * SVG group transform realizing {@link rotatePlanPoint} for whole layers, or
+ * "" for the unrotated plan. Matches the point mapping exactly — the overlay
+ * (HTML, remapped per point) and the drawing (SVG, one transform) must land
+ * on the same pixels or badges drift off their walls.
+ */
+export function planRotationTransform(w: number, h: number, rot: PlanRotation): string {
+  switch (rot) {
+    case 90:
+      return `translate(${h} 0) rotate(90)`;
+    case 180:
+      return `translate(${w} ${h}) rotate(180)`;
+    case 270:
+      return `translate(0 ${w}) rotate(-90)`;
+    default:
+      return "";
+  }
+}
+
 /**
  * Build an SVG `<mask>` (white field with a black rect at each opening) that, when
  * applied to the wall layer, removes the wall pixels behind doors/windows so a gap
