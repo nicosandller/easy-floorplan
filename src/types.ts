@@ -563,13 +563,51 @@ function normalizeFloor(f: Floor): Floor {
 }
 
 /**
+ * Repair missing / duplicated floor ids (issue #66). Hand-reordering floors
+ * in YAML is done by cut-and-paste, which routinely drops an `id:` line or
+ * pastes the same block twice. A missing id makes every by-id lookup miss
+ * (floor switching dead); a duplicated one is worse — the editor patches
+ * *every* floor sharing the id, so edits silently land on the wrong floor.
+ * Backfill deterministically from the position so the repair is stable
+ * across renders and persists on the next editor commit.
+ */
+function ensureFloorIds(floors: Floor[]): Floor[] {
+  const seen = new Set<string>();
+  return floors.map((f, i) => {
+    let id = f.id || `floor_${i + 1}`;
+    while (seen.has(id)) id = `${id}_${i + 1}`;
+    seen.add(id);
+    return id === f.id ? f : { ...f, id };
+  });
+}
+
+/**
+ * Reorder a floor one step up/down the list (issue #66), or null when the
+ * move is a no-op (unknown id, or already at that end).
+ */
+export function moveFloor(
+  floors: readonly Floor[],
+  id: string,
+  delta: -1 | 1
+): Floor[] | null {
+  const idx = floors.findIndex((f) => f.id === id);
+  const to = idx + delta;
+  if (idx < 0 || to < 0 || to >= floors.length) return null;
+  const next = [...floors];
+  const [f] = next.splice(idx, 1);
+  next.splice(to, 0, f!);
+  return next;
+}
+
+/**
  * Normalize a config into a list of floors. If `floors` is present and
  * non-empty each floor is returned with any missing element arrays
- * backfilled; otherwise the legacy flat arrays are wrapped into a single
- * floor so old single-floor configs keep rendering unchanged.
+ * backfilled and ids repaired ({@link ensureFloorIds}); otherwise the legacy
+ * flat arrays are wrapped into a single floor so old single-floor configs
+ * keep rendering unchanged.
  */
 export function getFloors(c: FloorplanCardConfig): Floor[] {
-  if (c.floors && c.floors.length) return c.floors.map(normalizeFloor);
+  if (c.floors && c.floors.length) return ensureFloorIds(c.floors.map(normalizeFloor));
   return [
     {
       id: "floor_main",

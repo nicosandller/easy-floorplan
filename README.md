@@ -115,10 +115,14 @@ background):
 - **+ Add** — one popover for everything droppable: device, text, and all furniture
   types shown as their actual glyphs (pick a sofa by seeing a sofa). The new element is
   selected immediately so the **Element** section is ready for configuring it.
-- **floor** — switch floors with the dropdown, add one with **+**; rename and delete
-  live behind the gear button. The gear also offers an **HA floor** dropdown listing
-  your Home Assistant floors — linking one names the plan floor after it (rename
-  afterwards if you like; the link sticks either way).
+- **floor** — switch floors with the dropdown, add one with **+**; rename, **reorder**
+  (▲/▼ move the current floor up/down the list — the order of the dropdown and the
+  card's floor switcher) and delete live behind the gear button. The gear also offers
+  an **HA floor** dropdown listing your Home Assistant floors — linking one names the
+  plan floor after it (rename afterwards if you like; the link sticks either way).
+  Prefer the ▲/▼ buttons over reordering floor blocks in YAML: hand-editing easily
+  drops or duplicates floor `id`s (the card now repairs both, but edits made while
+  ids collide can land on the wrong floor).
 
 Undo/redo buttons sit at the right of the tools row. Zoom controls live on the canvas
 itself (bottom-right): **−** / **+** step, click the percentage to reset, the fit button
