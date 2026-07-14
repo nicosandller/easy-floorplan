@@ -119,7 +119,9 @@ Undo/redo buttons sit at the right of the tools row. Zoom controls live on the c
 itself (bottom-right): **−** / **+** step, click the percentage to reset, the fit button
 snaps back to 100%, and **Ctrl/Cmd+scroll** zooms from the keyboard/trackpad. The
 **Project** section (canvas size, grid, background) is collapsed by default — click its
-header to expand.
+header to expand. Its last row, **Rotate display**, turns the *live card* in 90° steps
+for portrait wall tablets — the editor keeps showing the plan as drawn, and icons and
+labels stay upright at any rotation.
 
 ## Elements
 
@@ -333,6 +335,7 @@ The editor writes this config for you; manual editing is optional.
 | `height`     | number   | `600`              | Virtual canvas height, in canvas units.      |
 | `grid`       | number   | `20`               | Gap between grid lines, in canvas units (so on a 1000-wide canvas, `20` ≈ 50 columns). A **smaller** number means a **finer** grid with more lines. |
 | `snap`       | number   | follows `grid`     | Snap step for placement / drag / nudge / wall drawing, in canvas units. Omit to snap to the visible grid; set `0` for free placement; set any other number for a custom step. The editor shows a custom step as a **percentage of the grid** (e.g. `50` % of a `20` grid is stored here as `10`), but the value here is always absolute. |
+| `rotation`   | number   | `0`                | Rotate the displayed card by `90`, `180` or `270` degrees — e.g. a landscape plan on a portrait wall tablet. Editing always shows the plan as drawn. Icons and labels stay upright. |
 | `background` | string   | card background    | Canvas background color (CSS / hex).         |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see **Floors**).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |

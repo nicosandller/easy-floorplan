@@ -396,6 +396,13 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * absolute. Resolve with {@link resolveSnap}.
    */
   snap?: number;
+  /**
+   * Rotate the *displayed* card in 90° steps (issue #33), e.g. to show a
+   * landscape plan on a portrait wall tablet. Coordinates stay unrotated —
+   * the editor always shows the plan as drawn. Values other than
+   * 0/90/180/270 are normalized (see normalizePlanRotation).
+   */
+  rotation?: number;
   /** Canvas background color (CSS / hex). Falls back to the card background. */
   background?: string;
   /**

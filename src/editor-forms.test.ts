@@ -10,6 +10,7 @@ import {
   trackerForm,
   wallForm,
   projectForm,
+  projectRotationForm,
   floorImageForm,
 } from "./editor-forms";
 import type { FormField } from "./editor-forms";
@@ -209,6 +210,22 @@ describe("wallForm / projectForm / floorImageForm", () => {
     const width = form.fields.find((x) => x.name === "width")!;
     expect(width.required).toBe(true);
     expect((width.selector.number as { min: number }).min).toBe(1);
+  });
+
+  it("rotation lives in its own bottom-row form, defaults to 0°, and patches as a number", () => {
+    const form = projectRotationForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
+    expect(form.fields.map((x) => x.name)).toEqual(["rotation"]);
+    expect(form.data.rotation).toBe("0");
+    // 0 comes back as undefined so an unrotated plan stays out of the YAML.
+    expect(form.toPatch({ rotation: "0" })).toEqual({ rotation: undefined });
+    expect(form.toPatch({ rotation: "90" })).toEqual({ rotation: 90 });
+    const rotated = projectRotationForm({
+      type: "t",
+      width: 1000,
+      height: 600,
+      rotation: 270,
+    } as FloorplanCardConfig);
+    expect(rotated.data.rotation).toBe("270");
   });
 
   it("image opacity appears only when an image is set", () => {
