@@ -376,10 +376,16 @@ for backward compatibility.
 
 ### Floor
 
-`{ id, name, haFloor?, image?, imageOpacity?, walls, openings, items, texts, furniture }`
+`{ id, name, short?, color?, haFloor?, image?, imageOpacity?, walls, openings, items, texts, furniture }`
 — a named floor with its own elements. Use the **floor** controls in the editor toolbar
 to add, rename, switch and delete floors; the live card shows a floor switcher in the
 top-right when there is more than one.
+
+The floor gear popover also sets (issue #67): **Short** — an abbreviation shown on the
+card's switcher button (`GF`, `1st`…) while the full name stays as its tooltip;
+**Color** — an accent for that button while its floor is active (goes through the
+config-color allowlist); and **Default** — which floor the live card opens on
+(stored as the top-level `defaultFloor`).
 
 **`haFloor`** optionally stores the id of a linked Home Assistant floor (set from the
 editor's floor gear popover). Today the link auto-names the floor; it is kept in the

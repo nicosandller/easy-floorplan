@@ -2041,6 +2041,55 @@ export class FloorplanCardEditor extends LitElement {
                         this._renameFloor(this._activeFloorId, (e.target as HTMLInputElement).value)}
                     />
                   </div>
+                  <!-- Issue #67: switcher-button label, per-floor accent, and
+                       which floor the live card opens on. -->
+                  <div class="pop-row">
+                    <label>Short</label>
+                    <input
+                      type="text"
+                      maxlength="8"
+                      placeholder="e.g. GF"
+                      title="Short label for the card's floor-switcher button"
+                      .value=${floor?.short ?? ""}
+                      @change=${(e: Event) =>
+                        this._commitFloor({
+                          short: (e.target as HTMLInputElement).value.trim() || undefined,
+                        })}
+                    />
+                  </div>
+                  <div class="pop-row">
+                    <label>Color</label>
+                    <input
+                      type="color"
+                      title="Accent for this floor's switcher button while active"
+                      .value=${floor?.color ?? "#03a9f4"}
+                      @input=${(e: Event) =>
+                        this._commitFloor({ color: (e.target as HTMLInputElement).value })}
+                    />
+                    <button
+                      aria-label="Clear floor color"
+                      title="Back to the theme color"
+                      ?disabled=${!floor?.color}
+                      @click=${() => this._commitFloor({ color: undefined })}
+                    >
+                      <ha-icon icon="mdi:water-off-outline"></ha-icon>
+                    </button>
+                  </div>
+                  <div class="pop-row">
+                    <label>Default</label>
+                    <input
+                      type="checkbox"
+                      title="Open the live card on this floor"
+                      .checked=${this._config.defaultFloor === this._activeFloorId}
+                      @change=${(e: Event) =>
+                        this._commit({
+                          ...this._config,
+                          defaultFloor: (e.target as HTMLInputElement).checked
+                            ? this._activeFloorId
+                            : undefined,
+                        })}
+                    />
+                  </div>
                   <button
                     class="danger pop-action"
                     ?disabled=${floors.length <= 1}
