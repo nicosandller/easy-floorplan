@@ -1,5 +1,6 @@
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor } from "./types";
 import {
   DEFAULT_WIDTH,
@@ -22,10 +23,18 @@ import {
   renderTracker,
   trackerSensorReading,
   entityIsActive,
-  itemStateText,
+  itemBadgeLabel,
+  itemLabelSize,
   hassRenderInputsChanged,
   collectWatchedEntities,
   resolveItemIcon,
+  resolveIconAnimation,
+  itemIconSize,
+  normalizePlanRotation,
+  rotatedCanvasSize,
+  rotatePlanPoint,
+  planRotationTransform,
+  type PlanRotation,
 } from "./render";
 import type { Opening } from "./types";
 import { actionForGesture, executeAction, hasAction } from "./actions";
@@ -54,7 +63,7 @@ export class FloorplanCard extends LitElement {
       if (raw[key] != null && !Array.isArray(raw[key]))
         throw new Error(`Invalid configuration: "${key}" must be a list`);
     }
-    for (const key of ["width", "height", "grid"]) {
+    for (const key of ["width", "height", "grid", "rotation"]) {
       if (raw[key] != null && typeof raw[key] !== "number")
         throw new Error(`Invalid configuration: "${key}" must be a number`);
     }
@@ -125,7 +134,11 @@ export class FloorplanCard extends LitElement {
   }
 
   private _itemIcon(item: FloorItem): string {
-    return resolveItemIcon(item, this.hass?.states[item.entity]);
+    return resolveItemIcon(
+      item,
+      this.hass?.states[item.entity],
+      this.hass?.entities?.[item.entity]?.icon,
+    );
   }
 
   private _label(item: FloorItem): string {
@@ -165,22 +178,32 @@ export class FloorplanCard extends LitElement {
 
   private _renderBadge(item: FloorItem): TemplateResult {
     const size = item.size ?? DEFAULT_ITEM_SIZE;
+    // Animation goes on the inner ha-icon, not the badge: the badge carries
+    // the user's `angle` rotation, and a spin on the same element would
+    // overwrite it.
+    const anim = resolveIconAnimation(
+      item,
+      item.entity ? this.hass?.states[item.entity]?.state : undefined,
+    );
     return html`
       <div
         class="badge"
         style="width:${size}px;height:${size}px;transform:rotate(${item.angle ?? 0}deg);"
       >
         <ha-icon
+          class=${anim ? `anim-${anim}` : ""}
           icon=${this._itemIcon(item)}
-          style="--mdc-icon-size:${Math.round(size * 0.62)}px;"
+          style="--mdc-icon-size:${itemIconSize(size)}px;"
         ></ha-icon>
       </div>
     `;
   }
 
-  private _renderItem(item: FloorItem, c: FloorplanCardConfig): TemplateResult {
+  private _renderItem(item: FloorItem, c: FloorplanCardConfig, rot: PlanRotation): TemplateResult {
     const on = this._isOn(item);
-    const showState = item.showState ?? item.kind === "sensor";
+    // Name/state composition lives in itemBadgeLabel, including #39's
+    // no-entity guard (an unbound device gets no state line).
+    const labelText = itemBadgeLabel(this.hass, item);
     const showIcon = item.showIcon ?? true;
     const display = item.display ?? "badge";
     const rippleColor = item.rippleColor ?? "var(--primary-color, #03a9f4)";
@@ -198,10 +221,14 @@ export class FloorplanCard extends LitElement {
       visual = this._renderBadge(item);
     }
 
+    // Rotated frame: the overlay is HTML, so each anchor is remapped instead
+    // of transformed — badges and labels stay upright at any rotation.
+    const p = rotatePlanPoint(item.x, item.y, c.width, c.height, rot);
+    const d = rotatedCanvasSize(c.width, c.height, rot);
     return html`
       <div
         class="item ${on ? "on" : "off"}"
-        style="left:${(item.x / c.width) * 100}%; top:${(item.y / c.height) * 100}%;"
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;"
         title=${this._label(item)}
         role="button"
         tabindex="0"
@@ -213,16 +240,24 @@ export class FloorplanCard extends LitElement {
         })}
       >
         ${visual}
-        ${showState ? html`<span class="label">${itemStateText(this.hass, item)}</span>` : nothing}
+        ${labelText
+          ? html`<span
+              class="label ${visual === nothing ? "inflow" : ""}"
+              style="font-size:${itemLabelSize(item.labelSize)}px;"
+              >${labelText}</span
+            >`
+          : nothing}
       </div>
     `;
   }
 
-  private _renderText(t: FloorText, c: FloorplanCardConfig): TemplateResult {
+  private _renderText(t: FloorText, c: FloorplanCardConfig, rot: PlanRotation): TemplateResult {
+    const p = rotatePlanPoint(t.x, t.y, c.width, c.height, rot);
+    const d = rotatedCanvasSize(c.width, c.height, rot);
     return html`
       <div
         class="text"
-        style="left:${(t.x / c.width) * 100}%; top:${(t.y / c.height) * 100}%;
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
                font-size:${t.size ?? DEFAULT_TEXT_SIZE}px;
                color:${t.color ?? "var(--primary-text-color)"};
                transform:translate(-50%,-50%) rotate(${t.angle ?? 0}deg);"
@@ -240,11 +275,17 @@ export class FloorplanCard extends LitElement {
       floors.find((f) => f.id === this._activeFloorId) ??
       floors.find((f) => f.id === c.defaultFloor) ??
       floors[0];
+    // Whole-plan display rotation (issue #33): the SVG rotates via one group
+    // transform below; the HTML overlay remaps per point in _renderItem /
+    // _renderText. Both must use the same mapping (rotatePlanPoint).
+    const rot = normalizePlanRotation(c.rotation);
+    const dims = rotatedCanvasSize(c.width, c.height, rot);
+    const rotTransform = planRotationTransform(c.width, c.height, rot);
     return html`
       <ha-card .header=${c.title ?? nothing}>
         <div
           class="stage"
-          style="aspect-ratio: ${c.width} / ${c.height}; background:${c.background ??
+          style="aspect-ratio: ${dims.w} / ${dims.h}; background:${c.background ??
           "var(--card-background-color, #fff)"};"
         >
 <!-- preserveAspectRatio="none" is correct here, and it took a wrong fix to
@@ -261,7 +302,8 @@ export class FloorplanCard extends LitElement {
                The real fix letterboxes both layers together -- wrap the svg and
                the overlay in one aspect-ratio box and centre it. Until then, do
                not "fix" this line. -->
-          <svg viewBox="0 0 ${c.width} ${c.height}" preserveAspectRatio="none">
+          <svg viewBox="0 0 ${dims.w} ${dims.h}" preserveAspectRatio="none">
+            <g transform=${rotTransform || nothing}>
             ${active.image
               ? svg`<image href=${active.image} x="0" y="0" width=${c.width} height=${c.height}
                           preserveAspectRatio="none" opacity=${active.imageOpacity ?? 1} />`
@@ -275,7 +317,14 @@ export class FloorplanCard extends LitElement {
                       class="wall" stroke-width=${WALL_THICKNESS} stroke-linecap="round" />`
               )}
             </g>
-            ${active.openings.map((o) => {
+            ${repeat(
+              // Keyed by id: switching floors must create fresh DOM nodes.
+              // Unkeyed, Lit morphs floor A's openings into floor B's, and the
+              // 0.5s leaf/panel transitions animate the leftover state — a
+              // window briefly plays a door swing (issue #50).
+              active.openings,
+              (o, i) => o.id || i,
+              (o) => {
               const amount = this._openingAmount(o);
               const symbol = renderOpening(o, {
                 color: "var(--primary-text-color)",
@@ -297,7 +346,10 @@ export class FloorplanCard extends LitElement {
                         transform="rotate(${o.angle} ${o.x} ${o.y})" />
                 </g>`;
             })}
-            ${(active.trackers ?? []).map((tr) =>
+            ${repeat(
+              active.trackers ?? [],
+              (tr, i) => tr.id || i,
+              (tr) =>
               renderTracker(tr, {
                 editing: false,
                 xReading: trackerSensorReading(this.hass?.states, tr.xSensor?.entity),
@@ -306,10 +358,18 @@ export class FloorplanCard extends LitElement {
                 yPresent: trackerPresenceDetected(this.hass?.states, tr.ySensor?.presence),
               })
             )}
+            </g>
           </svg>
           <div class="items">
-            ${active.texts.map((t) => this._renderText(t, c))}
-            ${active.items.filter((it) => it.entity).map((it) => this._renderItem(it, c))}
+            ${active.texts.map((t) => this._renderText(t, c, rot))}
+            ${repeat(
+              // No entity filter: devices that exist physically but have no HA
+              // entity still deserve their badge (issue #39). Keyed by id so a
+              // floor switch builds fresh DOM (see the openings comment).
+              active.items,
+              (it, i) => it.id || i,
+              (it) => this._renderItem(it, c, rot)
+            )}
           </div>
           ${floors.length > 1 ? this._renderFloorSwitcher(floors, active) : nothing}
         </div>
@@ -442,7 +502,27 @@ export class FloorplanCard extends LitElement {
       display: flex;
       flex-direction: column;
       align-items: center;
-      gap: 2px;
+    }
+    /*
+     * The item's x/y anchors its icon, not its icon-plus-label. Were the label
+     * in flow, it would make the column taller and the translate would
+     * push the icon up by half the label's height -- so an item showing state
+     * would sit higher than a bare one beside it, at the same y. The label hangs
+     * below instead, out of flow, and every icon lands on its own y.
+     */
+    .item > .label {
+      position: absolute;
+      top: calc(100% + 2px);
+      left: 50%;
+      transform: translateX(-50%);
+      white-space: nowrap;
+    }
+    /* Label-only items (showIcon: false) have no badge to hang under, so the
+       absolute label would drop to y + 2px on a zero-height item. Put it back
+       in flow so it becomes the item's box and centers on (x, y) as before. */
+    .label.inflow {
+      position: static;
+      transform: none;
     }
     .badge {
       width: 34px;
@@ -464,7 +544,39 @@ export class FloorplanCard extends LitElement {
     ha-icon {
       --mdc-icon-size: 22px;
     }
+    /* Icon motion while the entity is active (issue #48). */
+    ha-icon.anim-spin {
+      animation: fp-icon-spin 2s linear infinite;
+    }
+    ha-icon.anim-pulse {
+      animation: fp-icon-pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes fp-icon-spin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    @keyframes fp-icon-pulse {
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.4;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      ha-icon.anim-spin,
+      ha-icon.anim-pulse {
+        animation: none;
+      }
+    }
     .label {
+      /* Positioning (out-of-flow anchor + inflow fallback) lives in the
+         .item > .label rules above, from #41. */
       font-size: 12px;
       line-height: 1;
       padding: 1px 4px;

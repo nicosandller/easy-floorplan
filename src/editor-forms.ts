@@ -23,7 +23,13 @@ import {
   DEFAULT_TEXT_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
 } from "./types";
-import { defaultIcon, openingMotion, sliderStyleOf } from "./render";
+import {
+  DEFAULT_LABEL_SIZE,
+  defaultIcon,
+  normalizePlanRotation,
+  openingMotion,
+  sliderStyleOf,
+} from "./render";
 import { defaultItemAction } from "./actions";
 
 /** One ha-form schema item, extended with our label/helper (read by computeLabel). */
@@ -279,6 +285,17 @@ export function itemForm(it: FloorItem): FormSpec {
         opt("iconRipple", "Icon + ripple")
       ),
     },
+    {
+      name: "iconAnimation",
+      label: "Animate icon",
+      helper: "Plays only while the entity is active",
+      selector: dropdown(
+        opt("auto", "Auto (fan spins; media & vacuum pulse)"),
+        opt("none", "None"),
+        opt("spin", "Spin"),
+        opt("pulse", "Pulse")
+      ),
+    },
   ];
   if (display !== "badge") {
     fields.push({
@@ -290,6 +307,22 @@ export function itemForm(it: FloorItem): FormSpec {
   fields.push(
     { name: "showIcon", label: "Show icon", selector: { boolean: {} } },
     { name: "showState", label: "Show state", selector: { boolean: {} } },
+    {
+      name: "showName",
+      label: "Show name",
+      helper: "Adds the device's name to the label line",
+      selector: { boolean: {} },
+    }
+  );
+  // Label size only matters while a label line renders.
+  if (it.showName || (it.showState ?? it.kind === "sensor")) {
+    fields.push({
+      name: "labelSize",
+      label: "Label size",
+      selector: { number: { min: 8, max: 40, step: 1, mode: "slider", unit_of_measurement: "px" } },
+    });
+  }
+  fields.push(
     {
       name: "tap_action",
       label: "Tap action",
@@ -312,9 +345,12 @@ export function itemForm(it: FloorItem): FormSpec {
       size: it.size ?? DEFAULT_ITEM_SIZE,
       angle: it.angle ?? 0,
       display,
+      iconAnimation: it.iconAnimation ?? "auto",
       rippleSize: it.rippleSize ?? DEFAULT_RIPPLE_SIZE,
       showIcon: it.showIcon ?? true,
       showState: it.showState ?? false,
+      showName: it.showName ?? false,
+      labelSize: it.labelSize ?? DEFAULT_LABEL_SIZE,
       tap_action: it.tap_action,
       hold_action: it.hold_action,
       double_tap_action: it.double_tap_action,
@@ -433,6 +469,30 @@ export function projectForm(c: FloorplanCardConfig): FormSpec {
     ],
     data: { title: c.title ?? "", width: c.width, height: c.height, grid: c.grid ?? DEFAULT_GRID },
     toPatch: identity,
+  };
+}
+
+/**
+ * Display rotation (issue #33), a separate one-field form so the editor can
+ * render it as the very last Project row — it's a set-once option for wall
+ * tablets, not day-to-day editing, so it stays out of the way.
+ */
+export function projectRotationForm(c: FloorplanCardConfig): FormSpec {
+  return {
+    fields: [
+      {
+        name: "rotation",
+        label: "Rotate display",
+        helper: "Rotates the live card only — editing stays as drawn",
+        selector: dropdown(opt("0", "0°"), opt("90", "90°"), opt("180", "180°"), opt("270", "270°")),
+      },
+    ],
+    data: { rotation: String(normalizePlanRotation(c.rotation)) },
+    toPatch: (p) =>
+      "rotation" in p
+        ? // Stored as a number; 0 means "not rotated", so keep it out of the YAML.
+          { ...p, rotation: p.rotation === "0" ? undefined : Number(p.rotation) }
+        : p,
   };
 }
 

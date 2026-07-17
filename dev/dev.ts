@@ -187,6 +187,19 @@ const hass = {
         supported_features: 15,
       },
     },
+    // Icon-animation demo (issue #48): a running fan spins, a playing media
+    // player pulses. Flip their states in the console via setHassBinary /
+    // baseStates to watch the animation start and stop.
+    "fan.ceiling_fan": {
+      entity_id: "fan.ceiling_fan",
+      state: "on",
+      attributes: { friendly_name: "Ceiling Fan" },
+    },
+    "media_player.living_tv": {
+      entity_id: "media_player.living_tv",
+      state: "playing",
+      attributes: { friendly_name: "Living Room TV" },
+    },
     [SENSOR_TEMPERATURE]: {
       entity_id: SENSOR_TEMPERATURE,
       state: "17.94",
