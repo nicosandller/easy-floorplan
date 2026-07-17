@@ -9,7 +9,8 @@ import type {
   Tracker,
   RenderHass,
 } from "./types";
-import { FURNITURE_COLOR, DEFAULT_TRACKER_DOT_SIZE, getFloors, trackerAxisFraction } from "./types";
+import { FURNITURE_COLOR, DEFAULT_TRACKER_DOT_SIZE, DEFAULT_RIPPLE_SIZE, getFloors, trackerAxisFraction } from "./types";
+import { cssColorOr, cssNumber } from "./css-safe";
 
 export const WALL_THICKNESS = 8;
 
@@ -118,14 +119,13 @@ export function itemBadgeLabel(
 /**
  * Clamp a config `labelSize` to the editor's 8–40 px range at the render
  * sink. The editor already clamps, but a hand-edited / imported config
- * bypasses it — and this value lands in an inline `style` attribute, so a
- * string like `"20px;color:red"` must coerce to a plain number, never pass
- * through (review feedback on #62; same surface #65 hardens).
+ * bypasses it — and this value lands in an inline `style` attribute.
+ * Coercion goes through {@link cssNumber} (the shared style-sink guard from
+ * #65), so a string like `"20px;color:red"` becomes the default, never
+ * markup; this adds only the range clamp on top.
  */
 export function itemLabelSize(v: unknown): number {
-  const n = typeof v === "string" && v !== "" ? Number(v) : (v as number | undefined);
-  if (typeof n !== "number" || !Number.isFinite(n)) return DEFAULT_LABEL_SIZE;
-  return Math.min(40, Math.max(8, n));
+  return Math.min(40, Math.max(8, cssNumber(v, DEFAULT_LABEL_SIZE)));
 }
 
 /** Default mdi icon per item kind, used when neither config nor entity supplies one. */
@@ -598,7 +598,8 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   const half = o.length / 2;
   const cutH = WALL_THICKNESS + 4;
   // The moving parts take the accent color when actively open (sensor-driven).
-  const tone = active ? accent : color;
+  // Sanitised: color/accent are config-supplied and land in `style="stroke/fill:…"`.
+  const tone = cssColorOr(active ? accent : color, "var(--primary-color, #03a9f4)");
   // Fraction open (0..1) drives partial swing/slide. Defaults to the binary
   // `open` so callers that don't pass `amount` render exactly as before.
   const amt = Math.max(0, Math.min(1, style.amount ?? (open ? 1 : 0)));
@@ -1096,7 +1097,7 @@ export function renderRipple(
   return html`
     <div
       class="ripple ${active ? "active" : ""}"
-      style="width:${sizePx}px;height:${sizePx}px;--fp-ripple-color:${color};"
+      style="width:${cssNumber(sizePx, DEFAULT_RIPPLE_SIZE)}px;height:${cssNumber(sizePx, DEFAULT_RIPPLE_SIZE)}px;--fp-ripple-color:${cssColorOr(color, "var(--primary-color, #03a9f4)")};"
     >
       <span class="dot"></span>
       ${Array.from(

@@ -21,6 +21,8 @@ import {
   DEFAULT_GRID,
   DEFAULT_ITEM_SIZE,
   DEFAULT_TEXT_SIZE,
+  DEFAULT_WIDTH,
+  DEFAULT_HEIGHT,
   DEFAULT_RIPPLE_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
   FURNITURE_DEFAULT_SIZE,
@@ -55,6 +57,7 @@ import {
   collectWatchedEntities,
   hassRenderInputsChanged,
 } from "./render";
+import { cssColorOr, cssNumber } from "./css-safe";
 import {
   ENDPOINT_SNAP,
   applyDelta,
@@ -2058,7 +2061,8 @@ export class FloorplanCardEditor extends LitElement {
         <div class="workspace">
         <div class="canvas-outer">
         <div class="canvas-wrap" tabindex="0" @wheel=${this._onCanvasWheel}>
-          <div class="stage" style="aspect-ratio: ${c.width} / ${c.height}; width:${this._zoom * 100}%;">
+          <div class="stage" style="aspect-ratio: ${cssNumber(c.width, DEFAULT_WIDTH)} / ${cssNumber(
+            c.height, DEFAULT_HEIGHT)}; width:${this._zoom * 100}%;">
             <svg
               viewBox="0 0 ${c.width} ${c.height}"
               preserveAspectRatio="none"
@@ -2553,7 +2557,7 @@ export class FloorplanCardEditor extends LitElement {
     // Pass the registry icon here too, so the editor preview matches the card.
     const icon = resolveItemIcon(it, st, it.entity ? this.hass?.entities?.[it.entity]?.icon : undefined);
     const label = it.name || it.entity || it.kind;
-    const size = it.size ?? DEFAULT_ITEM_SIZE;
+    const size = cssNumber(it.size, DEFAULT_ITEM_SIZE);
     const showIcon = it.showIcon ?? true;
     const display = it.display ?? "badge";
     const rippleColor = it.rippleColor ?? "var(--primary-color, #03a9f4)";
@@ -2565,7 +2569,7 @@ export class FloorplanCardEditor extends LitElement {
     const anim = resolveIconAnimation(it, st?.state);
     const badge = html`<div
       class="badge ${showIcon ? "" : "ghost"}"
-      style="width:${size}px;height:${size}px;transform:rotate(${it.angle ?? 0}deg);"
+      style="width:${size}px;height:${size}px;transform:rotate(${cssNumber(it.angle, 0)}deg);"
     >
       <ha-icon
         class=${anim ? `anim-${anim}` : ""}
@@ -2610,9 +2614,9 @@ export class FloorplanCardEditor extends LitElement {
       <div
         class="edit-text ${selected ? "selected" : ""}"
         style="left:${(t.x / c.width) * 100}%; top:${(t.y / c.height) * 100}%;
-               font-size:${t.size ?? DEFAULT_TEXT_SIZE}px;
-               color:${t.color ?? "var(--primary-text-color)"};
-               transform:translate(-50%,-50%) rotate(${t.angle ?? 0}deg);"
+               font-size:${cssNumber(t.size, DEFAULT_TEXT_SIZE)}px;
+               color:${cssColorOr(t.color, "var(--primary-text-color)")};
+               transform:translate(-50%,-50%) rotate(${cssNumber(t.angle, 0)}deg);"
         @pointerdown=${(e: PointerEvent) => this._onOverlayDown(e, { kind: "text", id: t.id })}
         @pointermove=${this._onOverlayMove}
         @pointerup=${this._onOverlayUp}

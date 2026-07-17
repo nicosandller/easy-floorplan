@@ -2,6 +2,7 @@ import { LitElement, html, css, svg, nothing, type TemplateResult, type Property
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor } from "./types";
+import { cssColorOr, cssNumber } from "./css-safe";
 import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
@@ -177,7 +178,7 @@ export class FloorplanCard extends LitElement {
   }
 
   private _renderBadge(item: FloorItem): TemplateResult {
-    const size = item.size ?? DEFAULT_ITEM_SIZE;
+    const size = cssNumber(item.size, DEFAULT_ITEM_SIZE);
     // Animation goes on the inner ha-icon, not the badge: the badge carries
     // the user's `angle` rotation, and a spin on the same element would
     // overwrite it.
@@ -188,7 +189,7 @@ export class FloorplanCard extends LitElement {
     return html`
       <div
         class="badge"
-        style="width:${size}px;height:${size}px;transform:rotate(${item.angle ?? 0}deg);"
+        style="width:${size}px;height:${size}px;transform:rotate(${cssNumber(item.angle, 0)}deg);"
       >
         <ha-icon
           class=${anim ? `anim-${anim}` : ""}
@@ -258,9 +259,9 @@ export class FloorplanCard extends LitElement {
       <div
         class="text"
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
-               font-size:${t.size ?? DEFAULT_TEXT_SIZE}px;
-               color:${t.color ?? "var(--primary-text-color)"};
-               transform:translate(-50%,-50%) rotate(${t.angle ?? 0}deg);"
+               font-size:${cssNumber(t.size, DEFAULT_TEXT_SIZE)}px;
+               color:${cssColorOr(t.color, "var(--primary-text-color)")};
+               transform:translate(-50%,-50%) rotate(${cssNumber(t.angle, 0)}deg);"
       >
         ${t.text}
       </div>
@@ -279,14 +280,14 @@ export class FloorplanCard extends LitElement {
     // transform below; the HTML overlay remaps per point in _renderItem /
     // _renderText. Both must use the same mapping (rotatePlanPoint).
     const rot = normalizePlanRotation(c.rotation);
-    const dims = rotatedCanvasSize(c.width, c.height, rot);
+    const dims = rotatedCanvasSize(cssNumber(c.width, DEFAULT_WIDTH), cssNumber(c.height, DEFAULT_HEIGHT), rot);
     const rotTransform = planRotationTransform(c.width, c.height, rot);
     return html`
       <ha-card .header=${c.title ?? nothing}>
         <div
           class="stage"
-          style="aspect-ratio: ${dims.w} / ${dims.h}; background:${c.background ??
-          "var(--card-background-color, #fff)"};"
+          style="aspect-ratio: ${dims.w} / ${dims.h}; background:${cssColorOr(
+          c.background, "var(--card-background-color, #fff)")};"
         >
 <!-- preserveAspectRatio="none" is correct here, and it took a wrong fix to
                see why. .stage pins aspect-ratio: width / height inline, so the
