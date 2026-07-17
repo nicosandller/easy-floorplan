@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest";
-import { nearestCorner, snapWallEnd, elementsInRect, applyDelta } from "./editor-geometry";
+import {
+  nearestCorner,
+  snapWallEnd,
+  elementsInRect,
+  applyDelta,
+  attachedCorners,
+} from "./editor-geometry";
 import type { OrigPos } from "./editor-geometry";
-import type { Floor } from "./types";
+import type { Floor, Wall } from "./types";
 
 const walls = [{ x1: 0, y1: 0, x2: 100, y2: 0 }];
 
@@ -104,5 +110,59 @@ describe("applyDelta", () => {
     const orig = new Map<string, OrigPos>([["opening:o", { kind: "pt", x: 10, y: 10 }]]);
     const out = applyDelta(f, 5, 5, orig);
     expect(out.openings![0]).toMatchObject({ x: 15, y: 15 });
+  });
+});
+
+describe("attachedCorners (issue #30: stretch-drag shared room corners)", () => {
+  // A closed rectangle drawn as four walls sharing corners.
+  const room: Wall[] = [
+    { id: "n", x1: 0, y1: 0, x2: 100, y2: 0 },
+    { id: "e", x1: 100, y1: 0, x2: 100, y2: 80 },
+    { id: "s", x1: 100, y1: 80, x2: 0, y2: 80 },
+    { id: "w", x1: 0, y1: 80, x2: 0, y2: 0 },
+  ];
+
+  it("endpoint drag: finds only the walls sharing the grabbed corner", () => {
+    // Grabbing the north wall's second endpoint (100, 0) — shared with east's first.
+    const out = attachedCorners(room, "n", 2);
+    expect(out).toEqual([{ id: "e", end: 1, which: 2, x0: 100, y0: 0 }]);
+  });
+
+  it("whole-wall drag: finds neighbors at both corners, tagged per corner", () => {
+    const out = attachedCorners(room, "n");
+    expect(out).toEqual([
+      { id: "e", end: 1, which: 2, x0: 100, y0: 0 },
+      { id: "w", end: 2, which: 1, x0: 0, y0: 0 },
+    ]);
+  });
+
+  it("tolerates near-coincident corners within the epsilon only", () => {
+    const sloppy: Wall[] = [
+      { id: "a", x1: 0, y1: 0, x2: 100, y2: 0 },
+      { id: "b", x1: 100.5, y1: 0.5, x2: 100, y2: 80 }, // ~0.7 away — attached
+      { id: "c", x1: 103, y1: 0, x2: 100, y2: 80 }, // 3 away — separate wall
+    ];
+    const out = attachedCorners(sloppy, "a", 2);
+    expect(out).toEqual([{ id: "b", end: 1, which: 2, x0: 100.5, y0: 0.5 }]);
+  });
+
+  it("returns undefined for a free-standing wall or unknown id", () => {
+    expect(attachedCorners(room, "missing")).toBeUndefined();
+    const lone: Wall[] = [
+      { id: "a", x1: 0, y1: 0, x2: 100, y2: 0 },
+      { id: "b", x1: 500, y1: 500, x2: 600, y2: 500 },
+    ];
+    expect(attachedCorners(lone, "a")).toBeUndefined();
+  });
+
+  it("can attach both endpoints of the same neighbor (duplicated wall)", () => {
+    const doubled: Wall[] = [
+      { id: "a", x1: 0, y1: 0, x2: 100, y2: 0 },
+      { id: "b", x1: 0, y1: 0, x2: 100, y2: 0 },
+    ];
+    expect(attachedCorners(doubled, "a")).toEqual([
+      { id: "b", end: 1, which: 1, x0: 0, y0: 0 },
+      { id: "b", end: 2, which: 2, x0: 100, y0: 0 },
+    ]);
   });
 });

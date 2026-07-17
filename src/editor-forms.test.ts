@@ -157,6 +157,36 @@ describe("itemForm", () => {
     ).toContain("rippleSize");
   });
 
+  it("offers the icon-animation dropdown defaulting to auto", () => {
+    const f = itemForm(item).fields.find((x) => x.name === "iconAnimation");
+    expect(f).toBeDefined();
+    const opts = (f!.selector as { select: { options: { value: string }[] } }).select.options.map(
+      (o) => o.value
+    );
+    expect(opts).toEqual(["auto", "none", "spin", "pulse"]);
+    expect(itemForm(item).data.iconAnimation).toBe("auto");
+    expect(itemForm({ ...item, iconAnimation: "spin" } as FloorItem).data.iconAnimation).toBe(
+      "spin"
+    );
+  });
+
+  it("offers Show name, and Label size only while a label line renders (#61, #59)", () => {
+    // A light shows no label by default → no size slider.
+    const light = itemForm(item);
+    expect(light.fields.map((x) => x.name)).toContain("showName");
+    expect(light.fields.map((x) => x.name)).not.toContain("labelSize");
+    // Sensors label by default; showName or showState also reveal the slider.
+    const sensor = itemForm({ ...item, entity: "sensor.a", kind: "sensor" } as FloorItem);
+    expect(sensor.fields.map((x) => x.name)).toContain("labelSize");
+    const namedLight = itemForm({ ...item, showName: true } as FloorItem);
+    expect(namedLight.fields.map((x) => x.name)).toContain("labelSize");
+    expect(namedLight.data.showName).toBe(true);
+    expect(namedLight.data.labelSize).toBe(12);
+    expect(
+      itemForm({ ...item, showName: true, labelSize: 20 } as FloorItem).data.labelSize
+    ).toBe(20);
+  });
+
   it("offers the three action fields with behavior-preserving defaults", () => {
     const fs = itemForm(item).fields;
     expect(fs.find((x) => x.name === "tap_action")!.selector).toEqual({

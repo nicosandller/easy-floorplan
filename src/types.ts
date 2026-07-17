@@ -134,6 +134,14 @@ export interface FloorItem {
   name?: string;
   /** Show the entity state next to the icon. */
   showState?: boolean;
+  /**
+   * Show the device's name in the label line (issue #61) — the `name`
+   * override, else the entity's friendly name. Combines with `showState` as
+   * "Name · state". Default false.
+   */
+  showName?: boolean;
+  /** Label line font size in pixels (issue #59). Default 12. */
+  labelSize?: number;
   /** Show the icon badge. When false only the state/label shows. Default true. */
   showIcon?: boolean;
   /** Badge diameter in pixels. Default 34. */
@@ -142,6 +150,15 @@ export interface FloorItem {
   angle?: number;
   /** How the device is drawn. Default "badge". */
   display?: ItemDisplay;
+  /**
+   * Animate the icon while the entity is active (issue #48). "auto" (the
+   * default) applies HA-like defaults per domain — a running fan spins; a
+   * media player or vacuum pulses while active (for a media player that
+   * means `playing` or plain `on`, matching the badge highlight);
+   * "spin"/"pulse" force that animation (still only while active); "none"
+   * disables it.
+   */
+  iconAnimation?: IconAnimation;
   /** Ripple ring color (CSS/hex). Falls back to the primary color. */
   rippleColor?: string;
   /** Max ripple ring diameter in pixels. Default 80. */
@@ -153,6 +170,8 @@ export interface FloorItem {
 }
 
 export type ItemDisplay = "badge" | "ripple" | "iconRipple";
+
+export type IconAnimation = "auto" | "none" | "spin" | "pulse";
 
 /**
  * A Lovelace action (tap/hold/double_tap). Typed loosely on purpose: HA has

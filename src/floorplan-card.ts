@@ -1,5 +1,6 @@
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
+import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor } from "./types";
 import { cssColorOr, cssNumber } from "./css-safe";
 import {
@@ -23,10 +24,13 @@ import {
   renderTracker,
   trackerSensorReading,
   entityIsActive,
-  itemStateText,
+  itemBadgeLabel,
+  itemLabelSize,
   hassRenderInputsChanged,
   collectWatchedEntities,
   resolveItemIcon,
+  resolveIconAnimation,
+  itemIconSize,
   normalizePlanRotation,
   rotatedCanvasSize,
   rotatePlanPoint,
@@ -175,14 +179,22 @@ export class FloorplanCard extends LitElement {
 
   private _renderBadge(item: FloorItem): TemplateResult {
     const size = cssNumber(item.size, DEFAULT_ITEM_SIZE);
+    // Animation goes on the inner ha-icon, not the badge: the badge carries
+    // the user's `angle` rotation, and a spin on the same element would
+    // overwrite it.
+    const anim = resolveIconAnimation(
+      item,
+      item.entity ? this.hass?.states[item.entity]?.state : undefined,
+    );
     return html`
       <div
         class="badge"
         style="width:${size}px;height:${size}px;transform:rotate(${cssNumber(item.angle, 0)}deg);"
       >
         <ha-icon
+          class=${anim ? `anim-${anim}` : ""}
           icon=${this._itemIcon(item)}
-          style="--mdc-icon-size:${Math.round(size * 0.62)}px;"
+          style="--mdc-icon-size:${itemIconSize(size)}px;"
         ></ha-icon>
       </div>
     `;
@@ -190,7 +202,9 @@ export class FloorplanCard extends LitElement {
 
   private _renderItem(item: FloorItem, c: FloorplanCardConfig, rot: PlanRotation): TemplateResult {
     const on = this._isOn(item);
-    const showState = item.showState ?? item.kind === "sensor";
+    // Name/state composition lives in itemBadgeLabel, including #39's
+    // no-entity guard (an unbound device gets no state line).
+    const labelText = itemBadgeLabel(this.hass, item);
     const showIcon = item.showIcon ?? true;
     const display = item.display ?? "badge";
     const rippleColor = item.rippleColor ?? "var(--primary-color, #03a9f4)";
@@ -227,9 +241,11 @@ export class FloorplanCard extends LitElement {
         })}
       >
         ${visual}
-        ${showState
-          ? html`<span class="label ${visual === nothing ? "inflow" : ""}"
-              >${itemStateText(this.hass, item)}</span
+        ${labelText
+          ? html`<span
+              class="label ${visual === nothing ? "inflow" : ""}"
+              style="font-size:${itemLabelSize(item.labelSize)}px;"
+              >${labelText}</span
             >`
           : nothing}
       </div>
@@ -302,7 +318,14 @@ export class FloorplanCard extends LitElement {
                       class="wall" stroke-width=${WALL_THICKNESS} stroke-linecap="round" />`
               )}
             </g>
-            ${active.openings.map((o) => {
+            ${repeat(
+              // Keyed by id: switching floors must create fresh DOM nodes.
+              // Unkeyed, Lit morphs floor A's openings into floor B's, and the
+              // 0.5s leaf/panel transitions animate the leftover state — a
+              // window briefly plays a door swing (issue #50).
+              active.openings,
+              (o, i) => o.id || i,
+              (o) => {
               const amount = this._openingAmount(o);
               const symbol = renderOpening(o, {
                 color: "var(--primary-text-color)",
@@ -324,7 +347,10 @@ export class FloorplanCard extends LitElement {
                         transform="rotate(${o.angle} ${o.x} ${o.y})" />
                 </g>`;
             })}
-            ${(active.trackers ?? []).map((tr) =>
+            ${repeat(
+              active.trackers ?? [],
+              (tr, i) => tr.id || i,
+              (tr) =>
               renderTracker(tr, {
                 editing: false,
                 xReading: trackerSensorReading(this.hass?.states, tr.xSensor?.entity),
@@ -337,7 +363,14 @@ export class FloorplanCard extends LitElement {
           </svg>
           <div class="items">
             ${active.texts.map((t) => this._renderText(t, c, rot))}
-            ${active.items.filter((it) => it.entity).map((it) => this._renderItem(it, c, rot))}
+            ${repeat(
+              // No entity filter: devices that exist physically but have no HA
+              // entity still deserve their badge (issue #39). Keyed by id so a
+              // floor switch builds fresh DOM (see the openings comment).
+              active.items,
+              (it, i) => it.id || i,
+              (it) => this._renderItem(it, c, rot)
+            )}
           </div>
           ${floors.length > 1 ? this._renderFloorSwitcher(floors, active) : nothing}
         </div>
@@ -503,7 +536,39 @@ export class FloorplanCard extends LitElement {
     ha-icon {
       --mdc-icon-size: 22px;
     }
+    /* Icon motion while the entity is active (issue #48). */
+    ha-icon.anim-spin {
+      animation: fp-icon-spin 2s linear infinite;
+    }
+    ha-icon.anim-pulse {
+      animation: fp-icon-pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes fp-icon-spin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    @keyframes fp-icon-pulse {
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.4;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      ha-icon.anim-spin,
+      ha-icon.anim-pulse {
+        animation: none;
+      }
+    }
     .label {
+      /* Positioning (out-of-flow anchor + inflow fallback) lives in the
+         .item > .label rules above, from #41. */
       font-size: 12px;
       line-height: 1;
       padding: 1px 4px;

@@ -23,11 +23,15 @@ import {
   openingIsActive,
   entityStateText,
   itemStateText,
+  itemBadgeLabel,
+  itemLabelSize,
   hassRenderInputsChanged,
   collectWatchedEntities,
   isEntityOn,
   entityIsActive,
   resolveItemIcon,
+  resolveIconAnimation,
+  itemIconSize,
   normalizePlanRotation,
   rotatedCanvasSize,
   rotatePlanPoint,
@@ -502,6 +506,76 @@ describe("itemStateText", () => {
   });
 });
 
+describe("itemBadgeLabel (issues #61, #59)", () => {
+  const named = () => {
+    const h = livingArea();
+    (h.states[TEMP]!.attributes as Record<string, unknown>).friendly_name = "Living Temp";
+    return h;
+  };
+
+  it("keeps the historic default: sensors show state, nothing else shows", () => {
+    expect(itemBadgeLabel(named(), { entity: TEMP, kind: "sensor" })).toBe("17.9 °C");
+    expect(itemBadgeLabel(named(), { entity: TEMP, kind: "light" })).toBe("");
+  });
+
+  it("showName renders the friendly name; a config name override wins", () => {
+    expect(itemBadgeLabel(named(), { entity: TEMP, kind: "light", showName: true })).toBe(
+      "Living Temp",
+    );
+    expect(
+      itemBadgeLabel(named(), { entity: TEMP, kind: "light", showName: true, name: "Lamp" }),
+    ).toBe("Lamp");
+  });
+
+  it("falls back to the entity id when there is no friendly name", () => {
+    expect(itemBadgeLabel(livingArea(), { entity: TEMP, kind: "light", showName: true })).toBe(
+      TEMP,
+    );
+  });
+
+  it("name and state combine as one line", () => {
+    expect(itemBadgeLabel(named(), { entity: TEMP, kind: "sensor", showName: true })).toBe(
+      "Living Temp · 17.9 °C",
+    );
+    expect(
+      itemBadgeLabel(named(), { entity: TEMP, kind: "light", showName: true, showState: true }),
+    ).toBe("Living Temp · 17.9 °C");
+  });
+
+  it("showState: false silences even a sensor; name alone still shows", () => {
+    expect(itemBadgeLabel(named(), { entity: TEMP, kind: "sensor", showState: false })).toBe("");
+    expect(
+      itemBadgeLabel(named(), { entity: TEMP, kind: "sensor", showState: false, showName: true }),
+    ).toBe("Living Temp");
+  });
+
+  it("no entity, no state line (issue #39) — only a configured name can label it", () => {
+    expect(itemBadgeLabel(named(), { entity: "", kind: "sensor" })).toBe("");
+    expect(itemBadgeLabel(named(), { entity: "", kind: "sensor", showName: true })).toBe("");
+    expect(
+      itemBadgeLabel(named(), { entity: "", kind: "sensor", showName: true, name: "Detector" }),
+    ).toBe("Detector");
+  });
+});
+
+describe("itemLabelSize (review on #62: clamp at the style sink)", () => {
+  it("clamps to the editor's 8–40 range and defaults when unset", () => {
+    expect(itemLabelSize(undefined)).toBe(12);
+    expect(itemLabelSize(20)).toBe(20);
+    expect(itemLabelSize(4)).toBe(8);
+    expect(itemLabelSize(999)).toBe(40);
+  });
+
+  it("coerces numeric strings and neutralizes style-injection payloads", () => {
+    expect(itemLabelSize("20")).toBe(20);
+    // A config string must never pass through to the style attribute.
+    expect(itemLabelSize("20px;color:red")).toBe(12);
+    expect(itemLabelSize("9;position:fixed;inset:0;background:red")).toBe(12);
+    expect(itemLabelSize(Number.NaN)).toBe(12);
+    expect(itemLabelSize(null)).toBe(12);
+  });
+});
+
 describe("hassRenderInputsChanged", () => {
   const watched = [TEMP];
   const tempState = { entity_id: TEMP, state: "17.94" };
@@ -769,6 +843,80 @@ describe("entityIsActive — domains that never say \"on\"", () => {
     expect(entityDefaultIcon("lock.front", undefined, entityIsActive("lock.front", "locked"))).toBe(
       "mdi:lock",
     );
+  });
+});
+
+describe("resolveIconAnimation (issue #48)", () => {
+  it("auto: a running fan spins, playback and a cleaning vacuum pulse", () => {
+    expect(resolveIconAnimation({ entity: "fan.ceiling" }, "on")).toBe("spin");
+    expect(resolveIconAnimation({ entity: "media_player.tv" }, "playing")).toBe("pulse");
+    expect(resolveIconAnimation({ entity: "vacuum.robo" }, "cleaning")).toBe("pulse");
+  });
+
+  it("auto: everything else stays still, even when active", () => {
+    expect(resolveIconAnimation({ entity: "light.a" }, "on")).toBeUndefined();
+    expect(resolveIconAnimation({ entity: "switch.a" }, "on")).toBeUndefined();
+  });
+
+  it("never animates an inactive entity — including forced spin/pulse", () => {
+    expect(resolveIconAnimation({ entity: "fan.ceiling" }, "off")).toBeUndefined();
+    expect(
+      resolveIconAnimation({ entity: "light.a", iconAnimation: "spin" }, "off"),
+    ).toBeUndefined();
+    expect(
+      resolveIconAnimation({ entity: "media_player.tv", iconAnimation: "pulse" }, "paused"),
+    ).toBeUndefined();
+  });
+
+  it("fail-closed: unavailable/unknown/missing state never animates", () => {
+    expect(resolveIconAnimation({ entity: "fan.ceiling" }, "unavailable")).toBeUndefined();
+    expect(resolveIconAnimation({ entity: "fan.ceiling" }, "unknown")).toBeUndefined();
+    expect(resolveIconAnimation({ entity: "fan.ceiling" }, undefined)).toBeUndefined();
+    expect(resolveIconAnimation({}, "on")).toBeUndefined();
+  });
+
+  it("explicit spin/pulse override the domain default while active", () => {
+    expect(resolveIconAnimation({ entity: "light.a", iconAnimation: "spin" }, "on")).toBe("spin");
+    expect(resolveIconAnimation({ entity: "fan.ceiling", iconAnimation: "pulse" }, "on")).toBe(
+      "pulse",
+    );
+  });
+
+  it("none disables the domain default", () => {
+    expect(resolveIconAnimation({ entity: "fan.ceiling", iconAnimation: "none" }, "on")).toBeUndefined();
+  });
+});
+
+describe("resolveItemIcon without an entity (issue #39)", () => {
+  it("falls back to the kind default when no entity is bound", () => {
+    expect(resolveItemIcon({ entity: "", kind: "sensor" }, undefined)).toBe(
+      defaultIcon("sensor"),
+    );
+    expect(resolveItemIcon({ kind: "light" }, undefined)).toBe(defaultIcon("light"));
+  });
+
+  it("still honors an explicit icon override", () => {
+    expect(resolveItemIcon({ entity: "", kind: "sensor", icon: "mdi:smoke-detector" }, undefined)).toBe(
+      "mdi:smoke-detector",
+    );
+  });
+});
+
+describe("itemIconSize (issue #39: off-center glyphs at small sizes)", () => {
+  it("keeps the familiar 22px icon for the 34px default badge", () => {
+    expect(itemIconSize(34)).toBe(22);
+  });
+
+  it("matches the badge's parity so centering slack is a whole pixel per side", () => {
+    for (const badge of [16, 18, 20, 24, 28, 34, 48]) {
+      expect((badge - itemIconSize(badge)) % 2, `badge ${badge}`).toBe(0);
+    }
+    // 18px badge: naive round(18 * 0.62) = 11 leaves a half-pixel; we want 12.
+    expect(itemIconSize(18)).toBe(12);
+  });
+
+  it("never collapses below 2px", () => {
+    expect(itemIconSize(1)).toBeGreaterThanOrEqual(2);
   });
 });
 

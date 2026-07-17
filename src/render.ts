@@ -4,6 +4,7 @@ import type {
   SectionalHand,
   Opening,
   ItemKind,
+  IconAnimation,
   Furniture,
   Tracker,
   RenderHass,
@@ -81,6 +82,50 @@ export function itemStateText(
   const primary = entityStateText(hass, item.entity);
   if (!item.secondaryEntity) return primary;
   return `${primary} · ${entityStateText(hass, item.secondaryEntity)}`;
+}
+
+/** Default label font size (px) for an item's name/state line. */
+export const DEFAULT_LABEL_SIZE = 12;
+
+/**
+ * The label line under an item's badge, or "" for none: the name (issue #61)
+ * and/or the state, per the item's toggles. `showState` keeps its historic
+ * default (sensors only); `showName` defaults off. Both together read
+ * "Name · state". No entity, no state line (issue #39) — an unbound device's
+ * label can only be its configured name.
+ */
+export function itemBadgeLabel(
+  hass: RenderHass | undefined,
+  item: {
+    entity: string;
+    secondaryEntity?: string;
+    name?: string;
+    kind: ItemKind;
+    showName?: boolean;
+    showState?: boolean;
+  },
+): string {
+  const parts: string[] = [];
+  if (item.showName) {
+    const friendly = hass?.states[item.entity]?.attributes?.friendly_name as string | undefined;
+    const name = item.name || friendly || item.entity;
+    if (name) parts.push(name);
+  }
+  if (!!item.entity && (item.showState ?? item.kind === "sensor"))
+    parts.push(itemStateText(hass, item));
+  return parts.join(" · ");
+}
+
+/**
+ * Clamp a config `labelSize` to the editor's 8–40 px range at the render
+ * sink. The editor already clamps, but a hand-edited / imported config
+ * bypasses it — and this value lands in an inline `style` attribute.
+ * Coercion goes through {@link cssNumber} (the shared style-sink guard from
+ * #65), so a string like `"20px;color:red"` becomes the default, never
+ * markup; this adds only the range clamp on top.
+ */
+export function itemLabelSize(v: unknown): number {
+  return Math.min(40, Math.max(8, cssNumber(v, DEFAULT_LABEL_SIZE)));
 }
 
 /** Default mdi icon per item kind, used when neither config nor entity supplies one. */
@@ -228,6 +273,35 @@ export function entityIsActive(entityId: string | undefined, state: string | und
 }
 
 /**
+ * Domains whose icons move by default while active (issue #48), mirroring the
+ * feel of HA's own Tile card: a running fan spins; playback and a working
+ * vacuum breathe. Everything else stays still unless the config asks.
+ */
+const AUTO_ICON_ANIMATION: Record<string, "spin" | "pulse"> = {
+  fan: "spin",
+  media_player: "pulse",
+  vacuum: "pulse",
+};
+
+/**
+ * Which animation an item's icon should play right now, or undefined for
+ * none. Shared by card and editor. Never animates an inactive (or
+ * unavailable) entity — including when the config forces "spin"/"pulse": a
+ * spinning fan icon is a claim that the fan is running, so it obeys the same
+ * fail-closed rule as the active highlight ({@link entityIsActive}).
+ */
+export function resolveIconAnimation(
+  item: { entity?: string; iconAnimation?: IconAnimation },
+  state: string | undefined,
+): "spin" | "pulse" | undefined {
+  const mode = item.iconAnimation ?? "auto";
+  if (mode === "none") return undefined;
+  if (!entityIsActive(item.entity, state)) return undefined;
+  if (mode === "spin" || mode === "pulse") return mode;
+  return AUTO_ICON_ANIMATION[item.entity?.split(".")[0] ?? ""];
+}
+
+/**
  * Icon implied by an entity's `device_class` — HA's "show as" setting (issue
  * #29). A `binary_sensor` shown as a Lock gets `mdi:lock` / `mdi:lock-open`,
  * matching what HA itself renders. Returns `undefined` when the domain /
@@ -272,11 +346,14 @@ export function entityDefaultIcon(
  * takes the state object, not `hass`.
  */
 export function resolveItemIcon(
-  item: { entity: string; kind: ItemKind; icon?: string },
+  item: { entity?: string; kind: ItemKind; icon?: string },
   st: { state: string; attributes: Record<string, unknown> } | undefined,
   registryIcon?: string,
 ): string {
   if (item.icon) return item.icon;
+  // No entity bound (issue #39: devices that exist physically but not in HA):
+  // nothing to derive from, fall straight through to the kind default.
+  if (!item.entity) return defaultIcon(item.kind);
   if (registryIcon) return registryIcon;
   const attrIcon = st?.attributes?.icon as string | undefined;
   if (attrIcon) return attrIcon;
@@ -287,6 +364,20 @@ export function resolveItemIcon(
       entityIsActive(item.entity, st?.state),
     ) ?? defaultIcon(item.kind)
   );
+}
+
+/**
+ * Icon size for an item badge, shared by card and editor. ~62% of the badge,
+ * nudged to the badge's parity so the flex-centering slack on each side is a
+ * whole pixel — an 11px icon in an 18px badge sits on a half-pixel and the
+ * glyph renders visibly off-center at small sizes (issue #39). The 34px
+ * default badge still gets its familiar 22px icon.
+ */
+export function itemIconSize(badgeSize: number): number {
+  const b = Math.round(badgeSize);
+  let s = Math.round(b * 0.62);
+  if (s % 2 !== b % 2) s += 1;
+  return Math.max(2, s);
 }
 
 /** Infer a sensible item kind from an entity id's domain. */
