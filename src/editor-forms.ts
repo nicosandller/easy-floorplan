@@ -277,6 +277,17 @@ export function itemForm(it: FloorItem): FormSpec {
         opt("iconRipple", "Icon + ripple")
       ),
     },
+    {
+      name: "iconAnimation",
+      label: "Animate icon",
+      helper: "Plays only while the entity is active",
+      selector: dropdown(
+        opt("auto", "Auto (fan spins; media & vacuum pulse)"),
+        opt("none", "None"),
+        opt("spin", "Spin"),
+        opt("pulse", "Pulse")
+      ),
+    },
   ];
   if (display !== "badge") {
     fields.push({
@@ -326,6 +337,7 @@ export function itemForm(it: FloorItem): FormSpec {
       size: it.size ?? DEFAULT_ITEM_SIZE,
       angle: it.angle ?? 0,
       display,
+      iconAnimation: it.iconAnimation ?? "auto",
       rippleSize: it.rippleSize ?? DEFAULT_RIPPLE_SIZE,
       showIcon: it.showIcon ?? true,
       showState: it.showState ?? false,

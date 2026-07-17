@@ -158,6 +158,13 @@ By default it shows an icon badge:
   still wins.
 - **Make it yours** — override the **icon** (with autocomplete + live preview), set a
   custom **name**, change the **size**, **rotate** it, or hide the icon entirely.
+- **Icons that move** — while an entity is active its icon can animate, the way
+  Home Assistant's own Tile card does it: by default a running **fan spins** and an
+  active **media player** (playing, or simply on) or **vacuum** (cleaning /
+  returning) **pulses**. The **Animate icon**
+  dropdown per device switches to `none`, or forces `spin` / `pulse` on any entity
+  (a spinning icon still only plays while the entity is actually active — an
+  unavailable fan never spins). Respects the OS *reduced motion* preference.
 - **Label line** — **Show state** displays the live value (sensors do this by
   default); **Show name** adds the device's name — handy for a panel of look-alike
   buttons where a state would say nothing. Both together read `Name · state`, and
@@ -415,6 +422,7 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | `size`        | number                                 | `34`         | Icon badge diameter (px).                              |
 | `angle`       | number                                 | `0`          | Icon rotation (deg).                                   |
 | `display`     | `badge` \| `ripple` \| `iconRipple`    | `badge`      | How the device is drawn.                               |
+| `iconAnimation` | `auto` \| `none` \| `spin` \| `pulse` | `auto`       | Animate the icon while active. `auto`: fan spins; media player / vacuum pulse. |
 | `rippleColor` | string                                 | primary color| Ripple ring color (ripple modes).                     |
 | `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
 | `showIcon`    | boolean                                | `true`       | Show the icon badge.                                   |

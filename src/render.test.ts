@@ -30,6 +30,7 @@ import {
   isEntityOn,
   entityIsActive,
   resolveItemIcon,
+  resolveIconAnimation,
   itemIconSize,
   normalizePlanRotation,
   rotatedCanvasSize,
@@ -842,6 +843,47 @@ describe("entityIsActive — domains that never say \"on\"", () => {
     expect(entityDefaultIcon("lock.front", undefined, entityIsActive("lock.front", "locked"))).toBe(
       "mdi:lock",
     );
+  });
+});
+
+describe("resolveIconAnimation (issue #48)", () => {
+  it("auto: a running fan spins, playback and a cleaning vacuum pulse", () => {
+    expect(resolveIconAnimation({ entity: "fan.ceiling" }, "on")).toBe("spin");
+    expect(resolveIconAnimation({ entity: "media_player.tv" }, "playing")).toBe("pulse");
+    expect(resolveIconAnimation({ entity: "vacuum.robo" }, "cleaning")).toBe("pulse");
+  });
+
+  it("auto: everything else stays still, even when active", () => {
+    expect(resolveIconAnimation({ entity: "light.a" }, "on")).toBeUndefined();
+    expect(resolveIconAnimation({ entity: "switch.a" }, "on")).toBeUndefined();
+  });
+
+  it("never animates an inactive entity — including forced spin/pulse", () => {
+    expect(resolveIconAnimation({ entity: "fan.ceiling" }, "off")).toBeUndefined();
+    expect(
+      resolveIconAnimation({ entity: "light.a", iconAnimation: "spin" }, "off"),
+    ).toBeUndefined();
+    expect(
+      resolveIconAnimation({ entity: "media_player.tv", iconAnimation: "pulse" }, "paused"),
+    ).toBeUndefined();
+  });
+
+  it("fail-closed: unavailable/unknown/missing state never animates", () => {
+    expect(resolveIconAnimation({ entity: "fan.ceiling" }, "unavailable")).toBeUndefined();
+    expect(resolveIconAnimation({ entity: "fan.ceiling" }, "unknown")).toBeUndefined();
+    expect(resolveIconAnimation({ entity: "fan.ceiling" }, undefined)).toBeUndefined();
+    expect(resolveIconAnimation({}, "on")).toBeUndefined();
+  });
+
+  it("explicit spin/pulse override the domain default while active", () => {
+    expect(resolveIconAnimation({ entity: "light.a", iconAnimation: "spin" }, "on")).toBe("spin");
+    expect(resolveIconAnimation({ entity: "fan.ceiling", iconAnimation: "pulse" }, "on")).toBe(
+      "pulse",
+    );
+  });
+
+  it("none disables the domain default", () => {
+    expect(resolveIconAnimation({ entity: "fan.ceiling", iconAnimation: "none" }, "on")).toBeUndefined();
   });
 });
 

@@ -4,6 +4,7 @@ import type {
   SectionalHand,
   Opening,
   ItemKind,
+  IconAnimation,
   Furniture,
   Tracker,
   RenderHass,
@@ -269,6 +270,35 @@ export function entityIsActive(entityId: string | undefined, state: string | und
   const domain = entityId?.split(".")[0] ?? "";
   const active = ACTIVE_STATES[domain];
   return active ? active.has(state) : isEntityOn(state);
+}
+
+/**
+ * Domains whose icons move by default while active (issue #48), mirroring the
+ * feel of HA's own Tile card: a running fan spins; playback and a working
+ * vacuum breathe. Everything else stays still unless the config asks.
+ */
+const AUTO_ICON_ANIMATION: Record<string, "spin" | "pulse"> = {
+  fan: "spin",
+  media_player: "pulse",
+  vacuum: "pulse",
+};
+
+/**
+ * Which animation an item's icon should play right now, or undefined for
+ * none. Shared by card and editor. Never animates an inactive (or
+ * unavailable) entity — including when the config forces "spin"/"pulse": a
+ * spinning fan icon is a claim that the fan is running, so it obeys the same
+ * fail-closed rule as the active highlight ({@link entityIsActive}).
+ */
+export function resolveIconAnimation(
+  item: { entity?: string; iconAnimation?: IconAnimation },
+  state: string | undefined,
+): "spin" | "pulse" | undefined {
+  const mode = item.iconAnimation ?? "auto";
+  if (mode === "none") return undefined;
+  if (!entityIsActive(item.entity, state)) return undefined;
+  if (mode === "spin" || mode === "pulse") return mode;
+  return AUTO_ICON_ANIMATION[item.entity?.split(".")[0] ?? ""];
 }
 
 /**

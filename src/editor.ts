@@ -48,6 +48,7 @@ import {
   trackerSensorReading,
   kindFromEntity,
   resolveItemIcon,
+  resolveIconAnimation,
   itemIconSize,
   itemLabelSize,
   snapToWall,
@@ -2558,11 +2559,19 @@ export class FloorplanCardEditor extends LitElement {
     const rippleColor = it.rippleColor ?? "var(--primary-color, #03a9f4)";
     const rippleSize = it.rippleSize ?? DEFAULT_RIPPLE_SIZE;
 
+    // Live preview: the icon animates exactly when the card would animate it
+    // (entity currently active), so the "Animate icon" dropdown shows its
+    // effect without leaving the editor.
+    const anim = resolveIconAnimation(it, st?.state);
     const badge = html`<div
       class="badge ${showIcon ? "" : "ghost"}"
       style="width:${size}px;height:${size}px;transform:rotate(${it.angle ?? 0}deg);"
     >
-      <ha-icon icon=${icon} style="--mdc-icon-size:${itemIconSize(size)}px;"></ha-icon>
+      <ha-icon
+        class=${anim ? `anim-${anim}` : ""}
+        icon=${icon}
+        style="--mdc-icon-size:${itemIconSize(size)}px;"
+      ></ha-icon>
     </div>`;
 
     // Editor always previews the ripple animated so its effect is visible.
@@ -3724,6 +3733,36 @@ export class FloorplanCardEditor extends LitElement {
     }
     ha-icon {
       --mdc-icon-size: 22px;
+    }
+    /* Icon motion while the entity is active (issue #48) — matches the card. */
+    ha-icon.anim-spin {
+      animation: fp-icon-spin 2s linear infinite;
+    }
+    ha-icon.anim-pulse {
+      animation: fp-icon-pulse 1.6s ease-in-out infinite;
+    }
+    @keyframes fp-icon-spin {
+      from {
+        transform: rotate(0deg);
+      }
+      to {
+        transform: rotate(360deg);
+      }
+    }
+    @keyframes fp-icon-pulse {
+      0%,
+      100% {
+        opacity: 1;
+      }
+      50% {
+        opacity: 0.4;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      ha-icon.anim-spin,
+      ha-icon.anim-pulse {
+        animation: none;
+      }
     }
     .ilabel {
       /* Out of flow, hanging below the badge: the label must not change the
