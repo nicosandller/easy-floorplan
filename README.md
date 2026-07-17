@@ -171,6 +171,23 @@ By default it shows an icon badge:
   default); **Show name** adds the device's name — handy for a panel of look-alike
   buttons where a state would say nothing. Both together read `Name · state`, and
   **Label size** adjusts the line's font size.
+- **Attributes, not just states** — set **Attribute** to show an attribute instead
+  of the state (a climate's `current_temperature` rather than "heat"), and
+  **2nd attribute** for a second reading from the same device — so one climate
+  entity renders `21.5 °C · 45%`. Formatted by HA's own attribute formatter.
+- **Threshold colors** — `stateColor` (YAML) colors the label by value:
+
+  ```yaml
+  stateColor:
+    - above: 26
+      color: red
+    - above: 24
+      color: orange
+    - color: white   # default
+  ```
+
+  The highest matching `above` wins; non-numeric values use the default rule.
+  Colors go through the same injection allowlist as every other config color.
 - **No entity? Still on the map** — a device with no entity bound renders as a plain
   badge (its icon override or kind default), so hardware that has no Home Assistant
   entity — a dumb smoke detector, a wired doorbell — can still be marked on the plan.
@@ -418,6 +435,9 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | `id`          | string                                 | —            | Unique id.                                             |
 | `entity`      | string                                 | —            | Entity id to bind. Optional: without one the device renders as a static badge. |
 | `secondaryEntity` | string                             | —            | Optional 2nd entity shown alongside (e.g. humidity).   |
+| `attribute`   | string                                 | —            | Show this attribute of `entity` instead of its state (e.g. `current_temperature`). |
+| `secondaryAttribute` | string                          | —            | Attribute for the 2nd reading — from `secondaryEntity`, or from `entity` when none. |
+| `stateColor`  | rule[]                                 | —            | Threshold colors for the label: `[{above: 26, color: red}, {color: white}]`. Highest matching `above` wins. |
 | `x`, `y`      | number                                 | —            | Position.                                              |
 | `kind`        | light/switch/sensor/binary_sensor/climate/cover/generic | inferred | Used for the default icon.            |
 | `icon`        | string                                 | entity icon  | Override mdi icon.                                     |

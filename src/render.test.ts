@@ -24,6 +24,7 @@ import {
   entityStateText,
   itemStateText,
   itemBadgeLabel,
+  resolveStateColor,
   itemLabelSize,
   hassRenderInputsChanged,
   collectWatchedEntities,
@@ -1006,5 +1007,91 @@ describe("plan rotation (issue #33)", () => {
       }
     }
     expect(planRotationTransform(W, H, 0)).toBe("");
+  });
+});
+
+describe("itemStateText with attributes (issue #70)", () => {
+  const climate = () => {
+    const h = livingArea();
+    (h.states as Record<string, unknown>)["climate.home"] = {
+      entity_id: "climate.home",
+      state: "heat",
+      attributes: { current_temperature: 21.5, current_humidity: 45 },
+    };
+    return h;
+  };
+
+  it("attribute replaces the state as the primary reading", () => {
+    expect(itemStateText(climate(), { entity: "climate.home", attribute: "current_temperature" }))
+      .toBe("21.5");
+  });
+
+  it("secondaryAttribute without a second entity reads the same entity", () => {
+    expect(
+      itemStateText(climate(), {
+        entity: "climate.home",
+        attribute: "current_temperature",
+        secondaryAttribute: "current_humidity",
+      }),
+    ).toBe("21.5 · 45");
+  });
+
+  it("secondaryAttribute applies to secondaryEntity when both are set", () => {
+    expect(
+      itemStateText(climate(), {
+        entity: "climate.home",
+        secondaryEntity: TEMP,
+        secondaryAttribute: "unit_of_measurement",
+      }),
+    ).toBe("heat · °C");
+  });
+
+  it("uses HA's attribute formatter when the frontend provides it", () => {
+    const h = climate() as unknown as Record<string, unknown>;
+    h.formatEntityAttributeValue = (_s: unknown, a: string) => `fmt:${a}`;
+    expect(
+      itemStateText(h as never, { entity: "climate.home", attribute: "current_temperature" }),
+    ).toBe("fmt:current_temperature");
+  });
+
+  it("missing attribute renders the em dash", () => {
+    expect(itemStateText(climate(), { entity: "climate.home", attribute: "nope" })).toBe("—");
+  });
+});
+
+describe("resolveStateColor (issue #68)", () => {
+  const rules = [
+    { above: 26, color: "red" },
+    { above: 24, color: "orange" },
+    { color: "white" },
+  ];
+
+  it("highest matching threshold wins", () => {
+    expect(resolveStateColor(rules, "27.1")).toBe("red");
+    expect(resolveStateColor(rules, 25)).toBe("orange");
+    expect(resolveStateColor(rules, "20")).toBe("white");
+  });
+
+  it("boundary is strict: exactly the threshold falls through", () => {
+    expect(resolveStateColor(rules, 26)).toBe("orange");
+    expect(resolveStateColor(rules, 24)).toBe("white");
+  });
+
+  it("non-numeric values only match the default rule", () => {
+    expect(resolveStateColor(rules, "heat")).toBe("white");
+    expect(resolveStateColor(rules, undefined)).toBe("white");
+    expect(resolveStateColor([{ above: 24, color: "orange" }], "heat")).toBeUndefined();
+  });
+
+  it("rule order doesn't matter; malformed rules are skipped", () => {
+    expect(resolveStateColor([...rules].reverse(), 30)).toBe("red");
+    expect(
+      resolveStateColor([null, { above: "x" }, { above: 24, color: "orange" }] as never, 25),
+    ).toBe("orange");
+  });
+
+  it("no rules, no color", () => {
+    expect(resolveStateColor(undefined, 30)).toBeUndefined();
+    expect(resolveStateColor([], 30)).toBeUndefined();
   });
 });

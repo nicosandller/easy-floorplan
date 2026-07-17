@@ -127,6 +127,35 @@ export interface FloorItem {
    * same element. The primary `entity` drives on/off state and click actions.
    */
   secondaryEntity?: string;
+  /**
+   * Show this attribute of `entity` instead of its state (issue #70) — e.g. a
+   * climate's `current_temperature` rather than "heat". Formatted through
+   * HA's own attribute formatter when available.
+   */
+  attribute?: string;
+  /**
+   * Attribute for the second reading. Applies to `secondaryEntity` when set,
+   * else to `entity` — so one climate device can show
+   * `current_temperature · current_humidity` without a second entity.
+   */
+  secondaryAttribute?: string;
+  /**
+   * Threshold colors for the label line (issue #68), highest matching `above`
+   * wins; an entry without `above` is the default. Evaluated against the
+   * displayed value (the attribute when `attribute` is set, else the state):
+   *
+   * ```yaml
+   * stateColor:
+   *   - above: 26
+   *     color: red
+   *   - above: 24
+   *     color: orange
+   *   - color: white
+   * ```
+   *
+   * Colors pass through the style-injection allowlist (#64) at render time.
+   */
+  stateColor?: StateColorRule[];
   x: number;
   y: number;
   kind: ItemKind;
@@ -172,6 +201,13 @@ export interface FloorItem {
 }
 
 export type ItemDisplay = "badge" | "ripple" | "iconRipple";
+
+/** One threshold rule for {@link FloorItem.stateColor}. */
+export interface StateColorRule {
+  /** Applies when the numeric value is strictly greater. Omit for the default rule. */
+  above?: number;
+  color: string;
+}
 
 export type IconAnimation = "auto" | "none" | "spin" | "pulse";
 
