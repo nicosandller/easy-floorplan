@@ -175,7 +175,15 @@ export function openingForm(o: Opening): FormSpec {
   const style = sliderStyleOf(o);
   const fields: FormField[] = [
     { name: "type", label: "Type", selector: dropdown(opt("door", "Door"), opt("window", "Window")) },
-    { name: "motion", label: "Motion", selector: dropdown(opt("swing", "Swing"), opt("slide", "Slide")) },
+    {
+      name: "motion",
+      label: "Motion",
+      selector: dropdown(
+        opt("swing", "Swing"),
+        opt("slide", "Slide"),
+        opt("roll", "Roll up (garage / shutter)")
+      ),
+    },
     { name: "length", label: "Length", required: true, selector: { number: { min: 1, mode: "box" } } },
   ];
   if (o.type === "door" && motion === "swing") {
@@ -236,8 +244,8 @@ export function openingForm(o: Opening): FormSpec {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(patch)) {
         if (k === "motion") {
-          out.motion = v === "slide" ? "slide" : undefined;
-          // sliderStyle only applies while sliding — drop it when switching back.
+          out.motion = v === "slide" || v === "roll" ? v : undefined;
+          // sliderStyle only applies while sliding — drop it when switching away.
           if (v !== "slide") out.sliderStyle = undefined;
         } else if (k === "hinge" || k === "slide") out.flipH = v === "right" || undefined;
         else if (k === "opens") out.flipV = v === "other" || undefined;

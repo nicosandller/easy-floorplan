@@ -91,3 +91,33 @@ describe("renderOpening — sliding window", () => {
     expect(win).not.toContain("height=2.5"); // not a solid door panel
   });
 });
+
+describe("renderOpening — roll-up cover (issue #45)", () => {
+  it("closed: full-thickness slatted curtain on the track", () => {
+    const closed = svgOf({ type: "door", motion: "roll" }, { open: false });
+    expect(closed).toContain("fp-roll-curtain");
+    expect(closed).toContain("scaleY(1)");
+    expect(closed).toContain("height=5"); // curtain band, thicker than any panel
+  });
+
+  it("open: the curtain collapses onto the track line", () => {
+    expect(svgOf({ type: "door", motion: "roll" }, { open: true })).toContain("scaleY(0)");
+  });
+
+  it("partial position thins the curtain proportionally", () => {
+    expect(svgOf({ type: "door", motion: "roll" }, { amount: 0.6 })).toContain("scaleY(0.4)");
+  });
+
+  it("draws slat ticks so it reads as a shutter, not a slab", () => {
+    // length 90 → ~8 slats → 7 interior ticks.
+    const closed = svgOf({ type: "door", motion: "roll" }, { open: false });
+    expect(closed.match(/var\(--card-background-color, #fff\)/g)?.length).toBeGreaterThanOrEqual(5);
+  });
+
+  it("nothing travels along the wall — no slide panels, no swing arc", () => {
+    const s = svgOf({ type: "door", motion: "roll" }, { amount: 0.5 });
+    expect(s).not.toContain("fp-slide-panel");
+    expect(s).not.toContain("fp-door-arc");
+    expect(s).not.toContain("fp-door-leaf");
+  });
+});

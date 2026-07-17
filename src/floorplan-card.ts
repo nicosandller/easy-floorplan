@@ -480,6 +480,15 @@ export class FloorplanCard extends LitElement {
     .fp-slide-panel rect {
       transition: fill 0.5s ease;
     }
+    /* Roll-up curtain (garage / roller shutter): thins onto the track line. */
+    .fp-roll-curtain {
+      transform-box: fill-box;
+      transform-origin: center;
+      transition: transform 0.5s ease;
+    }
+    .fp-roll-curtain rect {
+      transition: fill 0.5s ease;
+    }
     .items {
       position: absolute;
       inset: 0;

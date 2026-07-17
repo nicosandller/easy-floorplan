@@ -58,9 +58,11 @@ export interface Opening {
   /**
    * How the opening moves. `swing` (default) is a hinged door / casement window;
    * `slide` is a sliding door / sliding window whose panel(s) travel along the
-   * wall (see {@link sliderStyle}).
+   * wall (see {@link sliderStyle}); `roll` is a roll-up cover — garage door,
+   * roller shutter — whose slatted curtain leaves the floor plane (issue #45),
+   * drawn thinning toward the track line as it opens.
    */
-  motion?: "swing" | "slide";
+  motion?: "swing" | "slide" | "roll";
   x: number;
   y: number;
   /** Length along the wall, in virtual units. */

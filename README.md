@@ -143,7 +143,9 @@ A **device** binds a Home Assistant entity to a spot on the plan. Add one with
 **+ device**, then pick the entity in the **Element** section below the canvas.
 By default it shows an icon badge:
 
-- **Tap to act** — lights, switches, covers, fans and `input_boolean`s toggle on tap;
+- **Tap to act** — lights, switches, fans and `input_boolean`s toggle on tap;
+  covers open the more-info dialog instead (an accidental tap must not move a
+  shutter — set **Tap action** to *Toggle* to opt back in);
   any other entity opens its more-info dialog.
 - **Live look** — the badge highlights when the entity is "on". Turn on **Show state**
   to display the current value next to it, formatted exactly as Home Assistant would —
@@ -201,8 +203,9 @@ Select the opening and bind an **Entity** in the **Element** section below the c
 contact `binary_sensor` or a `cover` (Home Assistant's domain for anything that opens: doors,
 gates, garages, blinds, shades, shutters, curtains…) — to make the opening track its real
 state. When you bind an entity the card reads its HA **`device_class`** and sets a sensible
-`type`/`motion` for you (a `window` cover → a window; a `garage` roller → a sliding door);
-adjust either afterwards. Once bound, the opening tracks state:
+`type`/`motion` for you (a `window` cover → a window; a `blind` → a slider; a `garage`
+or `shutter` roller → a **roll-up**); adjust either afterwards. Once bound, the opening
+tracks state:
 
 - **Open / closed** — the opening is drawn open when the entity is `on` / `open`, closed
   otherwise. A door's leaf swings around its hinge; a window's two leaves swing outward
@@ -397,7 +400,7 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | ------------- | --------------------------- | ------------------------------------------------------ |
 | `id`          | string                      | Unique id.                                             |
 | `type`        | `door` \| `window`          | The kind of opening.                                   |
-| `motion`      | `swing` \| `slide`          | How it moves. `swing` (default) hinged door / casement window; `slide` sliding panels. |
+| `motion`      | `swing` \| `slide` \| `roll` | How it moves. `swing` (default) hinged door / casement window; `slide` sliding panels; `roll` roll-up cover (garage / roller shutter) drawn as a slatted curtain that thins onto its track as it opens. |
 | `x`, `y`      | number                      | Center position.                                       |
 | `length`      | number                      | Length along the wall.                                 |
 | `angle`       | number                      | Rotation in degrees.                                   |

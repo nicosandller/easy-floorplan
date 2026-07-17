@@ -406,7 +406,7 @@ export function kindFromEntity(entity: string): ItemKind {
  * How an opening moves — `swing` (hinged door / casement window) or `slide`
  * (panels travelling along the wall). Defaults to `swing`.
  */
-export function openingMotion(o: Opening): "swing" | "slide" {
+export function openingMotion(o: Opening): "swing" | "slide" | "roll" {
   return o.motion ?? "swing";
 }
 
@@ -442,30 +442,30 @@ export function sliderStyleOf(o: Opening): "single" | "bypass" | "biparting" {
 
 /** HA `cover` / `binary_sensor` device classes that read as a window (glass). */
 const WINDOW_DEVICE_CLASSES = new Set(["window", "blind", "shade", "shutter", "curtain", "awning"]);
-/** Device classes that roll / slide rather than swing. */
-const SLIDING_DEVICE_CLASSES = new Set([
-  "garage",
-  "garage_door",
-  "blind",
-  "shade",
-  "shutter",
-  "curtain",
-]);
+/** Device classes whose panels travel along the wall. */
+const SLIDING_DEVICE_CLASSES = new Set(["blind", "shade", "curtain"]);
+/** Device classes whose curtain rolls up out of the floor plane (issue #45). */
+const ROLLING_DEVICE_CLASSES = new Set(["garage", "garage_door", "shutter"]);
 
 /**
  * Default opening `type` and `motion` inferred from a bound entity's HA
  * `device_class` (mirrors how HA itself picks icons/behaviour from it). Window-
- * like classes render as a window; rolling/sliding classes default to `slide`.
- * Unknown / missing classes fall back to a swing door. `motion: undefined`
- * means swing (the default).
+ * like classes render as a window; blinds/shades/curtains default to `slide`;
+ * garage doors and roller shutters to `roll`. Unknown / missing classes fall
+ * back to a swing door. `motion: undefined` means swing (the default).
  */
 export function openingFromDeviceClass(deviceClass: string | undefined): {
   type: Opening["type"];
-  motion: "slide" | undefined;
+  motion: "slide" | "roll" | undefined;
 } {
+  const dc = deviceClass ?? "";
   return {
-    type: WINDOW_DEVICE_CLASSES.has(deviceClass ?? "") ? "window" : "door",
-    motion: SLIDING_DEVICE_CLASSES.has(deviceClass ?? "") ? "slide" : undefined,
+    type: WINDOW_DEVICE_CLASSES.has(dc) ? "window" : "door",
+    motion: ROLLING_DEVICE_CLASSES.has(dc)
+      ? "roll"
+      : SLIDING_DEVICE_CLASSES.has(dc)
+        ? "slide"
+        : undefined,
   };
 }
 
@@ -635,6 +635,36 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
           </g>
         </g>
       `;
+  } else if (openingMotion(o) === "roll") {
+    // Roll-up cover — garage door, roller shutter (issues #45 / #47). Unlike a
+    // slider nothing travels along the wall: the curtain leaves the floor
+    // plane, so the slatted band thins toward the track line as it opens and
+    // vanishes fully open, leaving jambs + track. Distinct at a glance from
+    // both the giant swing leaf and the slide panel.
+    const bandT = 5;
+    const slats = Math.max(3, Math.round(o.length / 12));
+    const ticks: SVGTemplateResult[] = [];
+    for (let i = 1; i < slats; i++) {
+      const x = -half + (o.length * i) / slats;
+      ticks.push(
+        svg`<line x1=${x} y1=${-bandT / 2} x2=${x} y2=${bandT / 2}
+              stroke="var(--card-background-color, #fff)" stroke-width="0.75" />`
+      );
+    }
+    body = svg`
+        <!-- jambs -->
+        <line x1=${-half} y1=${-cutH / 2} x2=${-half} y2=${cutH / 2}
+              stroke=${color} stroke-width="2" />
+        <line x1=${half} y1=${-cutH / 2} x2=${half} y2=${cutH / 2}
+              stroke=${color} stroke-width="2" />
+        <!-- track: stays when the curtain is up so the gap still reads as an opening -->
+        <line x1=${-half} y1="0" x2=${half} y2="0"
+              stroke=${color} stroke-width="0.75" opacity="0.6" />
+        <g class="fp-roll-curtain" style="transform:scaleY(${1 - amt});">
+          <rect x=${-half} y=${-bandT / 2} width=${o.length} height=${bandT}
+                style="fill:${tone};" />
+          ${ticks}
+        </g>`;
   } else if (openingMotion(o) === "slide") {
     // A sliding door / window: panel(s) sit in the opening and travel *along* the
     // wall. Closed, they fill the gap; open, they slide aside (single), stack

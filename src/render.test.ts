@@ -95,6 +95,19 @@ describe("openingMotion", () => {
     expect(openingMotion({ type: "door" } as Opening)).toBe("swing");
     expect(openingMotion({ type: "door", motion: "slide" } as Opening)).toBe("slide");
     expect(openingMotion({ type: "window", motion: "slide" } as Opening)).toBe("slide");
+    expect(openingMotion({ type: "door", motion: "roll" } as Opening)).toBe("roll");
+  });
+});
+
+describe("roll-up openings (issue #45)", () => {
+  it("draw closed by default, like sliders", () => {
+    expect(openingDefaultOpen({ type: "door", motion: "roll" } as Opening)).toBe(false);
+    expect(openingDefaultOpen({ type: "window", motion: "roll" } as Opening)).toBe(false);
+  });
+  it("have no slider panel arrangement", () => {
+    expect(sliderStyleOf({ type: "door", motion: "roll", sliderStyle: "bypass" } as Opening)).toBe(
+      "single",
+    );
   });
 });
 
@@ -134,10 +147,14 @@ describe("openingFromDeviceClass", () => {
     expect(openingFromDeviceClass("shade")).toEqual({ type: "window", motion: "slide" });
     expect(openingFromDeviceClass("curtain")).toEqual({ type: "window", motion: "slide" });
   });
-  it("maps door-like device classes to a door, sliding for rollers", () => {
+  it("maps door-like device classes to a door", () => {
     expect(openingFromDeviceClass("door")).toEqual({ type: "door", motion: undefined });
-    expect(openingFromDeviceClass("garage")).toEqual({ type: "door", motion: "slide" });
     expect(openingFromDeviceClass("gate")).toEqual({ type: "door", motion: undefined });
+  });
+  it("garage doors and roller shutters roll up (issue #45)", () => {
+    expect(openingFromDeviceClass("garage")).toEqual({ type: "door", motion: "roll" });
+    expect(openingFromDeviceClass("garage_door")).toEqual({ type: "door", motion: "roll" });
+    expect(openingFromDeviceClass("shutter")).toEqual({ type: "window", motion: "roll" });
   });
   it("defaults unknown / missing device classes to a swing door", () => {
     expect(openingFromDeviceClass(undefined)).toEqual({ type: "door", motion: undefined });

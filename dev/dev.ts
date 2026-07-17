@@ -163,6 +163,30 @@ const hass = {
       state: "off",
       attributes: { friendly_name: "Door Lock", device_class: "lock" },
     },
+    // Roll-up covers (issue #45): binding either to an opening infers
+    // motion "roll" from the device_class (garage → door, shutter → window)
+    // and the opening emulator below offers a 0–100 position slider that
+    // drives the curtain. The garage one ships pre-bound in the demo floor.
+    "cover.garage_door": {
+      entity_id: "cover.garage_door",
+      state: "closed",
+      attributes: {
+        friendly_name: "Garage Door",
+        device_class: "garage",
+        current_position: 0,
+        supported_features: 15,
+      },
+    },
+    "cover.bedroom_shutter": {
+      entity_id: "cover.bedroom_shutter",
+      state: "closed",
+      attributes: {
+        friendly_name: "Bedroom Shutter",
+        device_class: "shutter",
+        current_position: 0,
+        supported_features: 15,
+      },
+    },
     // Icon-animation demo (issue #48): a running fan spins, a playing media
     // player pulses. Flip their states in the console via setHassBinary /
     // baseStates to watch the animation start and stop.
@@ -239,6 +263,18 @@ const demoFloor = {
   openings: [
     { id: "o1", type: "window" as const, x: 500, y: 100, length: 140, angle: 0 },
     { id: "o2", type: "door" as const, x: 500, y: 500, length: 90, angle: 0 },
+    // Roll-up demo (issue #45): a garage door on the east wall, pre-bound so
+    // the emulator's position slider drives the slatted curtain immediately.
+    {
+      id: "o3",
+      type: "door" as const,
+      motion: "roll" as const,
+      x: 900,
+      y: 300,
+      length: 140,
+      angle: 90,
+      entity: "cover.garage_door",
+    },
   ],
   // A temperature reading paired with humidity — both stored at two decimals but
   // configured to display one, so the badge should read "17.9 °C · 49.3%".

@@ -114,6 +114,22 @@ describe("openingForm", () => {
     expect(bi.fields.map((x) => x.name)).not.toContain("slide");
   });
 
+  it("roll-up opening hides swing and slide fields (issue #45)", () => {
+    const motionField = openingForm(door).fields.find((x) => x.name === "motion")!;
+    const opts = (motionField.selector as { select: { options: { value: string }[] } }).select
+      .options.map((o) => o.value);
+    expect(opts).toEqual(["swing", "slide", "roll"]);
+    const roll = openingForm({ ...door, motion: "roll" } as Opening).fields.map((x) => x.name);
+    expect(roll).not.toContain("hinge");
+    expect(roll).not.toContain("opens");
+    expect(roll).not.toContain("slide");
+    expect(roll).not.toContain("style");
+    expect(openingForm(door).toPatch({ motion: "roll" })).toEqual({
+      motion: "roll",
+      sliderStyle: undefined,
+    });
+  });
+
   it("invert only offered with an entity; entity filter targets covers and binary_sensors", () => {
     expect(openingForm(door).fields.map((x) => x.name)).not.toContain("invert");
     const bound = openingForm({ ...door, entity: "cover.x" } as Opening);
