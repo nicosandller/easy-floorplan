@@ -91,6 +91,20 @@ export interface Opening {
    */
   flipV?: boolean;
   /**
+   * Swing windows only: how many sashes. `double` (the default, today's look)
+   * draws two casement leaves meeting in the middle; `single` draws one sash
+   * hinged at a jamb (issue #73) — `flipH` picks which jamb. Ignored for
+   * doors and for sliding / rolling openings.
+   */
+  sash?: "single" | "double";
+  /**
+   * Windows only: a `cover` entity for an external roller shutter sharing the
+   * same wall gap (issue #74). Drawn as a slatted roll curtain layered over
+   * the sash — `entity` keeps driving the window itself, so an open window
+   * behind a closed shutter renders both truthfully.
+   */
+  shutterEntity?: string;
+  /**
    * Sliding openings only (`motion: "slide"`): how the panels are arranged.
    * - `single` (default) — one panel slides aside into the wall.
    * - `bypass` — two panels on parallel tracks; one slides behind the other

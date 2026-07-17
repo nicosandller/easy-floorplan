@@ -8,6 +8,9 @@ import {
   openingMirror,
   sliderStyleOf,
   openingFromDeviceClass,
+  windowSash,
+  shutterAmount,
+  shutterActive,
   openingClickAction,
   resolveOpeningOpen,
   resolveOpeningAmount,
@@ -1006,5 +1009,59 @@ describe("plan rotation (issue #33)", () => {
       }
     }
     expect(planRotationTransform(W, H, 0)).toBe("");
+  });
+});
+
+describe("windowSash (issue #73)", () => {
+  it("defaults to double; single only for swing windows", () => {
+    expect(windowSash({ type: "window" } as Opening)).toBe("double");
+    expect(windowSash({ type: "window", sash: "single" } as Opening)).toBe("single");
+    expect(windowSash({ type: "door", sash: "single" } as Opening)).toBe("double");
+    expect(windowSash({ type: "window", motion: "slide", sash: "single" } as Opening)).toBe(
+      "double",
+    );
+  });
+});
+
+describe("shutterAmount / shutterActive (issue #74)", () => {
+  const st = (state: string, pos?: number) =>
+    ({ state, attributes: pos === undefined ? {} : { current_position: pos } });
+
+  it("position wins, clamped to 0..1", () => {
+    expect(shutterAmount(st("open", 50))).toBe(0.5);
+    expect(shutterAmount(st("open", 120))).toBe(1);
+    expect(shutterAmount(st("closed", 0))).toBe(0);
+  });
+
+  it("falls back to open-ish states without a position", () => {
+    expect(shutterAmount(st("open"))).toBe(1);
+    expect(shutterAmount(st("opening"))).toBe(1);
+    expect(shutterAmount(st("closed"))).toBe(0);
+  });
+
+  it("fails closed on an outage or missing state", () => {
+    expect(shutterAmount(undefined)).toBe(0);
+    expect(shutterAmount(st("unavailable", 80))).toBe(0);
+    expect(shutterActive(st("unknown"))).toBe(false);
+  });
+
+  it("active while (partly) open or in transit", () => {
+    expect(shutterActive(st("open", 40))).toBe(true);
+    expect(shutterActive(st("closing", 0))).toBe(true);
+    expect(shutterActive(st("closed", 0))).toBe(false);
+  });
+});
+
+describe("collectWatchedEntities includes shutter entities (issue #74)", () => {
+  it("watches shutterEntity alongside the opening entity", () => {
+    const cfg = {
+      type: "t", width: 1000, height: 600,
+      floors: [{ id: "f", name: "F", walls: [], items: [], texts: [], furniture: [], trackers: [],
+        openings: [{ id: "o", type: "window", x: 0, y: 0, length: 90, angle: 0,
+          entity: "binary_sensor.win", shutterEntity: "cover.shutter" }] }],
+    } as unknown as FloorplanCardConfig;
+    const ids = collectWatchedEntities(cfg);
+    expect(ids.has("binary_sensor.win")).toBe(true);
+    expect(ids.has("cover.shutter")).toBe(true);
   });
 });

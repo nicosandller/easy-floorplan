@@ -2495,6 +2495,9 @@ export class FloorplanCardEditor extends LitElement {
           // motion is visible — closed, both look like a plain band, which
           // would make the Motion / Slide / Style controls appear inert.
           amount: openingMotion(o) !== "swing" ? 0.55 : undefined,
+          // Shutter previewed half-rolled so the layer is visible while
+          // configuring, whatever the live state.
+          shutter: o.shutterEntity ? { amount: 0.55 } : undefined,
         })}
       </g>`;
   }

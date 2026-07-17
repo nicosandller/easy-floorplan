@@ -19,6 +19,8 @@ import {
   resolveOpeningAmount,
   openingIsActive,
   openingClickAction,
+  shutterAmount,
+  shutterActive,
   renderRipple,
   renderFurniture,
   renderTracker,
@@ -327,12 +329,20 @@ export class FloorplanCard extends LitElement {
               (o, i) => o.id || i,
               (o) => {
               const amount = this._openingAmount(o);
+              const shutterState = o.shutterEntity
+                ? this.hass?.states[o.shutterEntity]
+                : undefined;
               const symbol = renderOpening(o, {
                 color: "var(--primary-text-color)",
                 open: amount > 0,
                 amount,
                 active: this._openingActive(o),
                 accent: o.activeColor ?? "var(--primary-color, #03a9f4)",
+                // External roller shutter layer (issue #74). No entity bound
+                // yet → previewed shut, like a static plan.
+                shutter: o.shutterEntity
+                  ? { amount: shutterAmount(shutterState), active: shutterActive(shutterState) }
+                  : undefined,
               });
               if (!o.entity) return symbol;
               // Entity-bound openings are tappable — a transparent rect over the

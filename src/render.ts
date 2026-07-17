@@ -59,7 +59,10 @@ export function hassRenderInputsChanged(
 export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
   const ids = new Set<string>();
   for (const f of getFloors(c)) {
-    for (const o of f.openings) if (o.entity) ids.add(o.entity);
+    for (const o of f.openings) {
+      if (o.entity) ids.add(o.entity);
+      if (o.shutterEntity) ids.add(o.shutterEntity);
+    }
     for (const it of f.items) {
       if (it.entity) ids.add(it.entity);
       if (it.secondaryEntity) ids.add(it.secondaryEntity);
@@ -440,6 +443,45 @@ export function sliderStyleOf(o: Opening): "single" | "bypass" | "biparting" {
   return openingMotion(o) === "slide" ? (o.sliderStyle ?? "single") : "single";
 }
 
+/**
+ * Sash count for a swing window (issue #73): `double` (the historic look) or
+ * `single`. Only meaningful for `type: "window"` with swing motion — doors
+ * and sliding/rolling openings always resolve to `double` (ignored).
+ */
+export function windowSash(o: Opening): "single" | "double" {
+  return o.type === "window" && openingMotion(o) === "swing" ? (o.sash ?? "double") : "double";
+}
+
+/**
+ * How far open an external roller shutter is drawn, 0..1 (issue #74). Cover
+ * position when published, else open-ish states = 1. Fails closed on an
+ * outage — a stale "open" shutter is worse than drawing it shut.
+ */
+export function shutterAmount(
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+): number {
+  if (!state || isSensorOutage(state.state)) return 0;
+  const pos = state.attributes?.current_position;
+  if (typeof pos === "number" && Number.isFinite(pos)) {
+    return Math.max(0, Math.min(1, pos / 100));
+  }
+  return state.state === "open" || state.state === "opening" || state.state === "closing" ||
+    state.state === "on"
+    ? 1
+    : 0;
+}
+
+/**
+ * Whether the shutter layer wears the accent — drawn (partly) open or still in
+ * transit, matching {@link openingIsActive}'s "active = open" semantics.
+ */
+export function shutterActive(
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+): boolean {
+  if (!state || isSensorOutage(state.state)) return false;
+  return shutterAmount(state) > 0 || state.state === "opening" || state.state === "closing";
+}
+
 /** HA `cover` / `binary_sensor` device classes that read as a window (glass). */
 const WINDOW_DEVICE_CLASSES = new Set(["window", "blind", "shade", "shutter", "curtain", "awning"]);
 /** Device classes whose panels travel along the wall. */
@@ -568,6 +610,30 @@ export function openingIsActive(
   return openingInMotion(state.state) || resolveOpeningAmount(o, state) > 0;
 }
 
+/**
+ * The slatted roll curtain (band + slat ticks) scaled by how far open, shared
+ * by roll-up openings and the window shutter layer (issue #74). Centered on
+ * the track line; callers draw their own jambs/track.
+ */
+function rollCurtain(length: number, tone: string, amt: number): SVGTemplateResult {
+  const half = length / 2;
+  const bandT = 5;
+  const slats = Math.max(3, Math.round(length / 12));
+  const ticks: SVGTemplateResult[] = [];
+  for (let i = 1; i < slats; i++) {
+    const x = -half + (length * i) / slats;
+    ticks.push(
+      svg`<line x1=${x} y1=${-bandT / 2} x2=${x} y2=${bandT / 2}
+            stroke="var(--card-background-color, #fff)" stroke-width="0.75" />`
+    );
+  }
+  return svg`<g class="fp-roll-curtain" style="transform:scaleY(${1 - amt});">
+      <rect x=${-half} y=${-bandT / 2} width=${length} height=${bandT}
+            style="fill:${tone};" />
+      ${ticks}
+    </g>`;
+}
+
 /** Style options for {@link renderOpening}. */
 export interface OpeningStyle {
   /** Base color of the jambs / leaf / swing arc. */
@@ -584,6 +650,12 @@ export interface OpeningStyle {
   active?: boolean;
   /** Accent color used while `active` (default the HA primary color). */
   accent?: string;
+  /**
+   * External roller shutter layered over the opening (issue #74): how far
+   * open (0..1, see {@link shutterAmount}) and whether it wears the accent.
+   * Rendered as the roll curtain on top of the sash.
+   */
+  shutter?: { amount: number; active?: boolean };
 }
 
 /**
@@ -605,7 +677,29 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   const amt = Math.max(0, Math.min(1, style.amount ?? (open ? 1 : 0)));
 
   let body: SVGTemplateResult;
-  if (o.type === "window" && openingMotion(o) === "swing") {
+  if (o.type === "window" && openingMotion(o) === "swing" && windowSash(o) === "single") {
+    // One casement sash hinged at the left jamb (issue #73) — the window
+    // counterpart of the door leaf: full-width sash, quarter-circle arc that
+    // draws on as it opens. flipH (via the mirror wrapper below) moves the
+    // hinge to the other jamb.
+    const arcLen = (Math.PI / 2) * o.length;
+    body = svg`
+        <!-- jambs -->
+        <line x1=${-half} y1=${-cutH / 2} x2=${-half} y2=${cutH / 2}
+              stroke=${color} stroke-width="2" />
+        <line x1=${half} y1=${-cutH / 2} x2=${half} y2=${cutH / 2}
+              stroke=${color} stroke-width="2" />
+        <path class="fp-door-arc"
+              d="M ${half} 0 A ${o.length} ${o.length} 0 0 0 ${-half} ${-o.length}"
+              fill="none" stroke-width="1.5" stroke-dasharray=${arcLen}
+              style="stroke:${tone};stroke-dashoffset:${arcLen * (1 - amt)};" />
+        <g transform="translate(${-half} 0)">
+          <g class="fp-door-leaf" style="transform:rotate(${-90 * amt}deg);">
+            <rect x="0" y="-1.25" width=${o.length} height="2.5" style="fill:${tone};" />
+          </g>
+        </g>
+      `;
+  } else if (o.type === "window" && openingMotion(o) === "swing") {
     // Two casement leaves hinged at each jamb. Closed, they meet in the middle
     // along the wall; open, they swing outward (up) like double doors, each
     // tracing a quarter-circle arc (radius = half) that draws on as it opens.
@@ -642,16 +736,6 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
     // plane, so the slatted band thins toward the track line as it opens and
     // vanishes fully open, leaving jambs + track. Distinct at a glance from
     // both the giant swing leaf and the slide panel.
-    const bandT = 5;
-    const slats = Math.max(3, Math.round(o.length / 12));
-    const ticks: SVGTemplateResult[] = [];
-    for (let i = 1; i < slats; i++) {
-      const x = -half + (o.length * i) / slats;
-      ticks.push(
-        svg`<line x1=${x} y1=${-bandT / 2} x2=${x} y2=${bandT / 2}
-              stroke="var(--card-background-color, #fff)" stroke-width="0.75" />`
-      );
-    }
     body = svg`
         <!-- jambs -->
         <line x1=${-half} y1=${-cutH / 2} x2=${-half} y2=${cutH / 2}
@@ -661,11 +745,7 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
         <!-- track: stays when the curtain is up so the gap still reads as an opening -->
         <line x1=${-half} y1="0" x2=${half} y2="0"
               stroke=${color} stroke-width="0.75" opacity="0.6" />
-        <g class="fp-roll-curtain" style="transform:scaleY(${1 - amt});">
-          <rect x=${-half} y=${-bandT / 2} width=${o.length} height=${bandT}
-                style="fill:${tone};" />
-          ${ticks}
-        </g>`;
+        ${rollCurtain(o.length, tone, amt)}`;
   } else if (openingMotion(o) === "slide") {
     // A sliding door / window: panel(s) sit in the opening and travel *along* the
     // wall. Closed, they fill the gap; open, they slide aside (single), stack
@@ -749,6 +829,13 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   // Orientation mirrors are applied as a single scale wrapper inside the
   // place-into-position transform, so the base symbol (drawn once, centered at
   // the origin) reflects into any of the four hinge/swing orientations.
+  // External shutter layer (issue #74): the roll curtain rides on top of the
+  // sash so a shut shutter visibly covers an open window. Its own
+  // active/accent state is independent of the window's.
+  if (style.shutter) {
+    const shutterTone = style.shutter.active ? accent : color;
+    body = svg`${body}${rollCurtain(o.length, cssColorOr(shutterTone, "var(--primary-color, #03a9f4)"), style.shutter.amount)}`;
+  }
   const { sx, sy } = openingMirror(o);
   return svg`<g transform="translate(${o.x} ${o.y}) rotate(${o.angle})">
       <g transform="scale(${sx} ${sy})">${body}</g>

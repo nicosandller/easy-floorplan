@@ -410,7 +410,16 @@ function setCoverPosition(entity: string, pos: number) {
 function refreshOpeningEmu(cfg: FloorplanCardConfig) {
   const host = document.getElementById("opening-emu")!;
   const pane = document.getElementById("opening-emu-pane")!;
-  const openings = (cfg.floors ?? []).flatMap((f) => f.openings ?? []).filter((o) => o.entity);
+  // One control per bound entity — including a window's external shutter
+  // (issue #74), which gets its own cover slider.
+  const openings = (cfg.floors ?? [])
+    .flatMap((f) => f.openings ?? [])
+    .flatMap((o) => {
+      const out: { type: string; entity: string }[] = [];
+      if (o.entity) out.push({ type: o.type, entity: o.entity });
+      if (o.shutterEntity) out.push({ type: `${o.type} shutter`, entity: o.shutterEntity });
+      return out;
+    });
   if (!openings.length) {
     pane.style.display = "none";
     host.replaceChildren();
@@ -421,7 +430,7 @@ function refreshOpeningEmu(cfg: FloorplanCardConfig) {
   const frag = document.createDocumentFragment();
   const seen = new Set<string>();
   for (const o of openings) {
-    const entity = o.entity!;
+    const entity = o.entity;
     if (seen.has(entity)) continue; // one control per entity, even if reused
     seen.add(entity);
 

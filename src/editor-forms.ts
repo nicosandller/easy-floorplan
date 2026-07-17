@@ -29,6 +29,7 @@ import {
   normalizePlanRotation,
   openingMotion,
   sliderStyleOf,
+  windowSash,
 } from "./render";
 import { defaultItemAction } from "./actions";
 
@@ -186,7 +187,16 @@ export function openingForm(o: Opening): FormSpec {
     },
     { name: "length", label: "Length", required: true, selector: { number: { min: 1, mode: "box" } } },
   ];
-  if (o.type === "door" && motion === "swing") {
+  if (o.type === "window" && motion === "swing") {
+    fields.push({
+      name: "sash",
+      label: "Sashes",
+      helper: "Single = one full-width sash (issue #73)",
+      selector: dropdown(opt("double", "Double (two leaves)"), opt("single", "Single sash")),
+    });
+  }
+  // Hinge applies to anything with ONE hinged leaf: doors, and single-sash windows.
+  if (motion === "swing" && (o.type === "door" || windowSash(o) === "single")) {
     fields.push({
       name: "hinge",
       label: "Hinge",
@@ -224,6 +234,14 @@ export function openingForm(o: Opening): FormSpec {
     helper: "Type and motion follow the entity's device class",
     selector: { entity: { filter: [{ domain: ["binary_sensor", "cover"] }] } },
   });
+  if (o.type === "window") {
+    fields.push({
+      name: "shutterEntity",
+      label: "Shutter",
+      helper: "External roller shutter over this window (a cover)",
+      selector: { entity: { filter: [{ domain: "cover" }] } },
+    });
+  }
   if (o.entity) fields.push({ name: "invert", label: "Invert", selector: { boolean: {} } });
   fields.push(angleField());
   return {
@@ -236,7 +254,9 @@ export function openingForm(o: Opening): FormSpec {
       opens: o.flipV ? "other" : "this",
       slide: o.flipH ? "right" : "left",
       style,
+      sash: windowSash(o),
       entity: o.entity ?? "",
+      shutterEntity: o.shutterEntity ?? "",
       invert: o.invert ?? false,
       angle: o.angle,
     },
@@ -247,7 +267,8 @@ export function openingForm(o: Opening): FormSpec {
           out.motion = v === "slide" || v === "roll" ? v : undefined;
           // sliderStyle only applies while sliding — drop it when switching away.
           if (v !== "slide") out.sliderStyle = undefined;
-        } else if (k === "hinge" || k === "slide") out.flipH = v === "right" || undefined;
+        } else if (k === "sash") out.sash = v === "single" ? "single" : undefined;
+        else if (k === "hinge" || k === "slide") out.flipH = v === "right" || undefined;
         else if (k === "opens") out.flipV = v === "other" || undefined;
         else if (k === "style") out.sliderStyle = v === "single" ? undefined : v;
         else if (k === "invert") out.invert = v || undefined;
