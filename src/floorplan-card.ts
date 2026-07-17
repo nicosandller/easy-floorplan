@@ -2,7 +2,7 @@ import { LitElement, html, css, svg, nothing, type TemplateResult, type Property
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor } from "./types";
-import { cssColorOr, cssNumber } from "./css-safe";
+import { cssColor, cssColorOr, cssNumber } from "./css-safe";
 import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
@@ -381,19 +381,24 @@ export class FloorplanCard extends LitElement {
   private _renderFloorSwitcher(floors: Floor[], active: Floor): TemplateResult {
     return html`
       <div class="floor-switcher">
-        ${floors.map(
-          (f) => html`
+        ${floors.map((f) => {
+          // Per-floor accent (issue #67): applied only while active so the
+          // resting buttons stay theme-neutral. cssColor gates the config
+          // string; no custom color falls back to the theme primary.
+          const accent = f.id === active.id ? cssColor(f.color) : undefined;
+          return html`
             <button
               class=${f.id === active.id ? "active" : ""}
               title=${f.name}
+              style=${accent ? `background:${accent};border-color:${accent};` : nothing}
               @click=${() => {
                 this._activeFloorId = f.id;
               }}
             >
-              ${f.name}
+              ${f.short || f.name}
             </button>
-          `
-        )}
+          `;
+        })}
       </div>
     `;
   }

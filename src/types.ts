@@ -382,6 +382,17 @@ export interface Floor {
    */
   haFloor?: string;
   /**
+   * Short label for the card's floor-switcher button (issue #67), e.g. "GF" —
+   * the full `name` stays as the tooltip. Falls back to `name`.
+   */
+  short?: string;
+  /**
+   * Accent color for this floor's switcher button while active (issue #67).
+   * Passes through the style-injection allowlist (#64). Falls back to the
+   * theme primary color.
+   */
+  color?: string;
+  /**
    * Optional background image URL (e.g. `/local/floorplan.png` or an external
    * URL) drawn behind the elements — handy for tracing over a real floor plan.
    * It fills the virtual canvas, so match the canvas width/height to the image
