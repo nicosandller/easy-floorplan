@@ -778,7 +778,7 @@ describe("every furniture type renders and has a default size", () => {
     "table", "roundTable", "desk", "chair", "sofa", "bed", "wardrobe", "rug",
     "plant", "fridge", "stove", "sink", "toilet", "stairs", "tv",
     "washer", "dryer", "dishwasher", "waterHeater", "airHandler", "bathtub",
-    "vanity", "sectional",
+    "vanity", "sectional", "fishTank", "piano", "hotTub",
   ];
 
   it("has a default size for each", () => {

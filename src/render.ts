@@ -1010,6 +1010,56 @@ export function renderFurniture(f: Furniture): SVGTemplateResult {
         <circle cx=${w * 0.16} cy=${h * 0.08} r=${r} fill="none" stroke=${color} stroke-width="1.5" />`;
       break;
     }
+    case "fishTank": {
+      // Issue #72: glass inset, a waterline tick, and two fish seen from
+      // above (lens body + tail) so it can't be mistaken for a rug.
+      const fx = w * 0.18;
+      const fy = h * 0.1;
+      const fish = (cx: number, cy: number, dir: number) => svg`
+        <ellipse cx=${cx} cy=${cy} rx=${w * 0.07} ry=${h * 0.09}
+                 fill="none" stroke=${color} stroke-width="1.5" />
+        <path d="M ${cx + dir * w * 0.07} ${cy} l ${dir * w * 0.05} ${-h * 0.08} l 0 ${h * 0.16} z"
+              fill=${color} opacity="0.7" />`;
+      detail = svg`
+        <rect x=${-hw + w * 0.05} y=${-hh + h * 0.12} width=${w * 0.9} height=${h * 0.76}
+              fill="none" stroke=${color} stroke-width="1" opacity="0.6" />
+        ${fish(-fx, -fy, 1)}
+        ${fish(fx, fy, -1)}
+        <circle cx=${w * 0.32} cy=${-h * 0.18} r="1.5" fill="none" stroke=${color}
+                stroke-width="1" opacity="0.6" />`;
+      break;
+    }
+    case "piano": {
+      // Upright piano from above: body with a keyboard strip along the front
+      // edge, a few key separators, and the open lid line.
+      const stripY = hh - h * 0.3;
+      const keys: SVGTemplateResult[] = [];
+      for (let i = 1; i < 8; i++) {
+        const x = -hw + (w * i) / 8;
+        keys.push(svg`<line x1=${x} y1=${stripY} x2=${x} y2=${hh - h * 0.06}
+              stroke=${color} stroke-width="1" opacity="0.6" />`);
+      }
+      detail = svg`
+        <line x1=${-hw + w * 0.04} y1=${stripY} x2=${hw - w * 0.04} y2=${stripY}
+              stroke=${color} stroke-width="1.5" />
+        ${keys}
+        <line x1=${-hw + w * 0.04} y1=${-hh + h * 0.22} x2=${hw - w * 0.04} y2=${-hh + h * 0.22}
+              stroke=${color} stroke-width="1" opacity="0.5" />`;
+      break;
+    }
+    case "hotTub": {
+      // Square shell, round tub, jet bubbles in the corners of the water.
+      const r = Math.min(w, h) * 0.36;
+      const jr = Math.min(w, h) * 0.05;
+      const jd = r * 0.62;
+      detail = svg`
+        <circle cx="0" cy="0" r=${r} fill="none" stroke=${color} stroke-width="2" />
+        <circle cx=${-jd} cy=${-jd} r=${jr} fill="none" stroke=${color} stroke-width="1" opacity="0.6" />
+        <circle cx=${jd} cy=${-jd} r=${jr} fill="none" stroke=${color} stroke-width="1" opacity="0.6" />
+        <circle cx=${-jd} cy=${jd} r=${jr} fill="none" stroke=${color} stroke-width="1" opacity="0.6" />
+        <circle cx=${jd} cy=${jd} r=${jr} fill="none" stroke=${color} stroke-width="1" opacity="0.6" />`;
+      break;
+    }
     case "rug":
       detail = svg`<rect x=${-hw + w * 0.1} y=${-hh + h * 0.1} width=${w * 0.8} height=${h * 0.8}
                          rx=${Math.min(w, h) * 0.08} fill="none" stroke=${color}
