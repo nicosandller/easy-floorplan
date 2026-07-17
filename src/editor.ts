@@ -30,6 +30,7 @@ import {
   gridPercentToSnap,
   makeFloor,
   haFloorsOf,
+  moveFloor,
   resolveSnap,
   snapToGridPercent,
   trackerPresenceDetected,
@@ -1446,6 +1447,16 @@ export class FloorplanCardEditor extends LitElement {
     this._clearSel();
   }
 
+  /**
+   * Move the active floor one step up/down the list (issue #66) — the safe
+   * alternative to reordering floor blocks by hand in YAML. Commits through
+   * history, so a mis-move is one Ctrl+Z away.
+   */
+  private _moveFloor(delta: -1 | 1): void {
+    const next = moveFloor(this._config.floors ?? [], this._activeFloorId, delta);
+    if (next) this._commit({ ...this._config, floors: next });
+  }
+
   private _renameFloor(id: string, name: string): void {
     this._commit({
       ...this._config,
@@ -2003,7 +2014,7 @@ export class FloorplanCardEditor extends LitElement {
             >
               ${floors.map(
                 (f) =>
-                  html`<option value=${f.id} ?selected=${f.id === this._activeFloorId}>${f.name}</option>`
+                  html`<option value=${f.id} .selected=${f.id === this._activeFloorId}>${f.name}</option>`
               )}
             </select>
             <button
@@ -2028,6 +2039,29 @@ export class FloorplanCardEditor extends LitElement {
             ${this._floorMenuOpen
               ? html`<div class="pop">
                   ${this._renderHaFloorRow(floor)}
+                  <!-- Reorder (issue #66): the safe alternative to cut-and-
+                       pasting floor blocks in YAML, which drops/duplicates
+                       ids. Position in this list is the switcher order. -->
+                  <div class="pop-row">
+                    <label>Order</label>
+                    <button
+                      aria-label="Move floor up"
+                      title="Move this floor up the list"
+                      ?disabled=${floors.length < 2 || floors[0]?.id === this._activeFloorId}
+                      @click=${() => this._moveFloor(-1)}
+                    >
+                      <ha-icon icon="mdi:arrow-up"></ha-icon>
+                    </button>
+                    <button
+                      aria-label="Move floor down"
+                      title="Move this floor down the list"
+                      ?disabled=${floors.length < 2 ||
+                      floors[floors.length - 1]?.id === this._activeFloorId}
+                      @click=${() => this._moveFloor(1)}
+                    >
+                      <ha-icon icon="mdi:arrow-down"></ha-icon>
+                    </button>
+                  </div>
                   <div class="pop-row">
                     <label>Rename</label>
                     <input
