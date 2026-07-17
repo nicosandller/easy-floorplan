@@ -5,6 +5,7 @@ import type {
   Opening,
   ItemKind,
   IconAnimation,
+  StateColorRule,
   Furniture,
   Tracker,
   RenderHass,
@@ -74,14 +75,79 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
   return ids;
 }
 
-/** State text for an item: primary entity, plus secondary (e.g. humidity) when set. */
+/**
+ * An entity attribute's value as HA would render it, or "—" when there is
+ * none (issue #70). Uses HA's `formatEntityAttributeValue` when the running
+ * frontend provides it (2023.9+); otherwise the raw value, stringified.
+ */
+export function entityAttributeText(
+  hass: RenderHass | undefined,
+  entityId: string | undefined,
+  attribute: string,
+): string {
+  if (!entityId || !hass) return NO_STATE;
+  const stateObj = hass.states[entityId];
+  if (!stateObj) return NO_STATE;
+  const fmt = (hass as { formatEntityAttributeValue?: (s: unknown, a: string) => string })
+    .formatEntityAttributeValue;
+  if (typeof fmt === "function") return fmt(stateObj, attribute);
+  const raw = (stateObj.attributes as Record<string, unknown>)?.[attribute];
+  return raw === undefined || raw === null || raw === "" ? NO_STATE : String(raw);
+}
+
+/**
+ * State text for an item: primary reading (state, or `attribute` of the
+ * entity — issue #70), plus a secondary one when configured. The secondary
+ * reading comes from `secondaryEntity` when set, else from the same entity —
+ * so one climate device can show `21.5 °C · 45%` from two attributes.
+ */
 export function itemStateText(
   hass: RenderHass | undefined,
-  item: { entity: string; secondaryEntity?: string },
+  item: {
+    entity: string;
+    attribute?: string;
+    secondaryEntity?: string;
+    secondaryAttribute?: string;
+  },
 ): string {
-  const primary = entityStateText(hass, item.entity);
-  if (!item.secondaryEntity) return primary;
-  return `${primary} · ${entityStateText(hass, item.secondaryEntity)}`;
+  const primary = item.attribute
+    ? entityAttributeText(hass, item.entity, item.attribute)
+    : entityStateText(hass, item.entity);
+  const secondaryEntity = item.secondaryEntity ?? (item.secondaryAttribute ? item.entity : undefined);
+  if (!secondaryEntity) return primary;
+  const secondary = item.secondaryAttribute
+    ? entityAttributeText(hass, secondaryEntity, item.secondaryAttribute)
+    : entityStateText(hass, secondaryEntity);
+  return `${primary} · ${secondary}`;
+}
+
+/**
+ * The threshold color for a value (issue #68), or undefined for "use the
+ * theme default". Highest matching `above` wins; a rule without `above` is
+ * the default. Non-numeric values (a climate saying "heat") only ever match
+ * the default rule. The returned color is config-supplied — callers MUST
+ * pass it through cssColor/cssColorOr before it reaches a style attribute.
+ */
+export function resolveStateColor(
+  rules: readonly StateColorRule[] | undefined,
+  raw: unknown,
+): string | undefined {
+  if (!rules?.length) return undefined;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  const numeric = typeof raw !== "boolean" && raw !== "" && raw != null && Number.isFinite(n);
+  let best: StateColorRule | undefined;
+  let fallback: string | undefined;
+  for (const rule of rules) {
+    if (!rule || typeof rule !== "object" || typeof rule.color !== "string") continue;
+    if (typeof rule.above === "number") {
+      if (numeric && n > rule.above && (!best || rule.above > (best.above ?? -Infinity))) {
+        best = rule;
+      }
+    } else if (fallback === undefined) {
+      fallback = rule.color;
+    }
+  }
+  return best?.color ?? fallback;
 }
 
 /** Default label font size (px) for an item's name/state line. */

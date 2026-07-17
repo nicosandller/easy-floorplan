@@ -72,7 +72,12 @@ export function normalizeFormPatch(
   for (const field of fields) {
     if (!(field.name in patch)) continue;
     let v = patch[field.name];
-    if ("text" in field.selector || "icon" in field.selector || "entity" in field.selector) {
+    if (
+      "text" in field.selector ||
+      "icon" in field.selector ||
+      "entity" in field.selector ||
+      "attribute" in field.selector
+    ) {
       if (v === "" || v == null) v = field.required ? "" : undefined;
     } else if ("number" in field.selector) {
       const n = typeof v === "string" && v !== "" ? Number(v) : (v as number | undefined);
@@ -263,10 +268,22 @@ export function itemForm(it: FloorItem): FormSpec {
   const fields: FormField[] = [
     { name: "entity", label: "Entity", required: true, selector: { entity: {} } },
     {
+      name: "attribute",
+      label: "Attribute",
+      helper: "Show this attribute instead of the state (e.g. current_temperature)",
+      selector: { attribute: { entity_id: it.entity } },
+    },
+    {
       name: "secondaryEntity",
       label: "Second entity",
       helper: "Shown next to the primary state",
       selector: { entity: {} },
+    },
+    {
+      name: "secondaryAttribute",
+      label: "2nd attribute",
+      helper: "From the second entity, or this entity if none",
+      selector: { attribute: { entity_id: it.secondaryEntity || it.entity } },
     },
     { name: "icon", label: "Icon", selector: { icon: { placeholder: defaultIcon(it.kind) } } },
     { name: "name", label: "Name", selector: { text: {} } },
@@ -340,6 +357,8 @@ export function itemForm(it: FloorItem): FormSpec {
     data: {
       entity: it.entity,
       secondaryEntity: it.secondaryEntity ?? "",
+      attribute: it.attribute ?? "",
+      secondaryAttribute: it.secondaryAttribute ?? "",
       icon: it.icon ?? "",
       name: it.name ?? "",
       size: it.size ?? DEFAULT_ITEM_SIZE,
