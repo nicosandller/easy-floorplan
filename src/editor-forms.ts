@@ -141,6 +141,9 @@ export const FURNITURE_TYPES: FurnitureType[] = [
   "vanity",
   "waterHeater",
   "airHandler",
+  "fishTank",
+  "piano",
+  "hotTub",
 ];
 
 /** User-facing labels for furniture types (the enum uses camelCase). */
@@ -161,6 +164,9 @@ export const FURNITURE_LABELS: Record<FurnitureType, string> = {
   stairs: "stairs",
   tv: "tv",
   sectional: "sectional (L)",
+  fishTank: "fish tank",
+  piano: "piano",
+  hotTub: "hot tub",
   washer: "washer",
   dryer: "dryer",
   dishwasher: "dishwasher",
