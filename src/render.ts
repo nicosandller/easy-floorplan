@@ -1011,9 +1011,8 @@ export function renderFurniture(f: Furniture): SVGTemplateResult {
       break;
     }
     case "fishTank": {
-      // Issue #72: glass inset, a waterline tick, and two fish seen from
+      // Issue #72: glass inset and two fish seen from
       // above (lens body + tail) so it can't be mistaken for a rug.
-      const fx = w * 0.18;
       const fy = h * 0.1;
       const fish = (cx: number, cy: number, dir: number) => svg`
         <ellipse cx=${cx} cy=${cy} rx=${w * 0.07} ry=${h * 0.09}
