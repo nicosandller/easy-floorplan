@@ -121,3 +121,51 @@ describe("renderOpening — roll-up cover (issue #45)", () => {
     expect(s).not.toContain("fp-door-leaf");
   });
 });
+
+describe("renderOpening — single-sash window (issue #73)", () => {
+  const single = { type: "window", sash: "single" } as Partial<Opening>;
+
+  it("draws one full-width sash and one arc instead of two casement leaves", () => {
+    const s = svgOf(single, { open: true });
+    expect(s.match(/fp-door-leaf/g)?.length).toBe(1);
+    expect(s).not.toContain("fp-leaf-r");
+    expect(s.match(/fp-door-arc/g)?.length).toBe(1);
+    expect(s).toContain("width=90"); // sash spans the full opening
+  });
+
+  it("double stays the historic two-leaf look (default unchanged)", () => {
+    const d = svgOf({ type: "window" }, { open: true });
+    expect(d).toContain("fp-door-leaf");
+    expect(d).toContain("fp-leaf-r");
+    expect(svgOf({ type: "window", sash: "double" } as Partial<Opening>, { open: true })).toContain(
+      "fp-leaf-r",
+    );
+  });
+
+  it("hinge follows flipH via the mirror wrapper", () => {
+    expect(svgOf({ ...single, flipH: true })).toContain("scale(-1 1)");
+  });
+});
+
+describe("renderOpening — external shutter layer (issue #74)", () => {
+  it("layers the roll curtain over the window body", () => {
+    const s = svgOf({ type: "window" }, { open: true, shutter: { amount: 0.25 } });
+    expect(s).toContain("fp-roll-curtain");
+    expect(s).toContain("scaleY(0.75)"); // 1 - amount
+    expect(s).toContain("fp-leaf-r"); // the window itself still renders
+  });
+
+  it("no shutter style, no curtain (existing windows unchanged)", () => {
+    expect(svgOf({ type: "window" }, { open: true })).not.toContain("fp-roll-curtain");
+  });
+
+  it("shutter accent is independent of the window's active state", () => {
+    const s = svgOf({ type: "window" }, {
+      open: false,
+      active: false,
+      accent: "#ff0000",
+      shutter: { amount: 0.5, active: true },
+    });
+    expect(s).toContain("#ff0000"); // curtain wears the accent while the sash doesn't
+  });
+});
