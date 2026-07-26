@@ -12,6 +12,7 @@ import {
   haAreasOf,
   entityHaAreaId,
   entityIdsInHaArea,
+  areaFiltersEntities,
   uid,
   configsEqual,
   moveFloor,
@@ -352,6 +353,25 @@ describe("entityHaAreaId / entityIdsInHaArea", () => {
   it("entityIdsInHaArea returns [] without an entity registry", () => {
     expect(entityIdsInHaArea({}, "living_room")).toEqual([]);
     expect(entityIdsInHaArea(undefined, "living_room")).toEqual([]);
+  });
+});
+
+describe("areaFiltersEntities", () => {
+  it("filters by default once an HA area is linked", () => {
+    expect(areaFiltersEntities({ haArea: "living_room" })).toBe(true);
+  });
+
+  it("respects an explicit filterEntities: false", () => {
+    expect(areaFiltersEntities({ haArea: "living_room", filterEntities: false })).toBe(false);
+  });
+
+  it("an explicit filterEntities: true has no effect without a linked haArea", () => {
+    expect(areaFiltersEntities({ filterEntities: true })).toBe(false);
+  });
+
+  it("returns false for an unlinked area or undefined", () => {
+    expect(areaFiltersEntities({})).toBe(false);
+    expect(areaFiltersEntities(undefined)).toBe(false);
   });
 });
 

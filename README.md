@@ -315,8 +315,10 @@ device into one.
    - **Fill opacity** and a **color** picker — the translucent fill that makes the room
      stand out (falls back to the theme primary color).
    - **HA area** — link the polygon to one of your Home Assistant areas. Linking names
-     the polygon after it (rename afterwards if you like; the link sticks either way) and
-     turns on entity filtering (next point).
+     the polygon after it (rename afterwards if you like; the link sticks either way) —
+     once **Filter entities** is on (below) it also turns on entity filtering (next point).
+   - **Filter entities** — shown once an HA area is linked; a plain checkbox, on by
+     default. Turn it off to keep the name link without narrowing the entity picker.
 
 **Reshaping.** Drag anywhere inside the fill to move the whole room; drag a single corner
 handle to reshape it (each handle snaps the same way a freshly placed point does). There's
@@ -325,11 +327,12 @@ area's or a wall's corner doesn't drag together with it, only *snaps* there when
 or move it.
 
 **Entity filtering.** Drop a **device** (via **+ Add**) inside an area linked to an HA
-area, and that device's entity picker narrows to entities registered to that HA area —
-so you're not scrolling past your whole house to find the right light. The picker widens
-back up the moment you drag the device outside the polygon. Overlapping areas resolve by
-draw order: whichever area was drawn last wins for both the fill you see on top and which
-one a device is considered "inside".
+area (with **Filter entities** on), and that device's entity picker narrows to entities
+registered to that HA area — so you're not scrolling past your whole house to find the
+right light. The picker widens back up the moment you drag the device outside the polygon,
+or if you flip **Filter entities** off. Overlapping areas resolve by draw order: whichever
+area was drawn last wins for both the fill you see on top and which one a device is
+considered "inside".
 
 ```yaml
 areas:
@@ -597,7 +600,7 @@ trackers:
 
 ### Area
 
-`{ id, points, name?, showName?, color?, opacity?, haArea? }`
+`{ id, points, name?, showName?, color?, opacity?, haArea?, filterEntities? }`
 
 - `points` — an array of `{ x, y }` vertices (canvas units), in drawing order; the shape
   is implicitly closed from the last point back to the first.
@@ -606,8 +609,10 @@ trackers:
 - `color` / `opacity` — the room's fill; `color` falls back to the theme primary color,
   `opacity` defaults to `0.25`.
 - `haArea` — optional id of a linked Home Assistant area. Selecting one in the editor
-  names the polygon after it and scopes the entity picker, for any device placed inside
-  it, to that HA area's entities — see **Areas**.
+  names the polygon after it — see **Areas**.
+- `filterEntities` — with `haArea` set, scopes the entity picker (for any device placed
+  inside this polygon) to that HA area's entities. Default `true`; has no effect without
+  a linked `haArea`.
 
 ```yaml
 areas:

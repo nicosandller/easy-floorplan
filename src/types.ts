@@ -412,11 +412,28 @@ export interface Area {
   opacity?: number;
   /**
    * Optional link to a Home Assistant area (its registry `area_id`). Selecting
-   * one names this Area after it (same convention as {@link Floor.haFloor})
-   * and scopes the entity picker, for devices placed inside this polygon, to
-   * entities registered to that HA area.
+   * one names this Area after it (same convention as {@link Floor.haFloor}).
+   * Whether it also scopes the entity picker is controlled by
+   * {@link filterEntities}.
    */
   haArea?: string;
+  /**
+   * With `haArea` linked, scope the entity picker (for devices placed inside
+   * this polygon) to that HA area's entities. Default true. Has no effect
+   * without a linked `haArea`.
+   */
+  filterEntities?: boolean;
+}
+
+/**
+ * Whether a device inside `area` should have its entity picker scoped to the
+ * linked HA area's entities: only once an HA area is actually linked, and
+ * only while {@link Area.filterEntities} hasn't been turned off (defaults on).
+ */
+export function areaFiltersEntities(
+  area: Pick<Area, "haArea" | "filterEntities"> | undefined
+): boolean {
+  return !!area?.haArea && (area.filterEntities ?? true);
 }
 
 export const DEFAULT_AREA_OPACITY = 0.25;

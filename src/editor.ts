@@ -36,6 +36,7 @@ import {
   haFloorsOf,
   haAreasOf,
   entityIdsInHaArea,
+  areaFiltersEntities,
   moveFloor,
   resolveSnap,
   snapToGridPercent,
@@ -3083,13 +3084,14 @@ export class FloorplanCardEditor extends LitElement {
     if (sel.kind === "item") {
       const it = this._floor().items.find((x) => x.id === sel.id);
       if (!it) return html`${nothing}`;
-      // A device placed inside an Area linked to a Home Assistant area (issue
-      // TBD) gets its entity pickers scoped to that HA area — recomputed on
-      // every render from the device's live x/y, so it tracks the device as
-      // it's dragged in/out of the polygon, even before the form reopens.
+      // A device placed inside an Area linked to a Home Assistant area gets
+      // its entity pickers scoped to that HA area, unless the area's own
+      // "Filter entities" toggle turns that off — recomputed on every render
+      // from the device's live x/y, so it tracks the device as it's dragged
+      // in/out of the polygon, even before the form reopens.
       const containingArea = areaContainingPoint(this._floor(), it.x, it.y);
-      const areaEntities = containingArea?.haArea
-        ? entityIdsInHaArea(this.hass, containingArea.haArea)
+      const areaEntities = areaFiltersEntities(containingArea)
+        ? entityIdsInHaArea(this.hass, containingArea!.haArea!)
         : undefined;
       return html`
         ${this._renderForm(itemForm(it, areaEntities), (patch, live) => {
@@ -3219,9 +3221,23 @@ export class FloorplanCardEditor extends LitElement {
                     </option>`
                 )}
               </select>
+              <span class="hint">Names this room after the linked HA area.</span>
+            </div>`
+          : nothing}
+        ${a.haArea
+          ? html`<div class="row wide">
+              <label>Filter entities</label>
+              <input
+                type="checkbox"
+                .checked=${a.filterEntities ?? true}
+                @change=${(e: Event) =>
+                  this._updateArea(a.id, {
+                    filterEntities: (e.target as HTMLInputElement).checked,
+                  })}
+              />
               <span class="hint"
-                >Devices placed inside this room will be filtered to this HA area's
-                entities.</span
+                >Scope the entity picker, for devices placed inside this room, to this HA
+                area's entities.</span
               >
             </div>`
           : nothing}

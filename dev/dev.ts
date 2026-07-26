@@ -273,7 +273,7 @@ const bgImage =
 // Start with a blank floor so you can draw a perimeter from scratch. Flip
 // START_WITH_DEMO to true to instead load a sample room (walls + door + window
 // over the background image) — handy for testing rendering of existing plans.
-const START_WITH_DEMO = true;
+const START_WITH_DEMO = false;
 
 const demoFloor = {
   id: "f1",
