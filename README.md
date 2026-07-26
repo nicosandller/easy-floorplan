@@ -115,10 +115,14 @@ background):
 - **+ Add** — one popover for everything droppable: device, text, and all furniture
   types shown as their actual glyphs (pick a sofa by seeing a sofa). The new element is
   selected immediately so the **Element** section is ready for configuring it.
-- **floor** — switch floors with the dropdown, add one with **+**; rename and delete
-  live behind the gear button. The gear also offers an **HA floor** dropdown listing
-  your Home Assistant floors — linking one names the plan floor after it (rename
-  afterwards if you like; the link sticks either way).
+- **floor** — switch floors with the dropdown, add one with **+**; rename, **reorder**
+  (▲/▼ move the current floor up/down the list — the order of the dropdown and the
+  card's floor switcher) and delete live behind the gear button. The gear also offers
+  an **HA floor** dropdown listing your Home Assistant floors — linking one names the
+  plan floor after it (rename afterwards if you like; the link sticks either way).
+  Prefer the ▲/▼ buttons over reordering floor blocks in YAML: hand-editing easily
+  drops or duplicates floor `id`s (the card now repairs both, but edits made while
+  ids collide can land on the wrong floor).
 
 Undo/redo buttons sit at the right of the tools row. Zoom controls live on the canvas
 itself (bottom-right): **−** / **+** step, click the percentage to reset, the fit button
@@ -171,6 +175,23 @@ By default it shows an icon badge:
   default); **Show name** adds the device's name — handy for a panel of look-alike
   buttons where a state would say nothing. Both together read `Name · state`, and
   **Label size** adjusts the line's font size.
+- **Attributes, not just states** — set **Attribute** to show an attribute instead
+  of the state (a climate's `current_temperature` rather than "heat"), and
+  **2nd attribute** for a second reading from the same device — so one climate
+  entity renders `21.5 °C · 45%`. Formatted by HA's own attribute formatter.
+- **Threshold colors** — `stateColor` (YAML) colors the label by value:
+
+  ```yaml
+  stateColor:
+    - above: 26
+      color: red
+    - above: 24
+      color: orange
+    - color: white   # default
+  ```
+
+  The highest matching `above` wins; non-numeric values use the default rule.
+  Colors go through the same injection allowlist as every other config color.
 - **No entity? Still on the map** — a device with no entity bound renders as a plain
   badge (its icon override or kind default), so hardware that has no Home Assistant
   entity — a dumb smoke detector, a wired doorbell — can still be marked on the plan.
@@ -209,7 +230,12 @@ tracks state:
 
 - **Open / closed** — the opening is drawn open when the entity is `on` / `open`, closed
   otherwise. A door's leaf swings around its hinge; a window's two leaves swing outward
-  from the middle. When closed the swing arc is hidden; as the opening moves, the arc
+  from the middle — or set **Sashes** to *Single* for a one-sash window (hinged at
+  either jamb via **Hinge**).
+- **Window + external shutter** — a window and its roller shutter share one wall gap:
+  bind the window's contact sensor as **Entity** and the shutter's `cover` as
+  **Shutter**. The sash and the slatted curtain render independently, so an open
+  window behind a closed shutter shows both truthfully. When closed the swing arc is hidden; as the opening moves, the arc
   **draws on**, tracing the path of the leaf edge — animated smoothly.
 - **Partial (position covers)** — if the bound `cover` reports a `current_position`
   (0–100), the opening is drawn **partly open** to match — a door swings partway, a
@@ -407,6 +433,8 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | `id`          | string                      | Unique id.                                             |
 | `type`        | `door` \| `window`          | The kind of opening.                                   |
 | `motion`      | `swing` \| `slide` \| `roll` | How it moves. `swing` (default) hinged door / casement window; `slide` sliding panels; `roll` roll-up cover (garage / roller shutter) drawn as a slatted curtain that thins onto its track as it opens. |
+| `sash`        | `single` \| `double`        | Swing windows only: one full-width sash or the classic two leaves. Default `double`. |
+| `shutterEntity` | string                     | Windows only: a `cover` for an external roller shutter over the same gap — drawn as a slatted curtain layered on the sash, with its own open/closed state. |
 | `x`, `y`      | number                      | Center position.                                       |
 | `length`      | number                      | Length along the wall.                                 |
 | `angle`       | number                      | Rotation in degrees.                                   |
@@ -424,6 +452,9 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | `id`          | string                                 | —            | Unique id.                                             |
 | `entity`      | string                                 | —            | Entity id to bind. Optional: without one the device renders as a static badge. |
 | `secondaryEntity` | string                             | —            | Optional 2nd entity shown alongside (e.g. humidity).   |
+| `attribute`   | string                                 | —            | Show this attribute of `entity` instead of its state (e.g. `current_temperature`). |
+| `secondaryAttribute` | string                          | —            | Attribute for the 2nd reading — from `secondaryEntity`, or from `entity` when none. |
+| `stateColor`  | rule[]                                 | —            | Threshold colors for the label: `[{above: 26, color: red}, {color: white}]`. Highest matching `above` wins. |
 | `x`, `y`      | number                                 | —            | Position.                                              |
 | `kind`        | light/switch/sensor/binary_sensor/climate/cover/generic | inferred | Used for the default icon.            |
 | `icon`        | string                                 | entity icon  | Override mdi icon.                                     |

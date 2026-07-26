@@ -11,6 +11,7 @@ import {
   haFloorsOf,
   uid,
   configsEqual,
+  moveFloor,
 } from "./types";
 import type { FloorplanCardConfig, TrackerSensor } from "./types";
 
@@ -295,5 +296,56 @@ describe("configsEqual", () => {
     expect(configsEqual(null, null)).toBe(true);
     expect(configsEqual(null, {})).toBe(false);
     expect(configsEqual("a", "b")).toBe(false);
+  });
+});
+
+describe("floor id repair via getFloors (issue #66)", () => {
+  const floor = (id: string | undefined, name: string) =>
+    ({ id, name, walls: [], openings: [], items: [], texts: [], furniture: [], trackers: [] });
+  const cfg = (floors: unknown[]) =>
+    ({ type: "t", width: 1000, height: 600, floors }) as unknown as FloorplanCardConfig;
+
+  it("leaves well-formed ids untouched (same order, same values)", () => {
+    const out = getFloors(cfg([floor("a", "A"), floor("b", "B")]));
+    expect(out.map((f) => f.id)).toEqual(["a", "b"]);
+  });
+
+  it("backfills missing ids deterministically by position", () => {
+    const out = getFloors(cfg([floor(undefined, "A"), floor(undefined, "B")]));
+    expect(out.map((f) => f.id)).toEqual(["floor_1", "floor_2"]);
+    // Stable: a second call yields the same ids, so lookups don't churn.
+    const again = getFloors(cfg([floor(undefined, "A"), floor(undefined, "B")]));
+    expect(again.map((f) => f.id)).toEqual(["floor_1", "floor_2"]);
+  });
+
+  it("de-duplicates copy-pasted ids, keeping the first occurrence", () => {
+    const out = getFloors(cfg([floor("a", "One"), floor("a", "Two"), floor("a", "Three")]));
+    expect(out[0]!.id).toBe("a");
+    expect(new Set(out.map((f) => f.id)).size).toBe(3);
+    // Names stay with their floors — only the colliding ids change.
+    expect(out.map((f) => f.name)).toEqual(["One", "Two", "Three"]);
+  });
+});
+
+describe("moveFloor (issue #66)", () => {
+  const floors = [
+    makeFloor("Basement"),
+    makeFloor("Ground"),
+    makeFloor("Roof"),
+  ].map((f, i) => ({ ...f, id: `f${i}` }));
+
+  it("moves a floor one step and leaves the input untouched", () => {
+    const up = moveFloor(floors, "f2", -1)!;
+    expect(up.map((f) => f.id)).toEqual(["f0", "f2", "f1"]);
+    const down = moveFloor(floors, "f0", 1)!;
+    expect(down.map((f) => f.id)).toEqual(["f1", "f0", "f2"]);
+    expect(floors.map((f) => f.id)).toEqual(["f0", "f1", "f2"]);
+  });
+
+  it("returns null at the ends and for unknown ids", () => {
+    expect(moveFloor(floors, "f0", -1)).toBeNull();
+    expect(moveFloor(floors, "f2", 1)).toBeNull();
+    expect(moveFloor(floors, "missing", 1)).toBeNull();
+    expect(moveFloor([], "f0", 1)).toBeNull();
   });
 });

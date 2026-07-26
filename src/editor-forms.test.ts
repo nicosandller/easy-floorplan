@@ -281,3 +281,35 @@ describe("wallForm / projectForm / floorImageForm", () => {
     expect(floorImageForm({} as Floor).fields.map((x) => x.name)).not.toContain("imageOpacity");
   });
 });
+
+describe("openingForm — sash and shutter (issues #73 / #74)", () => {
+  const win = { id: "w1", type: "window", x: 0, y: 0, length: 90, angle: 0 } as Opening;
+
+  it("swing windows offer Sashes; single sash reveals Hinge", () => {
+    const names = openingForm(win).fields.map((x) => x.name);
+    expect(names).toContain("sash");
+    expect(names).not.toContain("hinge"); // double: no single hinge
+    const single = openingForm({ ...win, sash: "single" } as Opening).fields.map((x) => x.name);
+    expect(single).toContain("hinge");
+    // doors and sliders don't get a sash field
+    expect(openingForm(door).fields.map((x) => x.name)).not.toContain("sash");
+    expect(
+      openingForm({ ...win, motion: "slide" } as Opening).fields.map((x) => x.name)
+    ).not.toContain("sash");
+  });
+
+  it("windows offer a Shutter cover picker; doors don't", () => {
+    const f = openingForm(win).fields.find((x) => x.name === "shutterEntity");
+    expect(f).toBeDefined();
+    expect(f!.selector).toEqual({ entity: { filter: [{ domain: "cover" }] } });
+    expect(openingForm(door).fields.map((x) => x.name)).not.toContain("shutterEntity");
+  });
+
+  it("patches map back to config shape (double stays out of the YAML)", () => {
+    const form = openingForm(win);
+    expect(form.toPatch({ sash: "single" })).toEqual({ sash: "single" });
+    expect(form.toPatch({ sash: "double" })).toEqual({ sash: undefined });
+    expect(form.data.sash).toBe("double");
+    expect(openingForm({ ...win, sash: "single" } as Opening).data.sash).toBe("single");
+  });
+});
