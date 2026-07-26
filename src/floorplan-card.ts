@@ -2,7 +2,7 @@ import { LitElement, html, css, svg, nothing, type TemplateResult, type Property
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor } from "./types";
-import { cssColorOr, cssNumber } from "./css-safe";
+import { cssColor, cssColorOr, cssNumber } from "./css-safe";
 import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
@@ -19,12 +19,15 @@ import {
   resolveOpeningAmount,
   openingIsActive,
   openingClickAction,
+  shutterAmount,
+  shutterActive,
   renderRipple,
   renderFurniture,
   renderTracker,
   trackerSensorReading,
   entityIsActive,
   itemBadgeLabel,
+  resolveStateColor,
   itemLabelSize,
   hassRenderInputsChanged,
   collectWatchedEntities,
@@ -205,6 +208,13 @@ export class FloorplanCard extends LitElement {
     // Name/state composition lives in itemBadgeLabel, including #39's
     // no-entity guard (an unbound device gets no state line).
     const labelText = itemBadgeLabel(this.hass, item);
+    // Threshold color (issue #68), judged on the displayed value (attribute
+    // when set, else the state). cssColor gates the config string (#64).
+    const st = item.entity ? this.hass?.states[item.entity] : undefined;
+    const rawValue = item.attribute
+      ? (st?.attributes as Record<string, unknown> | undefined)?.[item.attribute]
+      : st?.state;
+    const labelColor = cssColor(resolveStateColor(item.stateColor, rawValue));
     const showIcon = item.showIcon ?? true;
     const display = item.display ?? "badge";
     const rippleColor = item.rippleColor ?? "var(--primary-color, #03a9f4)";
@@ -244,7 +254,9 @@ export class FloorplanCard extends LitElement {
         ${labelText
           ? html`<span
               class="label ${visual === nothing ? "inflow" : ""}"
-              style="font-size:${itemLabelSize(item.labelSize)}px;"
+              style="font-size:${itemLabelSize(item.labelSize)}px;${labelColor
+                ? `color:${labelColor};`
+                : ""}"
               >${labelText}</span
             >`
           : nothing}
@@ -327,12 +339,20 @@ export class FloorplanCard extends LitElement {
               (o, i) => o.id || i,
               (o) => {
               const amount = this._openingAmount(o);
+              const shutterState = o.shutterEntity
+                ? this.hass?.states[o.shutterEntity]
+                : undefined;
               const symbol = renderOpening(o, {
                 color: "var(--primary-text-color)",
                 open: amount > 0,
                 amount,
                 active: this._openingActive(o),
                 accent: o.activeColor ?? "var(--primary-color, #03a9f4)",
+                // External roller shutter layer (issue #74). No entity bound
+                // yet → previewed shut, like a static plan.
+                shutter: o.shutterEntity
+                  ? { amount: shutterAmount(shutterState), active: shutterActive(shutterState) }
+                  : undefined,
               });
               if (!o.entity) return symbol;
               // Entity-bound openings are tappable — a transparent rect over the
