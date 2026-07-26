@@ -1,7 +1,7 @@
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
-import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor } from "./types";
+import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor, Area } from "./types";
 import { cssColor, cssColorOr, cssNumber } from "./css-safe";
 import {
   DEFAULT_WIDTH,
@@ -24,6 +24,8 @@ import {
   renderRipple,
   renderFurniture,
   renderTracker,
+  renderArea,
+  polygonCentroid,
   trackerSensorReading,
   entityIsActive,
   itemBadgeLabel,
@@ -63,7 +65,7 @@ export class FloorplanCard extends LitElement {
     const raw = config as Record<string, unknown>;
     // A key with an empty YAML value ("trackers:") parses to null — treat it
     // as unset like the ?? defaults always have, not as malformed.
-    for (const key of ["walls", "openings", "items", "texts", "furniture", "trackers", "floors"]) {
+    for (const key of ["walls", "openings", "items", "texts", "furniture", "trackers", "areas", "floors"]) {
       if (raw[key] != null && !Array.isArray(raw[key]))
         throw new Error(`Invalid configuration: "${key}" must be a list`);
     }
@@ -264,6 +266,21 @@ export class FloorplanCard extends LitElement {
     `;
   }
 
+  private _renderAreaLabel(a: Area, c: FloorplanCardConfig, rot: PlanRotation): TemplateResult | typeof nothing {
+    if (!a.name || (a.showName ?? true) === false) return nothing;
+    const centroid = polygonCentroid(a.points);
+    const p = rotatePlanPoint(centroid.x, centroid.y, c.width, c.height, rot);
+    const d = rotatedCanvasSize(c.width, c.height, rot);
+    return html`
+      <div
+        class="area-label"
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;"
+      >
+        ${a.name}
+      </div>
+    `;
+  }
+
   private _renderText(t: FloorText, c: FloorplanCardConfig, rot: PlanRotation): TemplateResult {
     const p = rotatePlanPoint(t.x, t.y, c.width, c.height, rot);
     const d = rotatedCanvasSize(c.width, c.height, rot);
@@ -321,6 +338,7 @@ export class FloorplanCard extends LitElement {
               ? svg`<image href=${active.image} x="0" y="0" width=${c.width} height=${c.height}
                           preserveAspectRatio="none" opacity=${active.imageOpacity ?? 1} />`
               : nothing}
+            ${active.areas?.map((a) => renderArea(a))}
             ${active.furniture.map((f) => renderFurniture(f))}
             ${renderWallMask(active.openings, c.width, c.height, this._wallMaskId)}
             <g mask=${`url(#${this._wallMaskId})`}>
@@ -382,6 +400,7 @@ export class FloorplanCard extends LitElement {
             </g>
           </svg>
           <div class="items">
+            ${active.areas?.map((a) => this._renderAreaLabel(a, c, rot))}
             ${active.texts.map((t) => this._renderText(t, c, rot))}
             ${repeat(
               // No entity filter: devices that exist physically but have no HA
@@ -617,6 +636,22 @@ export class FloorplanCard extends LitElement {
       white-space: nowrap;
       font-weight: 500;
       line-height: 1;
+    }
+    .area-label {
+      position: absolute;
+      pointer-events: none;
+      white-space: nowrap;
+      transform: translate(-50%, -50%);
+      font-weight: 600;
+      font-size: 14px;
+      letter-spacing: 0.02em;
+      text-transform: uppercase;
+      line-height: 1;
+      color: var(--primary-text-color);
+      opacity: 0.7;
+      text-shadow:
+        0 1px 2px var(--card-background-color, #fff),
+        0 -1px 2px var(--card-background-color, #fff);
     }
     .stack {
       position: relative;

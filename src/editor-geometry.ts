@@ -1,7 +1,8 @@
-import type { Floor, Wall } from "./types";
+import type { Area, AreaPoint, Floor, Wall } from "./types";
+import { polygonCentroid } from "./render";
 
 /** Element kinds addressable by the editor's selection model. */
-export type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker";
+export type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker" | "area";
 
 export interface Sel {
   kind: SelKind;
@@ -11,7 +12,8 @@ export interface Sel {
 /** Snapshot of an element's position at drag start, for group translation. */
 export type OrigPos =
   | { kind: "wall"; x1: number; y1: number; x2: number; y2: number }
-  | { kind: "pt"; x: number; y: number };
+  | { kind: "pt"; x: number; y: number }
+  | { kind: "polygon"; points: AreaPoint[] };
 
 /** A rectangle described by two opposite corners (any orientation). */
 export interface Rect {
@@ -76,6 +78,25 @@ export function attachedCorners(
   return attached.length ? attached : undefined;
 }
 
+/** Closest of `points` to `(rawX, rawY)` within `maxDist`, or null. */
+function nearestOf(
+  points: readonly AreaPoint[],
+  rawX: number,
+  rawY: number,
+  maxDist: number
+): AreaPoint | null {
+  let best: AreaPoint | null = null;
+  let bestDist = maxDist;
+  for (const p of points) {
+    const d = Math.hypot(rawX - p.x, rawY - p.y);
+    if (d < bestDist) {
+      bestDist = d;
+      best = { x: p.x, y: p.y };
+    }
+  }
+  return best;
+}
+
 /** Nearest existing wall endpoint within `maxDist`, or null. */
 export function nearestCorner(
   walls: readonly WallSegment[],
@@ -83,21 +104,70 @@ export function nearestCorner(
   rawY: number,
   maxDist: number
 ): { x: number; y: number } | null {
-  let best: { x: number; y: number } | null = null;
-  let bestDist = maxDist;
-  for (const w of walls) {
-    for (const e of [
-      { x: w.x1, y: w.y1 },
-      { x: w.x2, y: w.y2 },
-    ]) {
-      const d = Math.hypot(rawX - e.x, rawY - e.y);
-      if (d < bestDist) {
-        bestDist = d;
-        best = { x: e.x, y: e.y };
-      }
-    }
+  const corners = walls.flatMap((w) => [
+    { x: w.x1, y: w.y1 },
+    { x: w.x2, y: w.y2 },
+  ]);
+  return nearestOf(corners, rawX, rawY, maxDist);
+}
+
+/**
+ * Nearest point within `maxDist` among every wall endpoint and every Area
+ * vertex on the floor — used both while drawing a new Area polygon and while
+ * dragging an existing vertex, so adjacent rooms (or a room and a wall) can
+ * share an exact boundary point. `exclude` drops one specific vertex from the
+ * candidate set — the one currently being moved, so it never snaps to its own
+ * pre-drag position.
+ */
+export function nearestAreaSnapPoint(
+  f: { walls: readonly WallSegment[]; areas?: readonly Area[] },
+  rawX: number,
+  rawY: number,
+  maxDist: number,
+  exclude?: { areaId: string; vertexIndex: number }
+): AreaPoint | null {
+  const corners = f.walls.flatMap((w) => [
+    { x: w.x1, y: w.y1 },
+    { x: w.x2, y: w.y2 },
+  ]);
+  const vertices = (f.areas ?? []).flatMap((a) =>
+    a.points
+      .filter((_, i) => !(exclude && exclude.areaId === a.id && exclude.vertexIndex === i))
+      .map((p) => ({ x: p.x, y: p.y }))
+  );
+  return nearestOf([...corners, ...vertices], rawX, rawY, maxDist);
+}
+
+/**
+ * Ray-casting point-in-polygon test. Points exactly on an edge may resolve
+ * either way (not a documented guarantee) — the caller only needs an
+ * approximate "did this land inside the room" answer, not exact edge
+ * semantics.
+ */
+export function pointInPolygon(points: readonly AreaPoint[], x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const pi = points[i]!;
+    const pj = points[j]!;
+    const intersects =
+      pi.y > y !== pj.y > y && x < ((pj.x - pi.x) * (y - pi.y)) / (pj.y - pi.y) + pi.x;
+    if (intersects) inside = !inside;
   }
-  return best;
+  return inside;
+}
+
+/**
+ * The topmost (last-drawn) Area whose polygon contains `(x, y)`, or undefined
+ * when none does. Overlapping areas resolve by array order — later elements
+ * paint over earlier ones, the same implicit tie-break the rest of the editor
+ * uses (e.g. marquee/click hit-testing).
+ */
+export function areaContainingPoint(f: Pick<Floor, "areas">, x: number, y: number): Area | undefined {
+  const areas = f.areas ?? [];
+  for (let i = areas.length - 1; i >= 0; i--) {
+    if (pointInPolygon(areas[i]!.points, x, y)) return areas[i];
+  }
+  return undefined;
 }
 
 /**
@@ -146,6 +216,10 @@ export function elementsInRect(f: Floor, m: Rect): Sel[] {
   for (const fu of f.furniture) if (inside(fu.x, fu.y)) out.push({ kind: "furniture", id: fu.id });
   for (const tr of f.trackers ?? [])
     if (inside(tr.x + tr.w / 2, tr.y + tr.h / 2)) out.push({ kind: "tracker", id: tr.id });
+  for (const a of f.areas ?? []) {
+    const c = polygonCentroid(a.points);
+    if (inside(c.x, c.y)) out.push({ kind: "area", id: a.id });
+  }
   return out;
 }
 
@@ -177,6 +251,12 @@ export function applyDelta(f: Floor, dx: number, dy: number, orig: Map<string, O
     trackers: (f.trackers ?? []).map((el) => {
       const o = orig.get(`tracker:${el.id}`);
       return o && o.kind === "pt" ? { ...el, x: o.x + dx, y: o.y + dy } : el;
+    }),
+    areas: (f.areas ?? []).map((el) => {
+      const o = orig.get(`area:${el.id}`);
+      return o && o.kind === "polygon"
+        ? { ...el, points: o.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) }
+        : el;
     }),
   };
 }

@@ -15,6 +15,8 @@ import type {
   ItemKind,
   Tracker,
   TrackerSensor,
+  Area,
+  AreaPoint,
 } from "./types";
 import {
   DEFAULT_CUSTOM_PERCENT,
@@ -32,6 +34,8 @@ import {
   gridPercentToSnap,
   makeFloor,
   haFloorsOf,
+  haAreasOf,
+  entityIdsInHaArea,
   moveFloor,
   resolveSnap,
   snapToGridPercent,
@@ -48,6 +52,7 @@ import {
   renderRipple,
   renderFurniture,
   renderTracker,
+  renderArea,
   trackerSensorReading,
   kindFromEntity,
   resolveItemIcon,
@@ -62,8 +67,10 @@ import { cssColorOr, cssNumber } from "./css-safe";
 import {
   ENDPOINT_SNAP,
   applyDelta,
+  areaContainingPoint,
   attachedCorners,
   elementsInRect,
+  nearestAreaSnapPoint,
   nearestCorner,
   snapWallEnd,
   type AttachedCorner,
@@ -75,6 +82,7 @@ import {
 import {
   FURNITURE_LABELS,
   FURNITURE_TYPES,
+  areaForm,
   diffFormValue,
   floorImageForm,
   furnitureForm,
@@ -94,7 +102,7 @@ import {
 const formLabel = (s: FormField): string => s.label;
 const formHelper = (s: FormField): string | undefined => s.helper;
 
-type Tool = "select" | "wall" | "door" | "window" | "tracker";
+type Tool = "select" | "wall" | "door" | "window" | "tracker" | "area";
 type OverlaySel = { kind: "item" | "text"; id: string };
 
 /** Toolbar metadata per tool: mdi icon + label (icons make the modes scannable). */
@@ -104,6 +112,7 @@ const TOOL_META: Record<Tool, { icon: string; label: string }> = {
   door: { icon: "mdi:door", label: "Door" },
   window: { icon: "mdi:window-closed-variant", label: "Window" },
   tracker: { icon: "mdi:crosshairs-gps", label: "Tracker" },
+  area: { icon: "mdi:vector-polygon", label: "Area" },
 };
 
 /** Icon shown in the Element header per selected element kind. */
@@ -114,6 +123,7 @@ const SEL_KIND_ICON: Record<SelKind, string> = {
   text: "mdi:format-text",
   furniture: "mdi:sofa-outline",
   tracker: "mdi:crosshairs-gps",
+  area: "mdi:floor-plan",
 };
 
 interface Drag {
@@ -125,6 +135,8 @@ interface Drag {
   orig: Map<string, OrigPos>;
   /** Set when dragging a single wall endpoint handle. */
   endpoint?: 1 | 2;
+  /** Set when dragging a single Area vertex handle (index into its `points`). */
+  areaVertex?: number;
   /**
    * Endpoints of *other* walls that coincide with the dragged wall's
    * corner(s) and stretch along with it (issue #30). Hold Alt to detach and
@@ -149,6 +161,7 @@ interface Clipboard {
   texts: FloorText[];
   furniture: Furniture[];
   trackers: Tracker[];
+  areas: Area[];
 }
 
 /** Snap distance (virtual units) for openings onto walls. */
@@ -195,6 +208,13 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _draft: { x1: number; y1: number; x2: number; y2: number } | null = null;
   /** While dragging the Tracker tool, the rectangle being drawn (top-left corner + opposite corner). */
   @state() private _draftTracker: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  /**
+   * While the Area tool is active, the polygon being built up click by click.
+   * Closed by clicking back on `points[0]` once at least 3 points are placed.
+   */
+  @state() private _draftArea: { points: AreaPoint[] } | null = null;
+  /** Live cursor position while drawing an Area, for the rubber-band preview segment. */
+  @state() private _areaHover: AreaPoint | null = null;
   /** When true, walls are drawn freely (no horizontal/vertical or corner gravity). */
   @state() private _freeWalls = false;
   /** Default length applied to a freshly placed door/window. User-editable from the context bar. */
@@ -556,6 +576,25 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
+   * Snap a raw point for Area drawing/editing: nearby wall corner or another
+   * Area's vertex wins (so adjacent rooms can share an exact boundary point),
+   * else the grid/snap step. `exclude` drops one vertex from the candidate
+   * set — the one currently being dragged, so it can't snap to itself.
+   */
+  private _snapAreaPoint(
+    rawX: number,
+    rawY: number,
+    exclude?: { areaId: string; vertexIndex: number }
+  ): AreaPoint {
+    return (
+      nearestAreaSnapPoint(this._floor(), rawX, rawY, ENDPOINT_SNAP, exclude) ?? {
+        x: this._snap(rawX),
+        y: this._snap(rawY),
+      }
+    );
+  }
+
+  /**
    * Like {@link _snapWallPoint}, but ignores endpoints in `moving` (keys
    * `${wallId}:${end}`) — the corner cluster being dragged must not attract
    * itself.
@@ -616,7 +655,7 @@ export class FloorplanCardEditor extends LitElement {
     // Emit without the legacy flat arrays: `floors` is the source of truth,
     // and empty stubs would otherwise be persisted into the user's YAML.
     const out = { ...config };
-    for (const key of ["walls", "openings", "items", "texts", "furniture", "trackers"] as const) {
+    for (const key of ["walls", "openings", "items", "texts", "furniture", "trackers", "areas"] as const) {
       if (!out[key]?.length) delete out[key];
     }
     this._lastEmitted = out;
@@ -748,7 +787,22 @@ export class FloorplanCardEditor extends LitElement {
     // While a gesture is live, any keyboard mutation (paste, delete, nudge,
     // undo…) would interleave with the drag's emits and history snapshot —
     // ignore them all; Escape below still cancels the gesture itself.
-    const gestureActive = !!(this._drag || this._draft || this._draftTracker || this._marquee);
+    const gestureActive = !!(
+      this._drag ||
+      this._draft ||
+      this._draftTracker ||
+      this._draftArea ||
+      this._marquee
+    );
+    // Backspace pops the last placed vertex instead of deleting a selected
+    // element while an Area draft is in progress (checked ahead of the
+    // gestureActive bail so it isn't swallowed by that guard).
+    if (ev.key === "Backspace" && this._draftArea?.points.length) {
+      ev.preventDefault();
+      const pts = this._draftArea.points.slice(0, -1);
+      this._draftArea = pts.length ? { points: pts } : null;
+      return;
+    }
     if (gestureActive && ev.key !== "Escape" && !(mod && key === "c")) return;
     if (mod && key === "c") {
       if (this._selection.length) {
@@ -796,7 +850,7 @@ export class FloorplanCardEditor extends LitElement {
         this._addMenuOpen = false;
         return;
       }
-      if (this._draft || this._draftTracker || this._marquee || this._drag) {
+      if (this._draft || this._draftTracker || this._draftArea || this._marquee || this._drag) {
         ev.preventDefault();
         ev.stopPropagation();
         this._cancelGesture();
@@ -845,6 +899,7 @@ export class FloorplanCardEditor extends LitElement {
     const tIds = this._idsOfKind("text");
     const fIds = this._idsOfKind("furniture");
     const trIds = this._idsOfKind("tracker");
+    const aIds = this._idsOfKind("area");
     this._commitFloor({
       walls: f.walls.map((w) =>
         wIds.has(w.id) ? { ...w, x1: w.x1 + dx, y1: w.y1 + dy, x2: w.x2 + dx, y2: w.y2 + dy } : w
@@ -857,6 +912,9 @@ export class FloorplanCardEditor extends LitElement {
       ),
       trackers: (f.trackers ?? []).map((tr) =>
         trIds.has(tr.id) ? { ...tr, x: tr.x + dx, y: tr.y + dy } : tr
+      ),
+      areas: (f.areas ?? []).map((a) =>
+        aIds.has(a.id) ? { ...a, points: a.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) } : a
       ),
     });
   }
@@ -916,6 +974,25 @@ export class FloorplanCardEditor extends LitElement {
       this._capturePointer(ev);
       return;
     }
+    if (this._tool === "area") {
+      // Discrete clicks, like door/window — no drag capture/gesture pointer.
+      const pt = this._snapAreaPoint(raw.x, raw.y);
+      if (!this._draftArea) {
+        this._draftArea = { points: [pt] };
+        return;
+      }
+      const pts = this._draftArea.points;
+      const first = pts[0]!;
+      if (pts.length >= 3 && Math.hypot(pt.x - first.x, pt.y - first.y) <= ENDPOINT_SNAP) {
+        this._finishArea();
+        return;
+      }
+      const last = pts[pts.length - 1]!;
+      if (pt.x !== last.x || pt.y !== last.y) {
+        this._draftArea = { points: [...pts, pt] };
+      }
+      return;
+    }
     // Select tool, empty canvas: start a marquee (rubber-band) selection.
     this._marqueeAdd = ev.shiftKey || ev.ctrlKey || ev.metaKey;
     this._marquee = { x0: raw.x, y0: raw.y, x1: raw.x, y1: raw.y };
@@ -933,6 +1010,8 @@ export class FloorplanCardEditor extends LitElement {
     this._gesturePointer = null;
     this._draft = null;
     this._draftTracker = null;
+    this._draftArea = null;
+    this._areaHover = null;
     this._marquee = null;
     const drag = this._drag;
     this._drag = null;
@@ -977,6 +1056,11 @@ export class FloorplanCardEditor extends LitElement {
         x1: this._snap(raw.x),
         y1: this._snap(raw.y),
       };
+      return;
+    }
+    if (this._tool === "area" && this._draftArea) {
+      const raw = this._toVirtual(ev, false);
+      this._areaHover = this._snapAreaPoint(raw.x, raw.y);
       return;
     }
     if (this._marquee) {
@@ -1043,19 +1127,20 @@ export class FloorplanCardEditor extends LitElement {
 
   // ---- dragging existing elements ----------------------------------------
 
-  private _startDrag(ev: PointerEvent, sel: Sel, endpoint?: 1 | 2): void {
+  private _startDrag(ev: PointerEvent, sel: Sel, endpoint?: 1 | 2, areaVertex?: number): void {
     if (this._tool !== "select") return;
     ev.stopPropagation();
     if (this._gesturePointer !== null) return;
     this._canvasWrap?.focus();
-    // Endpoint handles always operate on that single wall.
-    if (endpoint) this._selectOne(sel);
+    // Endpoint/vertex handles always operate on that single element.
+    if (endpoint || areaVertex != null) this._selectOne(sel);
     else this._selectForPointer(ev, sel);
     this._drag = {
       primary: sel,
       start: this._toVirtual(ev, false),
       orig: this._snapshotSelection(),
       endpoint,
+      areaVertex,
     };
     if (sel.kind === "wall") this._drag.attached = this._attachedCorners(sel.id, endpoint);
     this._gesturePointer = ev.pointerId;
@@ -1087,6 +1172,9 @@ export class FloorplanCardEditor extends LitElement {
       } else if (s.kind === "furniture") {
         const fu = f.furniture.find((x) => x.id === s.id);
         if (fu) m.set(`furniture:${fu.id}`, { kind: "pt", x: fu.x, y: fu.y });
+      } else if (s.kind === "area") {
+        const a = (f.areas ?? []).find((x) => x.id === s.id);
+        if (a) m.set(`area:${a.id}`, { kind: "polygon", points: a.points.map((p) => ({ ...p })) });
       } else {
         // tracker — stored by top-left corner.
         const tr = (f.trackers ?? []).find((x) => x.id === s.id);
@@ -1142,6 +1230,23 @@ export class FloorplanCardEditor extends LitElement {
       return;
     }
 
+    // Single Area vertex handle: reshape just that point, snapping to nearby
+    // wall corners / other areas' vertices (decision #1/#4 in areas.md). Like
+    // the wall-endpoint branch above, this positions absolutely against the
+    // live floor data rather than a delta off the pre-drag snapshot, and has
+    // no "stretch neighboring corners" step — a vertex only ever moves alone.
+    if (drag.primary.kind === "area" && drag.areaVertex != null) {
+      const idx = drag.areaVertex;
+      const target = this._snapAreaPoint(p.x, p.y, { areaId: drag.primary.id, vertexIndex: idx });
+      const areas = (f.areas ?? []).map((a) =>
+        a.id === drag.primary.id
+          ? { ...a, points: a.points.map((pt, i) => (i === idx ? target : pt)) }
+          : a
+      );
+      this._emitFloor({ areas });
+      return;
+    }
+
     // Single opening: keep the wall-snapping (and angle alignment) behavior.
     if (this._selection.length === 1 && drag.primary.kind === "opening") {
       const orig = drag.orig.get(`opening:${drag.primary.id}`);
@@ -1165,8 +1270,10 @@ export class FloorplanCardEditor extends LitElement {
     // derived from the primary element's reference point.
     const ref = drag.orig.get(`${drag.primary.kind}:${drag.primary.id}`);
     if (!ref) return;
-    const refX = ref.kind === "wall" ? ref.x1 : ref.x;
-    const refY = ref.kind === "wall" ? ref.y1 : ref.y;
+    // Any fixed vertex works as the delta-tracking reference for a whole-
+    // polygon (Area) drag — every point moves by the same delta regardless.
+    const refX = ref.kind === "wall" ? ref.x1 : ref.kind === "polygon" ? ref.points[0]!.x : ref.x;
+    const refY = ref.kind === "wall" ? ref.y1 : ref.kind === "polygon" ? ref.points[0]!.y : ref.y;
     const dx = this._snap(refX + (p.x - drag.start.x)) - refX;
     const dy = this._snap(refY + (p.y - drag.start.y)) - refY;
     let patch = this._applyDelta(dx, dy, drag.orig);
@@ -1305,6 +1412,17 @@ export class FloorplanCardEditor extends LitElement {
     this._tool = "select";
   }
 
+  /** Close the in-progress Area draft into a committed polygon and select it. */
+  private _finishArea(): void {
+    if (!this._draftArea || this._draftArea.points.length < 3) return;
+    const area: Area = { id: uid("area"), points: this._draftArea.points, showName: true };
+    this._commitFloor({ areas: [...(this._floor().areas ?? []), area] });
+    this._selection = [{ kind: "area", id: area.id }];
+    this._draftArea = null;
+    this._areaHover = null;
+    this._tool = "select";
+  }
+
   private _addText(): void {
     const t: FloorText = {
       id: uid("text"),
@@ -1327,6 +1445,7 @@ export class FloorplanCardEditor extends LitElement {
     const tIds = this._idsOfKind("text");
     const fIds = this._idsOfKind("furniture");
     const trIds = this._idsOfKind("tracker");
+    const aIds = this._idsOfKind("area");
     this._commitFloor({
       walls: f.walls.filter((w) => !wIds.has(w.id)),
       openings: f.openings.filter((o) => !oIds.has(o.id)),
@@ -1334,6 +1453,7 @@ export class FloorplanCardEditor extends LitElement {
       texts: f.texts.filter((t) => !tIds.has(t.id)),
       furniture: f.furniture.filter((fu) => !fIds.has(fu.id)),
       trackers: (f.trackers ?? []).filter((tr) => !trIds.has(tr.id)),
+      areas: (f.areas ?? []).filter((a) => !aIds.has(a.id)),
     });
     this._clearSel();
   }
@@ -1349,6 +1469,7 @@ export class FloorplanCardEditor extends LitElement {
     const tIds = this._idsOfKind("text");
     const fIds = this._idsOfKind("furniture");
     const trIds = this._idsOfKind("tracker");
+    const aIds = this._idsOfKind("area");
     this._clipboard = structuredClone({
       walls: f.walls.filter((w) => wIds.has(w.id)),
       openings: f.openings.filter((o) => oIds.has(o.id)),
@@ -1356,6 +1477,7 @@ export class FloorplanCardEditor extends LitElement {
       texts: f.texts.filter((t) => tIds.has(t.id)),
       furniture: f.furniture.filter((fu) => fIds.has(fu.id)),
       trackers: (f.trackers ?? []).filter((tr) => trIds.has(tr.id)),
+      areas: (f.areas ?? []).filter((a) => aIds.has(a.id)),
     });
   }
 
@@ -1405,6 +1527,11 @@ export class FloorplanCardEditor extends LitElement {
       x: tr.x + off,
       y: tr.y + off,
     }));
+    const newAreas: Area[] = (cb.areas ?? []).map((a) => ({
+      ...a,
+      id: uid("area"),
+      points: a.points.map((p) => ({ x: p.x + off, y: p.y + off })),
+    }));
     this._commitFloor({
       walls: [...f.walls, ...newWalls],
       openings: [...f.openings, ...newOpenings],
@@ -1412,6 +1539,7 @@ export class FloorplanCardEditor extends LitElement {
       texts: [...f.texts, ...newTexts],
       furniture: [...f.furniture, ...newFurn],
       trackers: [...(f.trackers ?? []), ...newTrackers],
+      areas: [...(f.areas ?? []), ...newAreas],
     });
     this._selection = [
       ...newWalls.map((w) => ({ kind: "wall" as const, id: w.id })),
@@ -1420,6 +1548,7 @@ export class FloorplanCardEditor extends LitElement {
       ...newTexts.map((t) => ({ kind: "text" as const, id: t.id })),
       ...newFurn.map((fu) => ({ kind: "furniture" as const, id: fu.id })),
       ...newTrackers.map((tr) => ({ kind: "tracker" as const, id: tr.id })),
+      ...newAreas.map((a) => ({ kind: "area" as const, id: a.id })),
     ];
     this._tool = "select";
   }
@@ -1556,6 +1685,22 @@ export class FloorplanCardEditor extends LitElement {
     });
   }
 
+  private _updateArea(id: string, partial: Partial<Area>): void {
+    this._commitFloor({
+      areas: (this._floor().areas ?? []).map((a) => (a.id === id ? { ...a, ...partial } : a)),
+    });
+  }
+
+  /**
+   * Link an Area to a Home Assistant area (mirrors {@link _linkHaFloor}).
+   * Linking also names the Area after it — the point of the association —
+   * while a later manual rename sticks; unlinking keeps the current name.
+   */
+  private _linkHaArea(id: string, haAreaId: string): void {
+    const ha = haAreasOf(this.hass).find((a) => a.area_id === haAreaId);
+    this._updateArea(id, { haArea: ha?.area_id, ...(ha ? { name: ha.name } : {}) });
+  }
+
   /** Patch a single field on one of a tracker's sensor sub-objects (X / Y axis). */
   private _updateTrackerSensor(
     id: string,
@@ -1632,6 +1777,13 @@ export class FloorplanCardEditor extends LitElement {
     });
   }
 
+  private _updateAreaLive(id: string, partial: Partial<Area>): void {
+    this._beginLive("area", id, partial);
+    this._emitFloor({
+      areas: (this._floor().areas ?? []).map((a) => (a.id === id ? { ...a, ...partial } : a)),
+    });
+  }
+
   private _patchConfigLive(partial: Partial<FloorplanCardConfig>): void {
     this._beginLive("config", "", partial);
     this._emit({ ...this._config, ...partial });
@@ -1651,7 +1803,7 @@ export class FloorplanCardEditor extends LitElement {
 
   /** Route a form patch to the right per-kind update helper (commit or burst). */
   private _applyElementPatch(
-    kind: "opening" | "item" | "text" | "furniture" | "tracker" | "wall",
+    kind: "opening" | "item" | "text" | "furniture" | "tracker" | "wall" | "area",
     id: string,
     patch: Record<string, unknown>,
     live: boolean
@@ -1680,6 +1832,10 @@ export class FloorplanCardEditor extends LitElement {
       case "wall":
         if (live) this._updateWallLive(id, patch);
         else this._updateWall(id, patch);
+        break;
+      case "area":
+        if (live) this._updateAreaLive(id, patch);
+        else this._updateArea(id, patch);
         break;
     }
   }
@@ -1733,6 +1889,11 @@ export class FloorplanCardEditor extends LitElement {
         if (!fu) return "Furniture";
         const label = FURNITURE_LABELS[fu.type];
         return `${label.charAt(0).toUpperCase()}${label.slice(1)} · ${Math.round(fu.w)}×${Math.round(fu.h)}`;
+      }
+      case "area": {
+        const a = (f.areas ?? []).find((x) => x.id === sel.id);
+        if (!a) return "Area";
+        return `Area · ${a.name || `${a.points.length}-point`}`;
       }
       default: {
         const tr = (f.trackers ?? []).find((x) => x.id === sel.id);
@@ -1799,6 +1960,18 @@ export class FloorplanCardEditor extends LitElement {
           >Drag on the canvas to draw the tracked area; bind one or two
           distance sensors in the Element editor.</span
         >
+      `;
+    } else if (t === "area") {
+      label = "Area";
+      const n = this._draftArea?.points.length ?? 0;
+      body = html`
+        <span class="ctx-hint">
+          ${n === 0
+            ? "Click to start a room outline; points snap to nearby corners."
+            : n < 3
+              ? `${n} point${n === 1 ? "" : "s"} placed — click to add more (3+ to close).`
+              : `${n} points placed — click the first point to close the room, or keep adding.`}
+        </span>
       `;
     } else if (t === "door" || t === "window") {
       label = t === "door" ? "Door" : "Window";
@@ -1921,7 +2094,8 @@ export class FloorplanCardEditor extends LitElement {
       !floor.items.length &&
       !floor.texts.length &&
       !floor.furniture.length &&
-      !(floor.trackers ?? []).length;
+      !(floor.trackers ?? []).length &&
+      !(floor.areas ?? []).length;
     return html`
       <div
         class="editor ${this._fullscreen ? "fullscreen" : ""}"
@@ -1940,7 +2114,7 @@ export class FloorplanCardEditor extends LitElement {
         <div class="toolbar">
           <!-- Tools — modes; exactly one is active at a time -->
           <div class="seg" role="group" aria-label="Tool">
-            ${(["select", "wall", "door", "window", "tracker"] as Tool[]).map(
+            ${(["select", "wall", "door", "window", "tracker", "area"] as Tool[]).map(
               (t) => html`
                 <button
                   class=${this._tool === t ? "active" : ""}
@@ -1950,6 +2124,8 @@ export class FloorplanCardEditor extends LitElement {
                     this._tool = t;
                     this._draft = null;
                     this._draftTracker = null;
+                    this._draftArea = null;
+                    this._areaHover = null;
                   }}
                 >
                   <ha-icon icon=${TOOL_META[t].icon}></ha-icon>${TOOL_META[t].label}
@@ -2167,6 +2343,11 @@ export class FloorplanCardEditor extends LitElement {
                             preserveAspectRatio="none" opacity=${floor.imageOpacity ?? 1} />`
                 : nothing}
               ${this._renderGrid()}
+              ${repeat(
+                floor.areas ?? [],
+                (a, i) => a.id || i,
+                (a) => this._renderAreaSel(a)
+              )}
               ${floor.furniture.map((f) => this._renderFurnitureSel(f))}
               ${renderWallMask(floor.openings, c.width, c.height, this._wallMaskId)}
               ${floor.walls.map((w) => this._renderWall(w))}
@@ -2201,6 +2382,7 @@ export class FloorplanCardEditor extends LitElement {
                               stroke-width=${WALL_THICKNESS} />`
                   : nothing
               }
+              ${this._renderAreaDraft()}
               ${
                 this._marquee
                   ? svg`<rect x=${Math.min(this._marquee.x0, this._marquee.x1)}
@@ -2217,7 +2399,7 @@ export class FloorplanCardEditor extends LitElement {
             </div>
           </div>
         </div>
-        ${floorEmpty && !this._draft && !this._draftTracker
+        ${floorEmpty && !this._draft && !this._draftTracker && !this._draftArea
           ? html`<div class="empty-hint">
               <div>
                 <b>Draw your first room:</b> pick the <b>Wall</b> tool and drag on the canvas.<br />
@@ -2374,13 +2556,17 @@ export class FloorplanCardEditor extends LitElement {
       </div>`;
     }
     if ("entity" in sel) {
-      const filter = (sel.entity as { filter?: { domain?: string[] }[] }).filter;
+      const entitySel = sel.entity as {
+        filter?: { domain?: string[] }[];
+        include_entities?: string[];
+      };
       return html`<div class="row wide">
         <label>${f.label}</label>
         ${this._renderEntityPicker(
           String(value ?? ""),
           (v) => this._applyFallback(spec, f, v, false, apply),
-          filter?.[0]?.domain
+          entitySel.filter?.[0]?.domain,
+          entitySel.include_entities
         )}
       </div>`;
     }
@@ -2412,13 +2598,15 @@ export class FloorplanCardEditor extends LitElement {
   private _renderEntityPicker(
     value: string,
     onChange: (entity: string) => void,
-    includeDomains?: string[]
+    includeDomains?: string[],
+    includeEntities?: string[]
   ): TemplateResult {
     if (customElements.get("ha-entity-picker")) {
       return html`<ha-entity-picker
         .hass=${this.hass}
         .value=${value}
         .includeDomains=${includeDomains}
+        .includeEntities=${includeEntities}
         allow-custom-entity
         @value-changed=${(e: CustomEvent) => onChange((e.detail.value as string) ?? "")}
       ></ha-entity-picker>`;
@@ -2637,6 +2825,67 @@ export class FloorplanCardEditor extends LitElement {
       </g>`;
   }
 
+  /**
+   * A committed Area: the translucent fill (shared with the live card),
+   * a transparent hit-polygon for click-to-select and whole-shape drag, and
+   * — while selected — a heavier outline plus one draggable handle per
+   * vertex (decision #1 in areas.md: vertices reshape independently, with
+   * no cross-element corner-stretch).
+   */
+  private _renderAreaSel(a: Area): TemplateResult {
+    const selected = this._isSel("area", a.id);
+    const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
+    return svg`
+      <g class="area-hit ${selected ? "selected" : ""}">
+        ${renderArea(a)}
+        <polygon points=${pts} class="area-hit-shape"
+                 @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "area", id: a.id })} />
+        ${selected ? svg`<polygon points=${pts} class="area-outline" />` : nothing}
+        ${
+          selected
+            ? a.points.map(
+                (p, i) => svg`
+                  <circle cx=${p.x} cy=${p.y} r="7" class="handle"
+                          @pointerdown=${(e: PointerEvent) =>
+                            this._startDrag(e, { kind: "area", id: a.id }, undefined, i)} />`
+              )
+            : nothing
+        }
+      </g>`;
+  }
+
+  /**
+   * The in-progress Area draft: committed vertices as dots, straight segments
+   * between them, and — while a live pointer position is known — a dashed
+   * "rubber band" segment from the last vertex to the cursor. Once 3+ points
+   * are down the starting vertex is drawn larger/hollow so it's visually
+   * obvious that clicking it closes the polygon (see `_onCanvasDown`).
+   */
+  private _renderAreaDraft(): TemplateResult | typeof nothing {
+    const draft = this._draftArea;
+    if (!draft) return nothing;
+    const pts = draft.points;
+    const line = pts.map((p) => `${p.x},${p.y}`).join(" ");
+    const last = pts[pts.length - 1]!;
+    const canClose = pts.length >= 3;
+    const hover = this._areaHover;
+    return svg`
+      <g class="area-draft">
+        ${pts.length > 1 ? svg`<polyline points=${line} class="area-draft-line" />` : nothing}
+        ${
+          hover
+            ? svg`<line x1=${last.x} y1=${last.y} x2=${hover.x} y2=${hover.y}
+                        class="area-draft-hover" />`
+            : nothing
+        }
+        ${pts.map((p, i) =>
+          i === 0 && canClose
+            ? svg`<circle cx=${p.x} cy=${p.y} r="9" class="area-draft-start" />`
+            : svg`<circle cx=${p.x} cy=${p.y} r="5" class="area-draft-point" />`
+        )}
+      </g>`;
+  }
+
   private _renderItemOverlay(it: FloorItem, c: FloorplanCardConfig): TemplateResult {
     const selected = this._isSel("item", it.id);
     const st = it.entity ? this.hass?.states[it.entity] : undefined;
@@ -2834,8 +3083,16 @@ export class FloorplanCardEditor extends LitElement {
     if (sel.kind === "item") {
       const it = this._floor().items.find((x) => x.id === sel.id);
       if (!it) return html`${nothing}`;
+      // A device placed inside an Area linked to a Home Assistant area (issue
+      // TBD) gets its entity pickers scoped to that HA area — recomputed on
+      // every render from the device's live x/y, so it tracks the device as
+      // it's dragged in/out of the polygon, even before the form reopens.
+      const containingArea = areaContainingPoint(this._floor(), it.x, it.y);
+      const areaEntities = containingArea?.haArea
+        ? entityIdsInHaArea(this.hass, containingArea.haArea)
+        : undefined;
       return html`
-        ${this._renderForm(itemForm(it), (patch, live) => {
+        ${this._renderForm(itemForm(it, areaEntities), (patch, live) => {
           // Any entity change re-derives the item kind (icon defaults etc.) —
           // including clearing it, which resets kind to "generic".
           if ("entity" in patch && typeof patch.entity === "string") {
@@ -2919,6 +3176,58 @@ export class FloorplanCardEditor extends LitElement {
               })}
           />
         </div>
+      `;
+    }
+
+    if (sel.kind === "area") {
+      const a = (this._floor().areas ?? []).find((x) => x.id === sel.id);
+      if (!a) return html`${nothing}`;
+      const haAreas = haAreasOf(this.hass);
+      return html`
+        ${this._renderForm(areaForm(a), (patch, live) =>
+          this._applyElementPatch("area", a.id, patch, live)
+        )}
+        <div class="row">
+          <label>Color</label>
+          <input
+            type="color"
+            .value=${a.color ?? "#03a9f4"}
+            @input=${(e: Event) =>
+              this._updateAreaLive(a.id, { color: (e.target as HTMLInputElement).value })}
+          />
+          <input
+            type="text"
+            placeholder="(primary)"
+            .value=${a.color ?? ""}
+            @change=${(e: Event) =>
+              this._updateArea(a.id, { color: (e.target as HTMLInputElement).value || undefined })}
+          />
+        </div>
+        ${haAreas.length
+          ? html`<div class="row wide">
+              <label>HA area</label>
+              <select
+                .value=${a.haArea ?? ""}
+                @change=${(e: Event) =>
+                  this._linkHaArea(a.id, (e.target as HTMLSelectElement).value)}
+              >
+                <option value="" ?selected=${!a.haArea}>(not linked)</option>
+                ${haAreas.map(
+                  (ha) =>
+                    html`<option value=${ha.area_id} ?selected=${a.haArea === ha.area_id}>
+                      ${ha.name}
+                    </option>`
+                )}
+              </select>
+              <span class="hint"
+                >Devices placed inside this room will be filtered to this HA area's
+                entities.</span
+              >
+            </div>`
+          : nothing}
+        <p class="hint">
+          Drag inside the fill to move the whole room; drag a vertex handle to reshape it.
+        </p>
       `;
     }
 
@@ -3356,7 +3665,8 @@ export class FloorplanCardEditor extends LitElement {
     svg.wall,
     svg.door,
     svg.window,
-    svg.tracker {
+    svg.tracker,
+    svg.area {
       cursor: crosshair;
     }
     .grid {
@@ -3745,6 +4055,50 @@ export class FloorplanCardEditor extends LitElement {
       stroke: var(--primary-color, #03a9f4);
       stroke-width: 1.5;
       stroke-dasharray: 6 4;
+      pointer-events: none;
+    }
+    .area-hit {
+      cursor: move;
+    }
+    .area-hit-shape {
+      /* Transparent fill turns the whole polygon into a pointer target for
+         the whole-shape drag, without covering the translucent room fill
+         drawn underneath by renderArea. */
+      fill: transparent;
+      stroke: none;
+      pointer-events: all;
+    }
+    .area-outline {
+      fill: none;
+      stroke: var(--primary-color, #03a9f4);
+      stroke-width: 2;
+      pointer-events: none;
+    }
+    .area-draft-line {
+      fill: none;
+      stroke: var(--primary-color, #03a9f4);
+      stroke-width: 2;
+      stroke-dasharray: 6 4;
+      pointer-events: none;
+    }
+    .area-draft-hover {
+      fill: none;
+      stroke: var(--primary-color, #03a9f4);
+      stroke-width: 1.5;
+      stroke-dasharray: 3 4;
+      opacity: 0.7;
+      pointer-events: none;
+    }
+    .area-draft-point {
+      fill: var(--primary-color, #03a9f4);
+      stroke: var(--card-background-color, #fff);
+      stroke-width: 1.5;
+      pointer-events: none;
+    }
+    .area-draft-start {
+      fill: var(--card-background-color, #fff);
+      stroke: var(--primary-color, #03a9f4);
+      stroke-width: 2;
       pointer-events: none;
     }
     .tracker-draft {

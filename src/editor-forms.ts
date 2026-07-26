@@ -6,6 +6,7 @@
  * effects (device-class inference, grid/snap rescale).
  */
 import type {
+  Area,
   Floor,
   FloorItem,
   FloorText,
@@ -17,6 +18,7 @@ import type {
   Wall,
 } from "./types";
 import {
+  DEFAULT_AREA_OPACITY,
   DEFAULT_GRID,
   DEFAULT_ITEM_SIZE,
   DEFAULT_RIPPLE_SIZE,
@@ -290,10 +292,19 @@ export function openingForm(o: Opening): FormSpec {
   };
 }
 
-export function itemForm(it: FloorItem): FormSpec {
+/**
+ * When `it` sits inside a Home Assistant area-linked {@link Area} on the
+ * plan, `areaEntities` narrows the `entity`/`secondaryEntity` pickers to
+ * that HA area's entities. `include_entities` on the entity selector is the
+ * assumed-but-unverified `<ha-form>` equivalent of `ha-entity-picker`'s own
+ * `.includeEntities` property — see areas.md decision #5.
+ */
+export function itemForm(it: FloorItem, areaEntities?: string[]): FormSpec {
   const display = it.display ?? "badge";
+  const entitySelector = (): Record<string, unknown> =>
+    areaEntities ? { entity: { include_entities: areaEntities } } : { entity: {} };
   const fields: FormField[] = [
-    { name: "entity", label: "Entity", required: true, selector: { entity: {} } },
+    { name: "entity", label: "Entity", required: true, selector: entitySelector() },
     {
       name: "attribute",
       label: "Attribute",
@@ -304,7 +315,7 @@ export function itemForm(it: FloorItem): FormSpec {
       name: "secondaryEntity",
       label: "Second entity",
       helper: "Shown next to the primary state",
-      selector: { entity: {} },
+      selector: entitySelector(),
     },
     {
       name: "secondaryAttribute",
@@ -480,6 +491,32 @@ export function trackerForm(tr: Tracker): FormSpec {
       y: Math.round(tr.y),
       angle: tr.angle ?? 0,
       dotSize: tr.dotSize ?? DEFAULT_TRACKER_DOT_SIZE,
+    },
+    toPatch: identity,
+  };
+}
+
+/**
+ * Name/visibility/opacity fields for an Area (a room polygon). Color and the
+ * HA-area link are bespoke rows in the editor's selection editor, same as
+ * every other color field / registry link in this file (see `textForm`'s
+ * caller / `_renderHaFloorRow` in editor.ts).
+ */
+export function areaForm(a: Area): FormSpec {
+  return {
+    fields: [
+      { name: "name", label: "Name", selector: { text: {} } },
+      { name: "showName", label: "Show name", selector: { boolean: {} } },
+      {
+        name: "opacity",
+        label: "Fill opacity",
+        selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
+      },
+    ],
+    data: {
+      name: a.name ?? "",
+      showName: a.showName ?? true,
+      opacity: a.opacity ?? DEFAULT_AREA_OPACITY,
     },
     toPatch: identity,
   };

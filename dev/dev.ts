@@ -119,10 +119,31 @@ import "../src/index";
 const SENSOR_TEMPERATURE = "sensor.living_area_temperature";
 const SENSOR_HUMIDITY = "sensor.living_area_humidity";
 
-/** Stand-in for HA's entity registry — the only place display precision lives. */
-const entityRegistry: Record<string, { entity_id: string; display_precision?: number }> = {
+/**
+ * Stand-in for HA's entity registry — display precision, plus (for the Area
+ * ⇄ HA-area device filtering feature) each entity's `device_id`. Paired with
+ * `deviceRegistry` below so `light.living_room` resolves to the "Living Room"
+ * HA area and `fan.ceiling_fan` resolves to no area at all, giving the demo
+ * both a filtered and an unfiltered case to compare in the editor.
+ */
+const entityRegistry: Record<
+  string,
+  { entity_id: string; display_precision?: number; device_id?: string }
+> = {
   [SENSOR_TEMPERATURE]: { entity_id: SENSOR_TEMPERATURE, display_precision: 1 },
   [SENSOR_HUMIDITY]: { entity_id: SENSOR_HUMIDITY, display_precision: 1 },
+  "light.living_room": { entity_id: "light.living_room", device_id: "dev_living_light" },
+  "fan.ceiling_fan": { entity_id: "fan.ceiling_fan" },
+};
+
+/** Stand-in for HA's device registry — just enough for area resolution. */
+const deviceRegistry: Record<string, { area_id?: string }> = {
+  dev_living_light: { area_id: "living_room" },
+};
+
+/** Stand-in for HA's area registry (Area ⇄ HA-area linking). */
+const areaRegistry: Record<string, { area_id: string; name: string }> = {
+  living_room: { area_id: "living_room", name: "Living Room" },
 };
 
 /** Approximates HA's own formatter: registry precision, then HA's unit spacing. */
@@ -212,6 +233,7 @@ const hass = {
     },
   },
   entities: entityRegistry,
+  devices: deviceRegistry,
   locale: { language: "en" },
   themes: { darkMode: false },
   // HA floor registry mock so the editor's "HA floor" link (issue #24) is
@@ -221,6 +243,10 @@ const hass = {
     upstairs: { floor_id: "upstairs", name: "Upstairs", level: 1 },
     basement: { floor_id: "basement", name: "Basement", level: -1 },
   },
+  // HA area registry mock so the editor's "HA area" link (Area feature) is
+  // exercisable outside HA. `light.living_room` and `fan.ceiling_fan` are the
+  // two devices to try dragging in/out of the demo room's Area polygon.
+  areas: areaRegistry,
   callService: (...args: unknown[]) => console.log("[mock hass] callService", ...args),
   formatEntityState: mockFormatEntityState,
   localize: (k: string) => k,
@@ -247,7 +273,7 @@ const bgImage =
 // Start with a blank floor so you can draw a perimeter from scratch. Flip
 // START_WITH_DEMO to true to instead load a sample room (walls + door + window
 // over the background image) — handy for testing rendering of existing plans.
-const START_WITH_DEMO = false;
+const START_WITH_DEMO = true;
 
 const demoFloor = {
   id: "f1",
@@ -287,10 +313,33 @@ const demoFloor = {
       y: 300,
       kind: "sensor" as const,
     },
+    // Sits inside the "Living Room" Area below, whose linked HA area (via
+    // deviceRegistry/areaRegistry) scopes its entity picker — drag it outside
+    // the polygon to watch the picker widen back up.
+    { id: "i2", entity: "light.living_room", x: 220, y: 180, kind: "light" as const },
   ],
   texts: [],
   furniture: [],
   trackers: [],
+  // Area demo: the whole room, linked to the mock "living_room" HA area so
+  // the entity-filtering behavior (light.living_room in, fan.ceiling_fan out)
+  // is exercisable without a real Home Assistant instance.
+  areas: [
+    {
+      id: "a1",
+      name: "Living Room",
+      haArea: "living_room",
+      showName: true,
+      color: "#26c6da",
+      opacity: 0.15,
+      points: [
+        { x: 100, y: 100 },
+        { x: 900, y: 100 },
+        { x: 900, y: 500 },
+        { x: 100, y: 500 },
+      ],
+    },
+  ],
 };
 
 const emptyFloor = {
@@ -302,6 +351,7 @@ const emptyFloor = {
   texts: [],
   furniture: [],
   trackers: [],
+  areas: [],
 };
 
 const config: FloorplanCardConfig = {

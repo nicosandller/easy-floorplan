@@ -9,6 +9,9 @@ import {
   trackerAxisFraction,
   trackerPresenceDetected,
   haFloorsOf,
+  haAreasOf,
+  entityHaAreaId,
+  entityIdsInHaArea,
   uid,
   configsEqual,
   moveFloor,
@@ -192,6 +195,15 @@ describe("getFloors", () => {
     expect(floors[0].walls).toEqual(c.walls);
   });
 
+  it("wraps legacy top-level areas into the implicit floor", () => {
+    const c = {
+      ...emptyConfig("x"),
+      areas: [{ id: "a1", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] }],
+    } as FloorplanCardConfig;
+    const [f] = getFloors(c);
+    expect(f.areas).toEqual(c.areas);
+  });
+
   it("treats an empty floors array as legacy (wraps flat arrays)", () => {
     const c = { ...emptyConfig("x"), floors: [] } as FloorplanCardConfig;
     expect(getFloors(c)).toHaveLength(1);
@@ -218,6 +230,7 @@ describe("getFloors", () => {
     expect(f.texts).toEqual([]);
     expect(f.furniture).toEqual([]);
     expect(f.trackers).toEqual([]);
+    expect(f.areas).toEqual([]);
   });
 
   it("preserves extra floor fields (image, opacity) while backfilling", () => {
@@ -266,6 +279,79 @@ describe("haFloorsOf", () => {
     expect(haFloorsOf({ floors: { x: { floor_id: "x" }, ok: { floor_id: "ok", name: "Ok" } } })).toEqual([
       { floor_id: "ok", name: "Ok" },
     ]);
+  });
+});
+
+describe("haAreasOf", () => {
+  it("lists HA areas sorted by name", () => {
+    const hass = {
+      areas: {
+        kitchen: { area_id: "kitchen", name: "Kitchen" },
+        bedroom: { area_id: "bedroom", name: "Bedroom" },
+      },
+    };
+    expect(haAreasOf(hass).map((a) => a.area_id)).toEqual(["bedroom", "kitchen"]);
+  });
+
+  it("returns [] for hass objects without an area registry (older HA, dev harness)", () => {
+    expect(haAreasOf({})).toEqual([]);
+    expect(haAreasOf(undefined)).toEqual([]);
+    expect(haAreasOf(null)).toEqual([]);
+    expect(haAreasOf({ areas: "bogus" })).toEqual([]);
+  });
+
+  it("drops malformed registry entries", () => {
+    expect(
+      haAreasOf({ areas: { x: { area_id: "x" }, ok: { area_id: "ok", name: "Ok" } } })
+    ).toEqual([{ area_id: "ok", name: "Ok" }]);
+  });
+});
+
+describe("entityHaAreaId / entityIdsInHaArea", () => {
+  const hass = {
+    entities: {
+      // Entity-level override wins over its device's area.
+      "light.override": { device_id: "dev1", area_id: "office" },
+      // No override -> falls back to the device's area.
+      "light.by_device": { device_id: "dev1" },
+      // Device with no area, no entity override -> unresolved.
+      "light.orphan_device": { device_id: "dev2" },
+      // No device_id at all -> unresolved.
+      "light.no_device": {},
+    },
+    devices: {
+      dev1: { area_id: "living_room" },
+      dev2: {},
+    },
+  };
+
+  it("prefers the entity's own area_id override", () => {
+    expect(entityHaAreaId(hass, "light.override")).toBe("office");
+  });
+
+  it("falls back to the device's area when the entity has no override", () => {
+    expect(entityHaAreaId(hass, "light.by_device")).toBe("living_room");
+  });
+
+  it("returns undefined when neither the entity nor its device has an area", () => {
+    expect(entityHaAreaId(hass, "light.orphan_device")).toBeUndefined();
+    expect(entityHaAreaId(hass, "light.no_device")).toBeUndefined();
+  });
+
+  it("returns undefined for an entity with no registry entry at all", () => {
+    expect(entityHaAreaId(hass, "light.missing")).toBeUndefined();
+    expect(entityHaAreaId(undefined, "light.missing")).toBeUndefined();
+  });
+
+  it("entityIdsInHaArea collects every entity resolving to that area", () => {
+    expect(entityIdsInHaArea(hass, "living_room")).toEqual(["light.by_device"]);
+    expect(entityIdsInHaArea(hass, "office")).toEqual(["light.override"]);
+    expect(entityIdsInHaArea(hass, "nonexistent")).toEqual([]);
+  });
+
+  it("entityIdsInHaArea returns [] without an entity registry", () => {
+    expect(entityIdsInHaArea({}, "living_room")).toEqual([]);
+    expect(entityIdsInHaArea(undefined, "living_room")).toEqual([]);
   });
 });
 

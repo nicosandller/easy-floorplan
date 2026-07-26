@@ -1,13 +1,16 @@
 import { describe, it, expect } from "vitest";
 import {
   nearestCorner,
+  nearestAreaSnapPoint,
+  pointInPolygon,
+  areaContainingPoint,
   snapWallEnd,
   elementsInRect,
   applyDelta,
   attachedCorners,
 } from "./editor-geometry";
 import type { OrigPos } from "./editor-geometry";
-import type { Floor, Wall } from "./types";
+import type { Area, Floor, Wall } from "./types";
 
 const walls = [{ x1: 0, y1: 0, x2: 100, y2: 0 }];
 
@@ -164,5 +167,116 @@ describe("attachedCorners (issue #30: stretch-drag shared room corners)", () => 
       { id: "b", end: 1, which: 1, x0: 0, y0: 0 },
       { id: "b", end: 2, which: 2, x0: 100, y0: 0 },
     ]);
+  });
+});
+
+describe("pointInPolygon", () => {
+  const square = [
+    { x: 0, y: 0 },
+    { x: 10, y: 0 },
+    { x: 10, y: 10 },
+    { x: 0, y: 10 },
+  ];
+
+  it("detects points inside/outside a convex quad", () => {
+    expect(pointInPolygon(square, 5, 5)).toBe(true);
+    expect(pointInPolygon(square, 50, 50)).toBe(false);
+  });
+
+  it("handles a concave (L-shaped) polygon", () => {
+    // An L: a 10x10 square with its top-right 5x5 quadrant notched out.
+    const L = [
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 5 },
+      { x: 5, y: 5 },
+      { x: 5, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    expect(pointInPolygon(L, 2, 2)).toBe(true); // main body
+    expect(pointInPolygon(L, 8, 8)).toBe(false); // inside the notched-out corner
+    expect(pointInPolygon(L, 8, 2)).toBe(true); // the lower-right arm
+  });
+
+  it("rejects a point clearly outside the bounding box", () => {
+    expect(pointInPolygon(square, -100, -100)).toBe(false);
+  });
+});
+
+describe("areaContainingPoint", () => {
+  const a1: Area = {
+    id: "a1",
+    points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }],
+  };
+  const a2: Area = {
+    id: "a2",
+    points: [{ x: 5, y: 5 }, { x: 15, y: 5 }, { x: 15, y: 15 }, { x: 5, y: 15 }],
+  };
+
+  it("finds the area containing a point, else undefined", () => {
+    expect(areaContainingPoint({ areas: [a1] }, 3, 3)?.id).toBe("a1");
+    expect(areaContainingPoint({ areas: [a1] }, 50, 50)).toBeUndefined();
+  });
+
+  it("overlapping areas: last-drawn (array order) wins", () => {
+    expect(areaContainingPoint({ areas: [a1, a2] }, 7, 7)?.id).toBe("a2");
+    expect(areaContainingPoint({ areas: [a2, a1] }, 7, 7)?.id).toBe("a1");
+  });
+});
+
+describe("nearestAreaSnapPoint", () => {
+  it("matches a wall corner", () => {
+    expect(nearestAreaSnapPoint({ walls, areas: [] }, 3, 4, 26)).toEqual({ x: 0, y: 0 });
+  });
+
+  it("matches another area's vertex", () => {
+    const areas: Area[] = [{ id: "a1", points: [{ x: 50, y: 50 }, { x: 60, y: 50 }, { x: 60, y: 60 }] }];
+    expect(nearestAreaSnapPoint({ walls: [], areas }, 52, 51, 26)).toEqual({ x: 50, y: 50 });
+  });
+
+  it("ignores the excluded vertex, falling back to the next-closest candidate", () => {
+    const a: Area = { id: "a1", points: [{ x: 50, y: 50 }, { x: 53, y: 50 }] };
+    const f = { walls: [], areas: [a] };
+    expect(nearestAreaSnapPoint(f, 51, 50, 26)).toEqual({ x: 50, y: 50 });
+    expect(nearestAreaSnapPoint(f, 51, 50, 26, { areaId: "a1", vertexIndex: 0 })).toEqual({
+      x: 53,
+      y: 50,
+    });
+  });
+
+  it("returns null when nothing is within range", () => {
+    expect(nearestAreaSnapPoint({ walls: [], areas: [] }, 500, 500, 26)).toBeNull();
+  });
+});
+
+describe("elementsInRect (area case)", () => {
+  it("selects an Area by its centroid", () => {
+    const f = {
+      ...floor,
+      areas: [
+        { id: "a1", points: [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }] },
+      ],
+    } as unknown as Floor;
+    const hits = elementsInRect(f, { x0: 0, y0: 0, x1: 60, y1: 60 });
+    expect(hits).toContainEqual({ kind: "area", id: "a1" });
+  });
+});
+
+describe("applyDelta (area case)", () => {
+  it("translates every vertex of a snapshotted area", () => {
+    const f = {
+      ...floor,
+      areas: [{ id: "a1", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] }],
+    } as unknown as Floor;
+    const orig = new Map<string, OrigPos>([
+      [
+        "area:a1",
+        { kind: "polygon", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] },
+      ],
+    ]);
+    const out = applyDelta(f, 5, 5, orig);
+    expect(out.areas![0]).toMatchObject({
+      points: [{ x: 5, y: 5 }, { x: 15, y: 5 }, { x: 15, y: 15 }],
+    });
   });
 });

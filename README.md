@@ -28,6 +28,10 @@ automatically to the card and screen size.
   wardrobe, rug, plant, fridge, stove, sink, toilet, stairs, tv, washer, dryer,
   dishwasher, water heater, air handler, bathtub, vanity, sectional, fish tank,
   piano, hot tub.
+- **Areas** — trace a room's outline point-by-point (points snap to wall corners and to
+  neighboring areas' corners) to get a colored, named room polygon. Link an area to a
+  Home Assistant area to name it automatically and scope the entity picker, for any
+  device dropped inside it, to that HA area's entities.
 - **Live position tracker** — draw a rectangular tracked area and bind one or two
   orthogonal distance sensors (e.g. mmWave / radar). The card linearly maps each
   sensor's `[min, max]` reading to the rectangle's edges and animates a pulsating
@@ -114,6 +118,11 @@ background):
   sensors (X axis and/or Y axis) in the **Element** section to animate a live position
   marker inside the zone — see **Tracker**. The zone outline is visible only in the
   editor; the live card shows just the marker.
+- **Area** — click to place each corner of a room outline; points snap onto nearby wall
+  corners or another area's corners, and clicking back on the starting point closes the
+  shape (3+ points required; Backspace removes the last point while drawing, Escape
+  discards the whole outline). Once placed, drag anywhere inside the fill to move the
+  whole room, or drag a corner handle to reshape it — see **Areas**.
 - **+ Add** — one popover for everything droppable: device, text, and all furniture
   types shown as their actual glyphs (pick a sofa by seeing a sofa). The new element is
   selected immediately so the **Element** section is ready for configuring it.
@@ -140,8 +149,8 @@ rotation.
 
 Everything you place on the plan is an **element** you can select, move (freely or
 snapped to a grid), nudge with arrow keys, copy/paste, duplicate and delete. The element
-types are **devices**, **doors & windows**, **furniture**, **text** and **trackers** —
-and each floor holds its own set of them.
+types are **devices**, **doors & windows**, **furniture**, **text**, **areas** and
+**trackers** — and each floor holds its own set of them.
 
 ### Devices
 
@@ -288,6 +297,54 @@ openings:
 
 <img width="540" height="304" alt="door_window_demo" src="https://github.com/user-attachments/assets/091b3c89-5202-4025-8a0f-0fe867276be2" />
 
+### Areas
+
+An **area** is a colored, named room polygon you trace on top of your walls — handy for
+telling rooms apart at a glance, and for scoping which entities show up when you drop a
+device into one.
+
+1. Pick the **Area** tool from the toolbar.
+2. Click to place each corner of the room. Points snap onto nearby wall corners — and
+   onto other areas' corners, so adjoining rooms can share an exact boundary point.
+3. Once you've placed at least 3 points, click back on the **first** point to close the
+   shape. **Backspace** removes the last point while you're still drawing; **Escape**
+   discards the whole outline.
+4. With the area selected, the **Element** section offers:
+   - **Name** and **Show name** — a label centered on the room; toggle it off if you'd
+     rather keep the plan uncluttered.
+   - **Fill opacity** and a **color** picker — the translucent fill that makes the room
+     stand out (falls back to the theme primary color).
+   - **HA area** — link the polygon to one of your Home Assistant areas. Linking names
+     the polygon after it (rename afterwards if you like; the link sticks either way) and
+     turns on entity filtering (next point).
+
+**Reshaping.** Drag anywhere inside the fill to move the whole room; drag a single corner
+handle to reshape it (each handle snaps the same way a freshly placed point does). There's
+no cross-room "shared corner" dragging — a corner that happens to coincide with another
+area's or a wall's corner doesn't drag together with it, only *snaps* there when you place
+or move it.
+
+**Entity filtering.** Drop a **device** (via **+ Add**) inside an area linked to an HA
+area, and that device's entity picker narrows to entities registered to that HA area —
+so you're not scrolling past your whole house to find the right light. The picker widens
+back up the moment you drag the device outside the polygon. Overlapping areas resolve by
+draw order: whichever area was drawn last wins for both the fill you see on top and which
+one a device is considered "inside".
+
+```yaml
+areas:
+  - id: living_room
+    name: Living Room
+    haArea: living_room
+    color: "#26c6da"
+    opacity: 0.15
+    points:
+      - { x: 100, y: 100 }
+      - { x: 900, y: 100 }
+      - { x: 900, y: 500 }
+      - { x: 100, y: 500 }
+```
+
 ### Live position trackers
 
 A **tracker** turns one or two distance sensors into a live marker that moves around
@@ -397,14 +454,16 @@ The editor writes this config for you; manual editing is optional.
 | `items`      | Item[]   | `[]`               | Entity devices.                              |
 | `texts`      | Text[]   | `[]`               | Free text labels.                            |
 | `furniture`  | Furniture[]| `[]`             | Gray furniture/fixture diagrams.             |
+| `trackers`   | Tracker[]| `[]`               | Live position trackers (see **Tracker**).    |
+| `areas`      | Area[]   | `[]`               | Named room polygons (see **Area**).          |
 
-When `floors` is present each floor carries its own `walls`, `openings`, `items`, `texts`
-and `furniture`. The top-level arrays describe a single implicit floor and remain valid
-for backward compatibility.
+When `floors` is present each floor carries its own `walls`, `openings`, `items`, `texts`,
+`furniture`, `trackers` and `areas`. The top-level arrays describe a single implicit floor
+and remain valid for backward compatibility.
 
 ### Floor
 
-`{ id, name, short?, color?, haFloor?, image?, imageOpacity?, walls, openings, items, texts, furniture }`
+`{ id, name, short?, color?, haFloor?, image?, imageOpacity?, walls, openings, items, texts, furniture, trackers, areas }`
 — a named floor with its own elements. Use the **floor** controls in the editor toolbar
 to add, rename, switch and delete floors; the live card shows a floor switcher in the
 top-right when there is more than one.
@@ -417,7 +476,8 @@ config-color allowlist); and **Default** — which floor the live card opens on
 
 **`haFloor`** optionally stores the id of a linked Home Assistant floor (set from the
 editor's floor gear popover). Today the link auto-names the floor; it is kept in the
-config so future features (like area-based entity filtering) can build on it.
+config so other features (like the per-**Area** HA-area entity filtering above) can build
+on the same idea one level down.
 
 Set **`image`** to a background image URL (e.g. `/local/floorplan.png` or an external
 URL) to draw it behind the elements — handy for tracing over a real floor plan. It fills
@@ -535,6 +595,34 @@ trackers:
       presence: { entity: binary_sensor.radar_occupancy }
 ```
 
+### Area
+
+`{ id, points, name?, showName?, color?, opacity?, haArea? }`
+
+- `points` — an array of `{ x, y }` vertices (canvas units), in drawing order; the shape
+  is implicitly closed from the last point back to the first.
+- `name` — display label, shown centered on the polygon when `showName` (default `true`)
+  is on. Mirrors the linked HA area's name when `haArea` is set.
+- `color` / `opacity` — the room's fill; `color` falls back to the theme primary color,
+  `opacity` defaults to `0.25`.
+- `haArea` — optional id of a linked Home Assistant area. Selecting one in the editor
+  names the polygon after it and scopes the entity picker, for any device placed inside
+  it, to that HA area's entities — see **Areas**.
+
+```yaml
+areas:
+  - id: living_room
+    name: Living Room
+    haArea: living_room
+    color: "#26c6da"
+    opacity: 0.15
+    points:
+      - { x: 100, y: 100 }
+      - { x: 900, y: 100 }
+      - { x: 900, y: 500 }
+      - { x: 100, y: 500 }
+```
+
 ### Example
 
 ```yaml
@@ -580,6 +668,17 @@ furniture:
   - { id: f1, type: sofa, x: 250, y: 420, w: 170, h: 72, angle: 0 }
 texts:
   - { id: t1, x: 500, y: 60, text: Living Room, size: 22 }
+areas:
+  - id: a1
+    name: Living Room
+    haArea: living_room
+    color: "#26c6da"
+    opacity: 0.15
+    points:
+      - { x: 100, y: 100 }
+      - { x: 900, y: 100 }
+      - { x: 900, y: 500 }
+      - { x: 100, y: 500 }
 trackers:
   - id: pet
     x: 120

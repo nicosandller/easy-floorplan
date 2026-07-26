@@ -8,9 +8,18 @@ import type {
   StateColorRule,
   Furniture,
   Tracker,
+  Area,
+  AreaPoint,
   RenderHass,
 } from "./types";
-import { FURNITURE_COLOR, DEFAULT_TRACKER_DOT_SIZE, DEFAULT_RIPPLE_SIZE, getFloors, trackerAxisFraction } from "./types";
+import {
+  FURNITURE_COLOR,
+  DEFAULT_TRACKER_DOT_SIZE,
+  DEFAULT_RIPPLE_SIZE,
+  DEFAULT_AREA_OPACITY,
+  getFloors,
+  trackerAxisFraction,
+} from "./types";
 import { cssColorOr, cssNumber } from "./css-safe";
 
 export const WALL_THICKNESS = 8;
@@ -999,6 +1008,31 @@ export function renderWallMask(
         })}
       </mask>
     </defs>`;
+}
+
+/**
+ * Arithmetic-mean centroid of a polygon's vertices. Not an exact
+ * center-of-mass for a non-convex shape, but that precision isn't needed
+ * here — it's only used for name-label placement and marquee/click
+ * hit-testing (see `elementsInRect` in editor-geometry.ts).
+ */
+export function polygonCentroid(points: readonly AreaPoint[]): { x: number; y: number } {
+  if (!points.length) return { x: 0, y: 0 };
+  const sum = points.reduce((s, p) => ({ x: s.x + p.x, y: s.y + p.y }), { x: 0, y: 0 });
+  return { x: sum.x / points.length, y: sum.y / points.length };
+}
+
+/**
+ * A room's translucent fill polygon. Drawn with no stroke — the walls drawn
+ * on top of it already imply an outline, so a second one would double it up.
+ * `color`/`opacity` are config-supplied style values, so they go through the
+ * same injection allowlist as every other color/number field (see css-safe.ts).
+ */
+export function renderArea(a: Area): SVGTemplateResult {
+  const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
+  return svg`<polygon points=${pts}
+                       fill=${cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
+                       fill-opacity=${cssNumber(a.opacity, DEFAULT_AREA_OPACITY)} />`;
 }
 
 /**

@@ -40,6 +40,8 @@ import {
   rotatedCanvasSize,
   rotatePlanPoint,
   planRotationTransform,
+  polygonCentroid,
+  renderArea,
 } from "./render";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
 
@@ -1174,5 +1176,51 @@ describe("collectWatchedEntities includes shutter entities (issue #74)", () => {
     const ids = collectWatchedEntities(cfg);
     expect(ids.has("binary_sensor.win")).toBe(true);
     expect(ids.has("cover.shutter")).toBe(true);
+  });
+});
+
+describe("polygonCentroid", () => {
+  it("averages the vertices", () => {
+    const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    expect(polygonCentroid(square)).toEqual({ x: 5, y: 5 });
+  });
+
+  it("returns the origin for an empty polygon", () => {
+    expect(polygonCentroid([])).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe("renderArea", () => {
+  /** Flatten a Lit template back to markup (see the fishTank glyph test above). */
+  const flatten = (node: unknown): string => {
+    if (node == null || node === false) return "";
+    if (Array.isArray(node)) return node.map(flatten).join("");
+    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+      const { strings, values } = node as { strings: string[]; values: unknown[] };
+      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
+    }
+    return String(node);
+  };
+  const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+
+  it("emits the vertex points and the default fill/opacity", () => {
+    const markup = flatten(renderArea({ id: "a", points: square }));
+    expect(markup).toContain("points=0,0 10,0 10,10 0,10");
+    expect(markup).toContain("fill=var(--primary-color, #03a9f4)");
+    expect(markup).toContain("fill-opacity=0.25");
+  });
+
+  it("honors a custom color and opacity", () => {
+    const markup = flatten(renderArea({ id: "a", points: square, color: "#ff0000", opacity: 0.6 }));
+    expect(markup).toContain("fill=#ff0000");
+    expect(markup).toContain("fill-opacity=0.6");
+  });
+
+  it("falls back to the default color for an unsafe value (css-safe gate)", () => {
+    const markup = flatten(
+      renderArea({ id: "a", points: square, color: "red;position:fixed;inset:0" })
+    );
+    expect(markup).toContain("fill=var(--primary-color, #03a9f4)");
+    expect(markup).not.toContain("position:fixed");
   });
 });

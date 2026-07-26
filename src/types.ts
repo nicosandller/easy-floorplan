@@ -386,6 +386,41 @@ export interface TrackerPresence {
   invert?: boolean;
 }
 
+/** A vertex of an {@link Area} polygon, in virtual canvas units. */
+export interface AreaPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * A named room polygon, drawn point-by-point in the editor and closed by
+ * clicking back on the starting vertex. Distinct from a {@link Floor} (a
+ * whole level/story) the same way Home Assistant's own "area" (room) sits
+ * inside a "floor" — see {@link Area.haArea}.
+ */
+export interface Area {
+  id: string;
+  /** Vertices in drawing order, virtual canvas units. Implicitly closed (last -> first). */
+  points: AreaPoint[];
+  /** Display name. Mirrors the linked HA area's name when `haArea` is set. */
+  name?: string;
+  /** Show the name label on the plan, centered on the polygon. Default true. */
+  showName?: boolean;
+  /** Fill color. Falls back to the theme primary color. */
+  color?: string;
+  /** Fill opacity, 0-1. Default {@link DEFAULT_AREA_OPACITY}. */
+  opacity?: number;
+  /**
+   * Optional link to a Home Assistant area (its registry `area_id`). Selecting
+   * one names this Area after it (same convention as {@link Floor.haFloor})
+   * and scopes the entity picker, for devices placed inside this polygon, to
+   * entities registered to that HA area.
+   */
+  haArea?: string;
+}
+
+export const DEFAULT_AREA_OPACITY = 0.25;
+
 export const DEFAULT_TRACKER_DOT_SIZE = 14;
 
 export const DEFAULT_ITEM_SIZE = 34;
@@ -463,6 +498,7 @@ export interface Floor {
   texts: FloorText[];
   furniture: Furniture[];
   trackers: Tracker[];
+  areas: Area[];
 }
 
 export interface FloorplanCardConfig extends LovelaceCardConfig {
@@ -507,6 +543,7 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   texts?: FloorText[];
   furniture?: Furniture[];
   trackers?: Tracker[];
+  areas?: Area[];
 }
 
 export const DEFAULT_WIDTH = 1000;
@@ -571,6 +608,58 @@ export function haFloorsOf(hass: unknown): HaFloorInfo[] {
     .sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || a.name.localeCompare(b.name));
 }
 
+/** A Home Assistant area-registry entry (the subset this card uses). */
+export interface HaAreaInfo {
+  area_id: string;
+  name: string;
+}
+
+/**
+ * List the Home Assistant areas from a `hass` object, sorted by name. Mirrors
+ * {@link haFloorsOf} exactly: `custom-card-helpers`' HomeAssistant type predates
+ * `hass.areas` too, and older HA / the dev harness simply yield `[]`.
+ */
+export function haAreasOf(hass: unknown): HaAreaInfo[] {
+  const areas = (hass as { areas?: Record<string, HaAreaInfo> } | null | undefined)?.areas;
+  if (!areas || typeof areas !== "object") return [];
+  return Object.values(areas)
+    .filter((a): a is HaAreaInfo => !!a && typeof a.area_id === "string" && typeof a.name === "string")
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * The shape of `hass.entities`/`hass.devices` this card needs to resolve an
+ * entity's effective Home Assistant area — the entity registry's own
+ * `area_id` override, else its device's `area_id`. Neither is declared by
+ * `custom-card-helpers`, so callers take `hass: unknown` like {@link haFloorsOf}.
+ */
+interface HaRegistryHass {
+  entities?: Record<string, { device_id?: string | null; area_id?: string | null } | undefined>;
+  devices?: Record<string, { area_id?: string | null } | undefined>;
+}
+
+/**
+ * The effective Home Assistant area for an entity: its own registry override
+ * when set, else the area of the device it belongs to. `undefined` when
+ * neither resolves (no registry entry, or unassigned to any area).
+ */
+export function entityHaAreaId(hass: unknown, entityId: string): string | undefined {
+  const h = hass as HaRegistryHass | null | undefined;
+  const ent = h?.entities?.[entityId];
+  if (!ent) return undefined;
+  if (ent.area_id) return ent.area_id;
+  const dev = ent.device_id ? h?.devices?.[ent.device_id] : undefined;
+  return dev?.area_id ?? undefined;
+}
+
+/** Every entity id (out of the entity registry) whose effective HA area is `areaId`. */
+export function entityIdsInHaArea(hass: unknown, areaId: string): string[] {
+  const h = hass as HaRegistryHass | null | undefined;
+  const entities = h?.entities;
+  if (!entities || typeof entities !== "object") return [];
+  return Object.keys(entities).filter((id) => entityHaAreaId(hass, id) === areaId);
+}
+
 export function emptyConfig(type: string): FloorplanCardConfig {
   return {
     type,
@@ -583,6 +672,7 @@ export function emptyConfig(type: string): FloorplanCardConfig {
     texts: [],
     furniture: [],
     trackers: [],
+    areas: [],
   };
 }
 
@@ -621,6 +711,7 @@ export function makeFloor(name: string, walls: Wall[] = []): Floor {
     texts: [],
     furniture: [],
     trackers: [],
+    areas: [],
   };
 }
 
@@ -639,6 +730,7 @@ function normalizeFloor(f: Floor): Floor {
     texts: f.texts ?? [],
     furniture: f.furniture ?? [],
     trackers: f.trackers ?? [],
+    areas: f.areas ?? [],
   };
 }
 
@@ -698,6 +790,7 @@ export function getFloors(c: FloorplanCardConfig): Floor[] {
       texts: c.texts ?? [],
       furniture: c.furniture ?? [],
       trackers: c.trackers ?? [],
+      areas: c.areas ?? [],
     },
   ];
 }

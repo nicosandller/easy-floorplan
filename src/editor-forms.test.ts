@@ -12,9 +12,10 @@ import {
   projectForm,
   projectRotationForm,
   floorImageForm,
+  areaForm,
 } from "./editor-forms";
 import type { FormField } from "./editor-forms";
-import type { Opening, FloorItem, Floor, FloorplanCardConfig } from "./types";
+import type { Area, Opening, FloorItem, Floor, FloorplanCardConfig } from "./types";
 
 const fields: FormField[] = [
   { name: "name", label: "Name", selector: { text: {} } },
@@ -223,6 +224,47 @@ describe("itemForm", () => {
     expect(d.showState).toBe(false);
     expect(d.display).toBe("badge");
     expect(d.angle).toBe(0);
+  });
+
+  it("scopes the entity/secondaryEntity pickers to areaEntities when given", () => {
+    const unscoped = itemForm(item);
+    expect(unscoped.fields.find((x) => x.name === "entity")!.selector).toEqual({ entity: {} });
+    const scoped = itemForm(item, ["light.kitchen", "switch.kitchen"]);
+    expect(scoped.fields.find((x) => x.name === "entity")!.selector).toEqual({
+      entity: { include_entities: ["light.kitchen", "switch.kitchen"] },
+    });
+    expect(scoped.fields.find((x) => x.name === "secondaryEntity")!.selector).toEqual({
+      entity: { include_entities: ["light.kitchen", "switch.kitchen"] },
+    });
+  });
+});
+
+describe("areaForm", () => {
+  const area = (extra: Partial<Area> = {}): Area => ({
+    id: "a",
+    points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }],
+    ...extra,
+  });
+
+  it("data presents effective defaults (showName true, DEFAULT_AREA_OPACITY)", () => {
+    const d = areaForm(area()).data;
+    expect(d).toMatchObject({ name: "", showName: true, opacity: 0.25 });
+  });
+
+  it("data reflects an explicit name/showName/opacity", () => {
+    const d = areaForm(area({ name: "Kitchen", showName: false, opacity: 0.5 })).data;
+    expect(d).toMatchObject({ name: "Kitchen", showName: false, opacity: 0.5 });
+  });
+
+  it("opacity field is a 0..1 slider", () => {
+    const f = areaForm(area()).fields.find((x) => x.name === "opacity")!;
+    expect(f.selector).toEqual({ number: { min: 0, max: 1, step: 0.05, mode: "slider" } });
+  });
+
+  it("clamps an out-of-range opacity patch via normalizeFormPatch", () => {
+    const fields = areaForm(area()).fields;
+    expect(normalizeFormPatch({ opacity: 5 }, fields)).toEqual({ opacity: 1 });
+    expect(normalizeFormPatch({ opacity: -1 }, fields)).toEqual({ opacity: 0 });
   });
 });
 
