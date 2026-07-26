@@ -1024,8 +1024,8 @@ export function renderFurniture(f: Furniture): SVGTemplateResult {
               fill="none" stroke=${color} stroke-width="1" opacity="0.6" />
         ${fish(-fx, -fy, 1)}
         ${fish(fx, fy, -1)}
-        <circle cx=${w * 0.32} cy=${-h * 0.18} r="1.5" fill="none" stroke=${color}
-                stroke-width="1" opacity="0.6" />`;
+        <circle cx=${w * 0.32} cy=${-h * 0.18} r=${Math.min(w, h) * 0.04} fill="none" stroke=${color}
+                stroke-width="1" opacity="0.6" />
       break;
     }
     case "piano": {
