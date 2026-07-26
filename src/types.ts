@@ -281,7 +281,10 @@ export type FurnitureType =
   | "airHandler"
   | "bathtub"
   | "vanity"
-  | "sectional";
+  | "sectional"
+  | "fishTank"
+  | "piano"
+  | "hotTub";
 
 /**
  * Which end of an L-shaped sectional the chaise sits on, facing the sofa from
@@ -415,6 +418,9 @@ export const FURNITURE_DEFAULT_SIZE: Record<FurnitureType, { w: number; h: numbe
   bathtub: { w: 150, h: 76 },
   vanity: { w: 110, h: 55 },
   sectional: { w: 230, h: 180 },
+  fishTank: { w: 100, h: 40 },
+  piano: { w: 140, h: 60 },
+  hotTub: { w: 120, h: 120 },
 };
 
 /**

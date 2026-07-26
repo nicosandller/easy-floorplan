@@ -782,7 +782,7 @@ describe("every furniture type renders and has a default size", () => {
     "table", "roundTable", "desk", "chair", "sofa", "bed", "wardrobe", "rug",
     "plant", "fridge", "stove", "sink", "toilet", "stairs", "tv",
     "washer", "dryer", "dishwasher", "waterHeater", "airHandler", "bathtub",
-    "vanity", "sectional",
+    "vanity", "sectional", "fishTank", "piano", "hotTub",
   ];
 
   it("has a default size for each", () => {
@@ -1010,6 +1010,30 @@ describe("plan rotation (issue #33)", () => {
       }
     }
     expect(planRotationTransform(W, H, 0)).toBe("");
+  });
+});
+
+describe("fishTank glyph scales with its size (issue #72 review)", () => {
+  /** Flatten a Lit template (and nested ones) back to markup. */
+  const flatten = (node: unknown): string => {
+    if (node == null || node === false) return "";
+    if (Array.isArray(node)) return node.map(flatten).join("");
+    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+      const { strings, values } = node as { strings: string[]; values: unknown[] };
+      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
+    }
+    return String(node);
+  };
+  const bubbleRadius = (w: number, h: number) => {
+    const markup = flatten(renderFurniture({ id: "f", type: "fishTank", x: 0, y: 0, w, h }));
+    return Number(markup.match(/<circle[^>]*\sr=([\d.]+)/)?.[1]);
+  };
+
+  it("the bubble scales with the tank instead of a fixed radius", () => {
+    const small = bubbleRadius(50, 20);
+    const large = bubbleRadius(200, 80);
+    expect(small).toBeGreaterThan(0);
+    expect(large).toBeGreaterThan(small);
   });
 });
 

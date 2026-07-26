@@ -25,7 +25,9 @@ automatically to the card and screen size.
   and windows open on the plan as their real state changes, with an optional accent color
   while open.
 - **Furniture** — gray line-art diagrams: table, round table, desk, chair, sofa, bed,
-  wardrobe, rug, plant, fridge, stove, sink, toilet, stairs, tv.
+  wardrobe, rug, plant, fridge, stove, sink, toilet, stairs, tv, washer, dryer,
+  dishwasher, water heater, air handler, bathtub, vanity, sectional, fish tank,
+  piano, hot tub.
 - **Live position tracker** — draw a rectangular tracked area and bind one or two
   orthogonal distance sensors (e.g. mmWave / radar). The card linearly maps each
   sensor's `[min, max]` reading to the rectangle's edges and animates a pulsating
