@@ -1011,9 +1011,12 @@ export function renderFurniture(f: Furniture): SVGTemplateResult {
       break;
     }
     case "fishTank": {
-      // Issue #72: glass inset and two fish seen from
-      // above (lens body + tail) so it can't be mistaken for a rug.
+      // Issue #72: glass inset and two fish seen from above (lens body +
+      // tail) so it can't be mistaken for a rug, plus a rising bubble.
+      // Every measure scales with w/h like the other glyphs.
+      const fx = w * 0.18;
       const fy = h * 0.1;
+      const bubble = Math.min(w, h) * 0.04;
       const fish = (cx: number, cy: number, dir: number) => svg`
         <ellipse cx=${cx} cy=${cy} rx=${w * 0.07} ry=${h * 0.09}
                  fill="none" stroke=${color} stroke-width="1.5" />
@@ -1024,8 +1027,8 @@ export function renderFurniture(f: Furniture): SVGTemplateResult {
               fill="none" stroke=${color} stroke-width="1" opacity="0.6" />
         ${fish(-fx, -fy, 1)}
         ${fish(fx, fy, -1)}
-        <circle cx=${w * 0.32} cy=${-h * 0.18} r=${Math.min(w, h) * 0.04} fill="none" stroke=${color}
-                stroke-width="1" opacity="0.6" />
+        <circle cx=${w * 0.32} cy=${-h * 0.18} r=${bubble} fill="none" stroke=${color}
+                stroke-width="1" opacity="0.6" />`;
       break;
     }
     case "piano": {
