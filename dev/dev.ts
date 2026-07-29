@@ -122,9 +122,12 @@ const SENSOR_HUMIDITY = "sensor.living_area_humidity";
 /**
  * Stand-in for HA's entity registry — display precision, plus (for the Area
  * ⇄ HA-area device filtering feature) each entity's `device_id`. Paired with
- * `deviceRegistry` below so `light.living_room` resolves to the "Living Room"
- * HA area and `fan.ceiling_fan` resolves to no area at all, giving the demo
- * both a filtered and an unfiltered case to compare in the editor.
+ * `deviceRegistry` below so `light.living_room` and `media_player.living_tv`
+ * resolve to the "Living Room" HA area (the former is already placed on the
+ * demo floor, the latter isn't — so the Area panel's "Add all devices in
+ * this HA area" button has something to add out of the box) while
+ * `fan.ceiling_fan` resolves to no area at all, for a filtered-vs-unfiltered
+ * comparison in the editor.
  */
 const entityRegistry: Record<
   string,
@@ -133,12 +136,14 @@ const entityRegistry: Record<
   [SENSOR_TEMPERATURE]: { entity_id: SENSOR_TEMPERATURE, display_precision: 1 },
   [SENSOR_HUMIDITY]: { entity_id: SENSOR_HUMIDITY, display_precision: 1 },
   "light.living_room": { entity_id: "light.living_room", device_id: "dev_living_light" },
+  "media_player.living_tv": { entity_id: "media_player.living_tv", device_id: "dev_living_tv" },
   "fan.ceiling_fan": { entity_id: "fan.ceiling_fan" },
 };
 
 /** Stand-in for HA's device registry — just enough for area resolution. */
 const deviceRegistry: Record<string, { area_id?: string }> = {
   dev_living_light: { area_id: "living_room" },
+  dev_living_tv: { area_id: "living_room" },
 };
 
 /** Stand-in for HA's area registry (Area ⇄ HA-area linking). */

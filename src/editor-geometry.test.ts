@@ -4,6 +4,7 @@ import {
   nearestAreaSnapPoint,
   pointInPolygon,
   areaContainingPoint,
+  layoutPointsInPolygon,
   snapWallEnd,
   elementsInRect,
   applyDelta,
@@ -246,6 +247,72 @@ describe("nearestAreaSnapPoint", () => {
 
   it("returns null when nothing is within range", () => {
     expect(nearestAreaSnapPoint({ walls: [], areas: [] }, 500, 500, 26)).toBeNull();
+  });
+});
+
+describe("layoutPointsInPolygon", () => {
+  const square = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+    { x: 0, y: 100 },
+  ];
+
+  it("returns [] for a non-positive count", () => {
+    expect(layoutPointsInPolygon(square, 0)).toEqual([]);
+    expect(layoutPointsInPolygon(square, -1)).toEqual([]);
+  });
+
+  it("places a single point at the centroid", () => {
+    expect(layoutPointsInPolygon(square, 1)).toEqual([{ x: 50, y: 50 }]);
+  });
+
+  it("returns exactly `count` distinct points, all inside the polygon", () => {
+    const pts = layoutPointsInPolygon(square, 6);
+    expect(pts).toHaveLength(6);
+    for (const p of pts) expect(pointInPolygon(square, p.x, p.y)).toBe(true);
+    // Distinct positions — the whole point is to not stack them.
+    const uniq = new Set(pts.map((p) => `${p.x},${p.y}`));
+    expect(uniq.size).toBe(6);
+  });
+
+  it("spreads points out rather than clumping in one corner", () => {
+    const pts = layoutPointsInPolygon(square, 4);
+    const xs = pts.map((p) => p.x);
+    const ys = pts.map((p) => p.y);
+    // A 4-point spread across a square should use a meaningful fraction of
+    // both axes, not huddle in a small sub-region.
+    expect(Math.max(...xs) - Math.min(...xs)).toBeGreaterThan(20);
+    expect(Math.max(...ys) - Math.min(...ys)).toBeGreaterThan(20);
+  });
+
+  it("keeps every point inside a concave (L-shaped) polygon, avoiding the notch", () => {
+    const L = [
+      { x: 0, y: 0 },
+      { x: 100, y: 0 },
+      { x: 100, y: 50 },
+      { x: 50, y: 50 },
+      { x: 50, y: 100 },
+      { x: 0, y: 100 },
+    ];
+    const pts = layoutPointsInPolygon(L, 8);
+    expect(pts).toHaveLength(8);
+    for (const p of pts) expect(pointInPolygon(L, p.x, p.y)).toBe(true);
+  });
+
+  it("still returns exactly `count` points when far more are requested than the room can grid-fit", () => {
+    const tiny = [
+      { x: 0, y: 0 },
+      { x: 4, y: 0 },
+      { x: 4, y: 4 },
+      { x: 0, y: 4 },
+    ];
+    const pts = layoutPointsInPolygon(tiny, 20);
+    expect(pts).toHaveLength(20);
+    for (const p of pts) {
+      expect(Number.isFinite(p.x)).toBe(true);
+      expect(Number.isFinite(p.y)).toBe(true);
+    }
   });
 });
 

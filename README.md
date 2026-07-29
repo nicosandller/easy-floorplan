@@ -319,6 +319,12 @@ device into one.
      once **Filter entities** is on (below) it also turns on entity filtering (next point).
    - **Filter entities** — shown once an HA area is linked; a plain checkbox, on by
      default. Turn it off to keep the name link without narrowing the entity picker.
+   - **Add all devices in this HA area** — shown once an HA area is linked; one click
+     drops a device for every entity registered to that HA area that isn't already
+     placed on this floor, laid out across the room so the new icons spread out instead
+     of stacking on top of each other. The button shows how many are pending and
+     disables itself once there's nothing left to add; click it again later (after
+     adding entities in Home Assistant) to top up.
 
 **Reshaping.** Drag anywhere inside the fill to move the whole room; drag a single corner
 handle to reshape it (each handle snaps the same way a freshly placed point does). There's

@@ -171,6 +171,66 @@ export function areaContainingPoint(f: Pick<Floor, "areas">, x: number, y: numbe
 }
 
 /**
+ * Evenly distribute `count` points across the interior of `polygon` — used to
+ * auto-place a batch of new elements (e.g. every entity in a linked HA area)
+ * without stacking them on top of each other. Lays a grid over the polygon's
+ * bounding box, sized to `count` and the box's aspect ratio, and keeps only
+ * the cell centers that actually fall inside the (possibly concave) polygon;
+ * if too few land inside on the first pass — a narrow or oddly-shaped room —
+ * the grid is retried at higher density up to a cap. More hits than needed
+ * are evenly subsampled down to `count` rather than just taking the first
+ * `count` found, so the result stays spread out instead of clumping wherever
+ * the scan happened to pass first. Any shortfall past the density cap (a
+ * sliver-shaped room, or `count` far exceeding what it could ever hold
+ * legibly) is padded with points ringed around the centroid — accepting some
+ * overlap is better than throwing.
+ */
+export function layoutPointsInPolygon(polygon: readonly AreaPoint[], count: number): AreaPoint[] {
+  if (count <= 0) return [];
+  const centroid = polygonCentroid(polygon);
+  if (count === 1) return [centroid];
+
+  const xs = polygon.map((p) => p.x);
+  const ys = polygon.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const w = Math.max(maxX - minX, 1);
+  const h = Math.max(maxY - minY, 1);
+
+  for (let density = 1; density <= 8; density++) {
+    const n = count * density;
+    const cols = Math.max(1, Math.round(Math.sqrt((n * w) / h)));
+    const rows = Math.max(1, Math.ceil(n / cols));
+    const stepX = w / (cols + 1);
+    const stepY = h / (rows + 1);
+    const candidates: AreaPoint[] = [];
+    for (let r = 1; r <= rows; r++) {
+      for (let c = 1; c <= cols; c++) {
+        const x = minX + c * stepX;
+        const y = minY + r * stepY;
+        if (pointInPolygon(polygon, x, y)) candidates.push({ x, y });
+      }
+    }
+    if (candidates.length >= count) {
+      return Array.from(
+        { length: count },
+        (_, i) => candidates[Math.floor((i * candidates.length) / count)]!
+      );
+    }
+  }
+
+  // Fallback: ring the remainder around the centroid so points at least
+  // separate a little instead of landing exactly on top of each other.
+  return Array.from({ length: count }, (_, i) => {
+    const angle = (i / count) * Math.PI * 2;
+    const ring = Math.min(w, h) * 0.15 * (1 + Math.floor(i / 6));
+    return { x: centroid.x + Math.cos(angle) * ring, y: centroid.y + Math.sin(angle) * ring };
+  });
+}
+
+/**
  * Snap a wall's moving endpoint while drawing. Existing corners win (so rooms
  * close/continue); otherwise, unless free-draw is on, apply "gravity" toward
  * horizontal/vertical relative to the start point. The position itself snaps

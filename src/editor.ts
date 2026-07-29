@@ -71,6 +71,7 @@ import {
   areaContainingPoint,
   attachedCorners,
   elementsInRect,
+  layoutPointsInPolygon,
   nearestAreaSnapPoint,
   nearestCorner,
   snapWallEnd,
@@ -1702,6 +1703,40 @@ export class FloorplanCardEditor extends LitElement {
     this._updateArea(id, { haArea: ha?.area_id, ...(ha ? { name: ha.name } : {}) });
   }
 
+  /** Every entity in `area`'s linked HA area not already placed as an item on this floor. */
+  private _pendingAreaEntities(area: Area): string[] {
+    if (!area.haArea) return [];
+    const existing = new Set(this._floor().items.map((it) => it.entity));
+    return entityIdsInHaArea(this.hass, area.haArea).filter((id) => !existing.has(id));
+  }
+
+  /**
+   * Add a device for every entity registered to `area`'s linked HA area that
+   * isn't already placed as an item on this floor, laid out across the
+   * polygon's interior (`layoutPointsInPolygon`) so the new icons spread out
+   * instead of stacking on top of each other.
+   */
+  private _addAreaEntities(area: Area): void {
+    const toAdd = this._pendingAreaEntities(area);
+    if (!toAdd.length) return;
+    const positions = layoutPointsInPolygon(area.points, toAdd.length);
+    const newItems: FloorItem[] = toAdd.map((entity, i) => {
+      const kind = kindFromEntity(entity);
+      return {
+        id: uid("item"),
+        entity,
+        x: Math.round(positions[i]!.x),
+        y: Math.round(positions[i]!.y),
+        kind,
+        showState: kind === "sensor",
+        showIcon: true,
+        size: DEFAULT_ITEM_SIZE,
+      };
+    });
+    this._commitFloor({ items: [...this._floor().items, ...newItems] });
+    this._selection = newItems.map((it) => ({ kind: "item" as const, id: it.id }));
+  }
+
   /** Patch a single field on one of a tracker's sensor sub-objects (X / Y axis). */
   private _updateTrackerSensor(
     id: string,
@@ -3185,6 +3220,7 @@ export class FloorplanCardEditor extends LitElement {
       const a = (this._floor().areas ?? []).find((x) => x.id === sel.id);
       if (!a) return html`${nothing}`;
       const haAreas = haAreasOf(this.hass);
+      const pendingEntities = a.haArea ? this._pendingAreaEntities(a) : [];
       return html`
         ${this._renderForm(areaForm(a), (patch, live) =>
           this._applyElementPatch("area", a.id, patch, live)
@@ -3239,6 +3275,22 @@ export class FloorplanCardEditor extends LitElement {
                 >Scope the entity picker, for devices placed inside this room, to this HA
                 area's entities.</span
               >
+            </div>`
+          : nothing}
+        ${a.haArea
+          ? html`<div class="row wide">
+              <button
+                ?disabled=${!pendingEntities.length}
+                title=${pendingEntities.length
+                  ? `Add ${pendingEntities.length} device${pendingEntities.length === 1 ? "" : "s"} from this HA area, spread out across the room`
+                  : "Every entity in this HA area is already placed on this floor"}
+                @click=${() => this._addAreaEntities(a)}
+              >
+                <ha-icon icon="mdi:shape-square-plus"></ha-icon>
+                Add all devices in this HA area${pendingEntities.length
+                  ? ` (${pendingEntities.length})`
+                  : ""}
+              </button>
             </div>`
           : nothing}
         <p class="hint">
