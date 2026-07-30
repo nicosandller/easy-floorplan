@@ -17,6 +17,7 @@ import type {
   TrackerSensor,
   Area,
   AreaPoint,
+  HaAreaInfo,
 } from "./types";
 import {
   DEFAULT_CUSTOM_PERCENT,
@@ -373,7 +374,7 @@ export class FloorplanCardEditor extends LitElement {
     void this._ensureHaComponents();
     // Upgrade the plain-input fallbacks in place whenever a component gets
     // defined later (by us or by another editor the user opened).
-    for (const tag of ["ha-form", "ha-entity-picker", "ha-icon-picker"]) {
+    for (const tag of ["ha-form", "ha-entity-picker", "ha-icon-picker", "ha-combo-box"]) {
       if (!customElements.get(tag)) {
         void customElements.whenDefined(tag).then(() => this.requestUpdate());
       }
@@ -1731,41 +1732,78 @@ export class FloorplanCardEditor extends LitElement {
    */
   private _renderAreaNameRow(a: Area): TemplateResult {
     const haAreas = haAreasOf(this.hass);
-    const listId = `ha-areas-${a.id}`;
     const linked = a.haArea ? haAreas.find((ha) => ha.area_id === a.haArea) : undefined;
     return html`
       <div class="row wide">
         <label>Name</label>
-        <input
-          type="text"
-          list=${haAreas.length ? listId : nothing}
-          placeholder="Room name (or a Home Assistant area)"
-          .value=${a.name ?? ""}
-          @change=${(e: Event) =>
-            this._commitAreaName(a.id, (e.target as HTMLInputElement).value)}
-        />
-        ${haAreas.length
-          ? html`<datalist id=${listId}>
-              ${haAreas.map((ha) => html`<option value=${ha.name}></option>`)}
-            </datalist>`
-          : nothing}
+        ${this._renderAreaNamePicker(a, haAreas)}
+      </div>
+      <div class="row wide area-name-status">
+        <label></label>
         ${a.haArea
-          ? html`<span class="ha-link-chip" title=${`Linked to the Home Assistant area "${linked?.name ?? a.haArea}"`}>
-                <ha-icon icon="mdi:link-variant"></ha-icon>Linked
-                <button
-                  class="unlink"
-                  title="Keep this name but unlink the Home Assistant area"
-                  @click=${() => this._unlinkHaArea(a.id)}
-                >
-                  <ha-icon icon="mdi:close"></ha-icon>
-                </button>
-              </span>`
+          ? html`<span
+              class="ha-link-chip"
+              title=${`Linked to the Home Assistant area "${linked?.name ?? a.haArea}"`}
+            >
+              <ha-icon icon="mdi:link-variant"></ha-icon>Linked
+              <button
+                class="unlink"
+                title="Keep this name but unlink the Home Assistant area"
+                @click=${() => this._unlinkHaArea(a.id)}
+              >
+                <ha-icon icon="mdi:close"></ha-icon>
+              </button>
+            </span>`
           : html`<span class="hint"
               >${haAreas.length
-                ? "Matching a Home Assistant area's name links it."
+                ? "Type or pick a Home Assistant area's name to link it."
                 : "No Home Assistant areas available."}</span
             >`}
       </div>
+    `;
+  }
+
+  /**
+   * The name control itself: HA's own `ha-combo-box` when it's defined, so this
+   * field looks and behaves like the entity/icon pickers elsewhere in the
+   * editor (filter-as-you-type dropdown, keyboard nav) rather than a bare text
+   * box. `allow-custom-value` is what makes the merged field work — a name that
+   * matches no HA area is still accepted as a plain label.
+   *
+   * Falls back to `<input list>` + `<datalist>`: native autocomplete, no HA
+   * components required (older HA, the dev harness).
+   */
+  private _renderAreaNamePicker(a: Area, haAreas: HaAreaInfo[]): TemplateResult {
+    const placeholder = "Room name (or a Home Assistant area)";
+    if (customElements.get("ha-combo-box")) {
+      return html`<ha-combo-box
+        .hass=${this.hass}
+        .items=${haAreas}
+        item-value-path="name"
+        item-label-path="name"
+        item-id-path="area_id"
+        allow-custom-value
+        .placeholder=${placeholder}
+        .value=${a.name ?? ""}
+        @value-changed=${(e: CustomEvent) =>
+          this._commitAreaName(a.id, ((e.detail as { value?: string }).value ?? "").toString())}
+      ></ha-combo-box>`;
+    }
+    const listId = `ha-areas-${a.id}`;
+    return html`
+      <input
+        type="text"
+        list=${haAreas.length ? listId : nothing}
+        placeholder=${placeholder}
+        .value=${a.name ?? ""}
+        @change=${(e: Event) =>
+          this._commitAreaName(a.id, (e.target as HTMLInputElement).value)}
+      />
+      ${haAreas.length
+        ? html`<datalist id=${listId}>
+            ${haAreas.map((ha) => html`<option value=${ha.name}></option>`)}
+          </datalist>`
+        : nothing}
     `;
   }
 
@@ -4460,7 +4498,8 @@ export class FloorplanCardEditor extends LitElement {
       color: var(--primary-text-color);
     }
     ha-entity-picker,
-    ha-icon-picker {
+    ha-icon-picker,
+    ha-combo-box {
       flex: 1;
       min-width: 0;
     }
@@ -4481,6 +4520,19 @@ export class FloorplanCardEditor extends LitElement {
       font-size: 13px;
       color: var(--secondary-text-color);
       line-height: 1.5;
+    }
+    /* The Area name's status line (Linked chip / hint). It sits on its own row
+       under the field rather than beside it: the docked inspector is only
+       340px wide in full screen, and a chip + hint sharing that row squeezed
+       the name box down to a sliver. The empty label keeps it aligned with the
+       field above, and -4px claws back the row's own bottom margin so the pair
+       still reads as one control. */
+    .area-name-status {
+      margin-top: -4px;
+    }
+    .area-name-status label {
+      /* Alignment spacer only — nothing to announce. */
+      flex: 0 0 90px;
     }
     /* "Linked" badge on the Area name row: the HA-area association is implied
        by the name matching, so it needs to be visible somewhere. */

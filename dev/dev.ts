@@ -6,10 +6,12 @@
  *
  * Run with: `npm run serve` (opens /dev/ on the Vite dev server).
  *
- * A few HA-provided custom elements are stubbed below: <ha-card>, <ha-icon> and
- * <ha-entity-picker>. The icon picker already falls back to a plain input in the
- * editor when unregistered, but the entity picker does not, so we stub it here
- * so Sensor / entity fields are usable outside HA.
+ * A few HA-provided custom elements are stubbed below: <ha-card>, <ha-icon>,
+ * <ha-entity-picker> and <ha-combo-box>. The icon picker already falls back to a
+ * plain input in the editor when unregistered, but the entity picker does not,
+ * so we stub it here so Sensor / entity fields are usable outside HA. The combo
+ * box has a fallback too, but stubbing it means the harness exercises the same
+ * branch HA does (the Area name field) instead of only the fallback.
  */
 import type { FloorplanCardConfig, Tracker, TrackerSensor } from "../src/types";
 
@@ -106,6 +108,77 @@ if (!customElements.get("ha-entity-picker")) {
     }
   }
   customElements.define("ha-entity-picker", HaEntityPickerStub);
+}
+
+if (!customElements.get("ha-combo-box")) {
+  // Same story as ha-entity-picker: inside HA this is a filter-as-you-type
+  // dropdown, and it's what the Area name field uses. Without a stub the field
+  // would silently fall back to its <input list> path here, so the harness
+  // would never exercise the code that actually runs in HA. A native
+  // input+datalist is close enough to drive it: free text (allow-custom-value)
+  // plus suggestions, emitting the same `value-changed`.
+  class HaComboBoxStub extends HTMLElement {
+    private _value = "";
+    private _items: Array<Record<string, unknown>> = [];
+    private _input?: HTMLInputElement;
+    private _list?: HTMLDataListElement;
+    set value(v: string) {
+      this._value = v ?? "";
+      if (this._input) this._input.value = this._value;
+    }
+    get value(): string {
+      return this._value;
+    }
+    set items(v: Array<Record<string, unknown>>) {
+      this._items = Array.isArray(v) ? v : [];
+      this._syncOptions();
+    }
+    set placeholder(v: string) {
+      if (this._input) this._input.placeholder = v ?? "";
+    }
+    /** `hass` is accepted and ignored — the real component uses it for i18n. */
+    set hass(_v: unknown) {}
+    private _labelPath(): string {
+      return this.getAttribute("item-label-path") || "name";
+    }
+    private _syncOptions() {
+      if (!this._list) return;
+      const path = this._labelPath();
+      this._list.replaceChildren(
+        ...this._items.map((it) => {
+          const opt = document.createElement("option");
+          opt.value = String(it[path] ?? "");
+          return opt;
+        }),
+      );
+    }
+    connectedCallback() {
+      if (this._input) return;
+      const id = `ha-combo-box-stub-${Math.random().toString(36).slice(2)}`;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.setAttribute("list", id);
+      input.value = this._value;
+      input.style.width = "100%";
+      input.addEventListener("change", () => {
+        this._value = input.value;
+        this.dispatchEvent(
+          new CustomEvent("value-changed", {
+            detail: { value: input.value },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      });
+      const list = document.createElement("datalist");
+      list.id = id;
+      this._input = input;
+      this._list = list;
+      this._syncOptions();
+      this.append(input, list);
+    }
+  }
+  customElements.define("ha-combo-box", HaComboBoxStub);
 }
 
 // ---- register the real card + editor --------------------------------------

@@ -737,9 +737,10 @@ npm run serve      # opens /dev/ on the Vite dev server with HMR
 This mounts the **real** `easy-floorplan-card-editor` and `easy-floorplan-card`
 side-by-side in a plain HTML page with:
 
-- a minimal `hass` mock + tiny `<ha-card>` and `<ha-icon>` stubs so the card
-  renders outside HA — the entity / icon pickers are already feature-detected
-  inside the editor and fall back to plain inputs;
+- a minimal `hass` mock + tiny `<ha-card>`, `<ha-icon>`, `<ha-entity-picker>` and
+  `<ha-combo-box>` stubs so the card renders outside HA — the pickers are
+  feature-detected inside the editor and fall back to plain inputs, but stubbing
+  them means the harness drives the same branch a real HA install does;
 - a `config-changed` round-trip between the editor and the live preview, so
   edits in the editor instantly update the card (matching how HA wires it);
 - a **Tracker emulator** panel that appears whenever the current config has
