@@ -29,9 +29,10 @@ automatically to the card and screen size.
   dishwasher, water heater, air handler, bathtub, vanity, sectional, fish tank,
   piano, hot tub.
 - **Areas** — trace a room's outline point-by-point (points snap to wall corners and to
-  neighboring areas' corners) to get a colored, named room polygon. Link an area to a
-  Home Assistant area to name it automatically and scope the entity picker, for any
-  device dropped inside it, to that HA area's entities.
+  neighboring areas' corners) to get a colored, named room polygon. Naming a room after
+  one of your Home Assistant areas (the name field autocompletes against them) links the
+  two, which scopes the entity picker — for any device dropped inside it — to that HA
+  area's entities, and can bulk-add every device in the area.
 - **Live position tracker** — draw a rectangular tracked area and bind one or two
   orthogonal distance sensors (e.g. mmWave / radar). The card linearly maps each
   sensor's `[min, max]` reading to the rectangle's edges and animates a pulsating
@@ -311,12 +312,14 @@ device into one.
    discards the whole outline.
 4. With the area selected, the **Element** section offers:
    - **Name** and **Show name** — a label centered on the room; toggle it off if you'd
-     rather keep the plan uncluttered.
+     rather keep the plan uncluttered. The name field autocompletes against your Home
+     Assistant areas, and **naming the room after one links it**: a **Linked** badge
+     appears next to the field, and the options below unlock. Any other text is just a
+     label. Picking from the list adopts the HA area's exact spelling, so typing
+     "living room" still shows as "Living Room" on the plan. To keep a name but drop the
+     link, click the **×** on the Linked badge.
    - **Fill opacity** and a **color** picker — the translucent fill that makes the room
      stand out (falls back to the theme primary color).
-   - **HA area** — link the polygon to one of your Home Assistant areas. Linking names
-     the polygon after it (rename afterwards if you like; the link sticks either way) —
-     once **Filter entities** is on (below) it also turns on entity filtering (next point).
    - **Filter entities** — shown once an HA area is linked; a plain checkbox, on by
      default. Turn it off to keep the name link without narrowing the entity picker.
    - **Add all devices in this HA area** — shown once an HA area is linked; one click
@@ -614,8 +617,8 @@ trackers:
   is on. Mirrors the linked HA area's name when `haArea` is set.
 - `color` / `opacity` — the room's fill; `color` falls back to the theme primary color,
   `opacity` defaults to `0.25`.
-- `haArea` — optional id of a linked Home Assistant area. Selecting one in the editor
-  names the polygon after it — see **Areas**.
+- `haArea` — optional id of a linked Home Assistant area. The editor sets this when the
+  polygon's `name` matches one of your HA areas — see **Areas**.
 - `filterEntities` — with `haArea` set, scopes the entity picker (for any device placed
   inside this polygon) to that HA area's entities. Default `true`; has no effect without
   a linked `haArea`.

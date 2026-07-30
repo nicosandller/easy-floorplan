@@ -248,12 +248,18 @@ describe("areaForm", () => {
 
   it("data presents effective defaults (showName true, DEFAULT_AREA_OPACITY)", () => {
     const d = areaForm(area()).data;
-    expect(d).toMatchObject({ name: "", showName: true, opacity: 0.25 });
+    expect(d).toMatchObject({ showName: true, opacity: 0.25 });
   });
 
-  it("data reflects an explicit name/showName/opacity", () => {
+  it("data reflects an explicit showName/opacity", () => {
     const d = areaForm(area({ name: "Kitchen", showName: false, opacity: 0.5 })).data;
-    expect(d).toMatchObject({ name: "Kitchen", showName: false, opacity: 0.5 });
+    expect(d).toMatchObject({ showName: false, opacity: 0.5 });
+  });
+
+  it("omits name — it's a bespoke row (autocompletes against HA areas to link one)", () => {
+    const f = areaForm(area({ name: "Kitchen" }));
+    expect(f.fields.some((x) => x.name === "name")).toBe(false);
+    expect(f.data).not.toHaveProperty("name");
   });
 
   it("opacity field is a 0..1 slider", () => {

@@ -645,6 +645,37 @@ export function haAreasOf(hass: unknown): HaAreaInfo[] {
 }
 
 /**
+ * Resolve a typed room name to a Home Assistant area, so the Area panel can
+ * offer one combined name-with-autocomplete field instead of a separate name
+ * box and HA-area dropdown: whatever the user types is the display name, and
+ * if it happens to name a real HA area we link to it too.
+ *
+ * Matching is exact first, then case-insensitive, then case-insensitive with
+ * surrounding whitespace collapsed — so "living  room" still finds "Living
+ * Room" — and returns `undefined` for free-text names that match nothing.
+ *
+ * NOTE: Home Assistant allows two areas to share a name (e.g. a "Bathroom" on
+ * each floor). Names therefore can't disambiguate them, and the first match in
+ * `haAreasOf` order (sorted by name, so effectively arbitrary between equals)
+ * wins. That ambiguity is inherent to naming an area by name; picking the
+ * other one means renaming it in HA.
+ */
+export function matchHaAreaByName(
+  areas: readonly HaAreaInfo[],
+  name: string | undefined
+): HaAreaInfo | undefined {
+  const raw = (name ?? "").trim();
+  if (!raw) return undefined;
+  const exact = areas.find((a) => a.name === raw);
+  if (exact) return exact;
+  const lower = raw.toLowerCase();
+  const ci = areas.find((a) => a.name.toLowerCase() === lower);
+  if (ci) return ci;
+  const loose = lower.replace(/\s+/g, " ");
+  return areas.find((a) => a.name.trim().toLowerCase().replace(/\s+/g, " ") === loose);
+}
+
+/**
  * The shape of `hass.entities`/`hass.devices` this card needs to resolve an
  * entity's effective Home Assistant area — the entity registry's own
  * `area_id` override, else its device's `area_id`. Neither is declared by

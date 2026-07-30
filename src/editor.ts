@@ -35,6 +35,7 @@ import {
   makeFloor,
   haFloorsOf,
   haAreasOf,
+  matchHaAreaByName,
   entityIdsInHaArea,
   areaFiltersEntities,
   moveFloor,
@@ -1694,13 +1695,78 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
-   * Link an Area to a Home Assistant area (mirrors {@link _linkHaFloor}).
-   * Linking also names the Area after it — the point of the association —
-   * while a later manual rename sticks; unlinking keeps the current name.
+   * Commit the Area's name, which doubles as the HA-area link: one field, so
+   * typing (or picking from the datalist) a name that matches a Home Assistant
+   * area links to it, and any other text is just a free label and clears the
+   * link. Picking from the datalist adopts the HA area's exact spelling, so a
+   * case-insensitive match doesn't leave the plan labelled "living room".
+   *
+   * The link is never silent — {@link _renderAreaNameRow} shows a "Linked"
+   * chip whenever `haArea` is set, with its own unlink button for the one case
+   * this can't express: keeping the name while dropping the link.
    */
-  private _linkHaArea(id: string, haAreaId: string): void {
-    const ha = haAreasOf(this.hass).find((a) => a.area_id === haAreaId);
-    this._updateArea(id, { haArea: ha?.area_id, ...(ha ? { name: ha.name } : {}) });
+  private _commitAreaName(id: string, typed: string): void {
+    const name = typed.trim();
+    const ha = matchHaAreaByName(haAreasOf(this.hass), name);
+    this._updateArea(id, {
+      name: ha ? ha.name : name || undefined,
+      haArea: ha?.area_id,
+    });
+  }
+
+  /** Drop the HA-area link but keep the name the user sees on the plan. */
+  private _unlinkHaArea(id: string): void {
+    this._updateArea(id, { haArea: undefined });
+  }
+
+  /**
+   * The Area's single name field: a free-text input whose `<datalist>` offers
+   * every Home Assistant area, so naming a room after one links it (see
+   * {@link _commitAreaName}). A "Linked" chip — with an unlink button — makes
+   * the resulting association visible rather than implied by the text alone.
+   *
+   * Falls back to a plain input when `hass` exposes no area registry (older
+   * HA, the dev harness): the field still names the room, there's just nothing
+   * to autocomplete against.
+   */
+  private _renderAreaNameRow(a: Area): TemplateResult {
+    const haAreas = haAreasOf(this.hass);
+    const listId = `ha-areas-${a.id}`;
+    const linked = a.haArea ? haAreas.find((ha) => ha.area_id === a.haArea) : undefined;
+    return html`
+      <div class="row wide">
+        <label>Name</label>
+        <input
+          type="text"
+          list=${haAreas.length ? listId : nothing}
+          placeholder="Room name (or a Home Assistant area)"
+          .value=${a.name ?? ""}
+          @change=${(e: Event) =>
+            this._commitAreaName(a.id, (e.target as HTMLInputElement).value)}
+        />
+        ${haAreas.length
+          ? html`<datalist id=${listId}>
+              ${haAreas.map((ha) => html`<option value=${ha.name}></option>`)}
+            </datalist>`
+          : nothing}
+        ${a.haArea
+          ? html`<span class="ha-link-chip" title=${`Linked to the Home Assistant area "${linked?.name ?? a.haArea}"`}>
+                <ha-icon icon="mdi:link-variant"></ha-icon>Linked
+                <button
+                  class="unlink"
+                  title="Keep this name but unlink the Home Assistant area"
+                  @click=${() => this._unlinkHaArea(a.id)}
+                >
+                  <ha-icon icon="mdi:close"></ha-icon>
+                </button>
+              </span>`
+          : html`<span class="hint"
+              >${haAreas.length
+                ? "Matching a Home Assistant area's name links it."
+                : "No Home Assistant areas available."}</span
+            >`}
+      </div>
+    `;
   }
 
   /** Every entity in `area`'s linked HA area not already placed as an item on this floor. */
@@ -3219,9 +3285,9 @@ export class FloorplanCardEditor extends LitElement {
     if (sel.kind === "area") {
       const a = (this._floor().areas ?? []).find((x) => x.id === sel.id);
       if (!a) return html`${nothing}`;
-      const haAreas = haAreasOf(this.hass);
       const pendingEntities = a.haArea ? this._pendingAreaEntities(a) : [];
       return html`
+        ${this._renderAreaNameRow(a)}
         ${this._renderForm(areaForm(a), (patch, live) =>
           this._applyElementPatch("area", a.id, patch, live)
         )}
@@ -3241,25 +3307,6 @@ export class FloorplanCardEditor extends LitElement {
               this._updateArea(a.id, { color: (e.target as HTMLInputElement).value || undefined })}
           />
         </div>
-        ${haAreas.length
-          ? html`<div class="row wide">
-              <label>HA area</label>
-              <select
-                .value=${a.haArea ?? ""}
-                @change=${(e: Event) =>
-                  this._linkHaArea(a.id, (e.target as HTMLSelectElement).value)}
-              >
-                <option value="" ?selected=${!a.haArea}>(not linked)</option>
-                ${haAreas.map(
-                  (ha) =>
-                    html`<option value=${ha.area_id} ?selected=${a.haArea === ha.area_id}>
-                      ${ha.name}
-                    </option>`
-                )}
-              </select>
-              <span class="hint">Names this room after the linked HA area.</span>
-            </div>`
-          : nothing}
         ${a.haArea
           ? html`<div class="row wide">
               <label>Filter entities</label>
@@ -4434,6 +4481,36 @@ export class FloorplanCardEditor extends LitElement {
       font-size: 13px;
       color: var(--secondary-text-color);
       line-height: 1.5;
+    }
+    /* "Linked" badge on the Area name row: the HA-area association is implied
+       by the name matching, so it needs to be visible somewhere. */
+    .ha-link-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 4px 2px 8px;
+      border-radius: 999px;
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .ha-link-chip ha-icon {
+      --mdc-icon-size: 14px;
+    }
+    .ha-link-chip .unlink {
+      display: inline-flex;
+      align-items: center;
+      padding: 0;
+      border: none;
+      background: none;
+      color: inherit;
+      cursor: pointer;
+      opacity: 0.85;
+    }
+    .ha-link-chip .unlink:hover {
+      opacity: 1;
     }
   `;
 }

@@ -497,15 +497,15 @@ export function trackerForm(tr: Tracker): FormSpec {
 }
 
 /**
- * Name/visibility/opacity fields for an Area (a room polygon). Color and the
- * HA-area link are bespoke rows in the editor's selection editor, same as
- * every other color field / registry link in this file (see `textForm`'s
- * caller / `_renderHaFloorRow` in editor.ts).
+ * Visibility/opacity fields for an Area (a room polygon). Color and the
+ * name — which doubles as the HA-area link, so it needs a datalist of area
+ * names and an unlink affordance — are bespoke rows in the editor's selection
+ * editor, same as every other color field / registry link in this file (see
+ * `textForm`'s caller / `_renderHaFloorRow` in editor.ts).
  */
 export function areaForm(a: Area): FormSpec {
   return {
     fields: [
-      { name: "name", label: "Name", selector: { text: {} } },
       { name: "showName", label: "Show name", selector: { boolean: {} } },
       {
         name: "opacity",
@@ -514,7 +514,6 @@ export function areaForm(a: Area): FormSpec {
       },
     ],
     data: {
-      name: a.name ?? "",
       showName: a.showName ?? true,
       opacity: a.opacity ?? DEFAULT_AREA_OPACITY,
     },

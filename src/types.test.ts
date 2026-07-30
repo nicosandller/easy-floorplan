@@ -10,6 +10,7 @@ import {
   trackerPresenceDetected,
   haFloorsOf,
   haAreasOf,
+  matchHaAreaByName,
   entityHaAreaId,
   entityIdsInHaArea,
   areaFiltersEntities,
@@ -305,6 +306,53 @@ describe("haAreasOf", () => {
     expect(
       haAreasOf({ areas: { x: { area_id: "x" }, ok: { area_id: "ok", name: "Ok" } } })
     ).toEqual([{ area_id: "ok", name: "Ok" }]);
+  });
+});
+
+describe("matchHaAreaByName", () => {
+  const areas = [
+    { area_id: "bedroom", name: "Bedroom" },
+    { area_id: "living_room", name: "Living Room" },
+  ];
+
+  it("matches an exact name", () => {
+    expect(matchHaAreaByName(areas, "Living Room")?.area_id).toBe("living_room");
+  });
+
+  it("matches case-insensitively and tolerates stray whitespace", () => {
+    expect(matchHaAreaByName(areas, "living room")?.area_id).toBe("living_room");
+    expect(matchHaAreaByName(areas, "  LIVING   ROOM ")?.area_id).toBe("living_room");
+  });
+
+  it("returns undefined for a free-text name that matches nothing", () => {
+    expect(matchHaAreaByName(areas, "Lounge")).toBeUndefined();
+  });
+
+  it("returns undefined for empty/whitespace-only input", () => {
+    expect(matchHaAreaByName(areas, "")).toBeUndefined();
+    expect(matchHaAreaByName(areas, "   ")).toBeUndefined();
+    expect(matchHaAreaByName(areas, undefined)).toBeUndefined();
+  });
+
+  it("returns undefined when there are no HA areas at all", () => {
+    expect(matchHaAreaByName([], "Living Room")).toBeUndefined();
+  });
+
+  it("prefers the exact-case area when two names differ only by case", () => {
+    const dupes = [
+      { area_id: "lower", name: "office" },
+      { area_id: "title", name: "Office" },
+    ];
+    expect(matchHaAreaByName(dupes, "Office")?.area_id).toBe("title");
+    expect(matchHaAreaByName(dupes, "office")?.area_id).toBe("lower");
+  });
+
+  it("picks the first of two identically named areas (names can't disambiguate)", () => {
+    const dupes = [
+      { area_id: "bath_up", name: "Bathroom" },
+      { area_id: "bath_down", name: "Bathroom" },
+    ];
+    expect(matchHaAreaByName(dupes, "Bathroom")?.area_id).toBe("bath_up");
   });
 });
 
