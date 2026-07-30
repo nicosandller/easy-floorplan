@@ -11,6 +11,7 @@ import {
   haFloorsOf,
   haAreasOf,
   matchHaAreaByName,
+  areaNamePatch,
   entityHaAreaId,
   entityIdsInHaArea,
   areaFiltersEntities,
@@ -353,6 +354,44 @@ describe("matchHaAreaByName", () => {
       { area_id: "bath_down", name: "Bathroom" },
     ];
     expect(matchHaAreaByName(dupes, "Bathroom")?.area_id).toBe("bath_up");
+  });
+});
+
+describe("areaNamePatch", () => {
+  const areas = [
+    { area_id: "bedroom", name: "Bedroom" },
+    { area_id: "living_room", name: "Living Room" },
+  ];
+
+  it("links (and canonicalizes) when the new name matches an HA area", () => {
+    expect(areaNamePatch({ name: "living room" }, areas)).toEqual({
+      name: "Living Room",
+      haArea: "living_room",
+    });
+  });
+
+  it("clears the link for a free-text name", () => {
+    expect(areaNamePatch({ name: "Lounge" }, areas)).toEqual({
+      name: "Lounge",
+      haArea: undefined,
+    });
+  });
+
+  it("drops an emptied name entirely (and its link)", () => {
+    expect(areaNamePatch({ name: "  " }, areas)).toEqual({ name: undefined, haArea: undefined });
+  });
+
+  it("passes through patches that don't touch the name", () => {
+    const patch = { showName: false, opacity: 0.4 };
+    expect(areaNamePatch(patch, areas)).toBe(patch);
+  });
+
+  it("preserves other keys in a patch that does touch the name", () => {
+    expect(areaNamePatch({ name: "Bedroom", showName: false }, areas)).toEqual({
+      name: "Bedroom",
+      haArea: "bedroom",
+      showName: false,
+    });
   });
 });
 

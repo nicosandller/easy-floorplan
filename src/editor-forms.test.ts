@@ -13,6 +13,7 @@ import {
   projectRotationForm,
   floorImageForm,
   areaForm,
+  areaNameForm,
 } from "./editor-forms";
 import type { FormField } from "./editor-forms";
 import type { Area, Opening, FloorItem, Floor, FloorplanCardConfig } from "./types";
@@ -239,6 +240,38 @@ describe("itemForm", () => {
   });
 });
 
+describe("areaNameForm", () => {
+  const area = (extra: Partial<Area> = {}): Area => ({
+    id: "a",
+    points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }],
+    ...extra,
+  });
+
+  it("offers the HA areas as a typeable dropdown (so HA renders it natively)", () => {
+    const name = areaNameForm(area(), ["Bedroom", "Living Room"]).fields[0];
+    expect(name.selector).toEqual({
+      select: {
+        options: [
+          { value: "Bedroom", label: "Bedroom" },
+          { value: "Living Room", label: "Living Room" },
+        ],
+        custom_value: true,
+        mode: "dropdown",
+        sort: false,
+      },
+    });
+  });
+
+  it("degrades to a plain text field when there are no HA areas to offer", () => {
+    expect(areaNameForm(area()).fields[0].selector).toEqual({ text: {} });
+  });
+
+  it("carries the current name as its data", () => {
+    expect(areaNameForm(area({ name: "Kitchen" })).data).toEqual({ name: "Kitchen" });
+    expect(areaNameForm(area()).data).toEqual({ name: "" });
+  });
+});
+
 describe("areaForm", () => {
   const area = (extra: Partial<Area> = {}): Area => ({
     id: "a",
@@ -256,10 +289,8 @@ describe("areaForm", () => {
     expect(d).toMatchObject({ showName: false, opacity: 0.5 });
   });
 
-  it("omits name — it's a bespoke row (autocompletes against HA areas to link one)", () => {
-    const f = areaForm(area({ name: "Kitchen" }));
-    expect(f.fields.some((x) => x.name === "name")).toBe(false);
-    expect(f.data).not.toHaveProperty("name");
+  it("keeps name out of the style form — it's its own form, above the link status", () => {
+    expect(areaForm(area({ name: "Kitchen" })).fields.some((x) => x.name === "name")).toBe(false);
   });
 
   it("opacity field is a 0..1 slider", () => {

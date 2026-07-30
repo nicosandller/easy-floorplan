@@ -36,7 +36,7 @@ import {
   makeFloor,
   haFloorsOf,
   haAreasOf,
-  matchHaAreaByName,
+  areaNamePatch,
   entityIdsInHaArea,
   areaFiltersEntities,
   moveFloor,
@@ -87,6 +87,7 @@ import {
   FURNITURE_LABELS,
   FURNITURE_TYPES,
   areaForm,
+  areaNameForm,
   diffFormValue,
   floorImageForm,
   furnitureForm,
@@ -1695,49 +1696,21 @@ export class FloorplanCardEditor extends LitElement {
     });
   }
 
-  /**
-   * Commit the Area's name, which doubles as the HA-area link: one field, so
-   * typing (or picking from the datalist) a name that matches a Home Assistant
-   * area links to it, and any other text is just a free label and clears the
-   * link. Picking from the datalist adopts the HA area's exact spelling, so a
-   * case-insensitive match doesn't leave the plan labelled "living room".
-   *
-   * The link is never silent — {@link _renderAreaNameRow} shows a "Linked"
-   * chip whenever `haArea` is set, with its own unlink button for the one case
-   * this can't express: keeping the name while dropping the link.
-   */
-  private _commitAreaName(id: string, typed: string): void {
-    const name = typed.trim();
-    const ha = matchHaAreaByName(haAreasOf(this.hass), name);
-    this._updateArea(id, {
-      name: ha ? ha.name : name || undefined,
-      haArea: ha?.area_id,
-    });
-  }
-
   /** Drop the HA-area link but keep the name the user sees on the plan. */
   private _unlinkHaArea(id: string): void {
     this._updateArea(id, { haArea: undefined });
   }
 
   /**
-   * The Area's single name field: a free-text input whose `<datalist>` offers
-   * every Home Assistant area, so naming a room after one links it (see
-   * {@link _commitAreaName}). A "Linked" chip — with an unlink button — makes
-   * the resulting association visible rather than implied by the text alone.
-   *
-   * Falls back to a plain input when `hass` exposes no area registry (older
-   * HA, the dev harness): the field still names the room, there's just nothing
-   * to autocomplete against.
+   * Status line under the Area's name field. The name doubles as the HA-area
+   * link (see {@link areaNamePatch}), so the resulting association would
+   * otherwise be invisible: this shows a "Linked" chip whenever `haArea` is
+   * set, with an unlink button for the one intent the merged field can't
+   * express — keeping the name while dropping the link.
    */
-  private _renderAreaNameRow(a: Area): TemplateResult {
-    const haAreas = haAreasOf(this.hass);
+  private _renderAreaLinkRow(a: Area, haAreas: HaAreaInfo[]): TemplateResult {
     const linked = a.haArea ? haAreas.find((ha) => ha.area_id === a.haArea) : undefined;
     return html`
-      <div class="row wide">
-        <label>Name</label>
-        ${this._renderAreaNamePicker(a, haAreas)}
-      </div>
       <div class="row wide area-name-status">
         <label></label>
         ${a.haArea
@@ -1756,54 +1729,10 @@ export class FloorplanCardEditor extends LitElement {
             </span>`
           : html`<span class="hint"
               >${haAreas.length
-                ? "Type or pick a Home Assistant area's name to link it."
+                ? "Name this room after a Home Assistant area to link it."
                 : "No Home Assistant areas available."}</span
             >`}
       </div>
-    `;
-  }
-
-  /**
-   * The name control itself: HA's own `ha-combo-box` when it's defined, so this
-   * field looks and behaves like the entity/icon pickers elsewhere in the
-   * editor (filter-as-you-type dropdown, keyboard nav) rather than a bare text
-   * box. `allow-custom-value` is what makes the merged field work — a name that
-   * matches no HA area is still accepted as a plain label.
-   *
-   * Falls back to `<input list>` + `<datalist>`: native autocomplete, no HA
-   * components required (older HA, the dev harness).
-   */
-  private _renderAreaNamePicker(a: Area, haAreas: HaAreaInfo[]): TemplateResult {
-    const placeholder = "Room name (or a Home Assistant area)";
-    if (customElements.get("ha-combo-box")) {
-      return html`<ha-combo-box
-        .hass=${this.hass}
-        .items=${haAreas}
-        item-value-path="name"
-        item-label-path="name"
-        item-id-path="area_id"
-        allow-custom-value
-        .placeholder=${placeholder}
-        .value=${a.name ?? ""}
-        @value-changed=${(e: CustomEvent) =>
-          this._commitAreaName(a.id, ((e.detail as { value?: string }).value ?? "").toString())}
-      ></ha-combo-box>`;
-    }
-    const listId = `ha-areas-${a.id}`;
-    return html`
-      <input
-        type="text"
-        list=${haAreas.length ? listId : nothing}
-        placeholder=${placeholder}
-        .value=${a.name ?? ""}
-        @change=${(e: Event) =>
-          this._commitAreaName(a.id, (e.target as HTMLInputElement).value)}
-      />
-      ${haAreas.length
-        ? html`<datalist id=${listId}>
-            ${haAreas.map((ha) => html`<option value=${ha.name}></option>`)}
-          </datalist>`
-        : nothing}
     `;
   }
 
@@ -2631,7 +2560,30 @@ export class FloorplanCardEditor extends LitElement {
     const value = spec.data[f.name];
     const sel = f.selector;
     if ("select" in sel) {
-      const options = (sel.select as { options: { value: string; label: string }[] }).options;
+      const select = sel.select as {
+        options: { value: string; label: string }[];
+        custom_value?: boolean;
+      };
+      const options = select.options;
+      // `custom_value` means "pick one of these, or type your own" — a <select>
+      // can't express that, so mirror HA's combo box with a datalist-backed
+      // input (the Area name field, which doubles as its HA-area link).
+      if (select.custom_value) {
+        const listId = `sel-${f.name}-${options.length}`;
+        return html`<div class="row wide">
+          <label>${f.label}</label>
+          <input
+            type="text"
+            list=${listId}
+            .value=${String(value ?? "")}
+            @change=${(e: Event) =>
+              this._applyFallback(spec, f, (e.target as HTMLInputElement).value, false, apply)}
+          />
+          <datalist id=${listId}>
+            ${options.map((o) => html`<option value=${o.value}></option>`)}
+          </datalist>
+        </div>`;
+      }
       return html`<div class="row">
         <label>${f.label}</label>
         <select
@@ -3323,9 +3275,17 @@ export class FloorplanCardEditor extends LitElement {
     if (sel.kind === "area") {
       const a = (this._floor().areas ?? []).find((x) => x.id === sel.id);
       if (!a) return html`${nothing}`;
+      const haAreas = haAreasOf(this.hass);
       const pendingEntities = a.haArea ? this._pendingAreaEntities(a) : [];
       return html`
-        ${this._renderAreaNameRow(a)}
+        ${this._renderForm(
+          areaNameForm(a, haAreas.map((ha) => ha.name)),
+          (patch, live) =>
+            // The name field doubles as the HA-area link, so a name change also
+            // decides `haArea` (see areaNamePatch).
+            this._applyElementPatch("area", a.id, areaNamePatch(patch, haAreas), live)
+        )}
+        ${this._renderAreaLinkRow(a, haAreas)}
         ${this._renderForm(areaForm(a), (patch, live) =>
           this._applyElementPatch("area", a.id, patch, live)
         )}

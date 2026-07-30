@@ -660,6 +660,23 @@ export function haAreasOf(hass: unknown): HaAreaInfo[] {
  * wins. That ambiguity is inherent to naming an area by name; picking the
  * other one means renaming it in HA.
  */
+/**
+ * Resolve the HA-area link for an Area form patch that may carry a new `name`.
+ * The name field doubles as the link, so committing a name also decides
+ * `haArea`: a name matching an HA area links it (adopting that area's exact
+ * spelling), anything else clears the link and stands as a plain label.
+ * Patches that don't touch `name` pass through untouched.
+ */
+export function areaNamePatch(
+  patch: Record<string, unknown>,
+  areas: readonly HaAreaInfo[]
+): Record<string, unknown> {
+  if (!("name" in patch)) return patch;
+  const typed = (patch.name ?? "").toString().trim();
+  const ha = matchHaAreaByName(areas, typed);
+  return { ...patch, name: ha ? ha.name : typed || undefined, haArea: ha?.area_id };
+}
+
 export function matchHaAreaByName(
   areas: readonly HaAreaInfo[],
   name: string | undefined

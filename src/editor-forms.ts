@@ -497,11 +497,39 @@ export function trackerForm(tr: Tracker): FormSpec {
 }
 
 /**
- * Visibility/opacity fields for an Area (a room polygon). Color and the
- * name — which doubles as the HA-area link, so it needs a datalist of area
- * names and an unlink affordance — are bespoke rows in the editor's selection
- * editor, same as every other color field / registry link in this file (see
- * `textForm`'s caller / `_renderHaFloorRow` in editor.ts).
+ * Name/visibility/opacity fields for an Area (a room polygon). Only the color
+ * stays a bespoke row in the editor's selection editor, same as every other
+ * color field in this file (see `textForm`'s caller).
+ *
+ * The name doubles as the HA-area link, so with `haAreaNames` it's a `select`
+ * with `custom_value` — HA renders that as a combo box you can also type into,
+ * which is what makes the field look and behave like the rest of the form
+ * (a bespoke row outside `ha-form` can't match HA's own field rendering).
+ * Without any HA areas to offer there's nothing to pick from, so it degrades
+ * to a plain text field rather than an empty dropdown.
+ */
+export function areaNameForm(a: Area, haAreaNames: readonly string[] = []): FormSpec {
+  const nameSelector = haAreaNames.length
+    ? {
+        select: {
+          options: haAreaNames.map((n) => ({ value: n, label: n })),
+          custom_value: true,
+          mode: "dropdown",
+          sort: false,
+        },
+      }
+    : { text: {} };
+  return {
+    fields: [{ name: "name", label: "Name", selector: nameSelector }],
+    data: { name: a.name ?? "" },
+    toPatch: identity,
+  };
+}
+
+/**
+ * The Area's remaining style fields. Split from {@link areaNameForm} so the
+ * editor can slot the HA-link status line directly beneath the name it
+ * describes; both halves still render through `ha-form`.
  */
 export function areaForm(a: Area): FormSpec {
   return {
