@@ -167,6 +167,16 @@ export interface FloorItem {
    *   - color: white
    * ```
    *
+   * Rules may also match an exact state instead of a threshold, for entities
+   * whose value is not a number:
+   *
+   * ```yaml
+   * stateColor:
+   *   - state: open
+   *     color: red
+   *   - color: green
+   * ```
+   *
    * Colors pass through the style-injection allowlist (#64) at render time.
    */
   stateColor?: StateColorRule[];
@@ -204,7 +214,14 @@ export interface FloorItem {
    * disables it.
    */
   iconAnimation?: IconAnimation;
-  /** Ripple ring color (CSS/hex). Falls back to the primary color. */
+  /**
+   * Badge color while the entity is active (issue #79). Falls back to the
+   * theme's active color — the yellow every device shares by default, which
+   * makes lights, covers and switches hard to tell apart at a glance.
+   * Same meaning as {@link Opening.activeColor}.
+   */
+  activeColor?: string;
+  /** Ripple ring color (CSS/hex). Falls back to `activeColor`, then the primary color. */
   rippleColor?: string;
   /** Max ripple ring diameter in pixels. Default 80. */
   rippleSize?: number;
@@ -216,10 +233,19 @@ export interface FloorItem {
 
 export type ItemDisplay = "badge" | "ripple" | "iconRipple";
 
-/** One threshold rule for {@link FloorItem.stateColor}. */
+/**
+ * One colour rule for {@link FloorItem.stateColor} / {@link Furniture.stateColor}.
+ *
+ * A rule matches either a numeric threshold (`above`) or an exact state
+ * (`state`); a rule with neither is the default. `state` covers non-numeric
+ * entities — a cover reading "open", a media player "playing" (issue #79) —
+ * while `above` covers readings like temperature or soil moisture (#68, #82).
+ */
 export interface StateColorRule {
-  /** Applies when the numeric value is strictly greater. Omit for the default rule. */
+  /** Applies when the numeric value is strictly greater. */
   above?: number;
+  /** Applies when the value equals this exactly (case-insensitive). */
+  state?: string;
   color: string;
 }
 
@@ -307,6 +333,21 @@ export interface Furniture {
   angle?: number;
   /** Stroke/fill color. Defaults to gray so it reads differently from walls. */
   color?: string;
+  /**
+   * Optional entity that makes the drawing live (issue #82) — a soil sensor on
+   * a plant, a water temperature sensor on a fish tank, a contact sensor on a
+   * cabinet. Drives {@link stateColor} and {@link activeColor}; furniture has
+   * no click action, so an unbound piece is still just a gray diagram.
+   */
+  entity?: string;
+  /**
+   * Threshold/state colors for the drawing, in the same shape as
+   * {@link FloorItem.stateColor}. Evaluated against `entity`'s state; takes
+   * precedence over {@link activeColor} and {@link color}.
+   */
+  stateColor?: StateColorRule[];
+  /** Color while `entity` is active. Used when no {@link stateColor} rule matches. */
+  activeColor?: string;
 }
 
 /**

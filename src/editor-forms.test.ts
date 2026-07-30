@@ -322,6 +322,44 @@ describe("textForm / furnitureForm / trackerForm", () => {
     const d = trackerForm({ id: "t", x: 1.6, y: 2.2, w: 20, h: 20 } as never).data;
     expect(d).toMatchObject({ x: 2, y: 2, w: 20, h: 20 });
   });
+
+  // Issue #82: furniture can bind an entity so the drawing goes live.
+  it("furniture offers an optional entity, empty when unbound", () => {
+    const form = furnitureForm({ id: "f", type: "plant", x: 0, y: 0, w: 10, h: 10 } as never);
+    const entity = form.fields.find((x) => x.name === "entity")!;
+    expect(entity.required).toBeUndefined();
+    expect(entity.selector).toEqual({ entity: {} });
+    expect(form.data.entity).toBe("");
+  });
+
+  it("furniture entity picker scopes to a linked HA area when given one", () => {
+    const form = furnitureForm({ id: "f", type: "plant", x: 0, y: 0, w: 10, h: 10 } as never, [
+      "sensor.soil",
+    ]);
+    expect(form.fields.find((x) => x.name === "entity")!.selector).toEqual({
+      entity: { include_entities: ["sensor.soil"] },
+    });
+  });
+
+  it("sectional keeps its chaise-side field alongside the entity", () => {
+    const form = furnitureForm({
+      id: "f",
+      type: "sectional",
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+      entity: "binary_sensor.x",
+    } as never);
+    expect(form.fields.map((x) => x.name)).toContain("hand");
+    expect(form.data).toMatchObject({ hand: "right", entity: "binary_sensor.x" });
+  });
+
+  it("non-sectional furniture has no chaise-side field or data", () => {
+    const form = furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10 } as never);
+    expect(form.fields.map((x) => x.name)).not.toContain("hand");
+    expect("hand" in form.data).toBe(false);
+  });
 });
 
 describe("wallForm / projectForm / floorImageForm", () => {

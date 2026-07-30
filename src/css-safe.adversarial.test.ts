@@ -1,5 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { cssColor } from "./css-safe";
+import { furnitureColor } from "./render";
+import type { Furniture } from "./types";
 
 describe("cssColor — adversarial: exotic breakout attempts all rejected", () => {
   const ATTACKS = [
@@ -110,5 +112,63 @@ describe("cssColor — INVARIANT: nothing accepted can break out of a style decl
     }
     // sanity: the legit seeds really were accepted (so the invariant isn't vacuous)
     expect(accepted).toBeGreaterThanOrEqual(6);
+  });
+});
+
+/*
+ * The colors added for #68/#79/#82 reach a `stroke`/`fill` attribute or a CSS
+ * custom property, so each new path needs its own gate — resolveStateColor
+ * deliberately returns the config string unfiltered, and it is the caller's
+ * job to run cssColor on it. These assert the callers actually do.
+ */
+describe("entity-driven colors are gated (issues #68, #79, #82)", () => {
+  const HOSTILE = "red;position:fixed";
+
+  it("furnitureColor filters a hostile stateColor rule", () => {
+    const f = {
+      id: "f",
+      type: "plant",
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+      entity: "sensor.soil",
+      stateColor: [{ color: HOSTILE }],
+    } as Furniture;
+    expect(furnitureColor(f, "1")).toBeUndefined();
+  });
+
+  it("furnitureColor filters a hostile activeColor", () => {
+    const f = {
+      id: "f",
+      type: "plant",
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+      entity: "binary_sensor.x",
+      activeColor: HOSTILE,
+    } as Furniture;
+    expect(furnitureColor(f, "on")).toBeUndefined();
+  });
+
+  it("a legitimate color still survives both paths", () => {
+    const base = { id: "f", type: "plant", x: 0, y: 0, w: 10, h: 10, entity: "sensor.s" };
+    expect(furnitureColor({ ...base, stateColor: [{ color: "#ff0000" }] } as Furniture, "1")).toBe(
+      "#ff0000",
+    );
+    expect(
+      furnitureColor(
+        { ...base, entity: "binary_sensor.x", activeColor: "var(--primary-color)" } as Furniture,
+        "on",
+      ),
+    ).toBe("var(--primary-color)");
+  });
+
+  // The item badge's activeColor (#79) lands in a --fp-active custom property;
+  // the card runs it through the same gate before it reaches the style string.
+  it("a hostile item activeColor does not survive cssColor", () => {
+    expect(cssColor(HOSTILE)).toBeUndefined();
+    expect(cssColor("#fdd835")).toBe("#fdd835");
   });
 });

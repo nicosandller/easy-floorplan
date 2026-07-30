@@ -191,7 +191,12 @@ By default it shows an icon badge:
   of the state (a climate's `current_temperature` rather than "heat"), and
   **2nd attribute** for a second reading from the same device — so one climate
   entity renders `21.5 °C · 45%`. Formatted by HA's own attribute formatter.
-- **Threshold colors** — `stateColor` (YAML) colors the label by value:
+- **Active color** — every active device is the theme's yellow by default, which
+  makes a wall of lights, covers and switches hard to read. Set **Active color**
+  per device to tell them apart at a glance — lights yellow, covers purple,
+  thermostats orange. Ripples follow it unless you set a ripple color too.
+- **Color by state** — the **Color by state** rules color the label by what the
+  entity reads. Add rules in the editor, or in YAML:
 
   ```yaml
   stateColor:
@@ -203,7 +208,18 @@ By default it shows an icon badge:
   ```
 
   The highest matching `above` wins; non-numeric values use the default rule.
-  Colors go through the same injection allowlist as every other config color.
+  A rule can also match an exact state instead of a threshold, for entities
+  whose value is a word rather than a number:
+
+  ```yaml
+  stateColor:
+    - state: open
+      color: red
+    - color: green
+  ```
+
+  An exact `state` match beats a threshold. Colors go through the same
+  injection allowlist as every other config color.
 - **No entity? Still on the map** — a device with no entity bound renders as a plain
   badge (its icon override or kind default), so hardware that has no Home Assistant
   entity — a dumb smoke detector, a wired doorbell — can still be marked on the plan.
@@ -528,7 +544,7 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | `secondaryEntity` | string                             | —            | Optional 2nd entity shown alongside (e.g. humidity).   |
 | `attribute`   | string                                 | —            | Show this attribute of `entity` instead of its state (e.g. `current_temperature`). |
 | `secondaryAttribute` | string                          | —            | Attribute for the 2nd reading — from `secondaryEntity`, or from `entity` when none. |
-| `stateColor`  | rule[]                                 | —            | Threshold colors for the label: `[{above: 26, color: red}, {color: white}]`. Highest matching `above` wins. |
+| `stateColor`  | rule[]                                 | —            | Colors for the label: `[{above: 26, color: red}, {color: white}]`. A rule matches `above: <n>` or `state: <value>`; an exact state beats a threshold, the highest matching `above` beats a lower one, and a rule with neither is the default. |
 | `x`, `y`      | number                                 | —            | Position.                                              |
 | `kind`        | light/switch/sensor/binary_sensor/climate/cover/generic | inferred | Used for the default icon.            |
 | `icon`        | string                                 | entity icon  | Override mdi icon.                                     |
@@ -537,7 +553,8 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | `angle`       | number                                 | `0`          | Icon rotation (deg).                                   |
 | `display`     | `badge` \| `ripple` \| `iconRipple`    | `badge`      | How the device is drawn.                               |
 | `iconAnimation` | `auto` \| `none` \| `spin` \| `pulse` | `auto`       | Animate the icon while active. `auto`: fan spins; media player / vacuum pulse. |
-| `rippleColor` | string                                 | primary color| Ripple ring color (ripple modes).                     |
+| `activeColor` | string                                 | theme color  | Badge color while the device is on — lets domains be told apart at a glance. |
+| `rippleColor` | string                                 | `activeColor`| Ripple ring color (ripple modes). Falls back to `activeColor`, then the primary color. |
 | `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
 | `showIcon`    | boolean                                | `true`       | Show the icon badge.                                   |
 | `showState`   | boolean                                | sensors only | Show the entity state in the label line.               |
@@ -554,10 +571,27 @@ domains open the more-info dialog.
 
 ### Furniture
 
-`{ id, type, x, y, w, h, angle?, color? }` where `type` is one of `table`, `roundTable`,
-`desk`, `chair`, `sofa`, `bed`, `wardrobe`, `rug`, `plant`, `fridge`, `stove`, `sink`,
-`toilet`, `stairs`, `tv`. `color` defaults to gray so furniture reads differently from
-walls.
+`{ id, type, x, y, w, h, angle?, color?, entity?, activeColor?, stateColor? }` where
+`type` is one of `table`, `roundTable`, `desk`, `chair`, `sofa`, `bed`, `wardrobe`,
+`rug`, `plant`, `fridge`, `stove`, `sink`, `toilet`, `stairs`, `tv`. `color` defaults
+to gray so furniture reads differently from walls.
+
+Furniture can bind an **entity** to make the drawing live: `stateColor` and
+`activeColor` then recolor the whole diagram the same way they do a device label.
+A plant with a soil sensor goes red when it needs watering; a fish tank turns on
+a water-temperature threshold; a cabinet with a contact sensor highlights while
+its door is open.
+
+```yaml
+{ id: plant1, type: plant, x: 300, y: 220, w: 40, h: 40,
+  entity: sensor.ficus_soil_moisture,
+  stateColor:
+    - above: 80
+      color: green
+    - above: 65
+      color: yellow
+    - color: red }
+```
 
 ### Tracker
 

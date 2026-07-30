@@ -20,7 +20,7 @@ import {
   getFloors,
   trackerAxisFraction,
 } from "./types";
-import { cssColorOr, cssNumber } from "./css-safe";
+import { cssColor, cssColorOr, cssNumber } from "./css-safe";
 
 export const WALL_THICKNESS = 8;
 
@@ -76,6 +76,12 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
     for (const it of f.items) {
       if (it.entity) ids.add(it.entity);
       if (it.secondaryEntity) ids.add(it.secondaryEntity);
+    }
+    // Entity-bound furniture (issue #82) — without this the card never
+    // re-renders when the soil sensor moves, and the plant stays its
+    // first-painted color forever.
+    for (const fu of f.furniture) {
+      if (fu.entity) ids.add(fu.entity);
     }
     for (const tr of f.trackers) {
       for (const s of [tr.xSensor, tr.ySensor]) {
@@ -134,11 +140,18 @@ export function itemStateText(
 }
 
 /**
- * The threshold color for a value (issue #68), or undefined for "use the
- * theme default". Highest matching `above` wins; a rule without `above` is
- * the default. Non-numeric values (a climate saying "heat") only ever match
- * the default rule. The returned color is config-supplied — callers MUST
- * pass it through cssColor/cssColorOr before it reaches a style attribute.
+ * The colour for a value (issues #68, #79, #82), or undefined for "use the
+ * theme default". Precedence:
+ *
+ * 1. an exact `state` match (case-insensitive) — a cover "open", a light "on";
+ * 2. otherwise the highest matching `above` threshold;
+ * 3. otherwise the default rule (neither `above` nor `state`).
+ *
+ * A `state` rule is checked against the raw value stringified, so `state: "on"`
+ * works for a boolean-ish reading too. Non-numeric values (a climate saying
+ * "heat") never match an `above` rule. The returned color is config-supplied —
+ * callers MUST pass it through cssColor/cssColorOr before it reaches a style
+ * attribute.
  */
 export function resolveStateColor(
   rules: readonly StateColorRule[] | undefined,
@@ -147,11 +160,19 @@ export function resolveStateColor(
   if (!rules?.length) return undefined;
   const n = typeof raw === "number" ? raw : Number(raw);
   const numeric = typeof raw !== "boolean" && raw !== "" && raw != null && Number.isFinite(n);
+  const text = raw == null ? "" : String(raw).trim().toLowerCase();
+  let exact: string | undefined;
   let best: StateColorRule | undefined;
   let fallback: string | undefined;
   for (const rule of rules) {
     if (!rule || typeof rule !== "object" || typeof rule.color !== "string") continue;
-    if (typeof rule.above === "number") {
+    if (typeof rule.state === "string" && rule.state !== "") {
+      // First matching state rule wins, so an earlier rule shadows a later
+      // duplicate — the same "first one listed" reading as the default rule.
+      if (exact === undefined && text !== "" && rule.state.trim().toLowerCase() === text) {
+        exact = rule.color;
+      }
+    } else if (typeof rule.above === "number") {
       if (numeric && n > rule.above && (!best || rule.above > (best.above ?? -Infinity))) {
         best = rule;
       }
@@ -159,7 +180,24 @@ export function resolveStateColor(
       fallback = rule.color;
     }
   }
-  return best?.color ?? fallback;
+  return exact ?? best?.color ?? fallback;
+}
+
+/**
+ * The color a piece of furniture should draw in (issue #82), or undefined to
+ * keep its configured/static color. Rules first, then the active color while
+ * the entity is on — so a plant can go red below 50% moisture, and a cabinet
+ * with a contact sensor can go amber while its door is open.
+ *
+ * Returns a value already through the style-injection allowlist (#64), because
+ * it flows straight into `stroke`/`fill` attributes.
+ */
+export function furnitureColor(f: Furniture, state: string | undefined): string | undefined {
+  if (!f.entity) return undefined;
+  const rule = resolveStateColor(f.stateColor, state);
+  if (rule) return cssColor(rule);
+  if (f.activeColor && entityIsActive(f.entity, state)) return cssColor(f.activeColor);
+  return undefined;
 }
 
 /** Default label font size (px) for an item's name/state line. */
@@ -1079,8 +1117,13 @@ export function sectionalPoints(
   return hand === "left" ? pts.map(([x, y]) => [-x, y] as [number, number]) : pts;
 }
 
-export function renderFurniture(f: Furniture): SVGTemplateResult {
-  const color = f.color ?? FURNITURE_COLOR;
+/**
+ * A furniture diagram. `override` is the entity-driven color resolved by the
+ * caller (issue #82) — see {@link furnitureColor}; the editor passes nothing
+ * and keeps the static look while you are drawing.
+ */
+export function renderFurniture(f: Furniture, override?: string): SVGTemplateResult {
+  const color = override ?? f.color ?? FURNITURE_COLOR;
   const w = f.w;
   const h = f.h;
   const hw = w / 2;

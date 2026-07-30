@@ -255,6 +255,21 @@ const hass = {
       state: "on",
       attributes: { friendly_name: "Living Room" },
     },
+    // Per-device active colors (issue #79): this cover and the light above are
+    // both active on the demo floor, with different `activeColor`s — the whole
+    // point of the option is that they no longer look identical.
+    "cover.living_blinds": {
+      entity_id: "cover.living_blinds",
+      state: "open",
+      attributes: { friendly_name: "Living Blinds", device_class: "blind" },
+    },
+    // Entity-bound furniture (issue #82): the plant on the demo floor reads
+    // this, and the emulator below gives it a 0–100 slider.
+    "sensor.ficus_soil_moisture": {
+      entity_id: "sensor.ficus_soil_moisture",
+      state: "72",
+      attributes: { friendly_name: "Ficus Soil Moisture", unit_of_measurement: "%" },
+    },
     // "Show as" demo (issue #29): a binary_sensor with device_class lock should
     // render mdi:lock / mdi:lock-open instead of the generic kind icon.
     "binary_sensor.door_lock": {
@@ -395,9 +410,44 @@ const demoFloor = {
     // deviceRegistry/areaRegistry) scopes its entity picker — drag it outside
     // the polygon to watch the picker widen back up.
     { id: "i2", entity: "light.living_room", x: 220, y: 180, kind: "light" as const },
+    // Issue #79: two active devices side by side with different active colors.
+    // Both are "on"; before the option existed both badges were the same yellow.
+    {
+      id: "i3",
+      entity: "light.living_room",
+      x: 300,
+      y: 180,
+      kind: "light" as const,
+      activeColor: "#ffb300",
+    },
+    {
+      id: "i4",
+      entity: "cover.living_blinds",
+      x: 380,
+      y: 180,
+      kind: "cover" as const,
+      activeColor: "#8e24aa",
+    },
   ],
   texts: [],
-  furniture: [],
+  // Issue #82: a plant bound to a soil sensor, colored by threshold — the
+  // exact configuration the issue asks for.
+  furniture: [
+    {
+      id: "fu1",
+      type: "plant" as const,
+      x: 700,
+      y: 380,
+      w: 60,
+      h: 60,
+      entity: "sensor.ficus_soil_moisture",
+      stateColor: [
+        { above: 80, color: "#2e7d32" },
+        { above: 65, color: "#f9a825" },
+        { color: "#c62828" },
+      ],
+    },
+  ],
   trackers: [],
   // Area demo: the whole room, linked to the mock "living_room" HA area so
   // the entity-filtering behavior (light.living_room in, fan.ceiling_fan out)

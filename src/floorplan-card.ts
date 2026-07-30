@@ -23,6 +23,7 @@ import {
   shutterActive,
   renderRipple,
   renderFurniture,
+  furnitureColor,
   renderTracker,
   renderArea,
   polygonCentroid,
@@ -219,7 +220,10 @@ export class FloorplanCard extends LitElement {
     const labelColor = cssColor(resolveStateColor(item.stateColor, rawValue));
     const showIcon = item.showIcon ?? true;
     const display = item.display ?? "badge";
-    const rippleColor = item.rippleColor ?? "var(--primary-color, #03a9f4)";
+    // Per-device active color (issue #79). Ripples follow it too, so a device
+    // given one color does not come out yellow-badged with a blue ring.
+    const activeColor = cssColor(item.activeColor);
+    const rippleColor = item.rippleColor ?? item.activeColor ?? "var(--primary-color, #03a9f4)";
     const rippleSize = item.rippleSize ?? DEFAULT_RIPPLE_SIZE;
 
     let visual: TemplateResult | typeof nothing = nothing;
@@ -241,7 +245,9 @@ export class FloorplanCard extends LitElement {
     return html`
       <div
         class="item ${on ? "on" : "off"}"
-        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;"
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${activeColor
+          ? `--fp-active:${activeColor};`
+          : ""}"
         title=${this._label(item)}
         role="button"
         tabindex="0"
@@ -339,7 +345,9 @@ export class FloorplanCard extends LitElement {
                           preserveAspectRatio="none" opacity=${active.imageOpacity ?? 1} />`
               : nothing}
             ${active.areas?.map((a) => renderArea(a))}
-            ${active.furniture.map((f) => renderFurniture(f))}
+            ${active.furniture.map((f) =>
+              renderFurniture(f, furnitureColor(f, f.entity ? this.hass?.states[f.entity]?.state : undefined))
+            )}
             ${renderWallMask(active.openings, c.width, c.height, this._wallMaskId)}
             <g mask=${`url(#${this._wallMaskId})`}>
               ${active.walls.map(
@@ -581,9 +589,14 @@ export class FloorplanCard extends LitElement {
       color: var(--primary-text-color);
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
     }
+    /*
+     * --fp-active is the item's own activeColor (issue #79) when it sets one;
+     * otherwise this falls through to the theme's active color, which is
+     * exactly what every badge used before the option existed.
+     */
     .item.on .badge {
-      background: var(--state-light-active-color, var(--state-active-color, #fdd835));
-      border-color: var(--state-light-active-color, var(--state-active-color, #fdd835));
+      background: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
+      border-color: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
       color: var(--text-primary-color, #212121);
     }
     ha-icon {

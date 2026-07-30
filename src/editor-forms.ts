@@ -432,7 +432,12 @@ export function textForm(t: FloorText): FormSpec {
   };
 }
 
-export function furnitureForm(f: Furniture): FormSpec {
+/**
+ * `areaEntities` scopes the entity picker to a linked HA area, exactly as in
+ * {@link itemForm} — a plant drawn inside the Living Room offers the Living
+ * Room's sensors first.
+ */
+export function furnitureForm(f: Furniture, areaEntities?: string[]): FormSpec {
   return {
     fields: [
       {
@@ -461,11 +466,24 @@ export function furnitureForm(f: Furniture): FormSpec {
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
       angleField(),
+      // Optional entity that makes the drawing live (issue #82) — a soil
+      // sensor on a plant, a contact sensor on a cabinet. Last, because most
+      // furniture is decoration and never binds anything.
+      {
+        name: "entity",
+        label: "Entity",
+        helper: "Optional — lets the drawing change color with a sensor",
+        selector: areaEntities ? { entity: { include_entities: areaEntities } } : { entity: {} },
+      },
     ],
-    data:
-      f.type === "sectional"
-        ? { type: f.type, hand: f.hand ?? "right", w: f.w, h: f.h, angle: f.angle ?? 0 }
-        : { type: f.type, w: f.w, h: f.h, angle: f.angle ?? 0 },
+    data: {
+      type: f.type,
+      ...(f.type === "sectional" ? { hand: f.hand ?? "right" } : {}),
+      w: f.w,
+      h: f.h,
+      angle: f.angle ?? 0,
+      entity: f.entity ?? "",
+    },
     toPatch: identity,
   };
 }

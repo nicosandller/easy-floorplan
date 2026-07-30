@@ -18,6 +18,7 @@ import type {
   Area,
   AreaPoint,
   HaAreaInfo,
+  StateColorRule,
 } from "./types";
 import {
   DEFAULT_CUSTOM_PERCENT,
@@ -1736,6 +1737,165 @@ export class FloorplanCardEditor extends LitElement {
     `;
   }
 
+  /**
+   * The editor's colour control: a swatch that edits live as you drag, plus a
+   * text box for theme variables and named colours, committed on change.
+   * Emptying the text box clears the override.
+   *
+   * Every colour in this editor is one of these. It lived as eight copies of
+   * the same markup before the colour rules below needed a ninth.
+   */
+  private _renderColorRow(opts: {
+    label: string;
+    value: string | undefined;
+    /** Swatch colour shown when nothing is set — the effective default. */
+    swatch: string;
+    /** Text-box placeholder naming that default, e.g. "(primary)". */
+    placeholder: string;
+    onLive: (color: string) => void;
+    onCommit: (color: string | undefined) => void;
+    title?: string;
+  }): TemplateResult {
+    return html`
+      <div class="row">
+        <label title=${opts.title ?? nothing}>${opts.label}</label>
+        <input
+          type="color"
+          title=${opts.title ?? nothing}
+          .value=${opts.value ?? opts.swatch}
+          @input=${(e: Event) => opts.onLive((e.target as HTMLInputElement).value)}
+        />
+        <input
+          type="text"
+          placeholder=${opts.placeholder}
+          .value=${opts.value ?? ""}
+          @change=${(e: Event) => opts.onCommit((e.target as HTMLInputElement).value || undefined)}
+        />
+      </div>
+    `;
+  }
+
+  /**
+   * The "Color by state" block (issues #68, #79, #82): a list of rules, each
+   * one a condition and a colour, plus an "Add rule" button.
+   *
+   * A rule's condition is either a numeric threshold or an exact state, chosen
+   * per row — the two ways an entity's value comes back. A rule with neither is
+   * the fallback, and reads as "otherwise" in the UI.
+   *
+   * These are plain rows rather than `ha-form` fields: the list is repeatable
+   * and ha-form has no selector for that (its `object` selector is a raw YAML
+   * box). Colours are the one part of this editor that was always hand-rolled,
+   * so the block still matches its neighbours.
+   */
+  private _renderStateColorRules(
+    rules: StateColorRule[] | undefined,
+    onChange: (next: StateColorRule[] | undefined) => void
+  ): TemplateResult {
+    const list = rules ?? [];
+    const patch = (i: number, part: Partial<StateColorRule>): void => {
+      const next = list.map((r, j) => (j === i ? { ...r, ...part } : r));
+      onChange(next);
+    };
+    return html`
+      <div class="row wide state-colors">
+        <label title="Color the element by what its entity reads">Color by state</label>
+      </div>
+      ${list.map((rule, i) => {
+        const mode = typeof rule.state === "string" ? "state" : typeof rule.above === "number" ? "above" : "else";
+        return html`
+          <div class="row wide state-color-rule">
+            <select
+              .value=${mode}
+              title="When this rule applies"
+              @change=${(e: Event) => {
+                const m = (e.target as HTMLSelectElement).value;
+                // Switching condition drops the other kind, so a rule can
+                // never carry both an `above` and a `state`.
+                patch(i, {
+                  above: m === "above" ? (rule.above ?? 0) : undefined,
+                  state: m === "state" ? (rule.state ?? "") : undefined,
+                });
+              }}
+            >
+              <option value="above">above</option>
+              <option value="state">state is</option>
+              <option value="else">otherwise</option>
+            </select>
+            ${mode === "above"
+              ? html`<input
+                  type="number"
+                  class="cond"
+                  .value=${String(rule.above ?? 0)}
+                  @change=${(e: Event) =>
+                    patch(i, { above: Number((e.target as HTMLInputElement).value) || 0 })}
+                />`
+              : mode === "state"
+                ? html`<input
+                    type="text"
+                    class="cond"
+                    placeholder="on"
+                    .value=${rule.state ?? ""}
+                    @change=${(e: Event) => patch(i, { state: (e.target as HTMLInputElement).value })}
+                  />`
+                : html`<span class="cond hint">any other value</span>`}
+            <input
+              type="color"
+              .value=${rule.color || "#ff0000"}
+              @input=${(e: Event) => patch(i, { color: (e.target as HTMLInputElement).value })}
+            />
+            <input
+              type="text"
+              class="rule-color-text"
+              placeholder="red"
+              .value=${rule.color ?? ""}
+              @change=${(e: Event) => patch(i, { color: (e.target as HTMLInputElement).value })}
+            />
+            <button
+              class="rule-remove"
+              aria-label="Remove rule"
+              title="Remove this rule"
+              @click=${() => {
+                const next = list.filter((_, j) => j !== i);
+                onChange(next.length ? next : undefined);
+              }}
+            >
+              <ha-icon icon="mdi:close"></ha-icon>
+            </button>
+          </div>
+        `;
+      })}
+      <div class="row wide state-color-add">
+        <button
+          @click=${() =>
+            onChange([
+              ...list,
+              // A fresh rule defaults to a threshold: the numeric case is what
+              // both #68 and #82 ask for, and it's the one that needs no typing.
+              { above: 0, color: "#ff0000" },
+            ])}
+        >
+          <ha-icon icon="mdi:plus"></ha-icon>Add rule
+        </button>
+      </div>
+    `;
+  }
+
+  /**
+   * Entity ids to scope a picker to for something sitting at (x, y), or
+   * undefined for "offer everything".
+   *
+   * An element inside an Area linked to a Home Assistant area gets its pickers
+   * scoped to that area, unless the area's own "Filter entities" toggle turns
+   * that off. Recomputed on every render from the live coordinates, so it
+   * tracks the element as it's dragged in/out of the polygon, even before the
+   * form reopens.
+   */
+  private _areaEntitiesAt(x: number, y: number): string[] | undefined {
+    const area = areaContainingPoint(this._floor(), x, y);
+    return areaFiltersEntities(area) ? entityIdsInHaArea(this.hass, area!.haArea!) : undefined;
+  }
+
   /** Every entity in `area`'s linked HA area not already placed as an item on this floor. */
   private _pendingAreaEntities(area: Area): string[] {
     if (!area.haArea) return [];
@@ -3092,22 +3252,14 @@ export class FloorplanCardEditor extends LitElement {
           if (live) this._patchConfigLive(patch as Partial<FloorplanCardConfig>);
           else this._patchConfig(patch as Partial<FloorplanCardConfig>);
         })}
-        <div class="row">
-          <label>Background</label>
-          <input
-            type="color"
-            .value=${this._config.background ?? "#ffffff"}
-            @input=${(e: Event) =>
-              this._patchConfigLive({ background: (e.target as HTMLInputElement).value })}
-          />
-          <input
-            type="text"
-            placeholder="#ffffff or empty"
-            .value=${this._config.background ?? ""}
-            @change=${(e: Event) =>
-              this._patchConfig({ background: (e.target as HTMLInputElement).value || undefined })}
-          />
-        </div>
+        ${this._renderColorRow({
+          label: "Background",
+          value: this._config.background,
+          swatch: "#ffffff",
+          placeholder: "#ffffff or empty",
+          onLive: (background) => this._patchConfigLive({ background }),
+          onCommit: (background) => this._patchConfig({ background }),
+        })}
         ${this._renderForm(floorImageForm(this._floor()), (patch, live) => {
           if (live) this._patchFloorLive(patch as Partial<Floor>);
           else this._commitFloor(patch as Partial<Floor>);
@@ -3148,26 +3300,14 @@ export class FloorplanCardEditor extends LitElement {
           this._applyElementPatch("opening", o.id, patch, live);
         })}
         ${o.entity
-          ? html`<div class="row">
-              <label>Active color</label>
-              <input
-                type="color"
-                .value=${o.activeColor ?? "#03a9f4"}
-                @input=${(e: Event) =>
-                  this._updateOpeningLive(o.id, {
-                    activeColor: (e.target as HTMLInputElement).value,
-                  })}
-              />
-              <input
-                type="text"
-                placeholder="(primary)"
-                .value=${o.activeColor ?? ""}
-                @change=${(e: Event) =>
-                  this._updateOpening(o.id, {
-                    activeColor: (e.target as HTMLInputElement).value || undefined,
-                  })}
-              />
-            </div>`
+          ? this._renderColorRow({
+              label: "Active color",
+              value: o.activeColor,
+              swatch: "#03a9f4",
+              placeholder: "(primary)",
+              onLive: (activeColor) => this._updateOpeningLive(o.id, { activeColor }),
+              onCommit: (activeColor) => this._updateOpening(o.id, { activeColor }),
+            })
           : nothing}
       `;
     }
@@ -3175,15 +3315,7 @@ export class FloorplanCardEditor extends LitElement {
     if (sel.kind === "item") {
       const it = this._floor().items.find((x) => x.id === sel.id);
       if (!it) return html`${nothing}`;
-      // A device placed inside an Area linked to a Home Assistant area gets
-      // its entity pickers scoped to that HA area, unless the area's own
-      // "Filter entities" toggle turns that off — recomputed on every render
-      // from the device's live x/y, so it tracks the device as it's dragged
-      // in/out of the polygon, even before the form reopens.
-      const containingArea = areaContainingPoint(this._floor(), it.x, it.y);
-      const areaEntities = areaFiltersEntities(containingArea)
-        ? entityIdsInHaArea(this.hass, containingArea!.haArea!)
-        : undefined;
+      const areaEntities = this._areaEntitiesAt(it.x, it.y);
       return html`
         ${this._renderForm(itemForm(it, areaEntities), (patch, live) => {
           // Any entity change re-derives the item kind (icon defaults etc.) —
@@ -3193,28 +3325,28 @@ export class FloorplanCardEditor extends LitElement {
           }
           this._applyElementPatch("item", it.id, patch, live);
         })}
+        ${this._renderColorRow({
+          label: "Active color",
+          title: "Badge color while this device is on (issue #79)",
+          value: it.activeColor,
+          swatch: "#fdd835",
+          placeholder: "(theme)",
+          onLive: (activeColor) => this._updateItemLive(it.id, { activeColor }),
+          onCommit: (activeColor) => this._updateItem(it.id, { activeColor }),
+        })}
         ${(it.display ?? "badge") !== "badge"
-          ? html`<div class="row">
-              <label>Ripple color</label>
-              <input
-                type="color"
-                .value=${it.rippleColor ?? "#03a9f4"}
-                @input=${(e: Event) =>
-                  this._updateItemLive(it.id, {
-                    rippleColor: (e.target as HTMLInputElement).value,
-                  })}
-              />
-              <input
-                type="text"
-                placeholder="(primary)"
-                .value=${it.rippleColor ?? ""}
-                @change=${(e: Event) =>
-                  this._updateItem(it.id, {
-                    rippleColor: (e.target as HTMLInputElement).value || undefined,
-                  })}
-              />
-            </div>`
+          ? this._renderColorRow({
+              label: "Ripple color",
+              value: it.rippleColor,
+              swatch: it.activeColor ?? "#03a9f4",
+              placeholder: it.activeColor ? "(active color)" : "(primary)",
+              onLive: (rippleColor) => this._updateItemLive(it.id, { rippleColor }),
+              onCommit: (rippleColor) => this._updateItem(it.id, { rippleColor }),
+            })
           : nothing}
+        ${this._renderStateColorRules(it.stateColor, (stateColor) =>
+          this._updateItem(it.id, { stateColor })
+        )}
       `;
     }
 
@@ -3225,22 +3357,14 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderForm(textForm(t), (patch, live) =>
           this._applyElementPatch("text", t.id, patch, live)
         )}
-        <div class="row">
-          <label>Color</label>
-          <input
-            type="color"
-            .value=${t.color ?? "#000000"}
-            @input=${(e: Event) =>
-              this._updateTextLive(t.id, { color: (e.target as HTMLInputElement).value })}
-          />
-          <input
-            type="text"
-            placeholder="(theme default)"
-            .value=${t.color ?? ""}
-            @change=${(e: Event) =>
-              this._updateText(t.id, { color: (e.target as HTMLInputElement).value || undefined })}
-          />
-        </div>
+        ${this._renderColorRow({
+          label: "Color",
+          value: t.color,
+          swatch: "#000000",
+          placeholder: "(theme default)",
+          onLive: (color) => this._updateTextLive(t.id, { color }),
+          onCommit: (color) => this._updateText(t.id, { color }),
+        })}
       `;
     }
 
@@ -3248,27 +3372,33 @@ export class FloorplanCardEditor extends LitElement {
       const f = this._floor().furniture.find((x) => x.id === sel.id);
       if (!f) return html`${nothing}`;
       return html`
-        ${this._renderForm(furnitureForm(f), (patch, live) =>
+        ${this._renderForm(furnitureForm(f, this._areaEntitiesAt(f.x, f.y)), (patch, live) =>
           this._applyElementPatch("furniture", f.id, patch, live)
         )}
-        <div class="row">
-          <label>Color</label>
-          <input
-            type="color"
-            .value=${f.color ?? "#9e9e9e"}
-            @input=${(e: Event) =>
-              this._updateFurnitureLive(f.id, { color: (e.target as HTMLInputElement).value })}
-          />
-          <input
-            type="text"
-            placeholder="(gray)"
-            .value=${f.color ?? ""}
-            @change=${(e: Event) =>
-              this._updateFurniture(f.id, {
-                color: (e.target as HTMLInputElement).value || undefined,
+        ${this._renderColorRow({
+          label: "Color",
+          value: f.color,
+          swatch: "#9e9e9e",
+          placeholder: "(gray)",
+          onLive: (color) => this._updateFurnitureLive(f.id, { color }),
+          onCommit: (color) => this._updateFurniture(f.id, { color }),
+        })}
+        ${f.entity
+          ? html`
+              ${this._renderColorRow({
+                label: "Active color",
+                title: "Color while the entity is on",
+                value: f.activeColor,
+                swatch: "#03a9f4",
+                placeholder: "(no change)",
+                onLive: (activeColor) => this._updateFurnitureLive(f.id, { activeColor }),
+                onCommit: (activeColor) => this._updateFurniture(f.id, { activeColor }),
               })}
-          />
-        </div>
+              ${this._renderStateColorRules(f.stateColor, (stateColor) =>
+                this._updateFurniture(f.id, { stateColor })
+              )}
+            `
+          : nothing}
       `;
     }
 
@@ -3289,22 +3419,14 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderForm(areaForm(a), (patch, live) =>
           this._applyElementPatch("area", a.id, patch, live)
         )}
-        <div class="row">
-          <label>Color</label>
-          <input
-            type="color"
-            .value=${a.color ?? "#03a9f4"}
-            @input=${(e: Event) =>
-              this._updateAreaLive(a.id, { color: (e.target as HTMLInputElement).value })}
-          />
-          <input
-            type="text"
-            placeholder="(primary)"
-            .value=${a.color ?? ""}
-            @change=${(e: Event) =>
-              this._updateArea(a.id, { color: (e.target as HTMLInputElement).value || undefined })}
-          />
-        </div>
+        ${this._renderColorRow({
+          label: "Color",
+          value: a.color,
+          swatch: "#03a9f4",
+          placeholder: "(primary)",
+          onLive: (color) => this._updateAreaLive(a.id, { color }),
+          onCommit: (color) => this._updateArea(a.id, { color }),
+        })}
         ${a.haArea
           ? html`<div class="row wide">
               <label>Filter entities</label>
@@ -3353,24 +3475,14 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderForm(trackerForm(tr), (patch, live) =>
           this._applyElementPatch("tracker", tr.id, patch, live)
         )}
-        <div class="row">
-          <label>Color</label>
-          <input
-            type="color"
-            .value=${tr.color ?? "#03a9f4"}
-            @input=${(e: Event) =>
-              this._updateTrackerLive(tr.id, { color: (e.target as HTMLInputElement).value })}
-          />
-          <input
-            type="text"
-            placeholder="(primary)"
-            .value=${tr.color ?? ""}
-            @change=${(e: Event) =>
-              this._updateTracker(tr.id, {
-                color: (e.target as HTMLInputElement).value || undefined,
-              })}
-          />
-        </div>
+        ${this._renderColorRow({
+          label: "Color",
+          value: tr.color,
+          swatch: "#03a9f4",
+          placeholder: "(primary)",
+          onLive: (color) => this._updateTrackerLive(tr.id, { color }),
+          onCommit: (color) => this._updateTracker(tr.id, { color }),
+        })}
       `;
     }
 
@@ -4489,6 +4601,61 @@ export class FloorplanCardEditor extends LitElement {
        still reads as one control. */
     .area-name-status {
       margin-top: -4px;
+    }
+    /* "Color by state" rules (issues #68, #79, #82). The rules are a list, so
+       they read as one group indented under the heading row rather than as
+       more loose fields; the rail is what says "these belong together" in a
+       340px panel where indentation alone is too expensive. */
+    .state-colors {
+      margin-bottom: 4px;
+    }
+    .state-colors label {
+      flex: 1 1 auto;
+      font-weight: 500;
+    }
+    .state-color-rule,
+    .state-color-add {
+      padding-left: 8px;
+      border-left: 2px solid var(--divider-color, #ccc);
+      margin-bottom: 6px;
+    }
+    .state-color-rule select {
+      flex: 0 0 96px;
+    }
+    /* Higher specificity than the generic .row input rule above, which would
+       otherwise stretch a two-digit threshold across half the panel. */
+    .row.state-color-rule input.cond {
+      flex: 0 0 90px;
+    }
+    .row.state-color-rule span.cond {
+      flex: 0 0 auto;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    /* The color text box gives up width first — the condition and the swatch
+       are what you read, and the swatch already shows the colour. */
+    .row.state-color-rule input.rule-color-text {
+      flex: 1 1 60px;
+      min-width: 60px;
+    }
+    .state-color-rule .rule-remove,
+    .state-color-add button {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 4px;
+      background: var(--card-background-color, #fff);
+      color: var(--secondary-text-color);
+      cursor: pointer;
+      padding: 3px 6px;
+    }
+    .state-color-rule .rule-remove {
+      flex: 0 0 auto;
+    }
+    .state-color-rule .rule-remove ha-icon,
+    .state-color-add button ha-icon {
+      --mdc-icon-size: 16px;
     }
     .area-name-status label {
       /* Alignment spacer only — nothing to announce. */
