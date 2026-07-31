@@ -464,3 +464,19 @@ describe("openingForm — sash and shutter (issues #73 / #74)", () => {
     expect(openingForm({ ...win, sash: "single" } as Opening).data.sash).toBe("single");
   });
 });
+
+describe("area scoping never traps you (issue reported on #83)", () => {
+  const item = { id: "i", entity: "", kind: "light", x: 0, y: 0 } as FloorItem;
+
+  it("outside every area, and inside an empty one, nothing is filtered", () => {
+    // No scope at all — the element sits outside every area.
+    expect(itemForm(item).fields.find((x) => x.name === "entity")!.selector).toEqual({
+      entity: {},
+    });
+    // Inside an area whose HA area has no entities: same, unfiltered.
+    expect(
+      itemForm(item, { entities: [], name: "Spare" }).fields.find((x) => x.name === "entity")!
+        .selector
+    ).toEqual({ entity: {} });
+  });
+});

@@ -1943,6 +1943,31 @@ export class FloorplanCardEditor extends LitElement {
    * tracks the element as it's dragged in/out of the polygon, even before the
    * form reopens.
    */
+  /**
+   * The Area actively scoping the selected element's entity picker, if any —
+   * i.e. the element is a device/furniture, it sits inside an Area, and that
+   * Area is linked to an HA area with filtering on. The canvas animates this
+   * one so it is obvious *which room you are working in* and why the picker
+   * is short; nothing else in the editor communicated that.
+   */
+  private _scopingAreaId(): string | undefined {
+    if (this._selection.length !== 1) return undefined;
+    const sel = this._selection[0]!;
+    const f = this._floor();
+    const el =
+      sel.kind === "item"
+        ? f.items.find((x) => x.id === sel.id)
+        : sel.kind === "furniture"
+          ? f.furniture.find((x) => x.id === sel.id)
+          : undefined;
+    if (!el) return undefined;
+    const area = areaContainingPoint(f, el.x, el.y);
+    // Only when it actually narrows the picker: an unlinked area, or one with
+    // nothing assigned in HA, filters nothing and must not claim otherwise.
+    if (!areaFiltersEntities(area)) return undefined;
+    return entityIdsInHaArea(this.hass, area!.haArea!).length ? area!.id : undefined;
+  }
+
   private _areaEntitiesAt(x: number, y: number): AreaEntityScope | undefined {
     const area = areaContainingPoint(this._floor(), x, y);
     if (!areaFiltersEntities(area)) return undefined;
@@ -2374,6 +2399,10 @@ export class FloorplanCardEditor extends LitElement {
     const c = this._config;
     const floor = this._floor();
     const floors = c.floors ?? [];
+    // Which room, if any, is currently narrowing the selected element's
+    // entity picker — animated on the canvas so the scoping is never a
+    // mystery (see _scopingAreaId).
+    const scopingAreaId = this._scopingAreaId();
     const floorEmpty =
       !floor.walls.length &&
       !floor.openings.length &&
@@ -2649,7 +2678,7 @@ export class FloorplanCardEditor extends LitElement {
               ${repeat(
                 floor.areas ?? [],
                 (a, i) => a.id || i,
-                (a) => this._renderAreaSel(a)
+                (a) => this._renderAreaSel(a, scopingAreaId)
               )}
               ${floor.furniture.map((f) => this._renderFurnitureSel(f))}
               ${renderWallMask(floor.openings, c.width, c.height, this._wallMaskId)}
@@ -3050,7 +3079,8 @@ export class FloorplanCardEditor extends LitElement {
           ? html`<p class="hint">
               Edit elements one at a time. Drag any selected element to move the whole group.
             </p>`
-          : html`<div class="rows">${this._renderSelectionEditor()}</div>`}
+          : html`${this._renderAreaScopeHint()}
+              <div class="rows">${this._renderSelectionEditor()}</div>`}
       </section>
     `;
   }
@@ -3158,11 +3188,30 @@ export class FloorplanCardEditor extends LitElement {
    * vertex (decision #1 in areas.md: vertices reshape independently, with
    * no cross-element corner-stretch).
    */
-  private _renderAreaSel(a: Area): TemplateResult {
+  /**
+   * States in words what the canvas animation shows: this element sits in a
+   * linked room, so its entity picker only lists that room's entities. Colour
+   * alone can't carry that, and the off-switch lives on the Area element.
+   */
+  private _renderAreaScopeHint(): TemplateResult | typeof nothing {
+    const id = this._scopingAreaId();
+    if (!id) return nothing;
+    const area = (this._floor().areas ?? []).find((a) => a.id === id);
+    const name = area?.name ? `the ${area.name} area` : "this area";
+    return html`<p class="hint area-scope-hint">
+      <ha-icon icon="mdi:vector-polygon"></ha-icon>
+      Inside ${name} — the entity pickers list only its entities. Select the area and turn
+      off <strong>Filter entities</strong> to see everything.
+    </p>`;
+  }
+
+  private _renderAreaSel(a: Area, scopingId?: string): TemplateResult {
     const selected = this._isSel("area", a.id);
+    const scoping = a.id === scopingId;
     const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
     return svg`
-      <g class="area-hit ${selected ? "selected" : ""}">
+      <g class="area-hit ${selected ? "selected" : ""} ${scoping ? "scoping" : ""}">
+        ${scoping ? svg`<polygon points=${pts} class="area-scoping" />` : nothing}
         ${renderArea(a)}
         <polygon points=${pts} class="area-hit-shape"
                  @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "area", id: a.id })} />
@@ -4374,11 +4423,54 @@ export class FloorplanCardEditor extends LitElement {
       stroke: none;
       pointer-events: all;
     }
+    .area-scope-hint {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin: 0 0 6px;
+      color: var(--primary-color, #03a9f4);
+    }
+    .area-scope-hint ha-icon {
+      --mdc-icon-size: 16px;
+      flex: 0 0 auto;
+    }
     .area-outline {
       fill: none;
       stroke: var(--primary-color, #03a9f4);
       stroke-width: 2;
       pointer-events: none;
+    }
+    /* The room currently scoping the selected element's entity picker: a
+       breathing tint plus marching-ants border, so "you are working inside
+       the Kitchen — that's why the picker is short" reads at a glance. */
+    .area-scoping {
+      fill: var(--primary-color, #03a9f4);
+      stroke: var(--primary-color, #03a9f4);
+      stroke-width: 2.5;
+      stroke-dasharray: 10 6;
+      pointer-events: none;
+      animation: fp-area-breathe 2.2s ease-in-out infinite,
+        fp-area-ants 1.4s linear infinite;
+    }
+    @keyframes fp-area-breathe {
+      0%,
+      100% {
+        fill-opacity: 0.1;
+      }
+      50% {
+        fill-opacity: 0.28;
+      }
+    }
+    @keyframes fp-area-ants {
+      to {
+        stroke-dashoffset: -16;
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .area-scoping {
+        animation: none;
+        fill-opacity: 0.2;
+      }
     }
     .area-draft-line {
       fill: none;

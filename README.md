@@ -139,6 +139,13 @@ background):
   drops or duplicates floor `id`s (the card now repairs both, but edits made while
   ids collide can land on the wrong floor).
 
+When a device sits inside an **Area** linked to a Home Assistant area, its entity pickers
+list only that area's entities — and the room is highlighted on the canvas (a breathing
+tint with a marching-ants border) with a matching note above the fields, so it's obvious
+*why* the list is short and where to widen it. An area with nothing assigned to it in HA
+filters nothing, the entity already bound always stays pickable, and an element outside
+every area is never filtered.
+
 The **Labels** toolbar toggle hides the element name labels on the canvas — useful on a
 dense plan where labels overlap the things you are trying to click. It only affects the
 editor view; the live card is unchanged.
