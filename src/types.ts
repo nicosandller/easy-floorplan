@@ -167,6 +167,16 @@ export interface FloorItem {
    *   - color: white
    * ```
    *
+   * Rules may also match an exact state instead of a threshold, for entities
+   * whose value is not a number:
+   *
+   * ```yaml
+   * stateColor:
+   *   - state: open
+   *     color: red
+   *   - color: green
+   * ```
+   *
    * Colors pass through the style-injection allowlist (#64) at render time.
    */
   stateColor?: StateColorRule[];
@@ -204,7 +214,14 @@ export interface FloorItem {
    * disables it.
    */
   iconAnimation?: IconAnimation;
-  /** Ripple ring color (CSS/hex). Falls back to the primary color. */
+  /**
+   * Badge color while the entity is active (issue #79). Falls back to the
+   * theme's active color — the yellow every device shares by default, which
+   * makes lights, covers and switches hard to tell apart at a glance.
+   * Same meaning as {@link Opening.activeColor}.
+   */
+  activeColor?: string;
+  /** Ripple ring color (CSS/hex). Falls back to `activeColor`, then the primary color. */
   rippleColor?: string;
   /** Max ripple ring diameter in pixels. Default 80. */
   rippleSize?: number;
@@ -216,10 +233,19 @@ export interface FloorItem {
 
 export type ItemDisplay = "badge" | "ripple" | "iconRipple";
 
-/** One threshold rule for {@link FloorItem.stateColor}. */
+/**
+ * One colour rule for {@link FloorItem.stateColor} / {@link Furniture.stateColor}.
+ *
+ * A rule matches either a numeric threshold (`above`) or an exact state
+ * (`state`); a rule with neither is the default. `state` covers non-numeric
+ * entities — a cover reading "open", a media player "playing" (issue #79) —
+ * while `above` covers readings like temperature or soil moisture (#68, #82).
+ */
 export interface StateColorRule {
-  /** Applies when the numeric value is strictly greater. Omit for the default rule. */
+  /** Applies when the numeric value is strictly greater. */
   above?: number;
+  /** Applies when the value equals this exactly (case-insensitive). */
+  state?: string;
   color: string;
 }
 
@@ -307,6 +333,21 @@ export interface Furniture {
   angle?: number;
   /** Stroke/fill color. Defaults to gray so it reads differently from walls. */
   color?: string;
+  /**
+   * Optional entity that makes the drawing live (issue #82) — a soil sensor on
+   * a plant, a water temperature sensor on a fish tank, a contact sensor on a
+   * cabinet. Drives {@link stateColor} and {@link activeColor}; furniture has
+   * no click action, so an unbound piece is still just a gray diagram.
+   */
+  entity?: string;
+  /**
+   * Threshold/state colors for the drawing, in the same shape as
+   * {@link FloorItem.stateColor}. Evaluated against `entity`'s state; takes
+   * precedence over {@link activeColor} and {@link color}.
+   */
+  stateColor?: StateColorRule[];
+  /** Color while `entity` is active. Used when no {@link stateColor} rule matches. */
+  activeColor?: string;
 }
 
 /**
@@ -386,6 +427,58 @@ export interface TrackerPresence {
   invert?: boolean;
 }
 
+/** A vertex of an {@link Area} polygon, in virtual canvas units. */
+export interface AreaPoint {
+  x: number;
+  y: number;
+}
+
+/**
+ * A named room polygon, drawn point-by-point in the editor and closed by
+ * clicking back on the starting vertex. Distinct from a {@link Floor} (a
+ * whole level/story) the same way Home Assistant's own "area" (room) sits
+ * inside a "floor" — see {@link Area.haArea}.
+ */
+export interface Area {
+  id: string;
+  /** Vertices in drawing order, virtual canvas units. Implicitly closed (last -> first). */
+  points: AreaPoint[];
+  /** Display name. Mirrors the linked HA area's name when `haArea` is set. */
+  name?: string;
+  /** Show the name label on the plan, centered on the polygon. Default true. */
+  showName?: boolean;
+  /** Fill color. Falls back to the theme primary color. */
+  color?: string;
+  /** Fill opacity, 0-1. Default {@link DEFAULT_AREA_OPACITY}. */
+  opacity?: number;
+  /**
+   * Optional link to a Home Assistant area (its registry `area_id`). Selecting
+   * one names this Area after it (same convention as {@link Floor.haFloor}).
+   * Whether it also scopes the entity picker is controlled by
+   * {@link filterEntities}.
+   */
+  haArea?: string;
+  /**
+   * With `haArea` linked, scope the entity picker (for devices placed inside
+   * this polygon) to that HA area's entities. Default true. Has no effect
+   * without a linked `haArea`.
+   */
+  filterEntities?: boolean;
+}
+
+/**
+ * Whether a device inside `area` should have its entity picker scoped to the
+ * linked HA area's entities: only once an HA area is actually linked, and
+ * only while {@link Area.filterEntities} hasn't been turned off (defaults on).
+ */
+export function areaFiltersEntities(
+  area: Pick<Area, "haArea" | "filterEntities"> | undefined
+): boolean {
+  return !!area?.haArea && (area.filterEntities ?? true);
+}
+
+export const DEFAULT_AREA_OPACITY = 0.25;
+
 export const DEFAULT_TRACKER_DOT_SIZE = 14;
 
 export const DEFAULT_ITEM_SIZE = 34;
@@ -463,6 +556,7 @@ export interface Floor {
   texts: FloorText[];
   furniture: Furniture[];
   trackers: Tracker[];
+  areas: Area[];
 }
 
 export interface FloorplanCardConfig extends LovelaceCardConfig {
@@ -507,6 +601,7 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   texts?: FloorText[];
   furniture?: Furniture[];
   trackers?: Tracker[];
+  areas?: Area[];
 }
 
 export const DEFAULT_WIDTH = 1000;
@@ -571,6 +666,106 @@ export function haFloorsOf(hass: unknown): HaFloorInfo[] {
     .sort((a, b) => (a.level ?? 0) - (b.level ?? 0) || a.name.localeCompare(b.name));
 }
 
+/** A Home Assistant area-registry entry (the subset this card uses). */
+export interface HaAreaInfo {
+  area_id: string;
+  name: string;
+}
+
+/**
+ * List the Home Assistant areas from a `hass` object, sorted by name. Mirrors
+ * {@link haFloorsOf} exactly: `custom-card-helpers`' HomeAssistant type predates
+ * `hass.areas` too, and older HA / the dev harness simply yield `[]`.
+ */
+export function haAreasOf(hass: unknown): HaAreaInfo[] {
+  const areas = (hass as { areas?: Record<string, HaAreaInfo> } | null | undefined)?.areas;
+  if (!areas || typeof areas !== "object") return [];
+  return Object.values(areas)
+    .filter((a): a is HaAreaInfo => !!a && typeof a.area_id === "string" && typeof a.name === "string")
+    .sort((a, b) => a.name.localeCompare(b.name));
+}
+
+/**
+ * Resolve a typed room name to a Home Assistant area, so the Area panel can
+ * offer one combined name-with-autocomplete field instead of a separate name
+ * box and HA-area dropdown: whatever the user types is the display name, and
+ * if it happens to name a real HA area we link to it too.
+ *
+ * Matching is exact first, then case-insensitive, then case-insensitive with
+ * surrounding whitespace collapsed — so "living  room" still finds "Living
+ * Room" — and returns `undefined` for free-text names that match nothing.
+ *
+ * NOTE: Home Assistant allows two areas to share a name (e.g. a "Bathroom" on
+ * each floor). Names therefore can't disambiguate them, and the first match in
+ * `haAreasOf` order (sorted by name, so effectively arbitrary between equals)
+ * wins. That ambiguity is inherent to naming an area by name; picking the
+ * other one means renaming it in HA.
+ */
+/**
+ * Resolve the HA-area link for an Area form patch that may carry a new `name`.
+ * The name field doubles as the link, so committing a name also decides
+ * `haArea`: a name matching an HA area links it (adopting that area's exact
+ * spelling), anything else clears the link and stands as a plain label.
+ * Patches that don't touch `name` pass through untouched.
+ */
+export function areaNamePatch(
+  patch: Record<string, unknown>,
+  areas: readonly HaAreaInfo[]
+): Record<string, unknown> {
+  if (!("name" in patch)) return patch;
+  const typed = (patch.name ?? "").toString().trim();
+  const ha = matchHaAreaByName(areas, typed);
+  return { ...patch, name: ha ? ha.name : typed || undefined, haArea: ha?.area_id };
+}
+
+export function matchHaAreaByName(
+  areas: readonly HaAreaInfo[],
+  name: string | undefined
+): HaAreaInfo | undefined {
+  const raw = (name ?? "").trim();
+  if (!raw) return undefined;
+  const exact = areas.find((a) => a.name === raw);
+  if (exact) return exact;
+  const lower = raw.toLowerCase();
+  const ci = areas.find((a) => a.name.toLowerCase() === lower);
+  if (ci) return ci;
+  const loose = lower.replace(/\s+/g, " ");
+  return areas.find((a) => a.name.trim().toLowerCase().replace(/\s+/g, " ") === loose);
+}
+
+/**
+ * The shape of `hass.entities`/`hass.devices` this card needs to resolve an
+ * entity's effective Home Assistant area — the entity registry's own
+ * `area_id` override, else its device's `area_id`. Neither is declared by
+ * `custom-card-helpers`, so callers take `hass: unknown` like {@link haFloorsOf}.
+ */
+interface HaRegistryHass {
+  entities?: Record<string, { device_id?: string | null; area_id?: string | null } | undefined>;
+  devices?: Record<string, { area_id?: string | null } | undefined>;
+}
+
+/**
+ * The effective Home Assistant area for an entity: its own registry override
+ * when set, else the area of the device it belongs to. `undefined` when
+ * neither resolves (no registry entry, or unassigned to any area).
+ */
+export function entityHaAreaId(hass: unknown, entityId: string): string | undefined {
+  const h = hass as HaRegistryHass | null | undefined;
+  const ent = h?.entities?.[entityId];
+  if (!ent) return undefined;
+  if (ent.area_id) return ent.area_id;
+  const dev = ent.device_id ? h?.devices?.[ent.device_id] : undefined;
+  return dev?.area_id ?? undefined;
+}
+
+/** Every entity id (out of the entity registry) whose effective HA area is `areaId`. */
+export function entityIdsInHaArea(hass: unknown, areaId: string): string[] {
+  const h = hass as HaRegistryHass | null | undefined;
+  const entities = h?.entities;
+  if (!entities || typeof entities !== "object") return [];
+  return Object.keys(entities).filter((id) => entityHaAreaId(hass, id) === areaId);
+}
+
 export function emptyConfig(type: string): FloorplanCardConfig {
   return {
     type,
@@ -583,6 +778,7 @@ export function emptyConfig(type: string): FloorplanCardConfig {
     texts: [],
     furniture: [],
     trackers: [],
+    areas: [],
   };
 }
 
@@ -621,6 +817,7 @@ export function makeFloor(name: string, walls: Wall[] = []): Floor {
     texts: [],
     furniture: [],
     trackers: [],
+    areas: [],
   };
 }
 
@@ -639,6 +836,7 @@ function normalizeFloor(f: Floor): Floor {
     texts: f.texts ?? [],
     furniture: f.furniture ?? [],
     trackers: f.trackers ?? [],
+    areas: f.areas ?? [],
   };
 }
 
@@ -698,6 +896,7 @@ export function getFloors(c: FloorplanCardConfig): Floor[] {
       texts: c.texts ?? [],
       furniture: c.furniture ?? [],
       trackers: c.trackers ?? [],
+      areas: c.areas ?? [],
     },
   ];
 }

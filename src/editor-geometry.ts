@@ -1,7 +1,8 @@
-import type { Floor, Wall } from "./types";
+import type { Area, AreaPoint, Floor, Wall } from "./types";
+import { polygonCentroid } from "./render";
 
 /** Element kinds addressable by the editor's selection model. */
-export type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker";
+export type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker" | "area";
 
 export interface Sel {
   kind: SelKind;
@@ -11,7 +12,8 @@ export interface Sel {
 /** Snapshot of an element's position at drag start, for group translation. */
 export type OrigPos =
   | { kind: "wall"; x1: number; y1: number; x2: number; y2: number }
-  | { kind: "pt"; x: number; y: number };
+  | { kind: "pt"; x: number; y: number }
+  | { kind: "polygon"; points: AreaPoint[] };
 
 /** A rectangle described by two opposite corners (any orientation). */
 export interface Rect {
@@ -76,6 +78,25 @@ export function attachedCorners(
   return attached.length ? attached : undefined;
 }
 
+/** Closest of `points` to `(rawX, rawY)` within `maxDist`, or null. */
+function nearestOf(
+  points: readonly AreaPoint[],
+  rawX: number,
+  rawY: number,
+  maxDist: number
+): AreaPoint | null {
+  let best: AreaPoint | null = null;
+  let bestDist = maxDist;
+  for (const p of points) {
+    const d = Math.hypot(rawX - p.x, rawY - p.y);
+    if (d < bestDist) {
+      bestDist = d;
+      best = { x: p.x, y: p.y };
+    }
+  }
+  return best;
+}
+
 /** Nearest existing wall endpoint within `maxDist`, or null. */
 export function nearestCorner(
   walls: readonly WallSegment[],
@@ -83,21 +104,130 @@ export function nearestCorner(
   rawY: number,
   maxDist: number
 ): { x: number; y: number } | null {
-  let best: { x: number; y: number } | null = null;
-  let bestDist = maxDist;
-  for (const w of walls) {
-    for (const e of [
-      { x: w.x1, y: w.y1 },
-      { x: w.x2, y: w.y2 },
-    ]) {
-      const d = Math.hypot(rawX - e.x, rawY - e.y);
-      if (d < bestDist) {
-        bestDist = d;
-        best = { x: e.x, y: e.y };
+  const corners = walls.flatMap((w) => [
+    { x: w.x1, y: w.y1 },
+    { x: w.x2, y: w.y2 },
+  ]);
+  return nearestOf(corners, rawX, rawY, maxDist);
+}
+
+/**
+ * Nearest point within `maxDist` among every wall endpoint and every Area
+ * vertex on the floor — used both while drawing a new Area polygon and while
+ * dragging an existing vertex, so adjacent rooms (or a room and a wall) can
+ * share an exact boundary point. `exclude` drops one specific vertex from the
+ * candidate set — the one currently being moved, so it never snaps to its own
+ * pre-drag position.
+ */
+export function nearestAreaSnapPoint(
+  f: { walls: readonly WallSegment[]; areas?: readonly Area[] },
+  rawX: number,
+  rawY: number,
+  maxDist: number,
+  exclude?: { areaId: string; vertexIndex: number }
+): AreaPoint | null {
+  const corners = f.walls.flatMap((w) => [
+    { x: w.x1, y: w.y1 },
+    { x: w.x2, y: w.y2 },
+  ]);
+  const vertices = (f.areas ?? []).flatMap((a) =>
+    a.points
+      .filter((_, i) => !(exclude && exclude.areaId === a.id && exclude.vertexIndex === i))
+      .map((p) => ({ x: p.x, y: p.y }))
+  );
+  return nearestOf([...corners, ...vertices], rawX, rawY, maxDist);
+}
+
+/**
+ * Ray-casting point-in-polygon test. Points exactly on an edge may resolve
+ * either way (not a documented guarantee) — the caller only needs an
+ * approximate "did this land inside the room" answer, not exact edge
+ * semantics.
+ */
+export function pointInPolygon(points: readonly AreaPoint[], x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const pi = points[i]!;
+    const pj = points[j]!;
+    const intersects =
+      pi.y > y !== pj.y > y && x < ((pj.x - pi.x) * (y - pi.y)) / (pj.y - pi.y) + pi.x;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * The topmost (last-drawn) Area whose polygon contains `(x, y)`, or undefined
+ * when none does. Overlapping areas resolve by array order — later elements
+ * paint over earlier ones, the same implicit tie-break the rest of the editor
+ * uses (e.g. marquee/click hit-testing).
+ */
+export function areaContainingPoint(f: Pick<Floor, "areas">, x: number, y: number): Area | undefined {
+  const areas = f.areas ?? [];
+  for (let i = areas.length - 1; i >= 0; i--) {
+    if (pointInPolygon(areas[i]!.points, x, y)) return areas[i];
+  }
+  return undefined;
+}
+
+/**
+ * Evenly distribute `count` points across the interior of `polygon` — used to
+ * auto-place a batch of new elements (e.g. every entity in a linked HA area)
+ * without stacking them on top of each other. Lays a grid over the polygon's
+ * bounding box, sized to `count` and the box's aspect ratio, and keeps only
+ * the cell centers that actually fall inside the (possibly concave) polygon;
+ * if too few land inside on the first pass — a narrow or oddly-shaped room —
+ * the grid is retried at higher density up to a cap. More hits than needed
+ * are evenly subsampled down to `count` rather than just taking the first
+ * `count` found, so the result stays spread out instead of clumping wherever
+ * the scan happened to pass first. Any shortfall past the density cap (a
+ * sliver-shaped room, or `count` far exceeding what it could ever hold
+ * legibly) is padded with points ringed around the centroid — accepting some
+ * overlap is better than throwing.
+ */
+export function layoutPointsInPolygon(polygon: readonly AreaPoint[], count: number): AreaPoint[] {
+  if (count <= 0) return [];
+  const centroid = polygonCentroid(polygon);
+  if (count === 1) return [centroid];
+
+  const xs = polygon.map((p) => p.x);
+  const ys = polygon.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const w = Math.max(maxX - minX, 1);
+  const h = Math.max(maxY - minY, 1);
+
+  for (let density = 1; density <= 8; density++) {
+    const n = count * density;
+    const cols = Math.max(1, Math.round(Math.sqrt((n * w) / h)));
+    const rows = Math.max(1, Math.ceil(n / cols));
+    const stepX = w / (cols + 1);
+    const stepY = h / (rows + 1);
+    const candidates: AreaPoint[] = [];
+    for (let r = 1; r <= rows; r++) {
+      for (let c = 1; c <= cols; c++) {
+        const x = minX + c * stepX;
+        const y = minY + r * stepY;
+        if (pointInPolygon(polygon, x, y)) candidates.push({ x, y });
       }
     }
+    if (candidates.length >= count) {
+      return Array.from(
+        { length: count },
+        (_, i) => candidates[Math.floor((i * candidates.length) / count)]!
+      );
+    }
   }
-  return best;
+
+  // Fallback: ring the remainder around the centroid so points at least
+  // separate a little instead of landing exactly on top of each other.
+  return Array.from({ length: count }, (_, i) => {
+    const angle = (i / count) * Math.PI * 2;
+    const ring = Math.min(w, h) * 0.15 * (1 + Math.floor(i / 6));
+    return { x: centroid.x + Math.cos(angle) * ring, y: centroid.y + Math.sin(angle) * ring };
+  });
 }
 
 /**
@@ -146,6 +276,10 @@ export function elementsInRect(f: Floor, m: Rect): Sel[] {
   for (const fu of f.furniture) if (inside(fu.x, fu.y)) out.push({ kind: "furniture", id: fu.id });
   for (const tr of f.trackers ?? [])
     if (inside(tr.x + tr.w / 2, tr.y + tr.h / 2)) out.push({ kind: "tracker", id: tr.id });
+  for (const a of f.areas ?? []) {
+    const c = polygonCentroid(a.points);
+    if (inside(c.x, c.y)) out.push({ kind: "area", id: a.id });
+  }
   return out;
 }
 
@@ -178,6 +312,12 @@ export function applyDelta(f: Floor, dx: number, dy: number, orig: Map<string, O
       const o = orig.get(`tracker:${el.id}`);
       return o && o.kind === "pt" ? { ...el, x: o.x + dx, y: o.y + dy } : el;
     }),
+    areas: (f.areas ?? []).map((el) => {
+      const o = orig.get(`area:${el.id}`);
+      return o && o.kind === "polygon"
+        ? { ...el, points: o.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) }
+        : el;
+    }),
   };
 }
 
@@ -189,7 +329,18 @@ export function applyDelta(f: Floor, dx: number, dy: number, orig: Map<string, O
  * the zone is still reachable by clicking again. Ties inside a kind are broken
  * by draw order (last drawn = on top = picked first).
  */
-const PICK_ORDER: SelKind[] = ["item", "text", "opening", "furniture", "wall", "tracker"];
+const PICK_ORDER: SelKind[] = [
+  "item",
+  "text",
+  "opening",
+  "furniture",
+  "wall",
+  "tracker",
+  // Room polygons are the largest thing on the plan and usually cover
+  // everything else in the room, so they pick last — but they *are* in the
+  // list, so cycling can still reach them.
+  "area",
+];
 
 /** Hit tolerances in virtual units. Wall matches the editor's fat hit stroke. */
 export const HIT = {
@@ -264,6 +415,9 @@ export function elementsAtPoint(
   (f.trackers ?? []).forEach((tr, i) => {
     const p = toLocal(x, y, tr.x + tr.w / 2, tr.y + tr.h / 2, tr.angle ?? 0);
     if (Math.abs(p.x) <= tr.w / 2 && Math.abs(p.y) <= tr.h / 2) push("tracker", tr.id, i);
+  });
+  (f.areas ?? []).forEach((a, i) => {
+    if (pointInPolygon(a.points, x, y)) push("area", a.id, i);
   });
 
   // Specific kinds first; within a kind, the last drawn sits on top.

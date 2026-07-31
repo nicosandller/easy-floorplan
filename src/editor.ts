@@ -15,6 +15,10 @@ import type {
   ItemKind,
   Tracker,
   TrackerSensor,
+  Area,
+  AreaPoint,
+  HaAreaInfo,
+  StateColorRule,
 } from "./types";
 import {
   DEFAULT_CUSTOM_PERCENT,
@@ -32,6 +36,10 @@ import {
   gridPercentToSnap,
   makeFloor,
   haFloorsOf,
+  haAreasOf,
+  areaNamePatch,
+  entityIdsInHaArea,
+  areaFiltersEntities,
   moveFloor,
   resolveSnap,
   snapToGridPercent,
@@ -48,6 +56,7 @@ import {
   renderRipple,
   renderFurniture,
   renderTracker,
+  renderArea,
   trackerSensorReading,
   kindFromEntity,
   resolveItemIcon,
@@ -62,10 +71,13 @@ import { cssColorOr, cssNumber } from "./css-safe";
 import {
   ENDPOINT_SNAP,
   applyDelta,
+  areaContainingPoint,
   attachedCorners,
   elementsAtPoint,
   cyclePick,
   elementsInRect,
+  layoutPointsInPolygon,
+  nearestAreaSnapPoint,
   nearestCorner,
   snapWallEnd,
   type AttachedCorner,
@@ -77,6 +89,8 @@ import {
 import {
   FURNITURE_LABELS,
   FURNITURE_TYPES,
+  areaForm,
+  areaNameForm,
   diffFormValue,
   floorImageForm,
   furnitureForm,
@@ -96,7 +110,7 @@ import {
 const formLabel = (s: FormField): string => s.label;
 const formHelper = (s: FormField): string | undefined => s.helper;
 
-type Tool = "select" | "wall" | "door" | "window" | "tracker";
+type Tool = "select" | "wall" | "door" | "window" | "tracker" | "area";
 type OverlaySel = { kind: "item" | "text"; id: string };
 
 /** Toolbar metadata per tool: mdi icon + label (icons make the modes scannable). */
@@ -106,6 +120,7 @@ const TOOL_META: Record<Tool, { icon: string; label: string }> = {
   door: { icon: "mdi:door", label: "Door" },
   window: { icon: "mdi:window-closed-variant", label: "Window" },
   tracker: { icon: "mdi:crosshairs-gps", label: "Tracker" },
+  area: { icon: "mdi:vector-polygon", label: "Area" },
 };
 
 /** Icon shown in the Element header per selected element kind. */
@@ -116,6 +131,7 @@ const SEL_KIND_ICON: Record<SelKind, string> = {
   text: "mdi:format-text",
   furniture: "mdi:sofa-outline",
   tracker: "mdi:crosshairs-gps",
+  area: "mdi:floor-plan",
 };
 
 interface Drag {
@@ -127,6 +143,8 @@ interface Drag {
   orig: Map<string, OrigPos>;
   /** Set when dragging a single wall endpoint handle. */
   endpoint?: 1 | 2;
+  /** Set when dragging a single Area vertex handle (index into its `points`). */
+  areaVertex?: number;
   /**
    * Endpoints of *other* walls that coincide with the dragged wall's
    * corner(s) and stretch along with it (issue #30). Hold Alt to detach and
@@ -151,6 +169,7 @@ interface Clipboard {
   texts: FloorText[];
   furniture: Furniture[];
   trackers: Tracker[];
+  areas: Area[];
 }
 
 /** Snap distance (virtual units) for openings onto walls. */
@@ -203,6 +222,13 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _draft: { x1: number; y1: number; x2: number; y2: number } | null = null;
   /** While dragging the Tracker tool, the rectangle being drawn (top-left corner + opposite corner). */
   @state() private _draftTracker: { x0: number; y0: number; x1: number; y1: number } | null = null;
+  /**
+   * While the Area tool is active, the polygon being built up click by click.
+   * Closed by clicking back on `points[0]` once at least 3 points are placed.
+   */
+  @state() private _draftArea: { points: AreaPoint[] } | null = null;
+  /** Live cursor position while drawing an Area, for the rubber-band preview segment. */
+  @state() private _areaHover: AreaPoint | null = null;
   /** When true, walls are drawn freely (no horizontal/vertical or corner gravity). */
   @state() private _freeWalls = false;
   /** Default length applied to a freshly placed door/window. User-editable from the context bar. */
@@ -370,7 +396,7 @@ export class FloorplanCardEditor extends LitElement {
     void this._ensureHaComponents();
     // Upgrade the plain-input fallbacks in place whenever a component gets
     // defined later (by us or by another editor the user opened).
-    for (const tag of ["ha-form", "ha-entity-picker", "ha-icon-picker"]) {
+    for (const tag of ["ha-form", "ha-entity-picker", "ha-icon-picker", "ha-combo-box"]) {
       if (!customElements.get(tag)) {
         void customElements.whenDefined(tag).then(() => this.requestUpdate());
       }
@@ -576,6 +602,25 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
+   * Snap a raw point for Area drawing/editing: nearby wall corner or another
+   * Area's vertex wins (so adjacent rooms can share an exact boundary point),
+   * else the grid/snap step. `exclude` drops one vertex from the candidate
+   * set — the one currently being dragged, so it can't snap to itself.
+   */
+  private _snapAreaPoint(
+    rawX: number,
+    rawY: number,
+    exclude?: { areaId: string; vertexIndex: number }
+  ): AreaPoint {
+    return (
+      nearestAreaSnapPoint(this._floor(), rawX, rawY, ENDPOINT_SNAP, exclude) ?? {
+        x: this._snap(rawX),
+        y: this._snap(rawY),
+      }
+    );
+  }
+
+  /**
    * Like {@link _snapWallPoint}, but ignores endpoints in `moving` (keys
    * `${wallId}:${end}`) — the corner cluster being dragged must not attract
    * itself.
@@ -636,7 +681,7 @@ export class FloorplanCardEditor extends LitElement {
     // Emit without the legacy flat arrays: `floors` is the source of truth,
     // and empty stubs would otherwise be persisted into the user's YAML.
     const out = { ...config };
-    for (const key of ["walls", "openings", "items", "texts", "furniture", "trackers"] as const) {
+    for (const key of ["walls", "openings", "items", "texts", "furniture", "trackers", "areas"] as const) {
       if (!out[key]?.length) delete out[key];
     }
     this._lastEmitted = out;
@@ -768,7 +813,22 @@ export class FloorplanCardEditor extends LitElement {
     // While a gesture is live, any keyboard mutation (paste, delete, nudge,
     // undo…) would interleave with the drag's emits and history snapshot —
     // ignore them all; Escape below still cancels the gesture itself.
-    const gestureActive = !!(this._drag || this._draft || this._draftTracker || this._marquee);
+    const gestureActive = !!(
+      this._drag ||
+      this._draft ||
+      this._draftTracker ||
+      this._draftArea ||
+      this._marquee
+    );
+    // Backspace pops the last placed vertex instead of deleting a selected
+    // element while an Area draft is in progress (checked ahead of the
+    // gestureActive bail so it isn't swallowed by that guard).
+    if (ev.key === "Backspace" && this._draftArea?.points.length) {
+      ev.preventDefault();
+      const pts = this._draftArea.points.slice(0, -1);
+      this._draftArea = pts.length ? { points: pts } : null;
+      return;
+    }
     if (gestureActive && ev.key !== "Escape" && !(mod && key === "c")) return;
     if (mod && key === "c") {
       if (this._selection.length) {
@@ -816,7 +876,7 @@ export class FloorplanCardEditor extends LitElement {
         this._addMenuOpen = false;
         return;
       }
-      if (this._draft || this._draftTracker || this._marquee || this._drag) {
+      if (this._draft || this._draftTracker || this._draftArea || this._marquee || this._drag) {
         ev.preventDefault();
         ev.stopPropagation();
         this._cancelGesture();
@@ -865,6 +925,7 @@ export class FloorplanCardEditor extends LitElement {
     const tIds = this._idsOfKind("text");
     const fIds = this._idsOfKind("furniture");
     const trIds = this._idsOfKind("tracker");
+    const aIds = this._idsOfKind("area");
     this._commitFloor({
       walls: f.walls.map((w) =>
         wIds.has(w.id) ? { ...w, x1: w.x1 + dx, y1: w.y1 + dy, x2: w.x2 + dx, y2: w.y2 + dy } : w
@@ -877,6 +938,9 @@ export class FloorplanCardEditor extends LitElement {
       ),
       trackers: (f.trackers ?? []).map((tr) =>
         trIds.has(tr.id) ? { ...tr, x: tr.x + dx, y: tr.y + dy } : tr
+      ),
+      areas: (f.areas ?? []).map((a) =>
+        aIds.has(a.id) ? { ...a, points: a.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) } : a
       ),
     });
   }
@@ -936,6 +1000,25 @@ export class FloorplanCardEditor extends LitElement {
       this._capturePointer(ev);
       return;
     }
+    if (this._tool === "area") {
+      // Discrete clicks, like door/window — no drag capture/gesture pointer.
+      const pt = this._snapAreaPoint(raw.x, raw.y);
+      if (!this._draftArea) {
+        this._draftArea = { points: [pt] };
+        return;
+      }
+      const pts = this._draftArea.points;
+      const first = pts[0]!;
+      if (pts.length >= 3 && Math.hypot(pt.x - first.x, pt.y - first.y) <= ENDPOINT_SNAP) {
+        this._finishArea();
+        return;
+      }
+      const last = pts[pts.length - 1]!;
+      if (pt.x !== last.x || pt.y !== last.y) {
+        this._draftArea = { points: [...pts, pt] };
+      }
+      return;
+    }
     // Select tool, empty canvas: start a marquee (rubber-band) selection.
     // Clicking empty space also ends any cycling run (issue #52).
     this._pickAnchor = null;
@@ -955,6 +1038,8 @@ export class FloorplanCardEditor extends LitElement {
     this._gesturePointer = null;
     this._draft = null;
     this._draftTracker = null;
+    this._draftArea = null;
+    this._areaHover = null;
     this._marquee = null;
     const drag = this._drag;
     this._drag = null;
@@ -999,6 +1084,11 @@ export class FloorplanCardEditor extends LitElement {
         x1: this._snap(raw.x),
         y1: this._snap(raw.y),
       };
+      return;
+    }
+    if (this._tool === "area" && this._draftArea) {
+      const raw = this._toVirtual(ev, false);
+      this._areaHover = this._snapAreaPoint(raw.x, raw.y);
       return;
     }
     if (this._marquee) {
@@ -1068,8 +1158,8 @@ export class FloorplanCardEditor extends LitElement {
   /**
    * Which element a plain click should actually select (issue #52). The
    * element whose hit area received the event is only a starting point: a big
-   * tracker zone or a wall can sit over a device, so we hit-test the point
-   * geometrically and take the most *specific* candidate. Clicking again
+   * tracker zone or an Area polygon can sit over a device, so we hit-test the
+   * point geometrically and take the most *specific* candidate. Clicking again
    * without moving steps to the next candidate underneath and wraps, which is
    * what makes buried elements reachable at all.
    *
@@ -1090,21 +1180,23 @@ export class FloorplanCardEditor extends LitElement {
     return cyclePick(candidates, this._selection, sameSpot) ?? sel;
   }
 
-  private _startDrag(ev: PointerEvent, sel: Sel, endpoint?: 1 | 2): void {
+  private _startDrag(ev: PointerEvent, sel: Sel, endpoint?: 1 | 2, areaVertex?: number): void {
     if (this._tool !== "select") return;
     ev.stopPropagation();
     if (this._gesturePointer !== null) return;
     this._canvasWrap?.focus();
-    // Endpoint handles always operate on that single wall; everything else
-    // goes through the overlap-aware picker (issue #52).
-    const pick = endpoint ? sel : this._resolvePick(ev, sel);
-    if (endpoint) this._selectOne(pick);
+    // Endpoint/vertex handles always operate on that single element; every
+    // other click goes through the overlap-aware picker (issue #52).
+    const explicitHandle = endpoint != null || areaVertex != null;
+    const pick = explicitHandle ? sel : this._resolvePick(ev, sel);
+    if (explicitHandle) this._selectOne(pick);
     else this._selectForPointer(ev, pick);
     this._drag = {
       primary: pick,
       start: this._toVirtual(ev, false),
       orig: this._snapshotSelection(),
       endpoint,
+      areaVertex,
     };
     if (pick.kind === "wall") this._drag.attached = this._attachedCorners(pick.id, endpoint);
     this._gesturePointer = ev.pointerId;
@@ -1136,6 +1228,9 @@ export class FloorplanCardEditor extends LitElement {
       } else if (s.kind === "furniture") {
         const fu = f.furniture.find((x) => x.id === s.id);
         if (fu) m.set(`furniture:${fu.id}`, { kind: "pt", x: fu.x, y: fu.y });
+      } else if (s.kind === "area") {
+        const a = (f.areas ?? []).find((x) => x.id === s.id);
+        if (a) m.set(`area:${a.id}`, { kind: "polygon", points: a.points.map((p) => ({ ...p })) });
       } else {
         // tracker — stored by top-left corner.
         const tr = (f.trackers ?? []).find((x) => x.id === s.id);
@@ -1191,6 +1286,23 @@ export class FloorplanCardEditor extends LitElement {
       return;
     }
 
+    // Single Area vertex handle: reshape just that point, snapping to nearby
+    // wall corners / other areas' vertices (decision #1/#4 in areas.md). Like
+    // the wall-endpoint branch above, this positions absolutely against the
+    // live floor data rather than a delta off the pre-drag snapshot, and has
+    // no "stretch neighboring corners" step — a vertex only ever moves alone.
+    if (drag.primary.kind === "area" && drag.areaVertex != null) {
+      const idx = drag.areaVertex;
+      const target = this._snapAreaPoint(p.x, p.y, { areaId: drag.primary.id, vertexIndex: idx });
+      const areas = (f.areas ?? []).map((a) =>
+        a.id === drag.primary.id
+          ? { ...a, points: a.points.map((pt, i) => (i === idx ? target : pt)) }
+          : a
+      );
+      this._emitFloor({ areas });
+      return;
+    }
+
     // Single opening: keep the wall-snapping (and angle alignment) behavior.
     if (this._selection.length === 1 && drag.primary.kind === "opening") {
       const orig = drag.orig.get(`opening:${drag.primary.id}`);
@@ -1214,8 +1326,10 @@ export class FloorplanCardEditor extends LitElement {
     // derived from the primary element's reference point.
     const ref = drag.orig.get(`${drag.primary.kind}:${drag.primary.id}`);
     if (!ref) return;
-    const refX = ref.kind === "wall" ? ref.x1 : ref.x;
-    const refY = ref.kind === "wall" ? ref.y1 : ref.y;
+    // Any fixed vertex works as the delta-tracking reference for a whole-
+    // polygon (Area) drag — every point moves by the same delta regardless.
+    const refX = ref.kind === "wall" ? ref.x1 : ref.kind === "polygon" ? ref.points[0]!.x : ref.x;
+    const refY = ref.kind === "wall" ? ref.y1 : ref.kind === "polygon" ? ref.points[0]!.y : ref.y;
     const dx = this._snap(refX + (p.x - drag.start.x)) - refX;
     const dy = this._snap(refY + (p.y - drag.start.y)) - refY;
     let patch = this._applyDelta(dx, dy, drag.orig);
@@ -1355,6 +1469,17 @@ export class FloorplanCardEditor extends LitElement {
     this._tool = "select";
   }
 
+  /** Close the in-progress Area draft into a committed polygon and select it. */
+  private _finishArea(): void {
+    if (!this._draftArea || this._draftArea.points.length < 3) return;
+    const area: Area = { id: uid("area"), points: this._draftArea.points, showName: true };
+    this._commitFloor({ areas: [...(this._floor().areas ?? []), area] });
+    this._selection = [{ kind: "area", id: area.id }];
+    this._draftArea = null;
+    this._areaHover = null;
+    this._tool = "select";
+  }
+
   private _addText(): void {
     const t: FloorText = {
       id: uid("text"),
@@ -1377,6 +1502,7 @@ export class FloorplanCardEditor extends LitElement {
     const tIds = this._idsOfKind("text");
     const fIds = this._idsOfKind("furniture");
     const trIds = this._idsOfKind("tracker");
+    const aIds = this._idsOfKind("area");
     this._commitFloor({
       walls: f.walls.filter((w) => !wIds.has(w.id)),
       openings: f.openings.filter((o) => !oIds.has(o.id)),
@@ -1384,6 +1510,7 @@ export class FloorplanCardEditor extends LitElement {
       texts: f.texts.filter((t) => !tIds.has(t.id)),
       furniture: f.furniture.filter((fu) => !fIds.has(fu.id)),
       trackers: (f.trackers ?? []).filter((tr) => !trIds.has(tr.id)),
+      areas: (f.areas ?? []).filter((a) => !aIds.has(a.id)),
     });
     this._clearSel();
   }
@@ -1399,6 +1526,7 @@ export class FloorplanCardEditor extends LitElement {
     const tIds = this._idsOfKind("text");
     const fIds = this._idsOfKind("furniture");
     const trIds = this._idsOfKind("tracker");
+    const aIds = this._idsOfKind("area");
     this._clipboard = structuredClone({
       walls: f.walls.filter((w) => wIds.has(w.id)),
       openings: f.openings.filter((o) => oIds.has(o.id)),
@@ -1406,6 +1534,7 @@ export class FloorplanCardEditor extends LitElement {
       texts: f.texts.filter((t) => tIds.has(t.id)),
       furniture: f.furniture.filter((fu) => fIds.has(fu.id)),
       trackers: (f.trackers ?? []).filter((tr) => trIds.has(tr.id)),
+      areas: (f.areas ?? []).filter((a) => aIds.has(a.id)),
     });
   }
 
@@ -1455,6 +1584,11 @@ export class FloorplanCardEditor extends LitElement {
       x: tr.x + off,
       y: tr.y + off,
     }));
+    const newAreas: Area[] = (cb.areas ?? []).map((a) => ({
+      ...a,
+      id: uid("area"),
+      points: a.points.map((p) => ({ x: p.x + off, y: p.y + off })),
+    }));
     this._commitFloor({
       walls: [...f.walls, ...newWalls],
       openings: [...f.openings, ...newOpenings],
@@ -1462,6 +1596,7 @@ export class FloorplanCardEditor extends LitElement {
       texts: [...f.texts, ...newTexts],
       furniture: [...f.furniture, ...newFurn],
       trackers: [...(f.trackers ?? []), ...newTrackers],
+      areas: [...(f.areas ?? []), ...newAreas],
     });
     this._selection = [
       ...newWalls.map((w) => ({ kind: "wall" as const, id: w.id })),
@@ -1470,6 +1605,7 @@ export class FloorplanCardEditor extends LitElement {
       ...newTexts.map((t) => ({ kind: "text" as const, id: t.id })),
       ...newFurn.map((fu) => ({ kind: "furniture" as const, id: fu.id })),
       ...newTrackers.map((tr) => ({ kind: "tracker" as const, id: tr.id })),
+      ...newAreas.map((a) => ({ kind: "area" as const, id: a.id })),
     ];
     this._tool = "select";
   }
@@ -1606,6 +1742,245 @@ export class FloorplanCardEditor extends LitElement {
     });
   }
 
+  private _updateArea(id: string, partial: Partial<Area>): void {
+    this._commitFloor({
+      areas: (this._floor().areas ?? []).map((a) => (a.id === id ? { ...a, ...partial } : a)),
+    });
+  }
+
+  /** Drop the HA-area link but keep the name the user sees on the plan. */
+  private _unlinkHaArea(id: string): void {
+    this._updateArea(id, { haArea: undefined });
+  }
+
+  /**
+   * Status line under the Area's name field. The name doubles as the HA-area
+   * link (see {@link areaNamePatch}), so the resulting association would
+   * otherwise be invisible: this shows a "Linked" chip whenever `haArea` is
+   * set, with an unlink button for the one intent the merged field can't
+   * express — keeping the name while dropping the link.
+   */
+  private _renderAreaLinkRow(a: Area, haAreas: HaAreaInfo[]): TemplateResult {
+    const linked = a.haArea ? haAreas.find((ha) => ha.area_id === a.haArea) : undefined;
+    return html`
+      <div class="row wide area-name-status">
+        <label></label>
+        ${a.haArea
+          ? html`<span
+              class="ha-link-chip"
+              title=${`Linked to the Home Assistant area "${linked?.name ?? a.haArea}"`}
+            >
+              <ha-icon icon="mdi:link-variant"></ha-icon>Linked
+              <button
+                class="unlink"
+                title="Keep this name but unlink the Home Assistant area"
+                @click=${() => this._unlinkHaArea(a.id)}
+              >
+                <ha-icon icon="mdi:close"></ha-icon>
+              </button>
+            </span>`
+          : html`<span class="hint"
+              >${haAreas.length
+                ? "Name this room after a Home Assistant area to link it."
+                : "No Home Assistant areas available."}</span
+            >`}
+      </div>
+    `;
+  }
+
+  /**
+   * The editor's colour control: a swatch that edits live as you drag, plus a
+   * text box for theme variables and named colours, committed on change.
+   * Emptying the text box clears the override.
+   *
+   * Every colour in this editor is one of these. It lived as eight copies of
+   * the same markup before the colour rules below needed a ninth.
+   */
+  private _renderColorRow(opts: {
+    label: string;
+    value: string | undefined;
+    /** Swatch colour shown when nothing is set — the effective default. */
+    swatch: string;
+    /** Text-box placeholder naming that default, e.g. "(primary)". */
+    placeholder: string;
+    onLive: (color: string) => void;
+    onCommit: (color: string | undefined) => void;
+    title?: string;
+  }): TemplateResult {
+    return html`
+      <div class="row">
+        <label title=${opts.title ?? nothing}>${opts.label}</label>
+        <input
+          type="color"
+          title=${opts.title ?? nothing}
+          .value=${opts.value ?? opts.swatch}
+          @input=${(e: Event) => opts.onLive((e.target as HTMLInputElement).value)}
+        />
+        <input
+          type="text"
+          placeholder=${opts.placeholder}
+          .value=${opts.value ?? ""}
+          @change=${(e: Event) => opts.onCommit((e.target as HTMLInputElement).value || undefined)}
+        />
+      </div>
+    `;
+  }
+
+  /**
+   * The "Color by state" block (issues #68, #79, #82): a list of rules, each
+   * one a condition and a colour, plus an "Add rule" button.
+   *
+   * A rule's condition is either a numeric threshold or an exact state, chosen
+   * per row — the two ways an entity's value comes back. A rule with neither is
+   * the fallback, and reads as "otherwise" in the UI.
+   *
+   * These are plain rows rather than `ha-form` fields: the list is repeatable
+   * and ha-form has no selector for that (its `object` selector is a raw YAML
+   * box). Colours are the one part of this editor that was always hand-rolled,
+   * so the block still matches its neighbours.
+   */
+  private _renderStateColorRules(
+    rules: StateColorRule[] | undefined,
+    onChange: (next: StateColorRule[] | undefined) => void
+  ): TemplateResult {
+    const list = rules ?? [];
+    const patch = (i: number, part: Partial<StateColorRule>): void => {
+      const next = list.map((r, j) => (j === i ? { ...r, ...part } : r));
+      onChange(next);
+    };
+    return html`
+      <div class="row wide state-colors">
+        <label title="Color the element by what its entity reads">Color by state</label>
+      </div>
+      ${list.map((rule, i) => {
+        const mode = typeof rule.state === "string" ? "state" : typeof rule.above === "number" ? "above" : "else";
+        return html`
+          <div class="row wide state-color-rule">
+            <select
+              .value=${mode}
+              title="When this rule applies"
+              @change=${(e: Event) => {
+                const m = (e.target as HTMLSelectElement).value;
+                // Switching condition drops the other kind, so a rule can
+                // never carry both an `above` and a `state`.
+                patch(i, {
+                  above: m === "above" ? (rule.above ?? 0) : undefined,
+                  state: m === "state" ? (rule.state ?? "") : undefined,
+                });
+              }}
+            >
+              <option value="above">above</option>
+              <option value="state">state is</option>
+              <option value="else">otherwise</option>
+            </select>
+            ${mode === "above"
+              ? html`<input
+                  type="number"
+                  class="cond"
+                  .value=${String(rule.above ?? 0)}
+                  @change=${(e: Event) =>
+                    patch(i, { above: Number((e.target as HTMLInputElement).value) || 0 })}
+                />`
+              : mode === "state"
+                ? html`<input
+                    type="text"
+                    class="cond"
+                    placeholder="on"
+                    .value=${rule.state ?? ""}
+                    @change=${(e: Event) => patch(i, { state: (e.target as HTMLInputElement).value })}
+                  />`
+                : html`<span class="cond hint">any other value</span>`}
+            <input
+              type="color"
+              .value=${rule.color || "#ff0000"}
+              @input=${(e: Event) => patch(i, { color: (e.target as HTMLInputElement).value })}
+            />
+            <input
+              type="text"
+              class="rule-color-text"
+              placeholder="red"
+              .value=${rule.color ?? ""}
+              @change=${(e: Event) => patch(i, { color: (e.target as HTMLInputElement).value })}
+            />
+            <button
+              class="rule-remove"
+              aria-label="Remove rule"
+              title="Remove this rule"
+              @click=${() => {
+                const next = list.filter((_, j) => j !== i);
+                onChange(next.length ? next : undefined);
+              }}
+            >
+              <ha-icon icon="mdi:close"></ha-icon>
+            </button>
+          </div>
+        `;
+      })}
+      <div class="row wide state-color-add">
+        <button
+          @click=${() =>
+            onChange([
+              ...list,
+              // A fresh rule defaults to a threshold: the numeric case is what
+              // both #68 and #82 ask for, and it's the one that needs no typing.
+              { above: 0, color: "#ff0000" },
+            ])}
+        >
+          <ha-icon icon="mdi:plus"></ha-icon>Add rule
+        </button>
+      </div>
+    `;
+  }
+
+  /**
+   * Entity ids to scope a picker to for something sitting at (x, y), or
+   * undefined for "offer everything".
+   *
+   * An element inside an Area linked to a Home Assistant area gets its pickers
+   * scoped to that area, unless the area's own "Filter entities" toggle turns
+   * that off. Recomputed on every render from the live coordinates, so it
+   * tracks the element as it's dragged in/out of the polygon, even before the
+   * form reopens.
+   */
+  private _areaEntitiesAt(x: number, y: number): string[] | undefined {
+    const area = areaContainingPoint(this._floor(), x, y);
+    return areaFiltersEntities(area) ? entityIdsInHaArea(this.hass, area!.haArea!) : undefined;
+  }
+
+  /** Every entity in `area`'s linked HA area not already placed as an item on this floor. */
+  private _pendingAreaEntities(area: Area): string[] {
+    if (!area.haArea) return [];
+    const existing = new Set(this._floor().items.map((it) => it.entity));
+    return entityIdsInHaArea(this.hass, area.haArea).filter((id) => !existing.has(id));
+  }
+
+  /**
+   * Add a device for every entity registered to `area`'s linked HA area that
+   * isn't already placed as an item on this floor, laid out across the
+   * polygon's interior (`layoutPointsInPolygon`) so the new icons spread out
+   * instead of stacking on top of each other.
+   */
+  private _addAreaEntities(area: Area): void {
+    const toAdd = this._pendingAreaEntities(area);
+    if (!toAdd.length) return;
+    const positions = layoutPointsInPolygon(area.points, toAdd.length);
+    const newItems: FloorItem[] = toAdd.map((entity, i) => {
+      const kind = kindFromEntity(entity);
+      return {
+        id: uid("item"),
+        entity,
+        x: Math.round(positions[i]!.x),
+        y: Math.round(positions[i]!.y),
+        kind,
+        showState: kind === "sensor",
+        showIcon: true,
+        size: DEFAULT_ITEM_SIZE,
+      };
+    });
+    this._commitFloor({ items: [...this._floor().items, ...newItems] });
+    this._selection = newItems.map((it) => ({ kind: "item" as const, id: it.id }));
+  }
+
   /** Patch a single field on one of a tracker's sensor sub-objects (X / Y axis). */
   private _updateTrackerSensor(
     id: string,
@@ -1682,6 +2057,13 @@ export class FloorplanCardEditor extends LitElement {
     });
   }
 
+  private _updateAreaLive(id: string, partial: Partial<Area>): void {
+    this._beginLive("area", id, partial);
+    this._emitFloor({
+      areas: (this._floor().areas ?? []).map((a) => (a.id === id ? { ...a, ...partial } : a)),
+    });
+  }
+
   private _patchConfigLive(partial: Partial<FloorplanCardConfig>): void {
     this._beginLive("config", "", partial);
     this._emit({ ...this._config, ...partial });
@@ -1701,7 +2083,7 @@ export class FloorplanCardEditor extends LitElement {
 
   /** Route a form patch to the right per-kind update helper (commit or burst). */
   private _applyElementPatch(
-    kind: "opening" | "item" | "text" | "furniture" | "tracker" | "wall",
+    kind: "opening" | "item" | "text" | "furniture" | "tracker" | "wall" | "area",
     id: string,
     patch: Record<string, unknown>,
     live: boolean
@@ -1730,6 +2112,10 @@ export class FloorplanCardEditor extends LitElement {
       case "wall":
         if (live) this._updateWallLive(id, patch);
         else this._updateWall(id, patch);
+        break;
+      case "area":
+        if (live) this._updateAreaLive(id, patch);
+        else this._updateArea(id, patch);
         break;
     }
   }
@@ -1783,6 +2169,11 @@ export class FloorplanCardEditor extends LitElement {
         if (!fu) return "Furniture";
         const label = FURNITURE_LABELS[fu.type];
         return `${label.charAt(0).toUpperCase()}${label.slice(1)} · ${Math.round(fu.w)}×${Math.round(fu.h)}`;
+      }
+      case "area": {
+        const a = (f.areas ?? []).find((x) => x.id === sel.id);
+        if (!a) return "Area";
+        return `Area · ${a.name || `${a.points.length}-point`}`;
       }
       default: {
         const tr = (f.trackers ?? []).find((x) => x.id === sel.id);
@@ -1849,6 +2240,18 @@ export class FloorplanCardEditor extends LitElement {
           >Drag on the canvas to draw the tracked area; bind one or two
           distance sensors in the Element editor.</span
         >
+      `;
+    } else if (t === "area") {
+      label = "Area";
+      const n = this._draftArea?.points.length ?? 0;
+      body = html`
+        <span class="ctx-hint">
+          ${n === 0
+            ? "Click to start a room outline; points snap to nearby corners."
+            : n < 3
+              ? `${n} point${n === 1 ? "" : "s"} placed — click to add more (3+ to close).`
+              : `${n} points placed — click the first point to close the room, or keep adding.`}
+        </span>
       `;
     } else if (t === "door" || t === "window") {
       label = t === "door" ? "Door" : "Window";
@@ -1971,7 +2374,8 @@ export class FloorplanCardEditor extends LitElement {
       !floor.items.length &&
       !floor.texts.length &&
       !floor.furniture.length &&
-      !(floor.trackers ?? []).length;
+      !(floor.trackers ?? []).length &&
+      !(floor.areas ?? []).length;
     return html`
       <div
         class="editor ${this._fullscreen ? "fullscreen" : ""}"
@@ -1990,7 +2394,7 @@ export class FloorplanCardEditor extends LitElement {
         <div class="toolbar">
           <!-- Tools — modes; exactly one is active at a time -->
           <div class="seg" role="group" aria-label="Tool">
-            ${(["select", "wall", "door", "window", "tracker"] as Tool[]).map(
+            ${(["select", "wall", "door", "window", "tracker", "area"] as Tool[]).map(
               (t) => html`
                 <button
                   class=${this._tool === t ? "active" : ""}
@@ -2000,6 +2404,8 @@ export class FloorplanCardEditor extends LitElement {
                     this._tool = t;
                     this._draft = null;
                     this._draftTracker = null;
+                    this._draftArea = null;
+                    this._areaHover = null;
                   }}
                 >
                   <ha-icon icon=${TOOL_META[t].icon}></ha-icon>${TOOL_META[t].label}
@@ -2234,6 +2640,11 @@ export class FloorplanCardEditor extends LitElement {
                             preserveAspectRatio="none" opacity=${floor.imageOpacity ?? 1} />`
                 : nothing}
               ${this._renderGrid()}
+              ${repeat(
+                floor.areas ?? [],
+                (a, i) => a.id || i,
+                (a) => this._renderAreaSel(a)
+              )}
               ${floor.furniture.map((f) => this._renderFurnitureSel(f))}
               ${renderWallMask(floor.openings, c.width, c.height, this._wallMaskId)}
               ${floor.walls.map((w) => this._renderWall(w))}
@@ -2268,6 +2679,7 @@ export class FloorplanCardEditor extends LitElement {
                               stroke-width=${WALL_THICKNESS} />`
                   : nothing
               }
+              ${this._renderAreaDraft()}
               ${
                 this._marquee
                   ? svg`<rect x=${Math.min(this._marquee.x0, this._marquee.x1)}
@@ -2284,7 +2696,7 @@ export class FloorplanCardEditor extends LitElement {
             </div>
           </div>
         </div>
-        ${floorEmpty && !this._draft && !this._draftTracker
+        ${floorEmpty && !this._draft && !this._draftTracker && !this._draftArea
           ? html`<div class="empty-hint">
               <div>
                 <b>Draw your first room:</b> pick the <b>Wall</b> tool and drag on the canvas.<br />
@@ -2376,7 +2788,30 @@ export class FloorplanCardEditor extends LitElement {
     const value = spec.data[f.name];
     const sel = f.selector;
     if ("select" in sel) {
-      const options = (sel.select as { options: { value: string; label: string }[] }).options;
+      const select = sel.select as {
+        options: { value: string; label: string }[];
+        custom_value?: boolean;
+      };
+      const options = select.options;
+      // `custom_value` means "pick one of these, or type your own" — a <select>
+      // can't express that, so mirror HA's combo box with a datalist-backed
+      // input (the Area name field, which doubles as its HA-area link).
+      if (select.custom_value) {
+        const listId = `sel-${f.name}-${options.length}`;
+        return html`<div class="row wide">
+          <label>${f.label}</label>
+          <input
+            type="text"
+            list=${listId}
+            .value=${String(value ?? "")}
+            @change=${(e: Event) =>
+              this._applyFallback(spec, f, (e.target as HTMLInputElement).value, false, apply)}
+          />
+          <datalist id=${listId}>
+            ${options.map((o) => html`<option value=${o.value}></option>`)}
+          </datalist>
+        </div>`;
+      }
       return html`<div class="row">
         <label>${f.label}</label>
         <select
@@ -2441,13 +2876,17 @@ export class FloorplanCardEditor extends LitElement {
       </div>`;
     }
     if ("entity" in sel) {
-      const filter = (sel.entity as { filter?: { domain?: string[] }[] }).filter;
+      const entitySel = sel.entity as {
+        filter?: { domain?: string[] }[];
+        include_entities?: string[];
+      };
       return html`<div class="row wide">
         <label>${f.label}</label>
         ${this._renderEntityPicker(
           String(value ?? ""),
           (v) => this._applyFallback(spec, f, v, false, apply),
-          filter?.[0]?.domain
+          entitySel.filter?.[0]?.domain,
+          entitySel.include_entities
         )}
       </div>`;
     }
@@ -2479,13 +2918,15 @@ export class FloorplanCardEditor extends LitElement {
   private _renderEntityPicker(
     value: string,
     onChange: (entity: string) => void,
-    includeDomains?: string[]
+    includeDomains?: string[],
+    includeEntities?: string[]
   ): TemplateResult {
     if (customElements.get("ha-entity-picker")) {
       return html`<ha-entity-picker
         .hass=${this.hass}
         .value=${value}
         .includeDomains=${includeDomains}
+        .includeEntities=${includeEntities}
         allow-custom-entity
         @value-changed=${(e: CustomEvent) => onChange((e.detail.value as string) ?? "")}
       ></ha-entity-picker>`;
@@ -2704,6 +3145,67 @@ export class FloorplanCardEditor extends LitElement {
       </g>`;
   }
 
+  /**
+   * A committed Area: the translucent fill (shared with the live card),
+   * a transparent hit-polygon for click-to-select and whole-shape drag, and
+   * — while selected — a heavier outline plus one draggable handle per
+   * vertex (decision #1 in areas.md: vertices reshape independently, with
+   * no cross-element corner-stretch).
+   */
+  private _renderAreaSel(a: Area): TemplateResult {
+    const selected = this._isSel("area", a.id);
+    const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
+    return svg`
+      <g class="area-hit ${selected ? "selected" : ""}">
+        ${renderArea(a)}
+        <polygon points=${pts} class="area-hit-shape"
+                 @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "area", id: a.id })} />
+        ${selected ? svg`<polygon points=${pts} class="area-outline" />` : nothing}
+        ${
+          selected
+            ? a.points.map(
+                (p, i) => svg`
+                  <circle cx=${p.x} cy=${p.y} r="7" class="handle"
+                          @pointerdown=${(e: PointerEvent) =>
+                            this._startDrag(e, { kind: "area", id: a.id }, undefined, i)} />`
+              )
+            : nothing
+        }
+      </g>`;
+  }
+
+  /**
+   * The in-progress Area draft: committed vertices as dots, straight segments
+   * between them, and — while a live pointer position is known — a dashed
+   * "rubber band" segment from the last vertex to the cursor. Once 3+ points
+   * are down the starting vertex is drawn larger/hollow so it's visually
+   * obvious that clicking it closes the polygon (see `_onCanvasDown`).
+   */
+  private _renderAreaDraft(): TemplateResult | typeof nothing {
+    const draft = this._draftArea;
+    if (!draft) return nothing;
+    const pts = draft.points;
+    const line = pts.map((p) => `${p.x},${p.y}`).join(" ");
+    const last = pts[pts.length - 1]!;
+    const canClose = pts.length >= 3;
+    const hover = this._areaHover;
+    return svg`
+      <g class="area-draft">
+        ${pts.length > 1 ? svg`<polyline points=${line} class="area-draft-line" />` : nothing}
+        ${
+          hover
+            ? svg`<line x1=${last.x} y1=${last.y} x2=${hover.x} y2=${hover.y}
+                        class="area-draft-hover" />`
+            : nothing
+        }
+        ${pts.map((p, i) =>
+          i === 0 && canClose
+            ? svg`<circle cx=${p.x} cy=${p.y} r="9" class="area-draft-start" />`
+            : svg`<circle cx=${p.x} cy=${p.y} r="5" class="area-draft-point" />`
+        )}
+      </g>`;
+  }
+
   private _renderItemOverlay(it: FloorItem, c: FloorplanCardConfig): TemplateResult {
     const selected = this._isSel("item", it.id);
     const st = it.entity ? this.hass?.states[it.entity] : undefined;
@@ -2825,22 +3327,14 @@ export class FloorplanCardEditor extends LitElement {
           if (live) this._patchConfigLive(patch as Partial<FloorplanCardConfig>);
           else this._patchConfig(patch as Partial<FloorplanCardConfig>);
         })}
-        <div class="row">
-          <label>Background</label>
-          <input
-            type="color"
-            .value=${this._config.background ?? "#ffffff"}
-            @input=${(e: Event) =>
-              this._patchConfigLive({ background: (e.target as HTMLInputElement).value })}
-          />
-          <input
-            type="text"
-            placeholder="#ffffff or empty"
-            .value=${this._config.background ?? ""}
-            @change=${(e: Event) =>
-              this._patchConfig({ background: (e.target as HTMLInputElement).value || undefined })}
-          />
-        </div>
+        ${this._renderColorRow({
+          label: "Background",
+          value: this._config.background,
+          swatch: "#ffffff",
+          placeholder: "#ffffff or empty",
+          onLive: (background) => this._patchConfigLive({ background }),
+          onCommit: (background) => this._patchConfig({ background }),
+        })}
         ${this._renderForm(floorImageForm(this._floor()), (patch, live) => {
           if (live) this._patchFloorLive(patch as Partial<Floor>);
           else this._commitFloor(patch as Partial<Floor>);
@@ -2881,26 +3375,14 @@ export class FloorplanCardEditor extends LitElement {
           this._applyElementPatch("opening", o.id, patch, live);
         })}
         ${o.entity
-          ? html`<div class="row">
-              <label>Active color</label>
-              <input
-                type="color"
-                .value=${o.activeColor ?? "#03a9f4"}
-                @input=${(e: Event) =>
-                  this._updateOpeningLive(o.id, {
-                    activeColor: (e.target as HTMLInputElement).value,
-                  })}
-              />
-              <input
-                type="text"
-                placeholder="(primary)"
-                .value=${o.activeColor ?? ""}
-                @change=${(e: Event) =>
-                  this._updateOpening(o.id, {
-                    activeColor: (e.target as HTMLInputElement).value || undefined,
-                  })}
-              />
-            </div>`
+          ? this._renderColorRow({
+              label: "Active color",
+              value: o.activeColor,
+              swatch: "#03a9f4",
+              placeholder: "(primary)",
+              onLive: (activeColor) => this._updateOpeningLive(o.id, { activeColor }),
+              onCommit: (activeColor) => this._updateOpening(o.id, { activeColor }),
+            })
           : nothing}
       `;
     }
@@ -2908,8 +3390,9 @@ export class FloorplanCardEditor extends LitElement {
     if (sel.kind === "item") {
       const it = this._floor().items.find((x) => x.id === sel.id);
       if (!it) return html`${nothing}`;
+      const areaEntities = this._areaEntitiesAt(it.x, it.y);
       return html`
-        ${this._renderForm(itemForm(it), (patch, live) => {
+        ${this._renderForm(itemForm(it, areaEntities), (patch, live) => {
           // Any entity change re-derives the item kind (icon defaults etc.) —
           // including clearing it, which resets kind to "generic".
           if ("entity" in patch && typeof patch.entity === "string") {
@@ -2917,28 +3400,28 @@ export class FloorplanCardEditor extends LitElement {
           }
           this._applyElementPatch("item", it.id, patch, live);
         })}
+        ${this._renderColorRow({
+          label: "Active color",
+          title: "Badge color while this device is on (issue #79)",
+          value: it.activeColor,
+          swatch: "#fdd835",
+          placeholder: "(theme)",
+          onLive: (activeColor) => this._updateItemLive(it.id, { activeColor }),
+          onCommit: (activeColor) => this._updateItem(it.id, { activeColor }),
+        })}
         ${(it.display ?? "badge") !== "badge"
-          ? html`<div class="row">
-              <label>Ripple color</label>
-              <input
-                type="color"
-                .value=${it.rippleColor ?? "#03a9f4"}
-                @input=${(e: Event) =>
-                  this._updateItemLive(it.id, {
-                    rippleColor: (e.target as HTMLInputElement).value,
-                  })}
-              />
-              <input
-                type="text"
-                placeholder="(primary)"
-                .value=${it.rippleColor ?? ""}
-                @change=${(e: Event) =>
-                  this._updateItem(it.id, {
-                    rippleColor: (e.target as HTMLInputElement).value || undefined,
-                  })}
-              />
-            </div>`
+          ? this._renderColorRow({
+              label: "Ripple color",
+              value: it.rippleColor,
+              swatch: it.activeColor ?? "#03a9f4",
+              placeholder: it.activeColor ? "(active color)" : "(primary)",
+              onLive: (rippleColor) => this._updateItemLive(it.id, { rippleColor }),
+              onCommit: (rippleColor) => this._updateItem(it.id, { rippleColor }),
+            })
           : nothing}
+        ${this._renderStateColorRules(it.stateColor, (stateColor) =>
+          this._updateItem(it.id, { stateColor })
+        )}
       `;
     }
 
@@ -2949,22 +3432,14 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderForm(textForm(t), (patch, live) =>
           this._applyElementPatch("text", t.id, patch, live)
         )}
-        <div class="row">
-          <label>Color</label>
-          <input
-            type="color"
-            .value=${t.color ?? "#000000"}
-            @input=${(e: Event) =>
-              this._updateTextLive(t.id, { color: (e.target as HTMLInputElement).value })}
-          />
-          <input
-            type="text"
-            placeholder="(theme default)"
-            .value=${t.color ?? ""}
-            @change=${(e: Event) =>
-              this._updateText(t.id, { color: (e.target as HTMLInputElement).value || undefined })}
-          />
-        </div>
+        ${this._renderColorRow({
+          label: "Color",
+          value: t.color,
+          swatch: "#000000",
+          placeholder: "(theme default)",
+          onLive: (color) => this._updateTextLive(t.id, { color }),
+          onCommit: (color) => this._updateText(t.id, { color }),
+        })}
       `;
     }
 
@@ -2972,27 +3447,97 @@ export class FloorplanCardEditor extends LitElement {
       const f = this._floor().furniture.find((x) => x.id === sel.id);
       if (!f) return html`${nothing}`;
       return html`
-        ${this._renderForm(furnitureForm(f), (patch, live) =>
+        ${this._renderForm(furnitureForm(f, this._areaEntitiesAt(f.x, f.y)), (patch, live) =>
           this._applyElementPatch("furniture", f.id, patch, live)
         )}
-        <div class="row">
-          <label>Color</label>
-          <input
-            type="color"
-            .value=${f.color ?? "#9e9e9e"}
-            @input=${(e: Event) =>
-              this._updateFurnitureLive(f.id, { color: (e.target as HTMLInputElement).value })}
-          />
-          <input
-            type="text"
-            placeholder="(gray)"
-            .value=${f.color ?? ""}
-            @change=${(e: Event) =>
-              this._updateFurniture(f.id, {
-                color: (e.target as HTMLInputElement).value || undefined,
+        ${this._renderColorRow({
+          label: "Color",
+          value: f.color,
+          swatch: "#9e9e9e",
+          placeholder: "(gray)",
+          onLive: (color) => this._updateFurnitureLive(f.id, { color }),
+          onCommit: (color) => this._updateFurniture(f.id, { color }),
+        })}
+        ${f.entity
+          ? html`
+              ${this._renderColorRow({
+                label: "Active color",
+                title: "Color while the entity is on",
+                value: f.activeColor,
+                swatch: "#03a9f4",
+                placeholder: "(no change)",
+                onLive: (activeColor) => this._updateFurnitureLive(f.id, { activeColor }),
+                onCommit: (activeColor) => this._updateFurniture(f.id, { activeColor }),
               })}
-          />
-        </div>
+              ${this._renderStateColorRules(f.stateColor, (stateColor) =>
+                this._updateFurniture(f.id, { stateColor })
+              )}
+            `
+          : nothing}
+      `;
+    }
+
+    if (sel.kind === "area") {
+      const a = (this._floor().areas ?? []).find((x) => x.id === sel.id);
+      if (!a) return html`${nothing}`;
+      const haAreas = haAreasOf(this.hass);
+      const pendingEntities = a.haArea ? this._pendingAreaEntities(a) : [];
+      return html`
+        ${this._renderForm(
+          areaNameForm(a, haAreas.map((ha) => ha.name)),
+          (patch, live) =>
+            // The name field doubles as the HA-area link, so a name change also
+            // decides `haArea` (see areaNamePatch).
+            this._applyElementPatch("area", a.id, areaNamePatch(patch, haAreas), live)
+        )}
+        ${this._renderAreaLinkRow(a, haAreas)}
+        ${this._renderForm(areaForm(a), (patch, live) =>
+          this._applyElementPatch("area", a.id, patch, live)
+        )}
+        ${this._renderColorRow({
+          label: "Color",
+          value: a.color,
+          swatch: "#03a9f4",
+          placeholder: "(primary)",
+          onLive: (color) => this._updateAreaLive(a.id, { color }),
+          onCommit: (color) => this._updateArea(a.id, { color }),
+        })}
+        ${a.haArea
+          ? html`<div class="row wide">
+              <label>Filter entities</label>
+              <input
+                type="checkbox"
+                .checked=${a.filterEntities ?? true}
+                @change=${(e: Event) =>
+                  this._updateArea(a.id, {
+                    filterEntities: (e.target as HTMLInputElement).checked,
+                  })}
+              />
+              <span class="hint"
+                >Scope the entity picker, for devices placed inside this room, to this HA
+                area's entities.</span
+              >
+            </div>`
+          : nothing}
+        ${a.haArea
+          ? html`<div class="row wide">
+              <button
+                ?disabled=${!pendingEntities.length}
+                title=${pendingEntities.length
+                  ? `Add ${pendingEntities.length} device${pendingEntities.length === 1 ? "" : "s"} from this HA area, spread out across the room`
+                  : "Every entity in this HA area is already placed on this floor"}
+                @click=${() => this._addAreaEntities(a)}
+              >
+                <ha-icon icon="mdi:shape-square-plus"></ha-icon>
+                Add all devices in this HA area${pendingEntities.length
+                  ? ` (${pendingEntities.length})`
+                  : ""}
+              </button>
+            </div>`
+          : nothing}
+        <p class="hint">
+          Drag inside the fill to move the whole room; drag a vertex handle to reshape it.
+        </p>
       `;
     }
 
@@ -3005,24 +3550,14 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderForm(trackerForm(tr), (patch, live) =>
           this._applyElementPatch("tracker", tr.id, patch, live)
         )}
-        <div class="row">
-          <label>Color</label>
-          <input
-            type="color"
-            .value=${tr.color ?? "#03a9f4"}
-            @input=${(e: Event) =>
-              this._updateTrackerLive(tr.id, { color: (e.target as HTMLInputElement).value })}
-          />
-          <input
-            type="text"
-            placeholder="(primary)"
-            .value=${tr.color ?? ""}
-            @change=${(e: Event) =>
-              this._updateTracker(tr.id, {
-                color: (e.target as HTMLInputElement).value || undefined,
-              })}
-          />
-        </div>
+        ${this._renderColorRow({
+          label: "Color",
+          value: tr.color,
+          swatch: "#03a9f4",
+          placeholder: "(primary)",
+          onLive: (color) => this._updateTrackerLive(tr.id, { color }),
+          onCommit: (color) => this._updateTracker(tr.id, { color }),
+        })}
       `;
     }
 
@@ -3430,7 +3965,8 @@ export class FloorplanCardEditor extends LitElement {
     svg.wall,
     svg.door,
     svg.window,
-    svg.tracker {
+    svg.tracker,
+    svg.area {
       cursor: crosshair;
     }
     .grid {
@@ -3821,6 +4357,50 @@ export class FloorplanCardEditor extends LitElement {
       stroke-dasharray: 6 4;
       pointer-events: none;
     }
+    .area-hit {
+      cursor: move;
+    }
+    .area-hit-shape {
+      /* Transparent fill turns the whole polygon into a pointer target for
+         the whole-shape drag, without covering the translucent room fill
+         drawn underneath by renderArea. */
+      fill: transparent;
+      stroke: none;
+      pointer-events: all;
+    }
+    .area-outline {
+      fill: none;
+      stroke: var(--primary-color, #03a9f4);
+      stroke-width: 2;
+      pointer-events: none;
+    }
+    .area-draft-line {
+      fill: none;
+      stroke: var(--primary-color, #03a9f4);
+      stroke-width: 2;
+      stroke-dasharray: 6 4;
+      pointer-events: none;
+    }
+    .area-draft-hover {
+      fill: none;
+      stroke: var(--primary-color, #03a9f4);
+      stroke-width: 1.5;
+      stroke-dasharray: 3 4;
+      opacity: 0.7;
+      pointer-events: none;
+    }
+    .area-draft-point {
+      fill: var(--primary-color, #03a9f4);
+      stroke: var(--card-background-color, #fff);
+      stroke-width: 1.5;
+      pointer-events: none;
+    }
+    .area-draft-start {
+      fill: var(--card-background-color, #fff);
+      stroke: var(--primary-color, #03a9f4);
+      stroke-width: 2;
+      pointer-events: none;
+    }
     .tracker-draft {
       fill: var(--primary-color, #03a9f4);
       fill-opacity: 0.08;
@@ -4065,7 +4645,8 @@ export class FloorplanCardEditor extends LitElement {
       color: var(--primary-text-color);
     }
     ha-entity-picker,
-    ha-icon-picker {
+    ha-icon-picker,
+    ha-combo-box {
       flex: 1;
       min-width: 0;
     }
@@ -4086,6 +4667,104 @@ export class FloorplanCardEditor extends LitElement {
       font-size: 13px;
       color: var(--secondary-text-color);
       line-height: 1.5;
+    }
+    /* The Area name's status line (Linked chip / hint). It sits on its own row
+       under the field rather than beside it: the docked inspector is only
+       340px wide in full screen, and a chip + hint sharing that row squeezed
+       the name box down to a sliver. The empty label keeps it aligned with the
+       field above, and -4px claws back the row's own bottom margin so the pair
+       still reads as one control. */
+    .area-name-status {
+      margin-top: -4px;
+    }
+    /* "Color by state" rules (issues #68, #79, #82). The rules are a list, so
+       they read as one group indented under the heading row rather than as
+       more loose fields; the rail is what says "these belong together" in a
+       340px panel where indentation alone is too expensive. */
+    .state-colors {
+      margin-bottom: 4px;
+    }
+    .state-colors label {
+      flex: 1 1 auto;
+      font-weight: 500;
+    }
+    .state-color-rule,
+    .state-color-add {
+      padding-left: 8px;
+      border-left: 2px solid var(--divider-color, #ccc);
+      margin-bottom: 6px;
+    }
+    .state-color-rule select {
+      flex: 0 0 96px;
+    }
+    /* Higher specificity than the generic .row input rule above, which would
+       otherwise stretch a two-digit threshold across half the panel. */
+    .row.state-color-rule input.cond {
+      flex: 0 0 90px;
+    }
+    .row.state-color-rule span.cond {
+      flex: 0 0 auto;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+    /* The color text box gives up width first — the condition and the swatch
+       are what you read, and the swatch already shows the colour. */
+    .row.state-color-rule input.rule-color-text {
+      flex: 1 1 60px;
+      min-width: 60px;
+    }
+    .state-color-rule .rule-remove,
+    .state-color-add button {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 4px;
+      background: var(--card-background-color, #fff);
+      color: var(--secondary-text-color);
+      cursor: pointer;
+      padding: 3px 6px;
+    }
+    .state-color-rule .rule-remove {
+      flex: 0 0 auto;
+    }
+    .state-color-rule .rule-remove ha-icon,
+    .state-color-add button ha-icon {
+      --mdc-icon-size: 16px;
+    }
+    .area-name-status label {
+      /* Alignment spacer only — nothing to announce. */
+      flex: 0 0 90px;
+    }
+    /* "Linked" badge on the Area name row: the HA-area association is implied
+       by the name matching, so it needs to be visible somewhere. */
+    .ha-link-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 4px 2px 8px;
+      border-radius: 999px;
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      font-size: 12px;
+      font-weight: 500;
+      white-space: nowrap;
+    }
+    .ha-link-chip ha-icon {
+      --mdc-icon-size: 14px;
+    }
+    .ha-link-chip .unlink {
+      display: inline-flex;
+      align-items: center;
+      padding: 0;
+      border: none;
+      background: none;
+      color: inherit;
+      cursor: pointer;
+      opacity: 0.85;
+    }
+    .ha-link-chip .unlink:hover {
+      opacity: 1;
     }
   `;
 }

@@ -6,6 +6,7 @@
  * effects (device-class inference, grid/snap rescale).
  */
 import type {
+  Area,
   Floor,
   FloorItem,
   FloorText,
@@ -17,6 +18,7 @@ import type {
   Wall,
 } from "./types";
 import {
+  DEFAULT_AREA_OPACITY,
   DEFAULT_GRID,
   DEFAULT_ITEM_SIZE,
   DEFAULT_RIPPLE_SIZE,
@@ -290,10 +292,19 @@ export function openingForm(o: Opening): FormSpec {
   };
 }
 
-export function itemForm(it: FloorItem): FormSpec {
+/**
+ * When `it` sits inside a Home Assistant area-linked {@link Area} on the
+ * plan, `areaEntities` narrows the `entity`/`secondaryEntity` pickers to
+ * that HA area's entities. `include_entities` on the entity selector is the
+ * assumed-but-unverified `<ha-form>` equivalent of `ha-entity-picker`'s own
+ * `.includeEntities` property — see areas.md decision #5.
+ */
+export function itemForm(it: FloorItem, areaEntities?: string[]): FormSpec {
   const display = it.display ?? "badge";
+  const entitySelector = (): Record<string, unknown> =>
+    areaEntities ? { entity: { include_entities: areaEntities } } : { entity: {} };
   const fields: FormField[] = [
-    { name: "entity", label: "Entity", required: true, selector: { entity: {} } },
+    { name: "entity", label: "Entity", required: true, selector: entitySelector() },
     {
       name: "attribute",
       label: "Attribute",
@@ -304,7 +315,7 @@ export function itemForm(it: FloorItem): FormSpec {
       name: "secondaryEntity",
       label: "Second entity",
       helper: "Shown next to the primary state",
-      selector: { entity: {} },
+      selector: entitySelector(),
     },
     {
       name: "secondaryAttribute",
@@ -421,7 +432,12 @@ export function textForm(t: FloorText): FormSpec {
   };
 }
 
-export function furnitureForm(f: Furniture): FormSpec {
+/**
+ * `areaEntities` scopes the entity picker to a linked HA area, exactly as in
+ * {@link itemForm} — a plant drawn inside the Living Room offers the Living
+ * Room's sensors first.
+ */
+export function furnitureForm(f: Furniture, areaEntities?: string[]): FormSpec {
   return {
     fields: [
       {
@@ -450,11 +466,24 @@ export function furnitureForm(f: Furniture): FormSpec {
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
       angleField(),
+      // Optional entity that makes the drawing live (issue #82) — a soil
+      // sensor on a plant, a contact sensor on a cabinet. Last, because most
+      // furniture is decoration and never binds anything.
+      {
+        name: "entity",
+        label: "Entity",
+        helper: "Optional — lets the drawing change color with a sensor",
+        selector: areaEntities ? { entity: { include_entities: areaEntities } } : { entity: {} },
+      },
     ],
-    data:
-      f.type === "sectional"
-        ? { type: f.type, hand: f.hand ?? "right", w: f.w, h: f.h, angle: f.angle ?? 0 }
-        : { type: f.type, w: f.w, h: f.h, angle: f.angle ?? 0 },
+    data: {
+      type: f.type,
+      ...(f.type === "sectional" ? { hand: f.hand ?? "right" } : {}),
+      w: f.w,
+      h: f.h,
+      angle: f.angle ?? 0,
+      entity: f.entity ?? "",
+    },
     toPatch: identity,
   };
 }
@@ -480,6 +509,59 @@ export function trackerForm(tr: Tracker): FormSpec {
       y: Math.round(tr.y),
       angle: tr.angle ?? 0,
       dotSize: tr.dotSize ?? DEFAULT_TRACKER_DOT_SIZE,
+    },
+    toPatch: identity,
+  };
+}
+
+/**
+ * Name/visibility/opacity fields for an Area (a room polygon). Only the color
+ * stays a bespoke row in the editor's selection editor, same as every other
+ * color field in this file (see `textForm`'s caller).
+ *
+ * The name doubles as the HA-area link, so with `haAreaNames` it's a `select`
+ * with `custom_value` — HA renders that as a combo box you can also type into,
+ * which is what makes the field look and behave like the rest of the form
+ * (a bespoke row outside `ha-form` can't match HA's own field rendering).
+ * Without any HA areas to offer there's nothing to pick from, so it degrades
+ * to a plain text field rather than an empty dropdown.
+ */
+export function areaNameForm(a: Area, haAreaNames: readonly string[] = []): FormSpec {
+  const nameSelector = haAreaNames.length
+    ? {
+        select: {
+          options: haAreaNames.map((n) => ({ value: n, label: n })),
+          custom_value: true,
+          mode: "dropdown",
+          sort: false,
+        },
+      }
+    : { text: {} };
+  return {
+    fields: [{ name: "name", label: "Name", selector: nameSelector }],
+    data: { name: a.name ?? "" },
+    toPatch: identity,
+  };
+}
+
+/**
+ * The Area's remaining style fields. Split from {@link areaNameForm} so the
+ * editor can slot the HA-link status line directly beneath the name it
+ * describes; both halves still render through `ha-form`.
+ */
+export function areaForm(a: Area): FormSpec {
+  return {
+    fields: [
+      { name: "showName", label: "Show name", selector: { boolean: {} } },
+      {
+        name: "opacity",
+        label: "Fill opacity",
+        selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
+      },
+    ],
+    data: {
+      showName: a.showName ?? true,
+      opacity: a.opacity ?? DEFAULT_AREA_OPACITY,
     },
     toPatch: identity,
   };

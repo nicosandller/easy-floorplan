@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import type { FurnitureType, ItemKind } from "./types";
+import type { Furniture, FurnitureType, ItemKind } from "./types";
 import { FURNITURE_DEFAULT_SIZE } from "./types";
 import {
   snapToWall,
@@ -17,6 +17,7 @@ import {
   kindFromEntity,
   defaultIcon,
   renderFurniture,
+  furnitureColor,
   sectionalPoints,
   SECTIONAL_CHAISE_FRACTION,
   SECTIONAL_SEAT_FRACTION,
@@ -40,6 +41,8 @@ import {
   rotatedCanvasSize,
   rotatePlanPoint,
   planRotationTransform,
+  polygonCentroid,
+  renderArea,
 } from "./render";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
 
@@ -714,6 +717,66 @@ describe("collectWatchedEntities", () => {
     expect(got.has("light.legacy")).toBe(true);
     expect(got.size).toBe(1);
   });
+
+  // Issue #82: miss this and an entity-bound plant never repaints, because
+  // nothing tells the card its sensor is worth re-rendering for.
+  it("collects entity-bound furniture (issue #82)", () => {
+    const got = collectWatchedEntities({
+      furniture: [
+        { id: "p", type: "plant", x: 0, y: 0, w: 40, h: 40, entity: "sensor.soil" },
+        { id: "t", type: "table", x: 0, y: 0, w: 40, h: 40 },
+      ],
+    } as unknown as FloorplanCardConfig);
+    expect(got.has("sensor.soil")).toBe(true);
+    expect(got.size).toBe(1);
+  });
+});
+
+describe("furnitureColor (issue #82)", () => {
+  const plant = (extra: Record<string, unknown>) =>
+    ({ id: "p", type: "plant", x: 0, y: 0, w: 40, h: 40, ...extra }) as Furniture;
+
+  it("is undefined without an entity, so unbound furniture stays static", () => {
+    expect(furnitureColor(plant({ stateColor: [{ color: "red" }] }), "42")).toBeUndefined();
+    expect(furnitureColor(plant({ activeColor: "red" }), "on")).toBeUndefined();
+  });
+
+  it("resolves the matching threshold rule", () => {
+    const f = plant({
+      entity: "sensor.soil",
+      stateColor: [
+        { above: 80, color: "green" },
+        { above: 65, color: "yellow" },
+        { color: "red" },
+      ],
+    });
+    expect(furnitureColor(f, "90")).toBe("green");
+    expect(furnitureColor(f, "70")).toBe("yellow");
+    expect(furnitureColor(f, "40")).toBe("red");
+  });
+
+  it("falls back to activeColor only while the entity is active", () => {
+    const f = plant({ entity: "binary_sensor.cabinet", activeColor: "orange" });
+    expect(furnitureColor(f, "on")).toBe("orange");
+    expect(furnitureColor(f, "off")).toBeUndefined();
+    expect(furnitureColor(f, "unavailable")).toBeUndefined();
+  });
+
+  it("prefers a matching rule over activeColor", () => {
+    const f = plant({
+      entity: "binary_sensor.cabinet",
+      activeColor: "orange",
+      stateColor: [{ state: "on", color: "purple" }],
+    });
+    expect(furnitureColor(f, "on")).toBe("purple");
+  });
+
+  // The color reaches a `stroke` attribute, so the allowlist (#64) has to run
+  // on this path too — not only on the item label's.
+  it("gates hostile colors through cssColor", () => {
+    const f = plant({ entity: "sensor.soil", stateColor: [{ color: "red;fill:url(#x)" }] });
+    expect(furnitureColor(f, "1")).toBeUndefined();
+  });
 });
 
 describe("sectionalPoints", () => {
@@ -1035,6 +1098,30 @@ describe("fishTank glyph scales with its size (issue #72 review)", () => {
     expect(small).toBeGreaterThan(0);
     expect(large).toBeGreaterThan(small);
   });
+
+  // Issue #82: the entity-driven color replaces the configured one across the
+  // whole drawing — base shape and detail strokes alike, not just the outline.
+  describe("renderFurniture color override", () => {
+    const markupOf = (override?: string) =>
+      flatten(
+        renderFurniture(
+          { id: "f", type: "plant", x: 0, y: 0, w: 40, h: 40, color: "#111111" },
+          override,
+        ),
+      );
+
+    it("uses the configured color when no override is passed", () => {
+      const markup = markupOf();
+      expect(markup).toContain("#111111");
+      expect(markup).not.toContain("#ff0000");
+    });
+
+    it("the override replaces every occurrence of the configured color", () => {
+      const markup = markupOf("#ff0000");
+      expect(markup).toContain("#ff0000");
+      expect(markup).not.toContain("#111111");
+    });
+  });
 });
 
 describe("itemStateText with attributes (issue #70)", () => {
@@ -1121,6 +1208,58 @@ describe("resolveStateColor (issue #68)", () => {
     expect(resolveStateColor(undefined, 30)).toBeUndefined();
     expect(resolveStateColor([], 30)).toBeUndefined();
   });
+
+  // Exact-state rules (issue #79): the same mechanism for entities whose
+  // value is a word rather than a number.
+  describe("state rules (issue #79)", () => {
+    const cover = [
+      { state: "open", color: "red" },
+      { state: "closed", color: "green" },
+      { color: "gray" },
+    ];
+
+    it("matches an exact state, case- and space-insensitively", () => {
+      expect(resolveStateColor(cover, "open")).toBe("red");
+      expect(resolveStateColor(cover, "OPEN")).toBe("red");
+      expect(resolveStateColor(cover, " closed ")).toBe("green");
+    });
+
+    it("an unmatched state falls to the default rule", () => {
+      expect(resolveStateColor(cover, "opening")).toBe("gray");
+      expect(resolveStateColor(cover, undefined)).toBe("gray");
+      expect(resolveStateColor([{ state: "open", color: "red" }], "closed")).toBeUndefined();
+    });
+
+    it("an exact state beats a matching threshold", () => {
+      const mixed = [
+        { above: 10, color: "orange" },
+        { state: "50", color: "blue" },
+      ];
+      expect(resolveStateColor(mixed, "50")).toBe("blue");
+      expect(resolveStateColor(mixed, "60")).toBe("orange");
+    });
+
+    it("the first listed state rule wins a duplicate", () => {
+      expect(
+        resolveStateColor(
+          [
+            { state: "on", color: "first" },
+            { state: "on", color: "second" },
+          ],
+          "on",
+        ),
+      ).toBe("first");
+    });
+
+    // A half-filled row in the editor ("state is", nothing typed yet) has no
+    // condition, so it behaves as the default rule rather than matching every
+    // reading or none of them.
+    it("a blank state is no condition at all", () => {
+      const rules = [{ state: "", color: "red" }];
+      expect(resolveStateColor(rules, "anything")).toBe("red");
+      expect(resolveStateColor(rules, "")).toBe("red");
+    });
+  });
 });
 
 describe("windowSash (issue #73)", () => {
@@ -1174,5 +1313,51 @@ describe("collectWatchedEntities includes shutter entities (issue #74)", () => {
     const ids = collectWatchedEntities(cfg);
     expect(ids.has("binary_sensor.win")).toBe(true);
     expect(ids.has("cover.shutter")).toBe(true);
+  });
+});
+
+describe("polygonCentroid", () => {
+  it("averages the vertices", () => {
+    const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    expect(polygonCentroid(square)).toEqual({ x: 5, y: 5 });
+  });
+
+  it("returns the origin for an empty polygon", () => {
+    expect(polygonCentroid([])).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe("renderArea", () => {
+  /** Flatten a Lit template back to markup (see the fishTank glyph test above). */
+  const flatten = (node: unknown): string => {
+    if (node == null || node === false) return "";
+    if (Array.isArray(node)) return node.map(flatten).join("");
+    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+      const { strings, values } = node as { strings: string[]; values: unknown[] };
+      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
+    }
+    return String(node);
+  };
+  const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+
+  it("emits the vertex points and the default fill/opacity", () => {
+    const markup = flatten(renderArea({ id: "a", points: square }));
+    expect(markup).toContain("points=0,0 10,0 10,10 0,10");
+    expect(markup).toContain("fill=var(--primary-color, #03a9f4)");
+    expect(markup).toContain("fill-opacity=0.25");
+  });
+
+  it("honors a custom color and opacity", () => {
+    const markup = flatten(renderArea({ id: "a", points: square, color: "#ff0000", opacity: 0.6 }));
+    expect(markup).toContain("fill=#ff0000");
+    expect(markup).toContain("fill-opacity=0.6");
+  });
+
+  it("falls back to the default color for an unsafe value (css-safe gate)", () => {
+    const markup = flatten(
+      renderArea({ id: "a", points: square, color: "red;position:fixed;inset:0" })
+    );
+    expect(markup).toContain("fill=var(--primary-color, #03a9f4)");
+    expect(markup).not.toContain("position:fixed");
   });
 });

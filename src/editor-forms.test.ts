@@ -12,9 +12,11 @@ import {
   projectForm,
   projectRotationForm,
   floorImageForm,
+  areaForm,
+  areaNameForm,
 } from "./editor-forms";
 import type { FormField } from "./editor-forms";
-import type { Opening, FloorItem, Floor, FloorplanCardConfig } from "./types";
+import type { Area, Opening, FloorItem, Floor, FloorplanCardConfig } from "./types";
 
 const fields: FormField[] = [
   { name: "name", label: "Name", selector: { text: {} } },
@@ -224,6 +226,83 @@ describe("itemForm", () => {
     expect(d.display).toBe("badge");
     expect(d.angle).toBe(0);
   });
+
+  it("scopes the entity/secondaryEntity pickers to areaEntities when given", () => {
+    const unscoped = itemForm(item);
+    expect(unscoped.fields.find((x) => x.name === "entity")!.selector).toEqual({ entity: {} });
+    const scoped = itemForm(item, ["light.kitchen", "switch.kitchen"]);
+    expect(scoped.fields.find((x) => x.name === "entity")!.selector).toEqual({
+      entity: { include_entities: ["light.kitchen", "switch.kitchen"] },
+    });
+    expect(scoped.fields.find((x) => x.name === "secondaryEntity")!.selector).toEqual({
+      entity: { include_entities: ["light.kitchen", "switch.kitchen"] },
+    });
+  });
+});
+
+describe("areaNameForm", () => {
+  const area = (extra: Partial<Area> = {}): Area => ({
+    id: "a",
+    points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }],
+    ...extra,
+  });
+
+  it("offers the HA areas as a typeable dropdown (so HA renders it natively)", () => {
+    const name = areaNameForm(area(), ["Bedroom", "Living Room"]).fields[0];
+    expect(name.selector).toEqual({
+      select: {
+        options: [
+          { value: "Bedroom", label: "Bedroom" },
+          { value: "Living Room", label: "Living Room" },
+        ],
+        custom_value: true,
+        mode: "dropdown",
+        sort: false,
+      },
+    });
+  });
+
+  it("degrades to a plain text field when there are no HA areas to offer", () => {
+    expect(areaNameForm(area()).fields[0].selector).toEqual({ text: {} });
+  });
+
+  it("carries the current name as its data", () => {
+    expect(areaNameForm(area({ name: "Kitchen" })).data).toEqual({ name: "Kitchen" });
+    expect(areaNameForm(area()).data).toEqual({ name: "" });
+  });
+});
+
+describe("areaForm", () => {
+  const area = (extra: Partial<Area> = {}): Area => ({
+    id: "a",
+    points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }],
+    ...extra,
+  });
+
+  it("data presents effective defaults (showName true, DEFAULT_AREA_OPACITY)", () => {
+    const d = areaForm(area()).data;
+    expect(d).toMatchObject({ showName: true, opacity: 0.25 });
+  });
+
+  it("data reflects an explicit showName/opacity", () => {
+    const d = areaForm(area({ name: "Kitchen", showName: false, opacity: 0.5 })).data;
+    expect(d).toMatchObject({ showName: false, opacity: 0.5 });
+  });
+
+  it("keeps name out of the style form — it's its own form, above the link status", () => {
+    expect(areaForm(area({ name: "Kitchen" })).fields.some((x) => x.name === "name")).toBe(false);
+  });
+
+  it("opacity field is a 0..1 slider", () => {
+    const f = areaForm(area()).fields.find((x) => x.name === "opacity")!;
+    expect(f.selector).toEqual({ number: { min: 0, max: 1, step: 0.05, mode: "slider" } });
+  });
+
+  it("clamps an out-of-range opacity patch via normalizeFormPatch", () => {
+    const fields = areaForm(area()).fields;
+    expect(normalizeFormPatch({ opacity: 5 }, fields)).toEqual({ opacity: 1 });
+    expect(normalizeFormPatch({ opacity: -1 }, fields)).toEqual({ opacity: 0 });
+  });
 });
 
 describe("textForm / furnitureForm / trackerForm", () => {
@@ -242,6 +321,44 @@ describe("textForm / furnitureForm / trackerForm", () => {
   it("tracker exposes rounded position", () => {
     const d = trackerForm({ id: "t", x: 1.6, y: 2.2, w: 20, h: 20 } as never).data;
     expect(d).toMatchObject({ x: 2, y: 2, w: 20, h: 20 });
+  });
+
+  // Issue #82: furniture can bind an entity so the drawing goes live.
+  it("furniture offers an optional entity, empty when unbound", () => {
+    const form = furnitureForm({ id: "f", type: "plant", x: 0, y: 0, w: 10, h: 10 } as never);
+    const entity = form.fields.find((x) => x.name === "entity")!;
+    expect(entity.required).toBeUndefined();
+    expect(entity.selector).toEqual({ entity: {} });
+    expect(form.data.entity).toBe("");
+  });
+
+  it("furniture entity picker scopes to a linked HA area when given one", () => {
+    const form = furnitureForm({ id: "f", type: "plant", x: 0, y: 0, w: 10, h: 10 } as never, [
+      "sensor.soil",
+    ]);
+    expect(form.fields.find((x) => x.name === "entity")!.selector).toEqual({
+      entity: { include_entities: ["sensor.soil"] },
+    });
+  });
+
+  it("sectional keeps its chaise-side field alongside the entity", () => {
+    const form = furnitureForm({
+      id: "f",
+      type: "sectional",
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+      entity: "binary_sensor.x",
+    } as never);
+    expect(form.fields.map((x) => x.name)).toContain("hand");
+    expect(form.data).toMatchObject({ hand: "right", entity: "binary_sensor.x" });
+  });
+
+  it("non-sectional furniture has no chaise-side field or data", () => {
+    const form = furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10 } as never);
+    expect(form.fields.map((x) => x.name)).not.toContain("hand");
+    expect("hand" in form.data).toBe(false);
   });
 });
 

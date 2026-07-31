@@ -6,10 +6,12 @@
  *
  * Run with: `npm run serve` (opens /dev/ on the Vite dev server).
  *
- * A few HA-provided custom elements are stubbed below: <ha-card>, <ha-icon> and
- * <ha-entity-picker>. The icon picker already falls back to a plain input in the
- * editor when unregistered, but the entity picker does not, so we stub it here
- * so Sensor / entity fields are usable outside HA.
+ * A few HA-provided custom elements are stubbed below: <ha-card>, <ha-icon>,
+ * <ha-entity-picker> and <ha-combo-box>. The icon picker already falls back to a
+ * plain input in the editor when unregistered, but the entity picker does not,
+ * so we stub it here so Sensor / entity fields are usable outside HA. The combo
+ * box has a fallback too, but stubbing it means the harness exercises the same
+ * branch HA does (the Area name field) instead of only the fallback.
  */
 import type { FloorplanCardConfig, Tracker, TrackerSensor } from "../src/types";
 
@@ -108,6 +110,77 @@ if (!customElements.get("ha-entity-picker")) {
   customElements.define("ha-entity-picker", HaEntityPickerStub);
 }
 
+if (!customElements.get("ha-combo-box")) {
+  // Same story as ha-entity-picker: inside HA this is a filter-as-you-type
+  // dropdown, and it's what the Area name field uses. Without a stub the field
+  // would silently fall back to its <input list> path here, so the harness
+  // would never exercise the code that actually runs in HA. A native
+  // input+datalist is close enough to drive it: free text (allow-custom-value)
+  // plus suggestions, emitting the same `value-changed`.
+  class HaComboBoxStub extends HTMLElement {
+    private _value = "";
+    private _items: Array<Record<string, unknown>> = [];
+    private _input?: HTMLInputElement;
+    private _list?: HTMLDataListElement;
+    set value(v: string) {
+      this._value = v ?? "";
+      if (this._input) this._input.value = this._value;
+    }
+    get value(): string {
+      return this._value;
+    }
+    set items(v: Array<Record<string, unknown>>) {
+      this._items = Array.isArray(v) ? v : [];
+      this._syncOptions();
+    }
+    set placeholder(v: string) {
+      if (this._input) this._input.placeholder = v ?? "";
+    }
+    /** `hass` is accepted and ignored — the real component uses it for i18n. */
+    set hass(_v: unknown) {}
+    private _labelPath(): string {
+      return this.getAttribute("item-label-path") || "name";
+    }
+    private _syncOptions() {
+      if (!this._list) return;
+      const path = this._labelPath();
+      this._list.replaceChildren(
+        ...this._items.map((it) => {
+          const opt = document.createElement("option");
+          opt.value = String(it[path] ?? "");
+          return opt;
+        }),
+      );
+    }
+    connectedCallback() {
+      if (this._input) return;
+      const id = `ha-combo-box-stub-${Math.random().toString(36).slice(2)}`;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.setAttribute("list", id);
+      input.value = this._value;
+      input.style.width = "100%";
+      input.addEventListener("change", () => {
+        this._value = input.value;
+        this.dispatchEvent(
+          new CustomEvent("value-changed", {
+            detail: { value: input.value },
+            bubbles: true,
+            composed: true,
+          }),
+        );
+      });
+      const list = document.createElement("datalist");
+      list.id = id;
+      this._input = input;
+      this._list = list;
+      this._syncOptions();
+      this.append(input, list);
+    }
+  }
+  customElements.define("ha-combo-box", HaComboBoxStub);
+}
+
 // ---- register the real card + editor --------------------------------------
 import "../src/index";
 
@@ -119,10 +192,36 @@ import "../src/index";
 const SENSOR_TEMPERATURE = "sensor.living_area_temperature";
 const SENSOR_HUMIDITY = "sensor.living_area_humidity";
 
-/** Stand-in for HA's entity registry — the only place display precision lives. */
-const entityRegistry: Record<string, { entity_id: string; display_precision?: number }> = {
+/**
+ * Stand-in for HA's entity registry — display precision, plus (for the Area
+ * ⇄ HA-area device filtering feature) each entity's `device_id`. Paired with
+ * `deviceRegistry` below so `light.living_room` and `media_player.living_tv`
+ * resolve to the "Living Room" HA area (the former is already placed on the
+ * demo floor, the latter isn't — so the Area panel's "Add all devices in
+ * this HA area" button has something to add out of the box) while
+ * `fan.ceiling_fan` resolves to no area at all, for a filtered-vs-unfiltered
+ * comparison in the editor.
+ */
+const entityRegistry: Record<
+  string,
+  { entity_id: string; display_precision?: number; device_id?: string }
+> = {
   [SENSOR_TEMPERATURE]: { entity_id: SENSOR_TEMPERATURE, display_precision: 1 },
   [SENSOR_HUMIDITY]: { entity_id: SENSOR_HUMIDITY, display_precision: 1 },
+  "light.living_room": { entity_id: "light.living_room", device_id: "dev_living_light" },
+  "media_player.living_tv": { entity_id: "media_player.living_tv", device_id: "dev_living_tv" },
+  "fan.ceiling_fan": { entity_id: "fan.ceiling_fan" },
+};
+
+/** Stand-in for HA's device registry — just enough for area resolution. */
+const deviceRegistry: Record<string, { area_id?: string }> = {
+  dev_living_light: { area_id: "living_room" },
+  dev_living_tv: { area_id: "living_room" },
+};
+
+/** Stand-in for HA's area registry (Area ⇄ HA-area linking). */
+const areaRegistry: Record<string, { area_id: string; name: string }> = {
+  living_room: { area_id: "living_room", name: "Living Room" },
 };
 
 /** Approximates HA's own formatter: registry precision, then HA's unit spacing. */
@@ -155,6 +254,21 @@ const hass = {
       entity_id: "light.living_room",
       state: "on",
       attributes: { friendly_name: "Living Room" },
+    },
+    // Per-device active colors (issue #79): this cover and the light above are
+    // both active on the demo floor, with different `activeColor`s — the whole
+    // point of the option is that they no longer look identical.
+    "cover.living_blinds": {
+      entity_id: "cover.living_blinds",
+      state: "open",
+      attributes: { friendly_name: "Living Blinds", device_class: "blind" },
+    },
+    // Entity-bound furniture (issue #82): the plant on the demo floor reads
+    // this, and the emulator below gives it a 0–100 slider.
+    "sensor.ficus_soil_moisture": {
+      entity_id: "sensor.ficus_soil_moisture",
+      state: "72",
+      attributes: { friendly_name: "Ficus Soil Moisture", unit_of_measurement: "%" },
     },
     // "Show as" demo (issue #29): a binary_sensor with device_class lock should
     // render mdi:lock / mdi:lock-open instead of the generic kind icon.
@@ -212,6 +326,7 @@ const hass = {
     },
   },
   entities: entityRegistry,
+  devices: deviceRegistry,
   locale: { language: "en" },
   themes: { darkMode: false },
   // HA floor registry mock so the editor's "HA floor" link (issue #24) is
@@ -221,6 +336,10 @@ const hass = {
     upstairs: { floor_id: "upstairs", name: "Upstairs", level: 1 },
     basement: { floor_id: "basement", name: "Basement", level: -1 },
   },
+  // HA area registry mock so the editor's "HA area" link (Area feature) is
+  // exercisable outside HA. `light.living_room` and `fan.ceiling_fan` are the
+  // two devices to try dragging in/out of the demo room's Area polygon.
+  areas: areaRegistry,
   callService: (...args: unknown[]) => console.log("[mock hass] callService", ...args),
   formatEntityState: mockFormatEntityState,
   localize: (k: string) => k,
@@ -287,10 +406,68 @@ const demoFloor = {
       y: 300,
       kind: "sensor" as const,
     },
+    // Sits inside the "Living Room" Area below, whose linked HA area (via
+    // deviceRegistry/areaRegistry) scopes its entity picker — drag it outside
+    // the polygon to watch the picker widen back up.
+    { id: "i2", entity: "light.living_room", x: 220, y: 180, kind: "light" as const },
+    // Issue #79: two active devices side by side with different active colors.
+    // Both are "on"; before the option existed both badges were the same yellow.
+    {
+      id: "i3",
+      entity: "light.living_room",
+      x: 300,
+      y: 180,
+      kind: "light" as const,
+      activeColor: "#ffb300",
+    },
+    {
+      id: "i4",
+      entity: "cover.living_blinds",
+      x: 380,
+      y: 180,
+      kind: "cover" as const,
+      activeColor: "#8e24aa",
+    },
   ],
   texts: [],
-  furniture: [],
+  // Issue #82: a plant bound to a soil sensor, colored by threshold — the
+  // exact configuration the issue asks for.
+  furniture: [
+    {
+      id: "fu1",
+      type: "plant" as const,
+      x: 700,
+      y: 380,
+      w: 60,
+      h: 60,
+      entity: "sensor.ficus_soil_moisture",
+      stateColor: [
+        { above: 80, color: "#2e7d32" },
+        { above: 65, color: "#f9a825" },
+        { color: "#c62828" },
+      ],
+    },
+  ],
   trackers: [],
+  // Area demo: the whole room, linked to the mock "living_room" HA area so
+  // the entity-filtering behavior (light.living_room in, fan.ceiling_fan out)
+  // is exercisable without a real Home Assistant instance.
+  areas: [
+    {
+      id: "a1",
+      name: "Living Room",
+      haArea: "living_room",
+      showName: true,
+      color: "#26c6da",
+      opacity: 0.15,
+      points: [
+        { x: 100, y: 100 },
+        { x: 900, y: 100 },
+        { x: 900, y: 500 },
+        { x: 100, y: 500 },
+      ],
+    },
+  ],
 };
 
 const emptyFloor = {
@@ -302,6 +479,7 @@ const emptyFloor = {
   texts: [],
   furniture: [],
   trackers: [],
+  areas: [],
 };
 
 const config: FloorplanCardConfig = {
