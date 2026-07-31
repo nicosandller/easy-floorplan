@@ -62,6 +62,7 @@ import {
   kindFromEntity,
   resolveItemIcon,
   resolveStateColor,
+  itemHiddenWhenInactive,
   resolveIconAnimation,
   itemIconSize,
   itemLabelSize,
@@ -3341,9 +3342,13 @@ export class FloorplanCardEditor extends LitElement {
       visual = badge;
     }
 
+    // "Only when active" devices are invisible on the card while idle (issue
+    // #55). The editor must still show them — dimmed — or they could never be
+    // found and edited again.
+    const hiddenOnCard = itemHiddenWhenInactive(it, st?.state);
     return html`
       <div
-        class="edit-item ${selected ? "selected" : ""}"
+        class="edit-item ${selected ? "selected" : ""} ${hiddenOnCard ? "card-hidden" : ""}"
         style="left:${(it.x / c.width) * 100}%; top:${(it.y / c.height) * 100}%;"
         @pointerdown=${(e: PointerEvent) => this._onOverlayDown(e, { kind: "item", id: it.id })}
         @pointermove=${this._onOverlayMove}
@@ -4362,6 +4367,14 @@ export class FloorplanCardEditor extends LitElement {
       justify-content: center;
       color: var(--primary-text-color);
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    }
+    /* Hidden on the live card right now (issue #55): faded and dashed here so
+       it reads as deliberately absent from the card, while staying selectable. */
+    .edit-item.card-hidden {
+      opacity: 0.4;
+    }
+    .edit-item.card-hidden .badge {
+      border-style: dashed;
     }
     .edit-item.selected .badge {
       border-color: var(--primary-color, #03a9f4);

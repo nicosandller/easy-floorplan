@@ -29,6 +29,7 @@ import {
   entityStateText,
   itemStateText,
   itemBadgeLabel,
+  itemHiddenWhenInactive,
   resolveStateColor,
   itemLabelSize,
   hassRenderInputsChanged,
@@ -1376,5 +1377,33 @@ describe("shutterStyleOf (issue #74)", () => {
 
   it("defaults to roll with nothing bound, so existing configs are untouched", () => {
     expect(shutterStyleOf({})).toBe("roll");
+  });
+});
+
+describe("itemHiddenWhenInactive (issue #55)", () => {
+  it("hides only when asked to, and only while inactive", () => {
+    expect(itemHiddenWhenInactive({ entity: "light.a", hideWhenInactive: true }, "off")).toBe(true);
+    expect(itemHiddenWhenInactive({ entity: "light.a", hideWhenInactive: true }, "on")).toBe(false);
+    // Off by default: an ordinary device always renders.
+    expect(itemHiddenWhenInactive({ entity: "light.a" }, "off")).toBe(false);
+  });
+
+  it("uses the domain-aware active test, not a bare on/off", () => {
+    // A lock is "active" when unlocked, a vacuum when cleaning — the same rule
+    // the badge highlight uses, so hiding matches what the user sees elsewhere.
+    expect(itemHiddenWhenInactive({ entity: "lock.front", hideWhenInactive: true }, "unlocked"))
+      .toBe(false);
+    expect(itemHiddenWhenInactive({ entity: "lock.front", hideWhenInactive: true }, "locked"))
+      .toBe(true);
+    expect(itemHiddenWhenInactive({ entity: "vacuum.r", hideWhenInactive: true }, "cleaning"))
+      .toBe(false);
+  });
+
+  it("an outage or a missing entity counts as inactive (fails hidden)", () => {
+    expect(itemHiddenWhenInactive({ entity: "light.a", hideWhenInactive: true }, "unavailable"))
+      .toBe(true);
+    expect(itemHiddenWhenInactive({ entity: "light.a", hideWhenInactive: true }, undefined))
+      .toBe(true);
+    expect(itemHiddenWhenInactive({ hideWhenInactive: true }, "on")).toBe(true);
   });
 });
