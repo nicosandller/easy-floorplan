@@ -209,8 +209,9 @@ By default it shows an icon badge:
   makes a wall of lights, covers and switches hard to read. Set **Active color**
   per device to tell them apart at a glance — lights yellow, covers purple,
   thermostats orange. Ripples follow it unless you set a ripple color too.
-- **Color by state** — the **Color by state** rules color the label by what the
-  entity reads. Add rules in the editor, or in YAML:
+- **Color by state** — the **Color by state** rules color the element by what the
+  entity reads: both the **icon badge** and the label, whether or not the entity is
+  "on" (a temperature sensor never is). Add rules in the editor, or in YAML:
 
   ```yaml
   stateColor:
@@ -234,6 +235,11 @@ By default it shows an icon badge:
 
   An exact `state` match beats a threshold. Colors go through the same
   injection allowlist as every other config color.
+
+  State rules **take precedence over `activeColor`** (and the ripple follows them, so
+  a device is never badged one color and ringed another), so the editor hides the
+  **Active color** field once rules exist rather than leaving a control that would
+  silently lose.
 - **No entity? Still on the map** — a device with no entity bound renders as a plain
   badge (its icon override or kind default), so hardware that has no Home Assistant
   entity — a dumb smoke detector, a wired doorbell — can still be marked on the plan.
@@ -561,7 +567,7 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | `secondaryEntity` | string                             | —            | Optional 2nd entity shown alongside (e.g. humidity).   |
 | `attribute`   | string                                 | —            | Show this attribute of `entity` instead of its state (e.g. `current_temperature`). |
 | `secondaryAttribute` | string                          | —            | Attribute for the 2nd reading — from `secondaryEntity`, or from `entity` when none. |
-| `stateColor`  | rule[]                                 | —            | Colors for the label: `[{above: 26, color: red}, {color: white}]`. A rule matches `above: <n>` or `state: <value>`; an exact state beats a threshold, the highest matching `above` beats a lower one, and a rule with neither is the default. |
+| `stateColor`  | rule[]                                 | —            | Colors for the badge and label (regardless of on/off; beats `activeColor`): `[{above: 26, color: red}, {color: white}]`. A rule matches `above: <n>` or `state: <value>`; an exact state beats a threshold, the highest matching `above` beats a lower one, and a rule with neither is the default. |
 | `x`, `y`      | number                                 | —            | Position.                                              |
 | `kind`        | light/switch/sensor/binary_sensor/climate/cover/generic | inferred | Used for the default icon.            |
 | `icon`        | string                                 | entity icon  | Override mdi icon.                                     |
@@ -570,7 +576,7 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | `angle`       | number                                 | `0`          | Icon rotation (deg).                                   |
 | `display`     | `badge` \| `ripple` \| `iconRipple`    | `badge`      | How the device is drawn.                               |
 | `iconAnimation` | `auto` \| `none` \| `spin` \| `pulse` | `auto`       | Animate the icon while active. `auto`: fan spins; media player / vacuum pulse. |
-| `activeColor` | string                                 | theme color  | Badge color while the device is on — lets domains be told apart at a glance. |
+| `activeColor` | string                                 | theme color  | Badge color while the device is on — lets domains be told apart at a glance. Ignored while `stateColor` rules match. |
 | `rippleColor` | string                                 | `activeColor`| Ripple ring color (ripple modes). Falls back to `activeColor`, then the primary color. |
 | `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
 | `showIcon`    | boolean                                | `true`       | Show the icon badge.                                   |
