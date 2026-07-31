@@ -90,7 +90,10 @@ for the current selection) and **Project** (page-level settings like canvas size
 background):
 
 - **Select** — the default tool. Click an element to select it; Shift/Ctrl-click or drag
-  a box to select several at once. Arrow keys nudge the selection (Shift+arrow jumps a
+  a box to select several at once. Where elements **overlap**, the first click takes the
+  most specific one (a device beats the tracker zone it sits in), and clicking again
+  without moving steps to the next element underneath, wrapping around — so nothing is
+  ever unreachable. Move the pointer and the next click starts over. Arrow keys nudge the selection (Shift+arrow jumps a
   full grid cell); **Ctrl/Cmd+C/V/D** copy / paste / duplicate — pasting also works
   across floors (copy, switch floor, paste); **Ctrl/Cmd+Z** undoes
   (**Shift+Z** or **Ctrl+Y** redoes); **Escape** cancels an in-progress draw or clears
@@ -125,6 +128,10 @@ background):
   Prefer the ▲/▼ buttons over reordering floor blocks in YAML: hand-editing easily
   drops or duplicates floor `id`s (the card now repairs both, but edits made while
   ids collide can land on the wrong floor).
+
+The **Labels** toolbar toggle hides the element name labels on the canvas — useful on a
+dense plan where labels overlap the things you are trying to click. It only affects the
+editor view; the live card is unchanged.
 
 Undo/redo buttons sit at the right of the tools row. Zoom controls live on the canvas
 itself (bottom-right): **−** / **+** step, click the percentage to reset, the fit button
@@ -414,6 +421,9 @@ card's switcher button (`GF`, `1st`…) while the full name stays as its tooltip
 **Color** — an accent for that button while its floor is active (goes through the
 config-color allowlist); and **Default** — which floor the live card opens on
 (stored as the top-level `defaultFloor`).
+
+While editing, the preview keeps showing whichever floor you switched it to, instead of
+snapping back to the default one after every change.
 
 **`haFloor`** optionally stores the id of a linked Home Assistant floor (set from the
 editor's floor gear popover). Today the link auto-names the floor; it is kept in the

@@ -63,6 +63,8 @@ import {
   ENDPOINT_SNAP,
   applyDelta,
   attachedCorners,
+  elementsAtPoint,
+  cyclePick,
   elementsInRect,
   nearestCorner,
   snapWallEnd,
@@ -153,6 +155,12 @@ interface Clipboard {
 
 /** Snap distance (virtual units) for openings onto walls. */
 const WALL_SNAP = 35;
+/**
+ * How far the pointer may move between clicks and still count as "the same
+ * spot" for click-cycling (issue #52). Generous enough for hand tremor on a
+ * touchpad, tight enough that aiming at a neighbour restarts the cycle.
+ */
+const PICK_EPS = 6;
 const HISTORY_MAX = 60;
 /** Angle (degrees) within which a drawn wall is snapped flat to horizontal/vertical. */
 const WALL_AXIS_SNAP_DEG = 10;
@@ -222,6 +230,18 @@ export class FloorplanCardEditor extends LitElement {
   @query(".canvas-wrap") private _canvasWrap?: HTMLElement;
 
   private _drag: Drag | null = null;
+  /**
+   * Where the last plain selection click landed, for click-cycling through
+   * overlapping elements (issue #52). Cleared whenever the pointer lands
+   * somewhere else, so cycling only happens on repeat clicks in one spot.
+   */
+  private _pickAnchor: { x: number; y: number } | null = null;
+  /**
+   * Hide the canvas name labels while editing (issue #52). Editor view state
+   * only — never written to the config, so it can't change what the live card
+   * shows. A dense plan is much easier to aim at without them.
+   */
+  @state() private _hideLabels = false;
   /** Live touch points on the canvas wrap, for pinch-zoom (issue #38). */
   private _pinchPts = new Map<number, { x: number; y: number }>();
   /** Pinch baseline: finger distance, zoom, and centroid (content coords) at pinch start. */
@@ -917,6 +937,8 @@ export class FloorplanCardEditor extends LitElement {
       return;
     }
     // Select tool, empty canvas: start a marquee (rubber-band) selection.
+    // Clicking empty space also ends any cycling run (issue #52).
+    this._pickAnchor = null;
     this._marqueeAdd = ev.shiftKey || ev.ctrlKey || ev.metaKey;
     this._marquee = { x0: raw.x, y0: raw.y, x1: raw.x, y1: raw.y };
     this._gesturePointer = ev.pointerId;
@@ -1043,21 +1065,48 @@ export class FloorplanCardEditor extends LitElement {
 
   // ---- dragging existing elements ----------------------------------------
 
+  /**
+   * Which element a plain click should actually select (issue #52). The
+   * element whose hit area received the event is only a starting point: a big
+   * tracker zone or a wall can sit over a device, so we hit-test the point
+   * geometrically and take the most *specific* candidate. Clicking again
+   * without moving steps to the next candidate underneath and wraps, which is
+   * what makes buried elements reachable at all.
+   *
+   * Modifier-clicks (multi-select) and explicit handles keep their old
+   * behavior — they address one element on purpose.
+   */
+  private _resolvePick(ev: PointerEvent, sel: Sel): Sel {
+    if (ev.shiftKey || ev.ctrlKey || ev.metaKey) return sel;
+    const p = this._toVirtual(ev, false);
+    const candidates = elementsAtPoint(this._floor(), p.x, p.y, {
+      itemSize: DEFAULT_ITEM_SIZE,
+      textSize: DEFAULT_TEXT_SIZE,
+      wallThickness: WALL_THICKNESS,
+    });
+    const sameSpot =
+      !!this._pickAnchor && Math.hypot(p.x - this._pickAnchor.x, p.y - this._pickAnchor.y) <= PICK_EPS;
+    this._pickAnchor = p;
+    return cyclePick(candidates, this._selection, sameSpot) ?? sel;
+  }
+
   private _startDrag(ev: PointerEvent, sel: Sel, endpoint?: 1 | 2): void {
     if (this._tool !== "select") return;
     ev.stopPropagation();
     if (this._gesturePointer !== null) return;
     this._canvasWrap?.focus();
-    // Endpoint handles always operate on that single wall.
-    if (endpoint) this._selectOne(sel);
-    else this._selectForPointer(ev, sel);
+    // Endpoint handles always operate on that single wall; everything else
+    // goes through the overlap-aware picker (issue #52).
+    const pick = endpoint ? sel : this._resolvePick(ev, sel);
+    if (endpoint) this._selectOne(pick);
+    else this._selectForPointer(ev, pick);
     this._drag = {
-      primary: sel,
+      primary: pick,
       start: this._toVirtual(ev, false),
       orig: this._snapshotSelection(),
       endpoint,
     };
-    if (sel.kind === "wall") this._drag.attached = this._attachedCorners(sel.id, endpoint);
+    if (pick.kind === "wall") this._drag.attached = this._attachedCorners(pick.id, endpoint);
     this._gesturePointer = ev.pointerId;
     this._capturePointer(ev);
   }
@@ -1203,9 +1252,10 @@ export class FloorplanCardEditor extends LitElement {
     ev.preventDefault();
     if (this._gesturePointer !== null) return;
     this._canvasWrap?.focus();
-    this._selectForPointer(ev, sel);
+    const pick = this._resolvePick(ev, sel);
+    this._selectForPointer(ev, pick);
     this._drag = {
-      primary: sel,
+      primary: pick,
       start: this._toVirtual(ev, false),
       orig: this._snapshotSelection(),
     };
@@ -1972,6 +2022,23 @@ export class FloorplanCardEditor extends LitElement {
             ${this._fullscreen ? "Exit" : "Expand"}
           </button>
 
+          <!-- Labels: declutter a dense plan while editing (issue #52). -->
+          <button
+            class="icon-btn"
+            aria-pressed=${this._hideLabels}
+            title=${this._hideLabels
+              ? "Show element labels on the canvas"
+              : "Hide element labels — easier to aim on a dense plan"}
+            @click=${() => {
+              this._hideLabels = !this._hideLabels;
+            }}
+          >
+            <ha-icon
+              icon=${this._hideLabels ? "mdi:label-off-outline" : "mdi:label-outline"}
+            ></ha-icon>
+            Labels
+          </button>
+
           <span class="divider"></span>
 
           <!-- Insert — one popover for everything droppable on the floor -->
@@ -2687,9 +2754,16 @@ export class FloorplanCardEditor extends LitElement {
         @pointercancel=${this._onPointerCancel}
       >
         ${visual}
-        <!-- The editor label always shows (identification while editing);
-             only its size previews the card's labelSize (issue #59). -->
-        <span class="ilabel" style="font-size:${it.labelSize != null ? itemLabelSize(it.labelSize) : 11}px;">${label}</span>
+        <!-- Identification while editing; the Labels toolbar toggle hides it
+             on dense plans (issue #52), and its size previews the card's
+             labelSize (issue #59). -->
+        ${this._hideLabels
+          ? nothing
+          : html`<span
+              class="ilabel"
+              style="font-size:${it.labelSize != null ? itemLabelSize(it.labelSize) : 11}px;"
+              >${label}</span
+            >`}
       </div>
     `;
   }

@@ -180,3 +180,109 @@ export function applyDelta(f: Floor, dx: number, dy: number, orig: Map<string, O
     }),
   };
 }
+
+// ---- hit testing for click-cycling (issue #52) ------------------------------
+
+/**
+ * Pick priority when several elements sit under one click: most *specific*
+ * first, so a small device inside a big tracker zone wins the first click and
+ * the zone is still reachable by clicking again. Ties inside a kind are broken
+ * by draw order (last drawn = on top = picked first).
+ */
+const PICK_ORDER: SelKind[] = ["item", "text", "opening", "furniture", "wall", "tracker"];
+
+/** Hit tolerances in virtual units. Wall matches the editor's fat hit stroke. */
+export const HIT = {
+  wall: 11,
+  /** Padding around an item badge / text box so small glyphs stay grabbable. */
+  pad: 4,
+} as const;
+
+/** Rotate (x, y) by −deg around (cx, cy) — i.e. into the element's local frame. */
+function toLocal(x: number, y: number, cx: number, cy: number, deg: number) {
+  const rad = (-(deg || 0) * Math.PI) / 180;
+  const dx = x - cx;
+  const dy = y - cy;
+  return { x: dx * Math.cos(rad) - dy * Math.sin(rad), y: dx * Math.sin(rad) + dy * Math.cos(rad) };
+}
+
+/** Distance from a point to a segment (used for wall hit tests). */
+function distToSegment(x: number, y: number, w: WallSegment): number {
+  const vx = w.x2 - w.x1;
+  const vy = w.y2 - w.y1;
+  const len2 = vx * vx + vy * vy;
+  if (len2 === 0) return Math.hypot(x - w.x1, y - w.y1);
+  let t = ((x - w.x1) * vx + (y - w.y1) * vy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(x - (w.x1 + t * vx), y - (w.y1 + t * vy));
+}
+
+/**
+ * Every element whose hit area contains (x, y), ordered by {@link PICK_ORDER}
+ * — the candidate list the editor cycles through on repeated clicks at the
+ * same spot (issue #52). Geometry only: no DOM, no z-index, so it is
+ * unit-testable and agrees with what the user sees.
+ *
+ * `itemSize` / `textSize` supply the per-element defaults the caller renders
+ * with, since those live in the card's config layer.
+ */
+export function elementsAtPoint(
+  f: Floor,
+  x: number,
+  y: number,
+  opts: { itemSize: number; textSize: number; wallThickness: number }
+): Sel[] {
+  const hits: { sel: Sel; rank: number; order: number }[] = [];
+  const push = (kind: SelKind, id: string, order: number) =>
+    hits.push({ sel: { kind, id }, rank: PICK_ORDER.indexOf(kind), order });
+
+  f.items.forEach((it, i) => {
+    const r = (it.size ?? opts.itemSize) / 2 + HIT.pad;
+    if (Math.abs(x - it.x) <= r && Math.abs(y - it.y) <= r) push("item", it.id, i);
+  });
+  f.texts.forEach((t, i) => {
+    // Rough box: text is centered on (x, y); width scales with the string.
+    const size = t.size ?? opts.textSize;
+    const hw = (size * 0.6 * Math.max(1, t.text?.length ?? 1)) / 2 + HIT.pad;
+    const hh = size / 2 + HIT.pad;
+    const p = toLocal(x, y, t.x, t.y, t.angle ?? 0);
+    if (Math.abs(p.x) <= hw && Math.abs(p.y) <= hh) push("text", t.id, i);
+  });
+  f.openings.forEach((o, i) => {
+    const p = toLocal(x, y, o.x, o.y, o.angle ?? 0);
+    if (Math.abs(p.x) <= o.length / 2 && Math.abs(p.y) <= opts.wallThickness / 2 + HIT.pad) {
+      push("opening", o.id, i);
+    }
+  });
+  f.furniture.forEach((fu, i) => {
+    const p = toLocal(x, y, fu.x, fu.y, fu.angle ?? 0);
+    if (Math.abs(p.x) <= fu.w / 2 && Math.abs(p.y) <= fu.h / 2) push("furniture", fu.id, i);
+  });
+  f.walls.forEach((w, i) => {
+    if (distToSegment(x, y, w) <= HIT.wall) push("wall", w.id, i);
+  });
+  (f.trackers ?? []).forEach((tr, i) => {
+    const p = toLocal(x, y, tr.x + tr.w / 2, tr.y + tr.h / 2, tr.angle ?? 0);
+    if (Math.abs(p.x) <= tr.w / 2 && Math.abs(p.y) <= tr.h / 2) push("tracker", tr.id, i);
+  });
+
+  // Specific kinds first; within a kind, the last drawn sits on top.
+  return hits.sort((a, b) => a.rank - b.rank || b.order - a.order).map((h) => h.sel);
+}
+
+/**
+ * The element a click should select, given the candidates under the cursor and
+ * what is selected now (issue #52). Repeat clicks at the same spot step
+ * *down* the stack and wrap; a click elsewhere restarts at the most specific
+ * candidate. Returns null when there is nothing to pick.
+ */
+export function cyclePick(
+  candidates: readonly Sel[],
+  current: readonly Sel[],
+  sameSpot: boolean
+): Sel | null {
+  if (!candidates.length) return null;
+  if (!sameSpot || current.length !== 1) return candidates[0]!;
+  const i = candidates.findIndex((c) => c.kind === current[0]!.kind && c.id === current[0]!.id);
+  return i < 0 ? candidates[0]! : candidates[(i + 1) % candidates.length]!;
+}

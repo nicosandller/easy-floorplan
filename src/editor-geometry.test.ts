@@ -5,6 +5,8 @@ import {
   elementsInRect,
   applyDelta,
   attachedCorners,
+  elementsAtPoint,
+  cyclePick,
 } from "./editor-geometry";
 import type { OrigPos } from "./editor-geometry";
 import type { Floor, Wall } from "./types";
@@ -164,5 +166,69 @@ describe("attachedCorners (issue #30: stretch-drag shared room corners)", () => 
       { id: "b", end: 1, which: 1, x0: 0, y0: 0 },
       { id: "b", end: 2, which: 2, x0: 100, y0: 0 },
     ]);
+  });
+});
+
+describe("elementsAtPoint / cyclePick (issue #52)", () => {
+  const opts = { itemSize: 34, textSize: 16, wallThickness: 8 };
+  // A device sitting inside a tracker zone, over a wall — the reported case.
+  const floor = {
+    id: "f", name: "F",
+    walls: [{ id: "w", x1: 0, y1: 200, x2: 400, y2: 200 }],
+    openings: [{ id: "o", type: "door", x: 300, y: 200, length: 90, angle: 0 }],
+    items: [{ id: "i", entity: "light.a", kind: "light", x: 100, y: 200 }],
+    texts: [],
+    furniture: [{ id: "fu", type: "table", x: 100, y: 200, w: 120, h: 80 }],
+    trackers: [{ id: "tr", x: 0, y: 100, w: 400, h: 200 }],
+  } as unknown as Floor;
+
+  it("orders overlapping candidates most-specific-first", () => {
+    // (100, 200) is inside the item, the table, the wall and the zone.
+    const at = elementsAtPoint(floor, 100, 200, opts);
+    expect(at.map((s) => s.kind)).toEqual(["item", "furniture", "wall", "tracker"]);
+  });
+
+  it("a big tracker zone never steals the first click from a device", () => {
+    expect(elementsAtPoint(floor, 100, 200, opts)[0]).toEqual({ kind: "item", id: "i" });
+  });
+
+  it("misses report nothing; a lone zone still reports itself", () => {
+    expect(elementsAtPoint(floor, 390, 110, opts).map((s) => s.kind)).toEqual(["tracker"]);
+    expect(elementsAtPoint(floor, 1000, 1000, opts)).toEqual([]);
+  });
+
+  it("hit areas respect rotation", () => {
+    const rotated = {
+      ...floor,
+      trackers: [],
+      furniture: [{ id: "fu", type: "table", x: 100, y: 200, w: 200, h: 20, angle: 90 }],
+      items: [], walls: [], openings: [],
+    } as unknown as Floor;
+    // Long axis now runs vertically, so a point 80 above the centre hits…
+    expect(elementsAtPoint(rotated, 100, 120, opts).map((s) => s.id)).toEqual(["fu"]);
+    // …while the same distance horizontally misses.
+    expect(elementsAtPoint(rotated, 180, 200, opts)).toEqual([]);
+  });
+
+  it("cyclePick steps down the stack on repeat clicks and wraps", () => {
+    const c = elementsAtPoint(floor, 100, 200, opts);
+    // First click at a fresh spot: most specific.
+    expect(cyclePick(c, [], false)).toEqual({ kind: "item", id: "i" });
+    // Same spot again: the next one underneath, and so on, wrapping.
+    expect(cyclePick(c, [{ kind: "item", id: "i" }], true)).toEqual({ kind: "furniture", id: "fu" });
+    expect(cyclePick(c, [{ kind: "furniture", id: "fu" }], true)).toEqual({ kind: "wall", id: "w" });
+    expect(cyclePick(c, [{ kind: "tracker", id: "tr" }], true)).toEqual({ kind: "item", id: "i" });
+  });
+
+  it("moving away restarts at the most specific candidate", () => {
+    const c = elementsAtPoint(floor, 100, 200, opts);
+    expect(cyclePick(c, [{ kind: "item", id: "i" }], false)).toEqual({ kind: "item", id: "i" });
+  });
+
+  it("a multi-selection or an empty stack doesn't cycle", () => {
+    const c = elementsAtPoint(floor, 100, 200, opts);
+    const multi = [{ kind: "item" as const, id: "i" }, { kind: "wall" as const, id: "w" }];
+    expect(cyclePick(c, multi, true)).toEqual({ kind: "item", id: "i" });
+    expect(cyclePick([], [], true)).toBeNull();
   });
 });

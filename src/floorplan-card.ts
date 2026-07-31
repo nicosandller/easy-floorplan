@@ -44,6 +44,23 @@ import type { Opening } from "./types";
 import { actionForGesture, executeAction, hasAction } from "./actions";
 import { actionHandler } from "./action-handler";
 
+/**
+ * Which floor each plan was last viewed on, keyed by its floor-id set (issue
+ * #81). Home Assistant's card editor **recreates** the preview element on
+ * every config change, so per-instance view state alone is lost on each
+ * keystroke and the preview snaps back to the default floor — making an
+ * upstairs plan almost uneditable. Module-level so it survives that
+ * re-creation, keyed by content so unrelated cards never share a floor.
+ *
+ * Deliberately not persisted: it is view state, never written to the config.
+ */
+const lastViewedFloor = new Map<string, string>();
+
+/** Content key for {@link lastViewedFloor} — the plan's floor ids, in order. */
+function floorMemoryKey(floors: readonly Floor[]): string {
+  return floors.map((f) => f.id).join("|");
+}
+
 @customElement("easy-floorplan-card")
 export class FloorplanCard extends LitElement {
   private static _nextWallMaskId = 0;
@@ -82,6 +99,16 @@ export class FloorplanCard extends LitElement {
       furniture: config.furniture ?? [],
     };
     this._watchedEntities = collectWatchedEntities(this._config);
+    // Restore the floor this plan was last viewed on (issue #81). Only when
+    // this instance has no floor of its own yet — a live floor switch always
+    // wins — and only if that floor still exists.
+    if (!this._activeFloorId) {
+      const floors = getFloors(this._config);
+      const remembered = lastViewedFloor.get(floorMemoryKey(floors));
+      if (remembered && floors.some((f) => f.id === remembered)) {
+        this._activeFloorId = remembered;
+      }
+    }
   }
 
   /**
@@ -413,6 +440,8 @@ export class FloorplanCard extends LitElement {
               style=${accent ? `background:${accent};border-color:${accent};` : nothing}
               @click=${() => {
                 this._activeFloorId = f.id;
+                // Remember it for the next element the editor preview builds.
+                lastViewedFloor.set(floorMemoryKey(floors), f.id);
               }}
             >
               ${f.short || f.name}
