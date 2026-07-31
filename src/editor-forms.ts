@@ -31,6 +31,7 @@ import {
   normalizePlanRotation,
   openingMotion,
   sliderStyleOf,
+  shutterStyleOf,
   windowSash,
 } from "./render";
 import { defaultItemAction } from "./actions";
@@ -247,12 +248,21 @@ export function openingForm(o: Opening): FormSpec {
     helper: "Type and motion follow the entity's device class",
     selector: { entity: { filter: [{ domain: ["binary_sensor", "cover"] }] } },
   });
-  if (o.type === "window") {
+  // Offered on doors too: French doors and patio doors get shutters as well.
+  // A hinged shutter usually reports through a contact sensor, so binary
+  // sensors belong in the picker next to covers (issue #74).
+  fields.push({
+    name: "shutterEntity",
+    label: "Shutter",
+    helper: "External shutter over this opening — a cover, or a contact sensor",
+    selector: { entity: { filter: [{ domain: ["cover", "binary_sensor"] }] } },
+  });
+  if (o.shutterEntity) {
     fields.push({
-      name: "shutterEntity",
-      label: "Shutter",
-      helper: "External roller shutter over this window (a cover)",
-      selector: { entity: { filter: [{ domain: "cover" }] } },
+      name: "shutterStyle",
+      label: "Shutter type",
+      helper: "Hinged panels fold back against the wall; roll-up slats disappear upward",
+      selector: dropdown(opt("swing", "Hinged (louvered panels)"), opt("roll", "Roll-up (slats)")),
     });
   }
   if (o.entity) fields.push({ name: "invert", label: "Invert", selector: { boolean: {} } });
@@ -270,6 +280,7 @@ export function openingForm(o: Opening): FormSpec {
       sash: windowSash(o),
       entity: o.entity ?? "",
       shutterEntity: o.shutterEntity ?? "",
+      shutterStyle: shutterStyleOf(o),
       invert: o.invert ?? false,
       angle: o.angle,
     },

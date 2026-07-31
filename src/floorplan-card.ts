@@ -20,6 +20,7 @@ import {
   openingIsActive,
   openingClickAction,
   shutterAmount,
+  shutterStyleOf,
   shutterActive,
   renderRipple,
   renderFurniture,
@@ -414,7 +415,11 @@ export class FloorplanCard extends LitElement {
                 // External roller shutter layer (issue #74). No entity bound
                 // yet → previewed shut, like a static plan.
                 shutter: o.shutterEntity
-                  ? { amount: shutterAmount(shutterState), active: shutterActive(shutterState) }
+                  ? {
+                      amount: shutterAmount(shutterState),
+                      active: shutterActive(shutterState),
+                      style: shutterStyleOf(o),
+                    }
                   : undefined,
               });
               if (!o.entity) return symbol;

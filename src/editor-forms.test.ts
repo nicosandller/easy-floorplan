@@ -449,11 +449,30 @@ describe("openingForm — sash and shutter (issues #73 / #74)", () => {
     ).not.toContain("sash");
   });
 
-  it("windows offer a Shutter cover picker; doors don't", () => {
-    const f = openingForm(win).fields.find((x) => x.name === "shutterEntity");
-    expect(f).toBeDefined();
-    expect(f!.selector).toEqual({ entity: { filter: [{ domain: "cover" }] } });
-    expect(openingForm(door).fields.map((x) => x.name)).not.toContain("shutterEntity");
+  it("every opening offers a Shutter picker taking covers or contact sensors", () => {
+    // Doors get shutters too (French/patio doors), and a hinged shutter
+    // usually reports through a binary_sensor rather than a cover (#74).
+    for (const o of [win, door]) {
+      const f = openingForm(o).fields.find((x) => x.name === "shutterEntity");
+      expect(f).toBeDefined();
+      expect(f!.selector).toEqual({
+        entity: { filter: [{ domain: ["cover", "binary_sensor"] }] },
+      });
+    }
+  });
+
+  it("the shutter type appears only once one is bound, and defaults per domain", () => {
+    expect(openingForm(win).fields.map((x) => x.name)).not.toContain("shutterStyle");
+    const contact = openingForm({ ...win, shutterEntity: "binary_sensor.shutter" } as Opening);
+    expect(contact.fields.map((x) => x.name)).toContain("shutterStyle");
+    expect(contact.data.shutterStyle).toBe("swing");
+    const roller = openingForm({ ...win, shutterEntity: "cover.tapparella" } as Opening);
+    expect(roller.data.shutterStyle).toBe("roll");
+    // An explicit choice overrides the domain default either way.
+    expect(
+      openingForm({ ...win, shutterEntity: "cover.x", shutterStyle: "swing" } as Opening).data
+        .shutterStyle
+    ).toBe("swing");
   });
 
   it("patches map back to config shape (double stays out of the YAML)", () => {

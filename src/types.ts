@@ -98,12 +98,24 @@ export interface Opening {
    */
   sash?: "single" | "double";
   /**
-   * Windows only: a `cover` entity for an external roller shutter sharing the
-   * same wall gap (issue #74). Drawn as a slatted roll curtain layered over
-   * the sash — `entity` keeps driving the window itself, so an open window
-   * behind a closed shutter renders both truthfully.
+   * An external shutter sharing this opening's wall gap (issue #74): a
+   * `cover` (roller shutter / tapparella) or a `binary_sensor` contact on a
+   * hinged shutter (persiana). `entity` keeps driving the opening itself, so
+   * an open window behind a closed shutter renders both truthfully.
    */
   shutterEntity?: string;
+  /**
+   * How that shutter is drawn (issue #74):
+   * - `roll` — a slatted curtain that rolls up out of the floor plane.
+   * - `swing` — louvered panels hinged at the jambs, **outside** the wall,
+   *   swinging outward (the shutters you fold back against the façade).
+   *
+   * Defaults from the bound entity: a `binary_sensor` can only say
+   * open/closed, which is what a hinged shutter reports, so it defaults to
+   * `swing`; a position-carrying `cover` defaults to `roll`. Set explicitly
+   * to override. See {@link shutterStyleOf}.
+   */
+  shutterStyle?: "roll" | "swing";
   /**
    * Sliding openings only (`motion: "slide"`): how the panels are arranged.
    * - `single` (default) — one panel slides aside into the wall.

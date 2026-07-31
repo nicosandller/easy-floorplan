@@ -10,6 +10,7 @@ import {
   openingFromDeviceClass,
   windowSash,
   shutterAmount,
+  shutterStyleOf,
   shutterActive,
   openingClickAction,
   resolveOpeningOpen,
@@ -1359,5 +1360,21 @@ describe("renderArea", () => {
     );
     expect(markup).toContain("fill=var(--primary-color, #03a9f4)");
     expect(markup).not.toContain("position:fixed");
+  });
+});
+
+describe("shutterStyleOf (issue #74)", () => {
+  it("infers from the bound entity: contacts hinge, covers roll", () => {
+    expect(shutterStyleOf({ shutterEntity: "binary_sensor.persiana" })).toBe("swing");
+    expect(shutterStyleOf({ shutterEntity: "cover.tapparella" })).toBe("roll");
+  });
+
+  it("an explicit style always wins", () => {
+    expect(shutterStyleOf({ shutterEntity: "cover.x", shutterStyle: "swing" })).toBe("swing");
+    expect(shutterStyleOf({ shutterEntity: "binary_sensor.x", shutterStyle: "roll" })).toBe("roll");
+  });
+
+  it("defaults to roll with nothing bound, so existing configs are untouched", () => {
+    expect(shutterStyleOf({})).toBe("roll");
   });
 });

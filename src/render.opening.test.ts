@@ -169,3 +169,45 @@ describe("renderOpening — external shutter layer (issue #74)", () => {
     expect(s).toContain("#ff0000"); // curtain wears the accent while the sash doesn't
   });
 });
+
+describe("renderOpening — hinged external shutter (issue #74)", () => {
+  const win = { type: "window" } as Partial<Opening>;
+
+  it("closed: two louvered panels lying across the opening, outside the wall", () => {
+    const s = svgOf(win, { open: false, shutter: { amount: 0, style: "swing" } });
+    // One panel hinged at each jamb, neither rotated while shut.
+    expect(s).toContain("rotate(0deg)");
+    expect(s).toContain("fp-door-leaf");
+    expect(s).toContain("fp-leaf-r");
+    // Panels sit beyond the wall band (positive y), clear of the casement sashes.
+    expect(s).toMatch(/translate\(-45 [0-9.]+\)/);
+    // Louver ticks are drawn in the background colour.
+    expect(s).toContain("var(--card-background-color, #fff)");
+  });
+
+  it("open: both panels fold back to the wall, in opposite directions", () => {
+    const s = svgOf(win, { open: false, shutter: { amount: 1, style: "swing" } });
+    expect(s).toContain("rotate(90deg)");
+    expect(s).toContain("rotate(-90deg)");
+  });
+
+  it("partial: panels swing proportionally", () => {
+    const s = svgOf(win, { open: false, shutter: { amount: 0.5, style: "swing" } });
+    expect(s).toContain("rotate(45deg)");
+    expect(s).toContain("rotate(-45deg)");
+  });
+
+  it("swing draws no roll curtain, and roll draws no hinged panels", () => {
+    const swing = svgOf(win, { open: false, shutter: { amount: 0.5, style: "swing" } });
+    expect(swing).not.toContain("fp-roll-curtain");
+    const roll = svgOf(win, { open: false, shutter: { amount: 0.5, style: "roll" } });
+    expect(roll).toContain("fp-roll-curtain");
+  });
+
+  it("the window underneath still renders its own sashes", () => {
+    const s = svgOf(win, { open: true, shutter: { amount: 0, style: "swing" } });
+    // Casement leaves swung open behind a shut shutter — both are true at once.
+    expect(s).toContain("rotate(-90deg)");
+    expect(s).toContain("rotate(0deg)");
+  });
+});
