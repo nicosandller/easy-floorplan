@@ -199,6 +199,14 @@ export interface FloorItem {
   labelSize?: number;
   /** Show the icon badge. When false only the state/label shows. Default true. */
   showIcon?: boolean;
+  /**
+   * Hide this device on the live card while its entity is inactive (issue
+   * #55), so a busy room only shows what is actually doing something. The
+   * editor always draws it — dimmed — or it could never be selected again.
+   * "Active" is the same domain-aware test the badge highlight uses
+   * ({@link entityIsActive}), so a lock reads unlocked, a vacuum cleaning.
+   */
+  hideWhenInactive?: boolean;
   /** Badge diameter in pixels. Default 34. */
   size?: number;
   /** Icon rotation in degrees. Default 0. */

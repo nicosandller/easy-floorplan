@@ -240,6 +240,12 @@ By default it shows an icon badge:
   a device is never badged one color and ringed another), so the editor hides the
   **Active color** field once rules exist rather than leaving a control that would
   silently lose.
+- **Only when active** — tick it and the device disappears from the card while its
+  entity is off/idle, so a busy room only shows what's actually doing something.
+  "Active" is the same domain-aware test the badge highlight uses (a lock counts as
+  active when *unlocked*, a vacuum while cleaning), and an unavailable entity counts as
+  inactive. The editor always draws these devices — faded, with a dashed badge — so you
+  can still find and edit them.
 - **No entity? Still on the map** — a device with no entity bound renders as a plain
   badge (its icon override or kind default), so hardware that has no Home Assistant
   entity — a dumb smoke detector, a wired doorbell — can still be marked on the plan.
@@ -580,6 +586,7 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | `rippleColor` | string                                 | `activeColor`| Ripple ring color (ripple modes). Falls back to `activeColor`, then the primary color. |
 | `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
 | `showIcon`    | boolean                                | `true`       | Show the icon badge.                                   |
+| `hideWhenInactive` | boolean                           | `false`      | Hide the device on the card while its entity is inactive (issue #55). Always shown, dimmed, in the editor. |
 | `showState`   | boolean                                | sensors only | Show the entity state in the label line.               |
 | `showName`    | boolean                                | `false`      | Show the device's name in the label line (`Name · state` when combined). |
 | `labelSize`   | number                                 | `12`         | Label line font size (px).                             |

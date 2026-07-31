@@ -406,6 +406,12 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
   }
   fields.push(
     { name: "showIcon", label: "Show icon", selector: { boolean: {} } },
+    {
+      name: "hideWhenInactive",
+      label: "Only when active",
+      helper: "Hide on the card while the entity is off/idle (still editable here)",
+      selector: { boolean: {} },
+    },
     { name: "showState", label: "Show state", selector: { boolean: {} } },
     {
       name: "showName",
@@ -450,6 +456,7 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
       iconAnimation: it.iconAnimation ?? "auto",
       rippleSize: it.rippleSize ?? DEFAULT_RIPPLE_SIZE,
       showIcon: it.showIcon ?? true,
+      hideWhenInactive: it.hideWhenInactive ?? false,
       showState: it.showState ?? false,
       showName: it.showName ?? false,
       labelSize: it.labelSize ?? DEFAULT_LABEL_SIZE,

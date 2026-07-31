@@ -200,6 +200,24 @@ export function furnitureColor(f: Furniture, state: string | undefined): string 
   return undefined;
 }
 
+/**
+ * Whether a device should be omitted from the **live card** right now
+ * (issue #55): it asked to appear only while active, and it isn't. An item
+ * with no entity can never be active, so a hide-when-inactive item without
+ * one stays hidden rather than becoming permanently invisible furniture the
+ * user forgot about — the editor still shows it, dimmed.
+ */
+export function itemHiddenWhenInactive(
+  item: { entity?: string; hideWhenInactive?: boolean },
+  state: string | undefined,
+): boolean {
+  if (!item.hideWhenInactive) return false;
+  // No entity, nothing that can be active — hide, and don't let a stray state
+  // string argue otherwise (entityIsActive would read a bare "on" as active).
+  if (!item.entity) return true;
+  return !entityIsActive(item.entity, state);
+}
+
 /** Default label font size (px) for an item's name/state line. */
 export const DEFAULT_LABEL_SIZE = 12;
 
