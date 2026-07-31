@@ -244,13 +244,21 @@ export class FloorplanCard extends LitElement {
     const rawValue = item.attribute
       ? (st?.attributes as Record<string, unknown> | undefined)?.[item.attribute]
       : st?.state;
-    const labelColor = cssColor(resolveStateColor(item.stateColor, rawValue));
+    // One resolved colour drives the whole element (issue #79 follow-up): the
+    // label *and* the badge. A sensor is never "on", so tying the badge to the
+    // active state alone left threshold colours invisible on exactly the
+    // devices they were written for.
+    const stateColor = cssColor(resolveStateColor(item.stateColor, rawValue));
+    const labelColor = stateColor;
     const showIcon = item.showIcon ?? true;
     const display = item.display ?? "badge";
     // Per-device active color (issue #79). Ripples follow it too, so a device
     // given one color does not come out yellow-badged with a blue ring.
+    // State rules win over the fixed active colour — they are the more
+    // specific statement about what this element should look like right now.
     const activeColor = cssColor(item.activeColor);
-    const rippleColor = item.rippleColor ?? item.activeColor ?? "var(--primary-color, #03a9f4)";
+    const rippleColor =
+      item.rippleColor ?? stateColor ?? item.activeColor ?? "var(--primary-color, #03a9f4)";
     const rippleSize = item.rippleSize ?? DEFAULT_RIPPLE_SIZE;
 
     let visual: TemplateResult | typeof nothing = nothing;
@@ -271,8 +279,10 @@ export class FloorplanCard extends LitElement {
     const d = rotatedCanvasSize(c.width, c.height, rot);
     return html`
       <div
-        class="item ${on ? "on" : "off"}"
-        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${activeColor
+        class="item ${on ? "on" : "off"} ${stateColor ? "state-colored" : ""}"
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${stateColor
+          ? `--fp-state:${stateColor};`
+          : ""}${activeColor
           ? `--fp-active:${activeColor};`
           : ""}"
         title=${this._label(item)}
@@ -626,6 +636,14 @@ export class FloorplanCard extends LitElement {
     .item.on .badge {
       background: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
       border-color: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
+      color: var(--text-primary-color, #212121);
+    }
+    /* A resolved state colour paints the badge whatever the on/off state —
+       thresholds exist for sensors, which are never "on". Declared *after* the
+       .on rule (equal specificity) so state rules win over the active colour. */
+    .item.state-colored .badge {
+      background: var(--fp-state);
+      border-color: var(--fp-state);
       color: var(--text-primary-color, #212121);
     }
     ha-icon {

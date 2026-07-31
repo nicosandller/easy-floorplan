@@ -60,6 +60,7 @@ import {
   trackerSensorReading,
   kindFromEntity,
   resolveItemIcon,
+  resolveStateColor,
   resolveIconAnimation,
   itemIconSize,
   itemLabelSize,
@@ -67,7 +68,7 @@ import {
   collectWatchedEntities,
   hassRenderInputsChanged,
 } from "./render";
-import { cssColorOr, cssNumber } from "./css-safe";
+import { cssColor, cssColorOr, cssNumber } from "./css-safe";
 import {
   ENDPOINT_SNAP,
   applyDelta,
@@ -3270,7 +3271,13 @@ export class FloorplanCardEditor extends LitElement {
     const size = cssNumber(it.size, DEFAULT_ITEM_SIZE);
     const showIcon = it.showIcon ?? true;
     const display = it.display ?? "badge";
-    const rippleColor = it.rippleColor ?? "var(--primary-color, #03a9f4)";
+    // Same resolution as the card, so the canvas shows the colour the plan
+    // will actually render (state rules first, then the active colour).
+    const rawValue = it.attribute
+      ? (st?.attributes as Record<string, unknown> | undefined)?.[it.attribute]
+      : st?.state;
+    const stateColor = cssColor(resolveStateColor(it.stateColor, rawValue));
+    const rippleColor = it.rippleColor ?? stateColor ?? "var(--primary-color, #03a9f4)";
     const rippleSize = it.rippleSize ?? DEFAULT_RIPPLE_SIZE;
 
     // Live preview: the icon animates exactly when the card would animate it
@@ -3278,8 +3285,10 @@ export class FloorplanCardEditor extends LitElement {
     // effect without leaving the editor.
     const anim = resolveIconAnimation(it, st?.state);
     const badge = html`<div
-      class="badge ${showIcon ? "" : "ghost"}"
-      style="width:${size}px;height:${size}px;transform:rotate(${cssNumber(it.angle, 0)}deg);"
+      class="badge ${showIcon ? "" : "ghost"} ${stateColor ? "state-colored" : ""}"
+      style="width:${size}px;height:${size}px;transform:rotate(${cssNumber(it.angle, 0)}deg);${
+        stateColor ? `--fp-state:${stateColor};` : ""
+      }"
     >
       <ha-icon
         class=${anim ? `anim-${anim}` : ""}
@@ -3455,15 +3464,22 @@ export class FloorplanCardEditor extends LitElement {
           }
           this._applyElementPatch("item", it.id, patch, live);
         })}
-        ${this._renderColorRow({
-          label: "Active color",
-          title: "Badge color while this device is on (issue #79)",
-          value: it.activeColor,
-          swatch: "#fdd835",
-          placeholder: "(theme)",
-          onLive: (activeColor) => this._updateItemLive(it.id, { activeColor }),
-          onCommit: (activeColor) => this._updateItem(it.id, { activeColor }),
-        })}
+        ${it.stateColor?.length
+          ? // Colour by state supersedes the fixed active colour, so showing
+            // both invites setting one and seeing the other. Say which one is
+            // in charge instead of leaving a dead control on screen.
+            html`<p class="hint rule-note">
+              Colored by the state rules below — they replace the active color.
+            </p>`
+          : this._renderColorRow({
+              label: "Active color",
+              title: "Badge color while this device is on (issue #79)",
+              value: it.activeColor,
+              swatch: "#fdd835",
+              placeholder: "(theme)",
+              onLive: (activeColor) => this._updateItemLive(it.id, { activeColor }),
+              onCommit: (activeColor) => this._updateItem(it.id, { activeColor }),
+            })}
         ${(it.display ?? "badge") !== "badge"
           ? this._renderColorRow({
               label: "Ripple color",
@@ -4791,6 +4807,24 @@ export class FloorplanCardEditor extends LitElement {
       padding-left: 8px;
       border-left: 2px solid var(--divider-color, #ccc);
       margin-bottom: 6px;
+    }
+    /* The docked inspector is only 340px wide, so a rule's condition and its
+       colour cannot share a line without crushing both. Wrap onto two lines
+       instead of squeezing — the fullscreen visibility complaint. */
+    .row.state-color-rule {
+      flex-wrap: wrap;
+      row-gap: 4px;
+    }
+    .rule-note {
+      margin: 0 0 6px;
+      font-style: italic;
+    }
+    /* The canvas preview mirrors the card: a resolved state colour paints the
+       badge whether or not the entity reads "on". */
+    .edit-item .badge.state-colored {
+      background: var(--fp-state);
+      border-color: var(--fp-state);
+      color: var(--text-primary-color, #212121);
     }
     .state-color-rule select {
       flex: 0 0 96px;
