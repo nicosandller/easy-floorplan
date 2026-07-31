@@ -177,10 +177,16 @@ interface Clipboard {
 const WALL_SNAP = 35;
 /**
  * How far the pointer may move between clicks and still count as "the same
- * spot" for click-cycling (issue #52). Generous enough for hand tremor on a
- * touchpad, tight enough that aiming at a neighbour restarts the cycle.
+ * spot" for click-cycling (issue #52), in **screen pixels**.
+ *
+ * This used to be measured in canvas units, which made the tolerance depend
+ * on zoom: on a plan shown at a quarter scale, one canvas unit is a quarter
+ * of a pixel, so a couple of pixels of ordinary hand tremor blew past it and
+ * silently restarted the cycle — the last candidate in the stack (an Area)
+ * was then unreachable in practice (issue #95). Screen space is where the
+ * hand actually moves, so the tolerance belongs there.
  */
-const PICK_EPS = 6;
+const PICK_EPS_PX = 8;
 const HISTORY_MAX = 60;
 /** Angle (degrees) within which a drawn wall is snapped flat to horizontal/vertical. */
 const WALL_AXIS_SNAP_DEG = 10;
@@ -262,7 +268,7 @@ export class FloorplanCardEditor extends LitElement {
    * overlapping elements (issue #52). Cleared whenever the pointer lands
    * somewhere else, so cycling only happens on repeat clicks in one spot.
    */
-  private _pickAnchor: { x: number; y: number } | null = null;
+  private _pickAnchor: { clientX: number; clientY: number } | null = null;
   /**
    * Hide the canvas name labels while editing (issue #52). Editor view state
    * only — never written to the config, so it can't change what the live card
@@ -1176,8 +1182,10 @@ export class FloorplanCardEditor extends LitElement {
       wallThickness: WALL_THICKNESS,
     });
     const sameSpot =
-      !!this._pickAnchor && Math.hypot(p.x - this._pickAnchor.x, p.y - this._pickAnchor.y) <= PICK_EPS;
-    this._pickAnchor = p;
+      !!this._pickAnchor &&
+      Math.hypot(ev.clientX - this._pickAnchor.clientX, ev.clientY - this._pickAnchor.clientY) <=
+        PICK_EPS_PX;
+    this._pickAnchor = { clientX: ev.clientX, clientY: ev.clientY };
     return cyclePick(candidates, this._selection, sameSpot) ?? sel;
   }
 
@@ -2651,7 +2659,20 @@ export class FloorplanCardEditor extends LitElement {
 
         <div class="workspace">
         <div class="canvas-outer">
-        <div class="canvas-wrap" tabindex="0" @wheel=${this._onCanvasWheel}>
+        <!-- The viewport keeps the canvas's aspect ratio so its height does not
+             grow with the zoom level. Otherwise zooming in made this box taller,
+             which pushed the zoom buttons (anchored to its bottom-right) down the
+             page — you had to chase the + button between clicks. Fullscreen sizes
+             the viewport from the available space instead, which is why it never
+             had the problem. -->
+        <div
+          class="canvas-wrap"
+          tabindex="0"
+          style=${this._fullscreen
+            ? nothing
+            : `aspect-ratio:${cssNumber(c.width, DEFAULT_WIDTH)} / ${cssNumber(c.height, DEFAULT_HEIGHT)};`}
+          @wheel=${this._onCanvasWheel}
+        >
           <div class="stage" style="aspect-ratio: ${cssNumber(c.width, DEFAULT_WIDTH)} / ${cssNumber(
             c.height, DEFAULT_HEIGHT)}; width:${this._zoom * 100}%;">
             <svg
@@ -3197,11 +3218,20 @@ export class FloorplanCardEditor extends LitElement {
     const id = this._scopingAreaId();
     if (!id) return nothing;
     const area = (this._floor().areas ?? []).find((a) => a.id === id);
-    const name = area?.name ? `the ${area.name} area` : "this area";
+    const name = area?.name ? area.name : "this area";
+    // The switch lives on the Area element, which is a deselect-navigate-
+    // reselect round trip from here — issue #94 was exactly someone reading
+    // the old wording and finding no such control. Offer it inline instead.
     return html`<p class="hint area-scope-hint">
       <ha-icon icon="mdi:vector-polygon"></ha-icon>
-      Inside ${name} — the entity pickers list only its entities. Select the area and turn
-      off <strong>Filter entities</strong> to see everything.
+      <span>Only entities in <strong>${name}</strong> are listed.</span>
+      <button
+        class="link-btn"
+        title="Turn off Filter entities for this area — every entity becomes selectable"
+        @click=${() => this._updateArea(id, { filterEntities: false })}
+      >
+        Show all
+      </button>
     </p>`;
   }
 
@@ -4429,6 +4459,16 @@ export class FloorplanCardEditor extends LitElement {
       gap: 6px;
       margin: 0 0 6px;
       color: var(--primary-color, #03a9f4);
+    }
+    .area-scope-hint .link-btn {
+      border: none;
+      background: none;
+      padding: 0 2px;
+      font: inherit;
+      color: var(--primary-color, #03a9f4);
+      text-decoration: underline;
+      cursor: pointer;
+      flex: 0 0 auto;
     }
     .area-scope-hint ha-icon {
       --mdc-icon-size: 16px;

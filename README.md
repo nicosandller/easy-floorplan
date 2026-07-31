@@ -141,8 +141,8 @@ background):
 
 When a device sits inside an **Area** linked to a Home Assistant area, its entity pickers
 list only that area's entities — and the room is highlighted on the canvas (a breathing
-tint with a marching-ants border) with a matching note above the fields, so it's obvious
-*why* the list is short and where to widen it. An area with nothing assigned to it in HA
+tint with a marching-ants border) with a matching note above the fields carrying a **Show all**
+link, so it's obvious *why* the list is short and it takes one click to widen it. An area with nothing assigned to it in HA
 filters nothing, the entity already bound always stays pickable, and an element outside
 every area is never filtered.
 
