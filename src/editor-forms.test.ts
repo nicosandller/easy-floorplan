@@ -227,16 +227,49 @@ describe("itemForm", () => {
     expect(d.angle).toBe(0);
   });
 
-  it("scopes the entity/secondaryEntity pickers to areaEntities when given", () => {
+  it("scopes the entity/secondaryEntity pickers to the area's entities when given", () => {
     const unscoped = itemForm(item);
     expect(unscoped.fields.find((x) => x.name === "entity")!.selector).toEqual({ entity: {} });
-    const scoped = itemForm(item, ["light.kitchen", "switch.kitchen"]);
+    const scoped = itemForm({ ...item, entity: "light.kitchen" } as FloorItem, {
+      entities: ["light.kitchen", "switch.kitchen"],
+      name: "Kitchen",
+    });
     expect(scoped.fields.find((x) => x.name === "entity")!.selector).toEqual({
       entity: { include_entities: ["light.kitchen", "switch.kitchen"] },
     });
     expect(scoped.fields.find((x) => x.name === "secondaryEntity")!.selector).toEqual({
       entity: { include_entities: ["light.kitchen", "switch.kitchen"] },
     });
+  });
+
+  it("an empty area list does NOT filter — an empty picker would hide everything", () => {
+    // Regression: `[]` is truthy, so the old code emitted
+    // `include_entities: []` and the picker listed nothing at all — the
+    // common case when a linked HA area has no entities assigned.
+    const scoped = itemForm(item, { entities: [], name: "Kitchen" });
+    expect(scoped.fields.find((x) => x.name === "entity")!.selector).toEqual({ entity: {} });
+    expect(scoped.fields.find((x) => x.name === "entity")!.helper).toBeUndefined();
+  });
+
+  it("always keeps the bound entity pickable, even from another area", () => {
+    const scoped = itemForm({ ...item, entity: "light.hallway" } as FloorItem, {
+      entities: ["light.kitchen"],
+      name: "Kitchen",
+    });
+    expect(scoped.fields.find((x) => x.name === "entity")!.selector).toEqual({
+      entity: { include_entities: ["light.kitchen", "light.hallway"] },
+    });
+  });
+
+  it("says why the list is short, and how to widen it", () => {
+    const scoped = itemForm(item, { entities: ["light.kitchen"], name: "Kitchen" });
+    const helper = scoped.fields.find((x) => x.name === "entity")!.helper!;
+    expect(helper).toContain("Kitchen");
+    expect(helper).toContain("Filter entities");
+    // The secondary picker keeps its own explanation too.
+    expect(scoped.fields.find((x) => x.name === "secondaryEntity")!.helper).toContain(
+      "Shown next to the primary state"
+    );
   });
 });
 
@@ -333,9 +366,10 @@ describe("textForm / furnitureForm / trackerForm", () => {
   });
 
   it("furniture entity picker scopes to a linked HA area when given one", () => {
-    const form = furnitureForm({ id: "f", type: "plant", x: 0, y: 0, w: 10, h: 10 } as never, [
-      "sensor.soil",
-    ]);
+    const form = furnitureForm({ id: "f", type: "plant", x: 0, y: 0, w: 10, h: 10 } as never, {
+      entities: ["sensor.soil"],
+      name: "Living room",
+    });
     expect(form.fields.find((x) => x.name === "entity")!.selector).toEqual({
       entity: { include_entities: ["sensor.soil"] },
     });

@@ -294,17 +294,62 @@ export function openingForm(o: Opening): FormSpec {
 
 /**
  * When `it` sits inside a Home Assistant area-linked {@link Area} on the
- * plan, `areaEntities` narrows the `entity`/`secondaryEntity` pickers to
- * that HA area's entities. `include_entities` on the entity selector is the
+ * plan, `areaScope` narrows the `entity`/`secondaryEntity` pickers to that HA
+ * area's entities — but never to an empty list, and never hiding the entity
+ * already bound (see {@link areaScopedEntity}). `include_entities` on the entity selector is the
  * assumed-but-unverified `<ha-form>` equivalent of `ha-entity-picker`'s own
  * `.includeEntities` property — see areas.md decision #5.
  */
-export function itemForm(it: FloorItem, areaEntities?: string[]): FormSpec {
+/**
+ * Scoping applied to an element's entity pickers because it sits inside an
+ * Area linked to a Home Assistant area (issue #83). `name` is shown to the
+ * user so the narrowed list is never a mystery.
+ */
+export interface AreaEntityScope {
+  entities: string[];
+  name?: string;
+}
+
+/**
+ * Entity selector for an element inside a linked Area.
+ *
+ * Two rules keep the scoping from becoming a trap:
+ * - an **empty** area list means "don't filter at all". `include_entities: []`
+ *   renders a picker with *nothing* in it — not even searchable — which is
+ *   what happens whenever the linked HA area has no entities assigned (very
+ *   common: many setups assign areas to devices only, or not at all).
+ * - the currently bound entity is **always** included, so opening an existing
+ *   element never shows an empty box just because that entity lives elsewhere.
+ */
+function areaScopedEntity(
+  scope: AreaEntityScope | undefined,
+  current?: string
+): Record<string, unknown> {
+  if (!scope?.entities.length) return { entity: {} };
+  const include = current && !scope.entities.includes(current)
+    ? [...scope.entities, current]
+    : scope.entities;
+  return { entity: { include_entities: include } };
+}
+
+/** Helper text telling the user their picker is area-scoped, and how to undo it. */
+function areaScopeHelper(scope: AreaEntityScope | undefined, base?: string): string | undefined {
+  if (!scope?.entities.length) return base;
+  const where = scope.name ? `the ${scope.name} area` : "this area";
+  const note = `Only entities in ${where} — turn off “Filter entities” on the area to see all`;
+  return base ? `${base}. ${note}` : note;
+}
+
+export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
   const display = it.display ?? "badge";
-  const entitySelector = (): Record<string, unknown> =>
-    areaEntities ? { entity: { include_entities: areaEntities } } : { entity: {} };
   const fields: FormField[] = [
-    { name: "entity", label: "Entity", required: true, selector: entitySelector() },
+    {
+      name: "entity",
+      label: "Entity",
+      required: true,
+      helper: areaScopeHelper(areaScope),
+      selector: areaScopedEntity(areaScope, it.entity),
+    },
     {
       name: "attribute",
       label: "Attribute",
@@ -314,8 +359,8 @@ export function itemForm(it: FloorItem, areaEntities?: string[]): FormSpec {
     {
       name: "secondaryEntity",
       label: "Second entity",
-      helper: "Shown next to the primary state",
-      selector: entitySelector(),
+      helper: areaScopeHelper(areaScope, "Shown next to the primary state"),
+      selector: areaScopedEntity(areaScope, it.secondaryEntity),
     },
     {
       name: "secondaryAttribute",
@@ -437,7 +482,7 @@ export function textForm(t: FloorText): FormSpec {
  * {@link itemForm} — a plant drawn inside the Living Room offers the Living
  * Room's sensors first.
  */
-export function furnitureForm(f: Furniture, areaEntities?: string[]): FormSpec {
+export function furnitureForm(f: Furniture, areaScope?: AreaEntityScope): FormSpec {
   return {
     fields: [
       {
@@ -472,8 +517,8 @@ export function furnitureForm(f: Furniture, areaEntities?: string[]): FormSpec {
       {
         name: "entity",
         label: "Entity",
-        helper: "Optional — lets the drawing change color with a sensor",
-        selector: areaEntities ? { entity: { include_entities: areaEntities } } : { entity: {} },
+        helper: areaScopeHelper(areaScope, "Optional — lets the drawing change color with a sensor"),
+        selector: areaScopedEntity(areaScope, f.entity),
       },
     ],
     data: {

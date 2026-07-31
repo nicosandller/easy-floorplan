@@ -86,6 +86,7 @@ import {
   type Sel,
   type SelKind,
 } from "./editor-geometry";
+import type { AreaEntityScope } from "./editor-forms";
 import {
   FURNITURE_LABELS,
   FURNITURE_TYPES,
@@ -1942,9 +1943,14 @@ export class FloorplanCardEditor extends LitElement {
    * tracks the element as it's dragged in/out of the polygon, even before the
    * form reopens.
    */
-  private _areaEntitiesAt(x: number, y: number): string[] | undefined {
+  private _areaEntitiesAt(x: number, y: number): AreaEntityScope | undefined {
     const area = areaContainingPoint(this._floor(), x, y);
-    return areaFiltersEntities(area) ? entityIdsInHaArea(this.hass, area!.haArea!) : undefined;
+    if (!areaFiltersEntities(area)) return undefined;
+    const entities = entityIdsInHaArea(this.hass, area!.haArea!);
+    // An area with nothing assigned to it in HA must not produce an empty
+    // picker — the form treats an empty list as "no scoping" (see
+    // areaScopedEntity), and the name lets it say so when it does scope.
+    return { entities, name: area!.name };
   }
 
   /** Every entity in `area`'s linked HA area not already placed as an item on this floor. */
