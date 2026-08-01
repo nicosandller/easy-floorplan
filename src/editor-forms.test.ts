@@ -431,6 +431,24 @@ describe("wallForm / projectForm / floorImageForm", () => {
     );
     expect(floorImageForm({} as Floor).fields.map((x) => x.name)).not.toContain("imageOpacity");
   });
+
+  it("offers the fit only alongside an image, defaulting to stretch (issue #86)", () => {
+    const withImage = floorImageForm({ image: "x.png" } as Floor);
+    expect(withImage.fields.map((x) => x.name)).toContain("imageFit");
+    expect(withImage.data.imageFit).toBe("stretch");
+    expect(floorImageForm({} as Floor).fields.map((x) => x.name)).not.toContain("imageFit");
+    expect(floorImageForm({ image: "x.png", imageFit: "contain" } as Floor).data.imageFit).toBe(
+      "contain"
+    );
+  });
+
+  it("drops the default fit from the config instead of writing it out", () => {
+    const { toPatch } = floorImageForm({ image: "x.png" } as Floor);
+    expect(toPatch({ imageFit: "stretch" }).imageFit).toBeUndefined();
+    expect(toPatch({ imageFit: "cover" }).imageFit).toBe("cover");
+    // Untouched keys must survive the patch — it rewrites one field, not the form.
+    expect(toPatch({ imageFit: "stretch", imageOpacity: 0.5 }).imageOpacity).toBe(0.5);
+  });
 });
 
 describe("openingForm — sash and shutter (issues #73 / #74)", () => {

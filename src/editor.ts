@@ -50,6 +50,7 @@ import {
   WALL_THICKNESS,
   renderOpening,
   renderWallMask,
+  imageFitRatio,
   openingDefaultOpen,
   openingMotion,
   shutterStyleOf,
@@ -2696,7 +2697,8 @@ export class FloorplanCardEditor extends LitElement {
               />
               ${floor.image
                 ? svg`<image href=${floor.image} x="0" y="0" width=${c.width} height=${c.height}
-                            preserveAspectRatio="none" opacity=${floor.imageOpacity ?? 1} />`
+                            preserveAspectRatio=${imageFitRatio(floor.imageFit)}
+                            opacity=${floor.imageOpacity ?? 1} />`
                 : nothing}
               ${this._renderGrid()}
               ${repeat(

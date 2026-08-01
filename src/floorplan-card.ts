@@ -16,6 +16,7 @@ import {
   WALL_THICKNESS,
   renderOpening,
   renderWallMask,
+  imageFitRatio,
   resolveOpeningAmount,
   openingIsActive,
   openingClickAction,
@@ -381,7 +382,8 @@ export class FloorplanCard extends LitElement {
             <g transform=${rotTransform || nothing}>
             ${active.image
               ? svg`<image href=${active.image} x="0" y="0" width=${c.width} height=${c.height}
-                          preserveAspectRatio="none" opacity=${active.imageOpacity ?? 1} />`
+                          preserveAspectRatio=${imageFitRatio(active.imageFit)}
+                          opacity=${active.imageOpacity ?? 1} />`
               : nothing}
             ${active.areas?.map((a) => renderArea(a))}
             ${active.furniture.map((f) =>

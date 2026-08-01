@@ -363,6 +363,29 @@ const bgImage =
      </svg>`
   );
 
+// A deliberately SQUARE source image, for testing `imageFit` (issue #86) — the
+// case of a scan whose aspect ratio disagrees with the canvas. The circle is
+// the tell: stretched onto the 1000x600 canvas it becomes a visible ellipse,
+// and `imageFit: "contain"` snaps it back to a circle. Swap it into
+// `demoFloor.image` (or set it from the console) to reproduce.
+//
+// The viewBox is load-bearing: an <image> honours preserveAspectRatio against a
+// referenced SVG's viewBox, and without one this fixture would stretch under
+// every fit and look like the feature was broken. Real PNG/JPG scans carry an
+// intrinsic size and need no such help.
+export const squareBgImage =
+  "data:image/svg+xml," +
+  encodeURIComponent(
+    `<svg xmlns='http://www.w3.org/2000/svg' width='600' height='600' viewBox='0 0 600 600'>
+       <rect width='600' height='600' fill='#ffd54f'/>
+       <circle cx='300' cy='300' r='250' fill='none' stroke='#e53935' stroke-width='8'/>
+       <g stroke='#000' stroke-opacity='0.18'>
+         ${Array.from({ length: 7 }, (_, i) => `<line x1='${i * 100}' y1='0' x2='${i * 100}' y2='600'/>`).join("")}
+         ${Array.from({ length: 7 }, (_, i) => `<line x1='0' y1='${i * 100}' x2='600' y2='${i * 100}'/>`).join("")}
+       </g>
+     </svg>`
+  );
+
 // Start with a blank floor so you can draw a perimeter from scratch. Flip
 // START_WITH_DEMO to true to instead load a sample room (walls + door + window
 // over the background image) — handy for testing rendering of existing plans.

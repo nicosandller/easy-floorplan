@@ -693,10 +693,29 @@ export function floorImageForm(f: Floor): FormSpec {
   ];
   if (f.image) {
     fields.push({
+      name: "imageFit",
+      label: "Image fit",
+      helper: "Per floor, so scans of different resolutions can each fit properly",
+      selector: dropdown(
+        opt("stretch", "Stretch to canvas (may distort)"),
+        opt("contain", "Fit inside (keep proportions)"),
+        opt("cover", "Fill canvas (keep proportions, crop)")
+      ),
+    });
+    fields.push({
       name: "imageOpacity",
       label: "Image opacity",
       selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
     });
   }
-  return { fields, data: { image: f.image ?? "", imageOpacity: f.imageOpacity ?? 1 }, toPatch: identity };
+  return {
+    fields,
+    data: {
+      image: f.image ?? "",
+      imageFit: f.imageFit ?? "stretch",
+      imageOpacity: f.imageOpacity ?? 1,
+    },
+    // "stretch" is the default, so keep it out of the YAML.
+    toPatch: (p) => ("imageFit" in p && p.imageFit === "stretch" ? { ...p, imageFit: undefined } : p),
+  };
 }

@@ -522,7 +522,7 @@ and remain valid for backward compatibility.
 
 ### Floor
 
-`{ id, name, short?, color?, haFloor?, image?, imageOpacity?, walls, openings, items, texts, furniture, trackers, areas }`
+`{ id, name, short?, color?, haFloor?, image?, imageFit?, imageOpacity?, walls, openings, items, texts, furniture, trackers, areas }`
 — a named floor with its own elements. Use the **floor** controls in the editor toolbar
 to add, rename, switch and delete floors; the live card shows a floor switcher in the
 top-right when there is more than one.
@@ -542,9 +542,29 @@ config so other features (like the per-**Area** HA-area entity filtering above) 
 on the same idea one level down.
 
 Set **`image`** to a background image URL (e.g. `/local/floorplan.png` or an external
-URL) to draw it behind the elements — handy for tracing over a real floor plan. It fills
-the canvas, so match the canvas `width`/`height` to the image's aspect ratio to avoid
-distortion. **`imageOpacity`** (0–1, default 1) fades it.
+URL) to draw it behind the elements — handy for tracing over a real floor plan.
+**`imageOpacity`** (0–1, default 1) fades it.
+
+**`imageFit`** controls how that image maps onto the canvas. The canvas `width`/`height`
+are set once for the whole card, but `image` is per floor — so if your scans differ in
+resolution, no single canvas ratio suits them all and some floors would be squashed.
+`imageFit` is per floor so each scan can choose for itself:
+
+| `imageFit` | What it does |
+| --- | --- |
+| `stretch` *(default)* | Fills the canvas, distorting if the ratios disagree. |
+| `contain` | Scales to fit, keeping proportions — may leave the canvas showing on two sides. |
+| `cover` | Fills the canvas keeping proportions, cropping the overflow. |
+
+The default stays `stretch` on purpose: plans traced over a stretched image would shift
+away from their walls if the fit changed under them. Set it to `contain` on a floor whose
+image looks squashed.
+
+One caveat: `imageFit` settles the image-against-canvas ratio, but the whole card is still
+stretched into whatever box your dashboard gives it. If that box's proportions differ from
+`width`/`height`, everything — image and elements alike — stretches together, and a
+`contain` image will look distorted again. Keep the card's `width`/`height` close to the
+shape it occupies on screen.
 
 ### Wall
 

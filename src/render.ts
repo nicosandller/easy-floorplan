@@ -1,6 +1,7 @@
 import { svg, html, type SVGTemplateResult, type TemplateResult } from "lit";
 import type {
   FloorplanCardConfig,
+  Floor,
   SectionalHand,
   Opening,
   ItemKind,
@@ -1102,6 +1103,29 @@ export function planRotationTransform(w: number, h: number, rot: PlanRotation): 
       return `translate(0 ${w}) rotate(-90)`;
     default:
       return "";
+  }
+}
+
+/**
+ * `preserveAspectRatio` for a floor's background image (issue #86).
+ *
+ * SVG already knows how to do this, so the fit option is a straight mapping
+ * rather than any arithmetic of ours: `none` stretches, `meet` fits inside
+ * (letterbox), `slice` fills and crops. Centred in both directions.
+ *
+ * This governs only how the bitmap maps into its own rect — the rect still
+ * spans the canvas, so element coordinates are untouched and a plan traced
+ * over the image keeps its alignment with everything else.
+ */
+export function imageFitRatio(fit: Floor["imageFit"]): string {
+  switch (fit) {
+    case "contain":
+      return "xMidYMid meet";
+    case "cover":
+      return "xMidYMid slice";
+    default:
+      // Unset and any stray value fall back to the historical behaviour.
+      return "none";
   }
 }
 

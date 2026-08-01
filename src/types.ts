@@ -564,10 +564,25 @@ export interface Floor {
   /**
    * Optional background image URL (e.g. `/local/floorplan.png` or an external
    * URL) drawn behind the elements — handy for tracing over a real floor plan.
-   * It fills the virtual canvas, so match the canvas width/height to the image
-   * aspect ratio to avoid distortion.
    */
   image?: string;
+  /**
+   * How the background image maps onto the virtual canvas (issue #86).
+   *
+   * The canvas width/height are config-level but `image` is per-floor, so a
+   * multi-floor plan whose scans differ in resolution cannot pick one canvas
+   * ratio that suits them all — at least one floor gets squashed. This is
+   * per-floor precisely so each scan can choose for itself.
+   *
+   * - **`stretch`** (default) — fill the canvas, distorting if the ratios
+   *   disagree. Kept as the default because existing plans were traced over a
+   *   stretched image; changing it under them would shift every wall.
+   * - **`contain`** — scale to fit, preserving the image's own aspect ratio.
+   *   Letterboxes: the canvas may show through on two sides.
+   * - **`cover`** — fill the canvas preserving aspect ratio, cropping the
+   *   overflow.
+   */
+  imageFit?: "stretch" | "contain" | "cover";
   /** Background image opacity, 0–1. Default 1. */
   imageOpacity?: number;
   walls: Wall[];

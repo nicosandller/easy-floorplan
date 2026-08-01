@@ -11,6 +11,7 @@ import {
   windowSash,
   shutterAmount,
   shutterStyleOf,
+  imageFitRatio,
   shutterActive,
   openingClickAction,
   resolveOpeningOpen,
@@ -1361,6 +1362,21 @@ describe("renderArea", () => {
     );
     expect(markup).toContain("fill=var(--primary-color, #03a9f4)");
     expect(markup).not.toContain("position:fixed");
+  });
+});
+
+describe("imageFitRatio (issue #86)", () => {
+  it("maps each fit onto SVG's own aspect-ratio handling", () => {
+    expect(imageFitRatio("contain")).toBe("xMidYMid meet");
+    expect(imageFitRatio("cover")).toBe("xMidYMid slice");
+    expect(imageFitRatio("stretch")).toBe("none");
+  });
+
+  it("keeps stretching when unset, so existing traced plans do not shift", () => {
+    expect(imageFitRatio(undefined)).toBe("none");
+    // A value from a hand-written config we don't recognise must not silently
+    // become "contain" and move every wall off the image it was traced over.
+    expect(imageFitRatio("fill" as never)).toBe("none");
   });
 });
 
