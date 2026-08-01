@@ -11,6 +11,7 @@ import {
   windowSash,
   shutterAmount,
   shutterStyleOf,
+  renderWallMask,
   shutterActive,
   openingClickAction,
   resolveOpeningOpen,
@@ -1361,6 +1362,38 @@ describe("renderArea", () => {
     );
     expect(markup).toContain("fill=var(--primary-color, #03a9f4)");
     expect(markup).not.toContain("position:fixed");
+  });
+});
+
+describe("renderWallMask region (issue #102)", () => {
+  const flatten = (node: unknown): string => {
+    if (node == null || typeof node === "boolean") return "";
+    if (Array.isArray(node)) return node.map(flatten).join("");
+    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+      const { strings, values } = node as { strings: string[]; values: unknown[] };
+      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
+    }
+    return String(node);
+  };
+
+  it("states its own region instead of inheriting the viewport default", () => {
+    const markup = flatten(renderWallMask([], 1000, 600, "m1"));
+    const mask = markup.slice(markup.indexOf("<mask"), markup.indexOf(">", markup.indexOf("<mask")));
+    // Without these, the region falls back to -10%..110% of the viewport, which
+    // the rotated card swaps — clipping walls past x=660 on a 1000x600 plan.
+    expect(mask).toContain('x=-8');
+    expect(mask).toContain('y=-8');
+    expect(mask).toContain("width=1016");
+    expect(mask).toContain("height=616");
+  });
+
+  it("covers the whole plan even where the viewport is narrower than it", () => {
+    // A 90°-rotated 1000x600 plan is drawn into a 600x1000 viewport, so the
+    // region must reach plan x=1000 regardless of that 600.
+    const markup = flatten(renderWallMask([], 1000, 600, "m2"));
+    const nums = [...markup.matchAll(/(?:x|y|width|height)=(-?\d+)/g)].map((m) => Number(m[1]));
+    const right = 1000 + 8;
+    expect(Math.max(...nums)).toBeGreaterThanOrEqual(right);
   });
 });
 

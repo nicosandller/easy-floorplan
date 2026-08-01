@@ -1111,6 +1111,13 @@ export function planRotationTransform(w: number, h: number, rot: PlanRotation): 
  * shows through — including any background image. Shared by the live card and the
  * editor so both cut walls identically. Wrap the wall strokes in
  * `<g mask="url(#id)">` (or set `mask="url(#id)"` on each wall line).
+ *
+ * The mask's own region is stated explicitly (issue #102). Left unset it defaults
+ * to -10%..110% *of the viewport*, and the rotated card (issue #33) swaps the
+ * viewport's width and height while the mask content stays in plan coordinates —
+ * so on a 1000x600 plan turned 90°, the region ended at 110% of 600 and every
+ * wall past x=660 was masked away. Only walls, because only walls wear the mask.
+ * A margin of one wall thickness keeps strokes that sit on the canvas edge whole.
  */
 export function renderWallMask(
   openings: Opening[],
@@ -1119,10 +1126,13 @@ export function renderWallMask(
   id: string
 ): SVGTemplateResult {
   const cutH = WALL_THICKNESS + 4;
+  const pad = WALL_THICKNESS;
   return svg`
     <defs>
-      <mask id=${id} maskUnits="userSpaceOnUse">
-        <rect x="0" y="0" width=${width} height=${height} fill="white" />
+      <mask id=${id} maskUnits="userSpaceOnUse"
+            x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}>
+        <rect x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}
+              fill="white" />
         ${openings.map((o) => {
           const half = o.length / 2;
           return svg`<rect x=${o.x - half} y=${o.y - cutH / 2}
