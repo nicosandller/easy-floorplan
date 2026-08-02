@@ -17,6 +17,7 @@ import {
   DEFAULT_TRACKER_DOT_SIZE,
   DEFAULT_RIPPLE_SIZE,
   DEFAULT_AREA_OPACITY,
+  DEFAULT_AREA_BORDER_WIDTH,
   getFloors,
   trackerAxisFraction,
 } from "./types";
@@ -1169,13 +1170,27 @@ export function polygonCentroid(points: readonly AreaPoint[]): { x: number; y: n
  */
 export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
   const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
-  // `liveColor` has already been through the allowlist by areaColor(); when it
-  // is present the area is "live", so activeOpacity (if set) applies instead of
-  // the resting opacity.
-  const opacity = liveColor !== undefined ? a.activeOpacity ?? a.opacity : a.opacity;
+  // `liveColor` has already been through the allowlist by areaColor(). When it
+  // is present the area is "live" and `highlight` decides whether that color
+  // lands on the fill, the outline, or both.
+  const live = liveColor !== undefined;
+  const target = a.highlight ?? "fill";
+  const liveFill = live && target !== "border";
+  const liveBorder = live && target !== "fill";
+
+  // activeOpacity is a fill concern, so it only applies when the fill is live.
+  const opacity = liveFill ? a.activeOpacity ?? a.opacity : a.opacity;
+  const stroke = liveBorder
+    ? liveColor
+    : a.borderColor
+      ? cssColorOr(a.borderColor, "none")
+      : undefined;
+
   return svg`<polygon points=${pts}
-                       fill=${liveColor ?? cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
-                       fill-opacity=${cssNumber(opacity, DEFAULT_AREA_OPACITY)} />`;
+                       fill=${liveFill ? liveColor : cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
+                       fill-opacity=${cssNumber(opacity, DEFAULT_AREA_OPACITY)}
+                       stroke=${stroke ?? "none"}
+                       stroke-width=${stroke ? cssNumber(a.borderWidth, DEFAULT_AREA_BORDER_WIDTH) : 0} />`;
 }
 
 /**

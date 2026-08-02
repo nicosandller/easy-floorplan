@@ -505,6 +505,20 @@ export interface Area {
    * Falls back to {@link opacity}.
    */
   activeOpacity?: number;
+  /**
+   * Static outline color for the polygon. No outline is drawn by default, so
+   * existing plans render unchanged.
+   */
+  borderColor?: string;
+  /** Outline width in canvas units. Defaults to {@link DEFAULT_AREA_BORDER_WIDTH}. */
+  borderWidth?: number;
+  /**
+   * Where a resolved live color paints: the `fill` (default, and the only
+   * behaviour before this option existed), the `border`, or `both`. Use
+   * `border` for a room that outlines itself while occupied without tinting
+   * everything inside it — which reads better on a busy plan.
+   */
+  highlight?: "fill" | "border" | "both";
 }
 
 /**
@@ -519,6 +533,7 @@ export function areaFiltersEntities(
 }
 
 export const DEFAULT_AREA_OPACITY = 0.25;
+export const DEFAULT_AREA_BORDER_WIDTH = 3;
 
 export const DEFAULT_TRACKER_DOT_SIZE = 14;
 

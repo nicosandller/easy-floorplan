@@ -1380,6 +1380,62 @@ describe("renderArea", () => {
     const markup = flatten(renderArea({ id: "a", points: square, opacity: 0.2 }, "#4caf50"));
     expect(markup).toContain("fill-opacity=0.2");
   });
+
+  it("draws no outline by default (#6)", () => {
+    const markup = flatten(renderArea({ id: "a", points: square }));
+    expect(markup).toContain("stroke=none");
+    expect(markup).toContain("stroke-width=0");
+  });
+
+  it("honors a static borderColor and borderWidth (#6)", () => {
+    const markup = flatten(
+      renderArea({ id: "a", points: square, borderColor: "#123456", borderWidth: 5 })
+    );
+    expect(markup).toContain("stroke=#123456");
+    expect(markup).toContain("stroke-width=5");
+  });
+
+  it("falls back to the default border width (#6)", () => {
+    const markup = flatten(renderArea({ id: "a", points: square, borderColor: "#123456" }));
+    expect(markup).toContain("stroke-width=3");
+  });
+
+  it("gates an unsafe borderColor through css-safe (#64)", () => {
+    const markup = flatten(
+      renderArea({ id: "a", points: square, borderColor: "red;position:fixed;inset:0" })
+    );
+    expect(markup).not.toContain("position:fixed");
+  });
+
+  it("highlight=border paints the outline and leaves the fill at rest (#6)", () => {
+    const a = { id: "a", points: square, color: "#ff0000", highlight: "border" as const };
+    const markup = flatten(renderArea(a, "#4caf50"));
+    expect(markup).toContain("stroke=#4caf50");
+    expect(markup).toContain("fill=#ff0000");
+  });
+
+  it("highlight=border ignores activeOpacity, which is a fill concern (#6)", () => {
+    const a = {
+      id: "a",
+      points: square,
+      opacity: 0.2,
+      activeOpacity: 0.7,
+      highlight: "border" as const,
+    };
+    expect(flatten(renderArea(a, "#4caf50"))).toContain("fill-opacity=0.2");
+  });
+
+  it("highlight=both paints fill and outline (#6)", () => {
+    const a = { id: "a", points: square, highlight: "both" as const };
+    const markup = flatten(renderArea(a, "#4caf50"));
+    expect(markup).toContain("fill=#4caf50");
+    expect(markup).toContain("stroke=#4caf50");
+  });
+
+  it("a live color overrides a static borderColor when it targets the border (#6)", () => {
+    const a = { id: "a", points: square, borderColor: "#111111", highlight: "border" as const };
+    expect(flatten(renderArea(a, "#4caf50"))).toContain("stroke=#4caf50");
+  });
 });
 
 describe("areaColor", () => {

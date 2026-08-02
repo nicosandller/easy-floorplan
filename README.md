@@ -681,7 +681,7 @@ trackers:
 
 ### Area
 
-`{ id, points, name?, showName?, color?, opacity?, haArea?, filterEntities?, entity?, stateColor?, activeColor?, activeOpacity? }`
+`{ id, points, name?, showName?, color?, opacity?, haArea?, filterEntities?, entity?, stateColor?, activeColor?, activeOpacity?, borderColor?, borderWidth?, highlight? }`
 
 - `points` — an array of `{ x, y }` vertices (canvas units), in drawing order; the shape
   is implicitly closed from the last point back to the first.
@@ -703,6 +703,11 @@ trackers:
   matches.
 - `activeOpacity` — fill opacity while `entity` resolves a color. Lets a room lift out of
   the plan while it is live without permanently darkening it. Falls back to `opacity`.
+- `borderColor` / `borderWidth` — a static outline for the room. No outline is drawn by
+  default; `borderWidth` defaults to `3` canvas units once a color is set.
+- `highlight` — where a live color paints: `fill` (default), `border`, or `both`. Use
+  `border` for a room that outlines itself while occupied without tinting everything
+  inside it, which reads better on a busy plan.
 
 ```yaml
 areas:
@@ -731,6 +736,21 @@ areas:
       - { x: 500, y: 500 }
       - { x: 500, y: 900 }
       - { x: 100, y: 900 }
+
+  # Outline-only highlight: the room draws a green border while occupied and
+  # its fill never changes. activeOpacity is a fill concern, so it does not
+  # apply here.
+  - id: hall
+    name: Hall
+    entity: binary_sensor.hall_occupancy
+    activeColor: "#4caf50"
+    highlight: border
+    borderWidth: 4
+    points:
+      - { x: 500, y: 100 }
+      - { x: 900, y: 100 }
+      - { x: 900, y: 500 }
+      - { x: 500, y: 500 }
 
   # Or bind a numeric sensor and threshold it, so the whole room reddens
   # when air quality goes bad.
