@@ -484,6 +484,27 @@ export interface Area {
    * without a linked `haArea`.
    */
   filterEntities?: boolean;
+  /**
+   * Optional entity that makes the room itself live (issue #6) — a presence
+   * sensor that lights the room while it is occupied, an air quality sensor
+   * that reddens it when readings go bad. Drives {@link stateColor} and
+   * {@link activeColor}; an unbound area is still just a static polygon.
+   */
+  entity?: string;
+  /**
+   * Threshold/state colors for the fill, in the same shape as
+   * {@link FloorItem.stateColor}. Evaluated against `entity`'s state; takes
+   * precedence over {@link activeColor} and {@link color}.
+   */
+  stateColor?: StateColorRule[];
+  /** Fill color while `entity` is active. Used when no {@link stateColor} rule matches. */
+  activeColor?: string;
+  /**
+   * Fill opacity while `entity` resolves a color, 0-1. Lets a room lift out of
+   * the plan while it is live without permanently darkening it when it is not.
+   * Falls back to {@link opacity}.
+   */
+  activeOpacity?: number;
 }
 
 /**

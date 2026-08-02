@@ -29,7 +29,9 @@ automatically to the card and screen size.
   dishwasher, water heater, air handler, bathtub, vanity, sectional, fish tank,
   piano, hot tub.
 - **Areas** — trace a room's outline point-by-point (points snap to wall corners and to
-  neighboring areas' corners) to get a colored, named room polygon. Naming a room after
+  neighboring areas' corners) to get a colored, named room polygon. Bind an entity to a
+  room and its fill goes live — green while a presence sensor is occupied, red when a CO2
+  sensor crosses a threshold. Naming a room after
   one of your Home Assistant areas (the name field autocompletes against them) links the
   two, which scopes the entity picker — for any device dropped inside it — to that HA
   area's entities, and can bulk-add every device in the area.
@@ -679,7 +681,7 @@ trackers:
 
 ### Area
 
-`{ id, points, name?, showName?, color?, opacity?, haArea?, filterEntities? }`
+`{ id, points, name?, showName?, color?, opacity?, haArea?, filterEntities?, entity?, stateColor?, activeColor?, activeOpacity? }`
 
 - `points` — an array of `{ x, y }` vertices (canvas units), in drawing order; the shape
   is implicitly closed from the last point back to the first.
@@ -692,6 +694,15 @@ trackers:
 - `filterEntities` — with `haArea` set, scopes the entity picker (for any device placed
   inside this polygon) to that HA area's entities. Default `true`; has no effect without
   a linked `haArea`.
+- `entity` — optional entity that makes the room itself live, in the same shape furniture
+  uses. Drives `stateColor` and `activeColor`; an unbound area stays a static polygon.
+- `stateColor` — threshold/state rules for the fill (same shape as a device's
+  `stateColor`). Evaluated against `entity`'s state; takes precedence over `activeColor`
+  and `color`.
+- `activeColor` — fill color while `entity` is active, used when no `stateColor` rule
+  matches.
+- `activeOpacity` — fill opacity while `entity` resolves a color. Lets a room lift out of
+  the plan while it is live without permanently darkening it. Falls back to `opacity`.
 
 ```yaml
 areas:
@@ -705,6 +716,36 @@ areas:
       - { x: 900, y: 100 }
       - { x: 900, y: 500 }
       - { x: 100, y: 500 }
+
+  # The room lights up green while it is occupied, and lifts to a stronger
+  # fill so it reads at a glance.
+  - id: kitchen
+    name: Kitchen
+    haArea: kitchen
+    entity: binary_sensor.kitchen_occupancy
+    activeColor: "#4caf50"
+    opacity: 0.12
+    activeOpacity: 0.35
+    points:
+      - { x: 100, y: 500 }
+      - { x: 500, y: 500 }
+      - { x: 500, y: 900 }
+      - { x: 100, y: 900 }
+
+  # Or bind a numeric sensor and threshold it, so the whole room reddens
+  # when air quality goes bad.
+  - id: study
+    name: Study
+    entity: sensor.study_co2
+    stateColor:
+      - { above: 1200, color: "#e1243b" }
+      - { above: 800, color: "#ff9300" }
+      - { color: "#58d32f" }
+    points:
+      - { x: 500, y: 500 }
+      - { x: 900, y: 500 }
+      - { x: 900, y: 900 }
+      - { x: 500, y: 900 }
 ```
 
 ### Example

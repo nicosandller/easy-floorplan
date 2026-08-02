@@ -201,6 +201,22 @@ export function furnitureColor(f: Furniture, state: string | undefined): string 
 }
 
 /**
+ * Resolve the live fill color for an {@link Area} bound to an entity (issue #6),
+ * mirroring {@link furnitureColor}: `stateColor` rules win, then `activeColor`
+ * while the entity is active, else undefined so the static `color` applies.
+ *
+ * Returns a value already through the style-injection allowlist (#64), because
+ * it flows straight into a `fill` attribute.
+ */
+export function areaColor(a: Area, state: string | undefined): string | undefined {
+  if (!a.entity) return undefined;
+  const rule = resolveStateColor(a.stateColor, state);
+  if (rule) return cssColor(rule);
+  if (a.activeColor && entityIsActive(a.entity, state)) return cssColor(a.activeColor);
+  return undefined;
+}
+
+/**
  * Whether a device should be omitted from the **live card** right now
  * (issue #55): it asked to appear only while active, and it isn't. An item
  * with no entity can never be active, so a hide-when-inactive item without
@@ -1151,11 +1167,15 @@ export function polygonCentroid(points: readonly AreaPoint[]): { x: number; y: n
  * `color`/`opacity` are config-supplied style values, so they go through the
  * same injection allowlist as every other color/number field (see css-safe.ts).
  */
-export function renderArea(a: Area): SVGTemplateResult {
+export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
   const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
+  // `liveColor` has already been through the allowlist by areaColor(); when it
+  // is present the area is "live", so activeOpacity (if set) applies instead of
+  // the resting opacity.
+  const opacity = liveColor !== undefined ? a.activeOpacity ?? a.opacity : a.opacity;
   return svg`<polygon points=${pts}
-                       fill=${cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
-                       fill-opacity=${cssNumber(a.opacity, DEFAULT_AREA_OPACITY)} />`;
+                       fill=${liveColor ?? cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
+                       fill-opacity=${cssNumber(opacity, DEFAULT_AREA_OPACITY)} />`;
 }
 
 /**

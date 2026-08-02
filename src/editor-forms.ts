@@ -621,10 +621,20 @@ export function areaForm(a: Area): FormSpec {
         label: "Fill opacity",
         selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
       },
+      // Optional entity that makes the room itself live (issue #6) — a presence
+      // sensor that lights the room while it is occupied. Last, because most
+      // areas are just outlines and never bind anything.
+      {
+        name: "entity",
+        label: "Entity",
+        helper: "Optional — lets the room fill change color with a sensor",
+        selector: { entity: {} },
+      },
     ],
     data: {
       showName: a.showName ?? true,
       opacity: a.opacity ?? DEFAULT_AREA_OPACITY,
+      entity: a.entity ?? "",
     },
     toPatch: identity,
   };

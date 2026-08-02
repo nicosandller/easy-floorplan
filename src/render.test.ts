@@ -45,6 +45,7 @@ import {
   planRotationTransform,
   polygonCentroid,
   renderArea,
+  areaColor,
 } from "./render";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
 
@@ -1361,6 +1362,57 @@ describe("renderArea", () => {
     );
     expect(markup).toContain("fill=var(--primary-color, #03a9f4)");
     expect(markup).not.toContain("position:fixed");
+  });
+
+  it("uses the live fill color over the resting one (#6)", () => {
+    const markup = flatten(renderArea({ id: "a", points: square, color: "#ff0000" }, "#4caf50"));
+    expect(markup).toContain("fill=#4caf50");
+    expect(markup).not.toContain("fill=#ff0000");
+  });
+
+  it("applies activeOpacity only while live (#6)", () => {
+    const a = { id: "a", points: square, opacity: 0.2, activeOpacity: 0.7 };
+    expect(flatten(renderArea(a, "#4caf50"))).toContain("fill-opacity=0.7");
+    expect(flatten(renderArea(a))).toContain("fill-opacity=0.2");
+  });
+
+  it("keeps the resting opacity when activeOpacity is unset (#6)", () => {
+    const markup = flatten(renderArea({ id: "a", points: square, opacity: 0.2 }, "#4caf50"));
+    expect(markup).toContain("fill-opacity=0.2");
+  });
+});
+
+describe("areaColor", () => {
+  const base = { id: "a", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] };
+
+  it("returns undefined for an unbound area", () => {
+    expect(areaColor({ ...base, activeColor: "#4caf50" }, "on")).toBeUndefined();
+  });
+
+  it("prefers a matching stateColor rule over activeColor", () => {
+    const a = {
+      ...base,
+      entity: "sensor.co2",
+      activeColor: "#4caf50",
+      stateColor: [{ above: 1000, color: "#ff0000" }, { color: "#00ff00" }],
+    };
+    expect(areaColor(a, "1200")).toBe("#ff0000");
+    expect(areaColor(a, "400")).toBe("#00ff00");
+  });
+
+  it("uses activeColor when active and no rule matches", () => {
+    const a = { ...base, entity: "binary_sensor.occupancy", activeColor: "#4caf50" };
+    expect(areaColor(a, "on")).toBe("#4caf50");
+  });
+
+  it("returns undefined when the bound entity is inactive", () => {
+    const a = { ...base, entity: "binary_sensor.occupancy", activeColor: "#4caf50" };
+    expect(areaColor(a, "off")).toBeUndefined();
+  });
+
+  it("gates an unsafe activeColor through css-safe (#64)", () => {
+    const a = { ...base, entity: "binary_sensor.occupancy", activeColor: "red;position:fixed;inset:0" };
+    expect(areaColor(a, "on")).toBeUndefined();
   });
 });
 
