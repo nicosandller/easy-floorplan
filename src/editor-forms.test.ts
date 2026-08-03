@@ -331,6 +331,32 @@ describe("areaForm", () => {
     expect(d).toMatchObject({ showName: true, opacity: 0.25 });
   });
 
+  it("the conditional-color controls appear once an entity is bound (issue #6)", () => {
+    const names = (a: Area) => areaForm(a).fields.map((f) => f.name);
+    // The Entity picker shipped without these, so binding an entity in the
+    // editor resolved no color and the whole feature looked unimplemented.
+    expect(names(area())).not.toContain("activeOpacity");
+    expect(names(area())).not.toContain("highlight");
+    const bound = names(area({ entity: "binary_sensor.occ" }));
+    expect(bound).toContain("activeOpacity");
+    expect(bound).toContain("highlight");
+  });
+
+  it("active opacity falls back to the resting opacity, highlight to fill", () => {
+    const d = areaForm(area({ entity: "binary_sensor.occ", opacity: 0.1 })).data;
+    expect(d).toMatchObject({ activeOpacity: 0.1, highlight: "fill" });
+    const set = areaForm(area({ entity: "x", activeOpacity: 0.4, highlight: "border" })).data;
+    expect(set).toMatchObject({ activeOpacity: 0.4, highlight: "border" });
+  });
+
+  it("drops the default highlight from the config instead of writing it out", () => {
+    const { toPatch } = areaForm(area({ entity: "binary_sensor.occ" }));
+    expect(toPatch({ highlight: "fill" }).highlight).toBeUndefined();
+    expect(toPatch({ highlight: "border" }).highlight).toBe("border");
+    // Untouched keys survive — it rewrites one field, not the form.
+    expect(toPatch({ highlight: "fill", activeOpacity: 0.5 }).activeOpacity).toBe(0.5);
+  });
+
   it("data reflects an explicit showName/opacity", () => {
     const d = areaForm(area({ name: "Kitchen", showName: false, opacity: 0.5 })).data;
     expect(d).toMatchObject({ showName: false, opacity: 0.5 });

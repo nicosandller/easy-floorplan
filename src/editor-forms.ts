@@ -659,13 +659,39 @@ export function areaForm(a: Area): FormSpec {
         helper: "Optional — lets the room fill change color with a sensor",
         selector: { entity: {} },
       },
+      // Only meaningful once something drives the colour. Offered here rather
+      // than in the editor's colour rows because both are plain selectors, and
+      // "Active opacity" belongs beside "Fill opacity".
+      ...(a.entity
+        ? [
+            {
+              name: "activeOpacity",
+              label: "Active opacity",
+              helper: "Fill opacity while the entity resolves a color",
+              selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
+            },
+            {
+              name: "highlight",
+              label: "Highlight",
+              helper: "Border only outlines the room without tinting what's inside",
+              selector: dropdown(
+                opt("fill", "Fill"),
+                opt("border", "Border only"),
+                opt("both", "Fill and border")
+              ),
+            },
+          ]
+        : []),
     ],
     data: {
       showName: a.showName ?? true,
       opacity: a.opacity ?? DEFAULT_AREA_OPACITY,
       entity: a.entity ?? "",
+      activeOpacity: a.activeOpacity ?? a.opacity ?? DEFAULT_AREA_OPACITY,
+      highlight: a.highlight ?? "fill",
     },
-    toPatch: identity,
+    // "fill" is the default, so keep it out of the YAML.
+    toPatch: (p) => ("highlight" in p && p.highlight === "fill" ? { ...p, highlight: undefined } : p),
   };
 }
 

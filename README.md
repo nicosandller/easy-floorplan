@@ -132,7 +132,10 @@ background):
   corners or another area's corners, and clicking back on the starting point closes the
   shape (3+ points required; Backspace removes the last point while drawing, Escape
   discards the whole outline). Once placed, drag anywhere inside the fill to move the
-  whole room, or drag a corner handle to reshape it — see **Areas**.
+  whole room, or drag a corner handle to reshape it — see **Areas**. Bind an **Entity** in
+  the Element section and the room's conditional-color controls appear beside it — **Active
+  color**, **Active opacity**, **Highlight**, and the **Color by state** rule list — the same
+  set devices and furniture already offer.
 - **+ Add** — one popover for everything droppable: device, text, and all furniture
   types shown as their actual glyphs (pick a sofa by seeing a sofa). The new element is
   selected immediately so the **Element** section is ready for configuring it.
@@ -755,6 +758,8 @@ trackers:
   a linked `haArea`.
 - `entity` — optional entity that makes the room itself live, in the same shape furniture
   uses. Drives `stateColor` and `activeColor`; an unbound area stays a static polygon.
+  Setting it in the editor reveals the colour controls below — on its own it changes
+  nothing, since there is no colour yet for it to resolve.
 - `stateColor` — threshold/state rules for the fill (same shape as a device's
   `stateColor`). Evaluated against `entity`'s state; takes precedence over `activeColor`
   and `color`.

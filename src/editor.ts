@@ -3642,6 +3642,30 @@ export class FloorplanCardEditor extends LitElement {
           onLive: (color) => this._updateAreaLive(a.id, { color }),
           onCommit: (color) => this._updateArea(a.id, { color }),
         })}
+        ${
+          // The colours the bound entity drives. Same shape furniture and
+          // devices already use, and gated the same way — without an entity
+          // there is nothing to condition on. Until this existed the Entity
+          // picker above was inert on its own: areaColor() resolves nothing
+          // without an activeColor or a matching rule, so binding an entity
+          // in the editor changed nothing and the feature looked unbuilt.
+          a.entity
+            ? html`
+                ${this._renderColorRow({
+                  label: "Active color",
+                  title: "Color while the entity is on",
+                  value: a.activeColor,
+                  swatch: "#03a9f4",
+                  placeholder: "(no change)",
+                  onLive: (activeColor) => this._updateAreaLive(a.id, { activeColor }),
+                  onCommit: (activeColor) => this._updateArea(a.id, { activeColor }),
+                })}
+                ${this._renderStateColorRules(a.stateColor, (stateColor) =>
+                  this._updateArea(a.id, { stateColor })
+                )}
+              `
+            : nothing
+        }
         ${a.haArea
           ? html`<div class="row wide">
               <label>Filter entities</label>
