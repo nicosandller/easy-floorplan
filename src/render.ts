@@ -1420,8 +1420,8 @@ export function polygonCentroid(points: readonly AreaPoint[]): { x: number; y: n
 }
 
 /**
- * A room's translucent fill polygon. Drawn with no stroke — the walls drawn
- * on top of it already imply an outline, so a second one would double it up.
+ * A room's translucent fill polygon, with no stroke of its own — the outline
+ * is a separate pass, drawn above the walls by {@link renderAreaBorder}.
  * `color`/`opacity` are config-supplied style values, so they go through the
  * same injection allowlist as every other color/number field (see css-safe.ts).
  */
@@ -1430,26 +1430,61 @@ export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
   // `liveColor` has already been through the allowlist by areaColor(). When it
   // is present the area is "live" and `highlight` decides whether that color
   // lands on the fill, the outline, or both.
-  const live = liveColor !== undefined;
-  const target = a.highlight ?? "fill";
-  const liveFill = live && target !== "border";
-  const liveBorder = live && target !== "fill";
+  const liveFill = liveColor !== undefined && (a.highlight ?? "fill") !== "border";
 
   // activeOpacity is a fill concern, so it only applies when the fill is live.
   const opacity = liveFill ? a.activeOpacity ?? a.opacity : a.opacity;
-  const stroke = liveBorder
-    ? liveColor
-    : a.borderColor
-      ? cssColorOr(a.borderColor, "none")
-      : undefined;
 
   return svg`<polygon class="fp-area" data-id=${cssIdent(a.id) ?? nothing}
                        data-entity=${cssEntityId(a.entity) ?? nothing}
                        points=${pts}
                        fill=${liveFill ? liveColor : cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
                        fill-opacity=${cssNumber(opacity, DEFAULT_AREA_OPACITY)}
-                       stroke=${stroke ?? "none"}
-                       stroke-width=${stroke ? cssNumber(a.borderWidth, DEFAULT_AREA_BORDER_WIDTH) : 0} />`;
+                       stroke="none"
+                       stroke-width="0" />`;
+}
+
+/**
+ * A room's outline — drawn as its own pass **above the walls**.
+ *
+ * An area polygon almost always traces the room it encloses, which means it
+ * runs down the centerline of that room's walls. Walls are stroked at
+ * {@link WALL_THICKNESS} over the top of the fills, so an outline drawn with
+ * the fill lands underneath the very wall it follows and cannot be seen at
+ * all. That left `highlight: "border"` (#107) inert on any plan whose areas
+ * follow its walls, which is very nearly all of them.
+ *
+ * Drawn above, the outline colors the room's own walls: an occupied or lit
+ * room announces itself along its boundary instead of tinting everything
+ * inside it, which is what `highlight: "border"` was for. The caller draws
+ * this inside the wall mask, so doorways and windows stay cut out of the
+ * outline exactly as they are cut out of the wall.
+ *
+ * Carries the same `data-id` / `data-entity` hooks as the fill (#111) under its
+ * own `fp-area-border` class, so a rule can target a room's outline and its
+ * fill separately.
+ *
+ * Returns `nothing` when there is no outline to draw — the default.
+ */
+export function renderAreaBorder(a: Area, liveColor?: string): SVGTemplateResult | typeof nothing {
+  const liveBorder = liveColor !== undefined && (a.highlight ?? "fill") !== "fill";
+  const stroke = liveBorder
+    ? liveColor
+    : a.borderColor
+      ? cssColorOr(a.borderColor, "none")
+      : undefined;
+  if (stroke === undefined || stroke === "none") return nothing;
+
+  // A live border defaults to the wall's own thickness. It sits on the wall it
+  // traces, and a room announcing itself wants that wall colored, not a thin
+  // stripe painted down the middle of it. A static border is decoration and
+  // keeps its thinner default. An explicit borderWidth still wins either way.
+  const width = cssNumber(a.borderWidth, liveBorder ? WALL_THICKNESS : DEFAULT_AREA_BORDER_WIDTH);
+  const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
+  return svg`<polygon class="fp-area-border" data-id=${cssIdent(a.id) ?? nothing}
+                      data-entity=${cssEntityId(a.entity) ?? nothing}
+                      points=${pts} fill="none"
+                      stroke=${stroke} stroke-width=${width} />`;
 }
 
 /**

@@ -62,6 +62,7 @@ import {
   renderFurniture,
   renderTracker,
   renderArea,
+  renderAreaBorder,
   trackerSensorReading,
   kindFromEntity,
   resolveItemIcon,
@@ -2740,6 +2741,12 @@ export class FloorplanCardEditor extends LitElement {
               ${floor.furniture.map((f) => this._renderFurnitureSel(f))}
               ${renderWallMask(floor.openings, c.width, c.height, this._wallMaskId)}
               ${floor.walls.map((w) => this._renderWall(w))}
+              <!-- Room outlines, same layer position as the card so what you
+                   place is what you get. No hass here, so only a static
+                   borderColor draws; a live highlight is a card-time concern. -->
+              <g mask=${`url(#${this._wallMaskId})`}>
+                ${(floor.areas ?? []).map((a) => renderAreaBorder(a))}
+              </g>
               ${repeat(
                 // Keyed by id: switching floors must create fresh DOM. Reused
                 // nodes would CSS-transition from the previous floor's opening
