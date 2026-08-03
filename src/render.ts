@@ -1444,6 +1444,7 @@ export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
       : undefined;
 
   return svg`<polygon class="fp-area" data-id=${cssIdent(a.id) ?? nothing}
+                       data-entity=${cssEntityId(a.entity) ?? nothing}
                        points=${pts}
                        fill=${liveFill ? liveColor : cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
                        fill-opacity=${cssNumber(opacity, DEFAULT_AREA_OPACITY)}

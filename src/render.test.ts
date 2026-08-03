@@ -1663,10 +1663,26 @@ describe("styling hooks reach the DOM (issue #105)", () => {
   };
   const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
 
-  it("an area carries its config id and a type class", () => {
-    const markup = flatten(renderArea({ id: "area_a5r5nwl", points: square }));
+  it("an area carries its config id, type class and bound entity", () => {
+    const markup = flatten(
+      renderArea({ id: "area_a5r5nwl", points: square, entity: "binary_sensor.smoke" } as never)
+    );
     expect(markup).toContain('class="fp-area"');
     expect(markup).toContain("data-id=area_a5r5nwl");
+    // Areas take an entity too (#107), so [data-entity=...] must reach them —
+    // they are the case this issue was actually about.
+    expect(markup).toContain("data-entity=binary_sensor.smoke");
+  });
+
+  it("every entity-bindable element answers the same [data-entity] selector", () => {
+    const ent = "light.kitchen";
+    const area = flatten(renderArea({ id: "a", points: square, entity: ent } as never));
+    const furn = flatten(renderFurniture({ id: "f", type: "sofa", x: 0, y: 0, w: 10, h: 10, entity: ent } as never));
+    const open = flatten(
+      renderOpening({ id: "o", type: "door", x: 0, y: 0, length: 40, angle: 0, entity: ent } as never,
+        { color: "#888", accent: "#0f0" } as never)
+    );
+    for (const m of [area, furn, open]) expect(m).toContain(`data-entity=${ent}`);
   });
 
   it("furniture carries its id, its type class and its entity", () => {

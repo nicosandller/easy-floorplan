@@ -917,7 +917,7 @@ editor.
 
 | Element | Class | Attributes |
 | --- | --- | --- |
-| Area | `fp-area` | `data-id` |
+| Area | `fp-area` | `data-id`, `data-entity` |
 | Furniture | `fp-furniture`, `fp-furniture-<type>` | `data-id`, `data-entity` |
 | Door / window | `fp-opening`, `fp-opening-door` \| `fp-opening-window` | `data-id`, `data-entity` |
 | Wall | `wall`, `fp-wall` | `data-id` |
