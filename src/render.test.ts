@@ -53,6 +53,7 @@ import {
   renderArea,
   areaColor,
   glowPaint,
+  editorGlowPaint,
   renderGlow,
 } from "./render";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
@@ -1557,6 +1558,32 @@ describe("glowPaint (issue #6)", () => {
 
   it("clamps out-of-range channels instead of trusting the integration", () => {
     expect(glowPaint({}, light("on", { rgb_color: [300, -20, 12.6] }))?.color).toBe("rgb(255, 0, 13)");
+  });
+});
+
+describe("editorGlowPaint (issue #108)", () => {
+  const light = (state: string, attributes: Record<string, unknown> = {}) =>
+    ({ entity_id: "light.x", state, attributes }) as never;
+
+  it("an OFF light draws nothing in the editor, exactly as on the card", () => {
+    // The v1.1.0 regression: this returned a full-strength warm pool, so five
+    // off living-room lamps washed the whole canvas amber.
+    expect(editorGlowPaint({}, light("off"))).toBeUndefined();
+    expect(editorGlowPaint({}, light("unavailable"))).toBeUndefined();
+    expect(editorGlowPaint({}, light("unknown"))).toBeUndefined();
+  });
+
+  it("an ON light paints exactly what glowPaint says", () => {
+    expect(editorGlowPaint({}, light("on", { rgb_color: [1, 2, 3], brightness: 255 })))
+      .toEqual(glowPaint({}, light("on", { rgb_color: [1, 2, 3], brightness: 255 })));
+  });
+
+  it("only a glow with NO readable state previews lit (outside HA)", () => {
+    expect(editorGlowPaint({}, undefined)).toEqual({
+      color: DEFAULT_GLOW_COLOR,
+      opacity: GLOW_MAX_OPACITY,
+    });
+    expect(editorGlowPaint({ glowColor: "#00ff00" }, undefined)?.color).toBe("#00ff00");
   });
 });
 

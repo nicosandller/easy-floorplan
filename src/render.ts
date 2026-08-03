@@ -286,6 +286,23 @@ export function glowPaint(
 }
 
 /**
+ * {@link glowPaint} as the **editor** should apply it (issue #108).
+ *
+ * The editor must trust the entity when there is one — an off light draws
+ * nothing, exactly as on the card. Only a glow with no readable state at all
+ * (no hass, or an entity hass does not know) previews lit, so the feature is
+ * still visible outside Home Assistant. v1.1.0 shipped the fallback applied
+ * unconditionally, and every off light washed the canvas at full strength.
+ */
+export function editorGlowPaint(
+  item: Pick<FloorItem, "glowColor">,
+  state: HassEntity | undefined,
+): GlowPaint | undefined {
+  if (state) return glowPaint(item, state);
+  return { color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR), opacity: GLOW_MAX_OPACITY };
+}
+
+/**
  * A light's cast pool: a radial gradient fading from `paint.color` at the
  * device's position to fully transparent at `glowRadius`.
  *
