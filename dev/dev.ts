@@ -253,7 +253,55 @@ const hass = {
     "light.living_room": {
       entity_id: "light.living_room",
       state: "on",
-      attributes: { friendly_name: "Living Room" },
+      // Colour-capable, so a `glow` device here casts this amber (issue #6).
+      attributes: {
+        friendly_name: "Living Room",
+        supported_color_modes: ["color_temp", "xy"],
+        color_mode: "xy",
+        rgb_color: [255, 170, 80],
+        brightness: 255,
+      },
+    },
+    // Cast light (issue #6), the two rungs below a colour-capable bulb. Most
+    // lights on a real install are one of these, so the demo covers them:
+    // `light.warm_lamp` can report a colour, `light.dim_lamp` only a
+    // brightness, `light.plain_switch` only on/off.
+    "light.warm_lamp": {
+      entity_id: "light.warm_lamp",
+      state: "on",
+      attributes: {
+        friendly_name: "Warm lamp",
+        supported_color_modes: ["xy"],
+        color_mode: "xy",
+        rgb_color: [255, 120, 0],
+        brightness: 255,
+      },
+    },
+    "light.cool_lamp": {
+      entity_id: "light.cool_lamp",
+      state: "on",
+      attributes: {
+        friendly_name: "Cool lamp",
+        supported_color_modes: ["xy"],
+        color_mode: "xy",
+        rgb_color: [0, 120, 255],
+        brightness: 255,
+      },
+    },
+    "light.dim_lamp": {
+      entity_id: "light.dim_lamp",
+      state: "on",
+      attributes: {
+        friendly_name: "Dimmable lamp",
+        supported_color_modes: ["brightness"],
+        color_mode: "brightness",
+        brightness: 90,
+      },
+    },
+    "light.plain_switch": {
+      entity_id: "light.plain_switch",
+      state: "on",
+      attributes: { friendly_name: "Plain switch", supported_color_modes: ["onoff"], color_mode: "onoff" },
     },
     // Per-device active colors (issue #79): this cover and the light above are
     // both active on the demo floor, with different `activeColor`s — the whole
@@ -410,6 +458,51 @@ const demoFloor = {
     // deviceRegistry/areaRegistry) scopes its entity picker — drag it outside
     // the polygon to watch the picker widen back up.
     { id: "i2", entity: "light.living_room", x: 220, y: 180, kind: "light" as const },
+    // Cast light (issue #6). The warm and cool lamps sit 200 apart with 200
+    // radii, so their pools OVERLAP in the middle — that band is the whole
+    // point of the feature: the two colours mix there rather than one winning.
+    // The other two show the fallback rungs for bulbs that can't report a colour.
+    {
+      id: "glow_warm",
+      entity: "light.warm_lamp",
+      x: 400,
+      y: 380,
+      kind: "light" as const,
+      glow: true,
+      glowRadius: 200,
+    },
+    {
+      id: "glow_cool",
+      entity: "light.cool_lamp",
+      x: 600,
+      y: 380,
+      kind: "light" as const,
+      glow: true,
+      glowRadius: 200,
+    },
+    // Brightness-only: no colour of its own, so it casts the warm-white default,
+    // dimmed to match its brightness.
+    {
+      id: "glow_dim",
+      entity: "light.dim_lamp",
+      x: 780,
+      y: 200,
+      kind: "light" as const,
+      glow: true,
+      glowRadius: 120,
+    },
+    // On/off-only: no colour and no brightness, so full strength, and here with
+    // a custom glowColor to show that override.
+    {
+      id: "glow_plain",
+      entity: "light.plain_switch",
+      x: 780,
+      y: 430,
+      kind: "light" as const,
+      glow: true,
+      glowRadius: 110,
+      glowColor: "#b0ffd0",
+    },
     // Issue #79: two active devices side by side with different active colors.
     // Both are "on"; before the option existed both badges were the same yellow.
     {

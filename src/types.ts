@@ -245,6 +245,26 @@ export interface FloorItem {
   rippleColor?: string;
   /** Max ripple ring diameter in pixels. Default 80. */
   rippleSize?: number;
+  /**
+   * Cast a pool of light onto the plan from this device's position (issue #6).
+   *
+   * The room is not tinted as a whole — the light falls where the device sits,
+   * so several lights in one room each cast their own pool and the pools mix
+   * where they overlap. That handles an open-plan room, or one lamp warm and
+   * another cool, which a single room-wide fill cannot express.
+   *
+   * The device's own `x`/`y` are the position, so a light icon already placed
+   * on the plan needs nothing but this flag.
+   */
+  glow?: boolean;
+  /** Radius of the cast pool in canvas units. Default {@link DEFAULT_GLOW_RADIUS}. */
+  glowRadius?: number;
+  /**
+   * Color for a light that cannot report one — a brightness-only or on/off
+   * bulb. A color-capable light always paints its own `rgb_color` instead.
+   * Defaults to {@link DEFAULT_GLOW_COLOR}, a warm white.
+   */
+  glowColor?: string;
   /** Lovelace actions. Defaults: tap = toggle (controllable domains) or more-info; hold/double = none. */
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
@@ -492,28 +512,9 @@ export interface Area {
    */
   entity?: string;
   /**
-   * A light in this room whose own color paints it (issue #6) — the bird's-eye
-   * view where you compare the tones set across rooms. Independent of
-   * {@link entity}, so a room can take its color from the light while a smoke
-   * detector on `entity` still overrides it.
-   *
-   * Not every light can report a color, so this degrades in rungs (see
-   * `areaLightPaint`): a color-capable light paints its `rgb_color`; a
-   * brightness-only light keeps the room's own color and varies the opacity;
-   * an on/off-only light just goes to full {@link activeOpacity}. An off or
-   * unavailable light paints nothing, leaving the room at its resting
-   * {@link color}.
-   */
-  lightEntity?: string;
-  /**
    * Threshold/state colors for the fill, in the same shape as
-   * {@link FloorItem.stateColor}. Evaluated against `entity`'s state.
-   *
-   * A rule that names an `above` threshold or an exact `state` outranks
-   * {@link lightEntity}, so an alarm still shows through a lit room. A
-   * catch-all rule (neither `above` nor `state`) deliberately ranks *below*
-   * the light — it reads as "the resting color", and letting it outrank the
-   * light would silently mask it, since most rule lists end with one.
+   * {@link FloorItem.stateColor}. Evaluated against `entity`'s state; takes
+   * precedence over {@link activeColor} and {@link color}.
    */
   stateColor?: StateColorRule[];
   /** Fill color while `entity` is active. Used when no {@link stateColor} rule matches. */
@@ -554,16 +555,19 @@ export function areaFiltersEntities(
 export const DEFAULT_AREA_OPACITY = 0.25;
 export const DEFAULT_AREA_BORDER_WIDTH = 3;
 
+/** Radius of a light's cast pool, in canvas units (issue #6). */
+export const DEFAULT_GLOW_RADIUS = 140;
+/** Warm white, for a light that cannot report a color of its own. */
+export const DEFAULT_GLOW_COLOR = "#ffd9a0";
 /**
- * Opacity band a light's `brightness` maps into (issue #6).
+ * Opacity band a light's `brightness` maps into at the center of its pool.
  *
- * Not 0–1: a room dimmed to 10% would be all but invisible, and "I can't see
- * the room" is a worse reading than "the room is dim". The floor keeps a lit
- * room legible, and the ceiling keeps a fully-lit room from swamping the
- * icons drawn on top of it.
+ * Not 0–1: a lamp dimmed to 10% would be invisible, and "I can't see it" reads
+ * worse than "it's dim". The ceiling keeps a bright lamp from burying the
+ * furniture and icons it sits on top of.
  */
-export const LIGHT_MIN_OPACITY = 0.15;
-export const LIGHT_MAX_OPACITY = 0.5;
+export const GLOW_MIN_OPACITY = 0.18;
+export const GLOW_MAX_OPACITY = 0.6;
 
 export const DEFAULT_TRACKER_DOT_SIZE = 14;
 

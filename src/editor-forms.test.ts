@@ -17,6 +17,7 @@ import {
 } from "./editor-forms";
 import type { FormField } from "./editor-forms";
 import type { Area, Opening, FloorItem, Floor, FloorplanCardConfig } from "./types";
+import { DEFAULT_GLOW_RADIUS } from "./types";
 
 const fields: FormField[] = [
   { name: "name", label: "Name", selector: { text: {} } },
@@ -167,6 +168,19 @@ describe("openingForm", () => {
 
 describe("itemForm", () => {
   const item = { id: "i", entity: "light.a", kind: "light", x: 0, y: 0 } as FloorItem;
+
+  it("offers Cast light on lights only, with its controls behind the toggle (#6)", () => {
+    const names = (it: FloorItem) => itemForm(it).fields.map((x) => x.name);
+    expect(names(item)).toContain("glow");
+    // Radius/colour would be noise on a device that isn't casting yet.
+    expect(names(item)).not.toContain("glowRadius");
+    const lit = { ...item, glow: true } as FloorItem;
+    expect(names(lit)).toContain("glowRadius");
+    expect(names(lit)).toContain("glowColor");
+    expect(itemForm(lit).data.glowRadius).toBe(DEFAULT_GLOW_RADIUS);
+    // A sensor has no colour to cast, so it is never offered.
+    expect(names({ ...item, kind: "sensor", entity: "sensor.temp" } as FloorItem)).not.toContain("glow");
+  });
 
   it("hides ripple size for badge display, shows it otherwise", () => {
     expect(itemForm(item).fields.map((x) => x.name)).not.toContain("rippleSize");

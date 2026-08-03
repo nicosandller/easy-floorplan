@@ -22,6 +22,7 @@ import {
   DEFAULT_GRID,
   DEFAULT_ITEM_SIZE,
   DEFAULT_RIPPLE_SIZE,
+  DEFAULT_GLOW_RADIUS,
   DEFAULT_TEXT_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
 } from "./types";
@@ -415,6 +416,31 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
       selector: { number: { min: 40, max: 400, step: 4, mode: "slider", unit_of_measurement: "px" } },
     });
   }
+  // A light can cast a pool of light onto the plan from where it sits (issue
+  // #6). Offered only for lights, since nothing else has a color to cast.
+  if (it.kind === "light" || it.entity?.startsWith("light.")) {
+    fields.push({
+      name: "glow",
+      label: "Cast light",
+      helper: "Pools the light's own color onto the plan; overlapping lights mix",
+      selector: { boolean: {} },
+    });
+    if (it.glow) {
+      fields.push(
+        {
+          name: "glowRadius",
+          label: "Light radius",
+          selector: { number: { min: 20, max: 600, step: 10, mode: "slider" } },
+        },
+        {
+          name: "glowColor",
+          label: "Light color",
+          helper: "Only for bulbs that can't report a color; others use their own",
+          selector: { text: {} },
+        }
+      );
+    }
+  }
   fields.push(
     { name: "showIcon", label: "Show icon", selector: { boolean: {} } },
     {
@@ -466,6 +492,9 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
       display,
       iconAnimation: it.iconAnimation ?? "auto",
       rippleSize: it.rippleSize ?? DEFAULT_RIPPLE_SIZE,
+      glow: it.glow ?? false,
+      glowRadius: it.glowRadius ?? DEFAULT_GLOW_RADIUS,
+      glowColor: it.glowColor ?? "",
       showIcon: it.showIcon ?? true,
       hideWhenInactive: it.hideWhenInactive ?? false,
       showState: it.showState ?? false,
@@ -630,21 +659,11 @@ export function areaForm(a: Area): FormSpec {
         helper: "Optional — lets the room fill change color with a sensor",
         selector: { entity: {} },
       },
-      // A light in this room paints it with its own color and brightness
-      // (issue #6). Separate from `entity` so a room can glow with the light
-      // while a smoke detector still overrides it.
-      {
-        name: "lightEntity",
-        label: "Light",
-        helper: "Optional — the room takes this light's color and brightness",
-        selector: { entity: { filter: [{ domain: "light" }] } },
-      },
     ],
     data: {
       showName: a.showName ?? true,
       opacity: a.opacity ?? DEFAULT_AREA_OPACITY,
       entity: a.entity ?? "",
-      lightEntity: a.lightEntity ?? "",
     },
     toPatch: identity,
   };

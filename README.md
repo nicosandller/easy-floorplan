@@ -21,6 +21,10 @@ automatically to the card and screen size.
   entity), custom icon (with autocomplete + preview), size and rotation.
 - **Presence ripples** — render presence/movement sensors as animated concentric rings
   that pulse while active and fade to a faint dot when idle.
+- **Cast light** — a light can pool its own color and brightness onto the plan from where
+  it sits. Several lights in one room each cast their own pool, and overlapping pools
+  *mix* — so a warm lamp and a cool lamp blend between them, and you can read the tones
+  set across the house at a glance.
 - **Animated doors & windows** — link a contact `binary_sensor` or `cover` so doors swing
   and windows open on the plan as their real state changes, with an optional accent color
   while open.
@@ -31,8 +35,7 @@ automatically to the card and screen size.
 - **Areas** — trace a room's outline point-by-point (points snap to wall corners and to
   neighboring areas' corners) to get a colored, named room polygon. Bind an entity to a
   room and its fill goes live — green while a presence sensor is occupied, red when a CO2
-  sensor crosses a threshold. Or bind a **light** and the room glows with that light's own
-  color and brightness, for a bird's-eye view of the tones set across the house. Naming a room after
+  sensor crosses a threshold. Naming a room after
   one of your Home Assistant areas (the name field autocompletes against them) links the
   two, which scopes the entity picker — for any device dropped inside it — to that HA
   area's entities, and can bulk-add every device in the area.
@@ -594,6 +597,9 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 | `activeColor` | string                                 | theme color  | Badge color while the device is on — lets domains be told apart at a glance. Ignored while `stateColor` rules match. |
 | `rippleColor` | string                                 | `activeColor`| Ripple ring color (ripple modes). Falls back to `activeColor`, then the primary color. |
 | `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
+| `glow`        | boolean                                | `false`      | Cast a pool of light onto the plan from this device (lights only). See **Cast light**. |
+| `glowRadius`  | number                                 | `140`        | Radius of the cast pool, in canvas units.              |
+| `glowColor`   | string                                 | `#ffd9a0`    | Color for a bulb that can't report one. A color-capable light always uses its own. |
 | `showIcon`    | boolean                                | `true`       | Show the icon badge.                                   |
 | `hideWhenInactive` | boolean                           | `false`      | Hide the device on the card while its entity is inactive (issue #55). Always shown, dimmed, in the editor. |
 | `showState`   | boolean                                | sensors only | Show the entity state in the label line.               |
@@ -602,6 +608,45 @@ distortion. **`imageOpacity`** (0–1, default 1) fades it.
 
 Clicking a `light`, `switch`, `cover`, `fan` or `input_boolean` toggles it; other
 domains open the more-info dialog.
+
+#### Cast light
+
+Set `glow: true` on a light and it pools its own color and brightness onto the plan,
+centered where the device sits. The light falls **where the lamp is**, not across the
+whole room — so several lights in one room each cast their own pool, and where the pools
+overlap they **mix additively**: a warm lamp and a cool one blend to a neutral tone
+between them, exactly as they would in the room. That's something a single room-wide fill
+can't express, and it's what makes an open-plan space read correctly.
+
+```yaml
+items:
+  - id: lamp_warm
+    entity: light.living_standing_lamp
+    kind: light
+    x: 400
+    y: 300
+    glow: true
+    glowRadius: 200
+```
+
+Lights differ in what they can report, so this degrades in rungs and every light does
+something sensible:
+
+| The light | The pool |
+| --- | --- |
+| Reports a color (`rgb`, `xy`, or even `color_temp`) | Its own color, strength from `brightness` |
+| Brightness only | `glowColor` (warm white), strength from `brightness` |
+| On/off only | `glowColor`, at full strength |
+| Off, `unavailable` or `unknown` | Casts nothing |
+
+Home Assistant derives an `rgb_color` even for `color_temp`-only bulbs, so a warm-white
+bulb still reads as amber. Brightness maps into a **0.18–0.6** opacity band rather than
+0–1: a lamp dimmed to 10% would otherwise be invisible.
+
+The pools are drawn above the room fills but below furniture and walls, so light reads as
+cast onto the floor rather than painted over the plan. `glow` is independent of the icon —
+combine it with `showIcon: false` for light with no badge, or with `hideWhenInactive` to
+drop both when the light is off.
 
 ### Text
 
@@ -682,7 +727,7 @@ trackers:
 
 ### Area
 
-`{ id, points, name?, showName?, color?, opacity?, haArea?, filterEntities?, entity?, lightEntity?, stateColor?, activeColor?, activeOpacity?, borderColor?, borderWidth?, highlight? }`
+`{ id, points, name?, showName?, color?, opacity?, haArea?, filterEntities?, entity?, stateColor?, activeColor?, activeOpacity?, borderColor?, borderWidth?, highlight? }`
 
 - `points` — an array of `{ x, y }` vertices (canvas units), in drawing order; the shape
   is implicitly closed from the last point back to the first.
@@ -697,12 +742,9 @@ trackers:
   a linked `haArea`.
 - `entity` — optional entity that makes the room itself live, in the same shape furniture
   uses. Drives `stateColor` and `activeColor`; an unbound area stays a static polygon.
-- `lightEntity` — a light in this room, whose own color and brightness paint it. See
-  **A room lit by its light** below.
 - `stateColor` — threshold/state rules for the fill (same shape as a device's
-  `stateColor`). Evaluated against `entity`'s state. A rule naming an `above` threshold
-  or an exact `state` outranks `lightEntity`; a catch-all rule (neither) ranks *below*
-  it — see the precedence list below.
+  `stateColor`). Evaluated against `entity`'s state; takes precedence over `activeColor`
+  and `color`.
 - `activeColor` — fill color while `entity` is active, used when no `stateColor` rule
   matches.
 - `activeOpacity` — fill opacity while `entity` resolves a color. Lets a room lift out of
@@ -712,41 +754,6 @@ trackers:
 - `highlight` — where a live color paints: `fill` (default), `border`, or `both`. Use
   `border` for a room that outlines itself while occupied without tinting everything
   inside it, which reads better on a busy plan.
-
-#### A room lit by its light
-
-Set `lightEntity` and the room takes the light's **own** color and brightness — a
-bird's-eye view where you can compare the tones set across the house at a glance. No
-rules to write: for a light you want the light's color, not a threshold.
-
-Lights differ in what they can report, so this degrades in rungs and every light does
-something sensible:
-
-| The light | What the room does |
-| --- | --- |
-| Reports a color (`rgb`, `xy`, or even `color_temp`) | Fills with that color, opacity from `brightness` |
-| Brightness only | Keeps its own `color`, opacity from `brightness` |
-| On/off only | Keeps its own `color`, at full brightness opacity |
-| Off, `unavailable` or `unknown` | Back to its resting `color`/`opacity` |
-
-Home Assistant derives an `rgb_color` even for `color_temp`-only bulbs, so a warm-white
-bulb still reads as amber. Brightness maps into a **0.15–0.5** opacity band rather than
-0–1: a room dimmed to 10% would otherwise be invisible, and "I can't see the room" reads
-worse than "the room is dim".
-
-#### Which color wins
-
-A room can bind both a light and a sensor. Highest priority first:
-
-1. a `stateColor` rule that **tested** the value (`above` or `state`) — so a smoke alarm
-   shows through a lit room;
-2. `lightEntity`, while the light is on;
-3. `activeColor`, while `entity` is active;
-4. a **catch-all** `stateColor` rule (neither `above` nor `state`) — it means "resting
-   color", so it ranks below anything that knows about right now. This matters: rule
-   lists conventionally end with a catch-all, and ranking it first would silently mask
-   the light on every config that has one;
-5. the static `color`.
 
 ```yaml
 areas:
@@ -790,23 +797,6 @@ areas:
       - { x: 900, y: 100 }
       - { x: 900, y: 500 }
       - { x: 500, y: 500 }
-
-  # The room glows with its light's own color and brightness — but a smoke
-  # alarm still shows through it, because a rule that tests the value
-  # outranks the light.
-  - id: bedroom
-    name: Bedroom
-    lightEntity: light.bedroom
-    entity: binary_sensor.bedroom_smoke
-    stateColor:
-      - { state: "on", color: "#e1243b" }
-    color: "#3366cc"
-    opacity: 0.12
-    points:
-      - { x: 500, y: 500 }
-      - { x: 900, y: 500 }
-      - { x: 900, y: 900 }
-      - { x: 500, y: 900 }
 
   # Or bind a numeric sensor and threshold it, so the whole room reddens
   # when air quality goes bad.

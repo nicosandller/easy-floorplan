@@ -45,11 +45,15 @@ import {
   snapToGridPercent,
   trackerPresenceDetected,
   uid,
+  DEFAULT_GLOW_COLOR,
+  GLOW_MAX_OPACITY,
 } from "./types";
 import {
   WALL_THICKNESS,
   renderOpening,
   renderWallMask,
+  glowPaint,
+  renderGlow,
   openingDefaultOpen,
   openingMotion,
   shutterStyleOf,
@@ -2704,6 +2708,20 @@ export class FloorplanCardEditor extends LitElement {
                 (a, i) => a.id || i,
                 (a) => this._renderAreaSel(a, scopingAreaId)
               )}
+              <!-- Light pools (issue #6), same layer position as the card so
+                   what you place is what you get. Previewed at full strength
+                   with no hass in the editor, so the radius is adjustable
+                   without having to turn the real light on. -->
+              <g class="fp-glows">
+                ${floor.items.map((it, i) => {
+                  if (!it.glow) return nothing;
+                  const paint = glowPaint(it, this.hass?.states[it.entity]) ?? {
+                    color: cssColorOr(it.glowColor, DEFAULT_GLOW_COLOR),
+                    opacity: GLOW_MAX_OPACITY,
+                  };
+                  return renderGlow(it, paint, `${this._wallMaskId}-glow-${i}`);
+                })}
+              </g>
               ${floor.furniture.map((f) => this._renderFurnitureSel(f))}
               ${renderWallMask(floor.openings, c.width, c.height, this._wallMaskId)}
               ${floor.walls.map((w) => this._renderWall(w))}
