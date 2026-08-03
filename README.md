@@ -774,10 +774,15 @@ trackers:
   inside it, which reads better on a busy plan.
 
   An area's outline is drawn **on top of the walls it traces**, so `border` colors the
-  room's own walls rather than hiding a line underneath them. A live border therefore
-  defaults to the wall thickness (`8`); set `borderWidth` yourself for a thinner line
-  inside the wall, or a thicker one that spills past it. Doorways and windows are cut
-  out of the outline exactly as they are cut out of the wall.
+  room's own walls rather than hiding a line underneath them. Doorways and windows are
+  cut out of the outline exactly as they are cut out of the wall.
+
+  A live outline is clipped to its own room, so rooms never paint each other: a wall
+  between two rooms splits down the middle and each side reports its own room, and a
+  corner where several rooms meet splits between them. An exterior wall colors on its
+  inside face only, leaving the plan's silhouette intact. `borderWidth` is the width
+  you actually see on the room's own side, and defaults to the thickness of the wall
+  it covers (`8`).
 
 ```yaml
 areas:

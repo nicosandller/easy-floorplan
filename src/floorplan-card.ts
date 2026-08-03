@@ -433,12 +433,15 @@ export class FloorplanCard extends LitElement {
                  with the fill is buried under the wall and never seen. Drawn
                  here it colors the wall instead. Same mask as the walls above,
                  so a doorway is a gap in the outline exactly as it is a gap in
-                 the wall. -->
+                 the wall. Each live outline is clipped to its own room, so a
+                 shared wall splits down the middle rather than going to
+                 whichever area happens to sit later in the config. -->
             <g mask=${`url(#${this._wallMaskId})`}>
-              ${active.areas?.map((a) =>
+              ${active.areas?.map((a, i) =>
                 renderAreaBorder(
                   a,
-                  areaColor(a, a.entity ? this.hass?.states[a.entity]?.state : undefined)
+                  areaColor(a, a.entity ? this.hass?.states[a.entity]?.state : undefined),
+                  `${this._wallMaskId}-area-${i}`
                 )
               )}
             </g>

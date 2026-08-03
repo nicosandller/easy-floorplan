@@ -1460,13 +1460,28 @@ export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
  * this inside the wall mask, so doorways and windows stay cut out of the
  * outline exactly as they are cut out of the wall.
  *
+ * A **live** border is clipped to its own room (`clipId` names the clip path
+ * the caller must keep unique). Rooms share walls, and an unclipped stroke
+ * straddles the boundary and paints the neighbour's face as well as its own —
+ * so on a wall between two live rooms whichever area sits later in `areas:`
+ * simply wins the whole wall, and reordering the config silently changes what
+ * the plan says. Clipped, each room paints its own side and a corner where
+ * several rooms meet splits between them. A **static** `borderColor` is drawn
+ * as authored — centered on the polygon, unclipped — since it is decoration
+ * placed deliberately rather than a per-room signal.
+ *
  * Carries the same `data-id` / `data-entity` hooks as the fill (#111) under its
  * own `fp-area-border` class, so a rule can target a room's outline and its
- * fill separately.
+ * fill separately. They go on the drawn polygon only: a `<clipPath>` is never
+ * rendered, so a rule matching one would look like it silently does nothing.
  *
  * Returns `nothing` when there is no outline to draw — the default.
  */
-export function renderAreaBorder(a: Area, liveColor?: string): SVGTemplateResult | typeof nothing {
+export function renderAreaBorder(
+  a: Area,
+  liveColor?: string,
+  clipId?: string
+): SVGTemplateResult | typeof nothing {
   const liveBorder = liveColor !== undefined && (a.highlight ?? "fill") !== "fill";
   const stroke = liveBorder
     ? liveColor
@@ -1475,16 +1490,27 @@ export function renderAreaBorder(a: Area, liveColor?: string): SVGTemplateResult
       : undefined;
   if (stroke === undefined || stroke === "none") return nothing;
 
-  // A live border defaults to the wall's own thickness. It sits on the wall it
-  // traces, and a room announcing itself wants that wall colored, not a thin
-  // stripe painted down the middle of it. A static border is decoration and
-  // keeps its thinner default. An explicit borderWidth still wins either way.
-  const width = cssNumber(a.borderWidth, liveBorder ? WALL_THICKNESS : DEFAULT_AREA_BORDER_WIDTH);
   const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
-  return svg`<polygon class="fp-area-border" data-id=${cssIdent(a.id) ?? nothing}
-                      data-entity=${cssEntityId(a.entity) ?? nothing}
-                      points=${pts} fill="none"
-                      stroke=${stroke} stroke-width=${width} />`;
+  // `borderWidth` is always the width actually seen. A live border defaults to
+  // the thickness of the wall it covers; a static one keeps the thinner
+  // decorative default.
+  const width = cssNumber(a.borderWidth, liveBorder ? WALL_THICKNESS : DEFAULT_AREA_BORDER_WIDTH);
+
+  if (!liveBorder || clipId === undefined) {
+    return svg`<polygon class="fp-area-border" data-id=${cssIdent(a.id) ?? nothing}
+                        data-entity=${cssEntityId(a.entity) ?? nothing}
+                        points=${pts} fill="none"
+                        stroke=${stroke} stroke-width=${width} />`;
+  }
+
+  // Clipping keeps only the inner half of the stroke, so it is drawn at twice
+  // the width to leave `width` showing on this room's own side.
+  return svg`
+    <clipPath id=${clipId}><polygon points=${pts} /></clipPath>
+    <polygon class="fp-area-border" data-id=${cssIdent(a.id) ?? nothing}
+             data-entity=${cssEntityId(a.entity) ?? nothing}
+             points=${pts} fill="none" clip-path=${`url(#${clipId})`}
+             stroke=${stroke} stroke-width=${width * 2} />`;
 }
 
 /**

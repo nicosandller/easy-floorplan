@@ -1487,6 +1487,30 @@ describe("renderAreaBorder", () => {
     expect(flatten(renderAreaBorder(a, "#4caf50"))).toContain("stroke-width=2");
   });
 
+  it("clips a live border to its own room, so a shared wall splits", () => {
+    const a = { id: "a", points: square, highlight: "border" as const };
+    const markup = flatten(renderAreaBorder(a, "#4caf50", "clip-1"));
+    expect(markup).toContain('<clipPath id=clip-1>');
+    expect(markup).toContain("clip-path=url(#clip-1)");
+  });
+
+  it("draws a clipped border at double width, so borderWidth is what is seen", () => {
+    const a = { id: "a", points: square, highlight: "border" as const };
+    // Half of the stroke is clipped away, leaving WALL_THICKNESS on this side.
+    expect(flatten(renderAreaBorder(a, "#4caf50", "c"))).toContain(
+      `stroke-width=${WALL_THICKNESS * 2}`
+    );
+    const wide = { ...a, borderWidth: 5 };
+    expect(flatten(renderAreaBorder(wide, "#4caf50", "c"))).toContain("stroke-width=10");
+  });
+
+  it("never clips a static border — decoration is drawn as authored (#6)", () => {
+    const a = { id: "a", points: square, borderColor: "#123456" };
+    const markup = flatten(renderAreaBorder(a, undefined, "clip-1"));
+    expect(markup).not.toContain("clip-path");
+    expect(markup).toContain("stroke-width=3");
+  });
+
   it("drops an unsafe borderColor rather than drawing it (#64)", () => {
     expect(
       renderAreaBorder({ id: "a", points: square, borderColor: "red;position:fixed;inset:0" })
