@@ -11,6 +11,7 @@ import type {
   Area,
   AreaPoint,
   RenderHass,
+  HassEntity,
 } from "./types";
 import {
   FURNITURE_COLOR,
@@ -18,6 +19,8 @@ import {
   DEFAULT_RIPPLE_SIZE,
   DEFAULT_AREA_OPACITY,
   DEFAULT_AREA_BORDER_WIDTH,
+  LIGHT_MIN_OPACITY,
+  LIGHT_MAX_OPACITY,
   getFloors,
   trackerAxisFraction,
 } from "./types";
@@ -83,6 +86,13 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
     // first-painted color forever.
     for (const fu of f.furniture) {
       if (fu.entity) ids.add(fu.entity);
+    }
+    // Entity-bound areas (issue #6) — same reasoning as furniture above: miss
+    // these and a room's color is painted once and then frozen, because
+    // shouldUpdate drops every hass tick that only moved an unwatched entity.
+    for (const a of f.areas) {
+      if (a.entity) ids.add(a.entity);
+      if (a.lightEntity) ids.add(a.lightEntity);
     }
     for (const tr of f.trackers) {
       for (const s of [tr.xSensor, tr.ySensor]) {
@@ -158,6 +168,26 @@ export function resolveStateColor(
   rules: readonly StateColorRule[] | undefined,
   raw: unknown,
 ): string | undefined {
+  return matchStateColor(rules, raw)?.color;
+}
+
+/** A matched {@link StateColorRule}, and whether it named a condition. */
+export interface StateColorMatch {
+  color: string;
+  /**
+   * True for a rule that actually tested the value (`above` or `state`), false
+   * for the catch-all. Callers that rank a rule against another source of
+   * color use this: a catch-all means "no opinion about right now", so it must
+   * not outrank a live reading (issue #6).
+   */
+  specific: boolean;
+}
+
+/** {@link resolveStateColor}, but reporting which tier matched. */
+export function matchStateColor(
+  rules: readonly StateColorRule[] | undefined,
+  raw: unknown,
+): StateColorMatch | undefined {
   if (!rules?.length) return undefined;
   const n = typeof raw === "number" ? raw : Number(raw);
   const numeric = typeof raw !== "boolean" && raw !== "" && raw != null && Number.isFinite(n);
@@ -181,7 +211,10 @@ export function resolveStateColor(
       fallback = rule.color;
     }
   }
-  return exact ?? best?.color ?? fallback;
+  if (exact !== undefined) return { color: exact, specific: true };
+  if (best) return { color: best.color, specific: true };
+  if (fallback !== undefined) return { color: fallback, specific: false };
+  return undefined;
 }
 
 /**
@@ -201,20 +234,99 @@ export function furnitureColor(f: Furniture, state: string | undefined): string 
   return undefined;
 }
 
+/** How an {@link Area} should paint right now. Empty = leave it static. */
+export interface AreaPaint {
+  /** Live color, already through the style-injection allowlist (#64). */
+  color?: string;
+  /** Live fill opacity. Only a light sets this; other sources use `activeOpacity`. */
+  opacity?: number;
+}
+
 /**
- * Resolve the live fill color for an {@link Area} bound to an entity (issue #6),
- * mirroring {@link furnitureColor}: `stateColor` rules win, then `activeColor`
- * while the entity is active, else undefined so the static `color` applies.
+ * What an associated light contributes to its room's fill (issue #6).
  *
- * Returns a value already through the style-injection allowlist (#64), because
- * it flows straight into a `fill` attribute.
+ * Lights vary wildly in what they can report, so this degrades in rungs rather
+ * than demanding `rgb_color` and doing nothing without it — on a real install
+ * most lights are brightness-only or on/off-only switches:
+ *
+ * 1. **color-capable** — paint `rgb_color`. Home Assistant derives it even for
+ *    `color_temp`-only bulbs, so a warm-white bulb still reads as amber.
+ * 2. **brightness-only** — no color of its own, so keep the room's color and
+ *    let `brightness` drive the opacity.
+ * 3. **on/off-only** — no color and no brightness: just go fully lit.
+ *
+ * A light that is off, `unavailable` or `unknown` returns undefined and the
+ * room falls back to its resting color — failing closed like every other
+ * state reader here, so a dead sensor never leaves a room looking lit.
  */
-export function areaColor(a: Area, state: string | undefined): string | undefined {
-  if (!a.entity) return undefined;
-  const rule = resolveStateColor(a.stateColor, state);
-  if (rule) return cssColor(rule);
-  if (a.activeColor && entityIsActive(a.entity, state)) return cssColor(a.activeColor);
-  return undefined;
+export function areaLightPaint(light: HassEntity | undefined): AreaPaint | undefined {
+  if (!light || light.state !== "on") return undefined;
+  const attrs = (light.attributes ?? {}) as Record<string, unknown>;
+
+  // brightness is 0-255 and absent on on/off-only lights, where "on" is full.
+  const raw = attrs.brightness;
+  const bright = typeof raw === "number" && Number.isFinite(raw) ? Math.max(0, Math.min(255, raw)) : undefined;
+  const opacity =
+    bright === undefined
+      ? LIGHT_MAX_OPACITY
+      : LIGHT_MIN_OPACITY + (LIGHT_MAX_OPACITY - LIGHT_MIN_OPACITY) * (bright / 255);
+
+  const rgb = attrs.rgb_color;
+  if (Array.isArray(rgb) && rgb.length >= 3) {
+    const [r, g, b] = rgb;
+    if ([r, g, b].every((c) => typeof c === "number" && Number.isFinite(c))) {
+      const chan = (c: number) => Math.max(0, Math.min(255, Math.round(c)));
+      // Built from clamped integers, so it cannot carry a payload — but it
+      // still goes through the allowlist, since every color reaching an
+      // attribute here does.
+      const color = cssColor(`rgb(${chan(r as number)}, ${chan(g as number)}, ${chan(b as number)})`);
+      if (color) return { color, opacity };
+    }
+  }
+  // Rungs 2 and 3: no color to offer, only a brightness.
+  return { opacity };
+}
+
+/**
+ * Resolve how an {@link Area} paints right now (issue #6). Precedence, highest
+ * first:
+ *
+ * 1. a **conditional rule that tested the value** — `above` or `state`. An
+ *    alarm must show through a lit room.
+ * 2. the **associated light**, if it is on.
+ * 3. **`activeColor`** while `entity` is active.
+ * 4. a **catch-all** `stateColor` rule — it means "resting color", so it ranks
+ *    below anything that knows about right now. Ranking it at (1) would mask
+ *    the light on every config, because rule lists conventionally end with one.
+ * 5. nothing — the static `color` applies.
+ *
+ * Colors come back already through the allowlist (#64), since they flow
+ * straight into `fill`/`stroke`.
+ */
+export function resolveAreaPaint(
+  a: Area,
+  state: string | undefined,
+  light?: HassEntity,
+): AreaPaint {
+  const match = a.entity ? matchStateColor(a.stateColor, state) : undefined;
+  if (match?.specific) {
+    const color = cssColor(match.color);
+    // A rejected color must not swallow the rung; fall through to the light.
+    if (color) return { color };
+  }
+  if (a.lightEntity) {
+    const lit = areaLightPaint(light);
+    if (lit) return lit;
+  }
+  if (a.entity && a.activeColor && entityIsActive(a.entity, state)) {
+    const color = cssColor(a.activeColor);
+    if (color) return { color };
+  }
+  if (match && !match.specific) {
+    const color = cssColor(match.color);
+    if (color) return { color };
+  }
+  return {};
 }
 
 /**
@@ -1168,29 +1280,36 @@ export function polygonCentroid(points: readonly AreaPoint[]): { x: number; y: n
  * `color`/`opacity` are config-supplied style values, so they go through the
  * same injection allowlist as every other color/number field (see css-safe.ts).
  */
-export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
+export function renderArea(a: Area, paint?: AreaPaint): SVGTemplateResult {
   const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
-  // `liveColor` has already been through the allowlist by areaColor(). When it
-  // is present the area is "live" and `highlight` decides whether that color
-  // lands on the fill, the outline, or both.
-  const live = liveColor !== undefined;
+  // Colors in `paint` have already been through the allowlist by
+  // resolveAreaPaint(). A paint with only an opacity still counts as live — a
+  // brightness-only light lights the room in the room's own color.
+  const liveColor = paint?.color;
+  const live = paint !== undefined && (paint.color !== undefined || paint.opacity !== undefined);
   const target = a.highlight ?? "fill";
   const liveFill = live && target !== "border";
-  const liveBorder = live && target !== "fill";
+  const liveBorder = live && liveColor !== undefined && target !== "fill";
 
-  // activeOpacity is a fill concern, so it only applies when the fill is live.
-  const opacity = liveFill ? a.activeOpacity ?? a.opacity : a.opacity;
+  // A light states its own opacity (brightness); otherwise `activeOpacity`
+  // lifts the room while it is live. Both are fill concerns only.
+  const opacity = liveFill ? paint?.opacity ?? a.activeOpacity ?? a.opacity : a.opacity;
   const stroke = liveBorder
     ? liveColor
     : a.borderColor
       ? cssColorOr(a.borderColor, "none")
       : undefined;
 
+  // A live fill without a color of its own (a brightness-only light) keeps the
+  // room's own color and varies only the opacity.
+  const fill = liveFill && liveColor ? liveColor : cssColorOr(a.color, "var(--primary-color, #03a9f4)");
+  // A rejected borderColor lands here as "none"; don't give it a width.
+  const outlined = stroke !== undefined && stroke !== "none";
   return svg`<polygon points=${pts}
-                       fill=${liveFill ? liveColor : cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
+                       fill=${fill}
                        fill-opacity=${cssNumber(opacity, DEFAULT_AREA_OPACITY)}
                        stroke=${stroke ?? "none"}
-                       stroke-width=${stroke ? cssNumber(a.borderWidth, DEFAULT_AREA_BORDER_WIDTH) : 0} />`;
+                       stroke-width=${outlined ? cssNumber(a.borderWidth, DEFAULT_AREA_BORDER_WIDTH) : 0} />`;
 }
 
 /**

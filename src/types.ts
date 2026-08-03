@@ -492,9 +492,28 @@ export interface Area {
    */
   entity?: string;
   /**
+   * A light in this room whose own color paints it (issue #6) — the bird's-eye
+   * view where you compare the tones set across rooms. Independent of
+   * {@link entity}, so a room can take its color from the light while a smoke
+   * detector on `entity` still overrides it.
+   *
+   * Not every light can report a color, so this degrades in rungs (see
+   * `areaLightPaint`): a color-capable light paints its `rgb_color`; a
+   * brightness-only light keeps the room's own color and varies the opacity;
+   * an on/off-only light just goes to full {@link activeOpacity}. An off or
+   * unavailable light paints nothing, leaving the room at its resting
+   * {@link color}.
+   */
+  lightEntity?: string;
+  /**
    * Threshold/state colors for the fill, in the same shape as
-   * {@link FloorItem.stateColor}. Evaluated against `entity`'s state; takes
-   * precedence over {@link activeColor} and {@link color}.
+   * {@link FloorItem.stateColor}. Evaluated against `entity`'s state.
+   *
+   * A rule that names an `above` threshold or an exact `state` outranks
+   * {@link lightEntity}, so an alarm still shows through a lit room. A
+   * catch-all rule (neither `above` nor `state`) deliberately ranks *below*
+   * the light — it reads as "the resting color", and letting it outrank the
+   * light would silently mask it, since most rule lists end with one.
    */
   stateColor?: StateColorRule[];
   /** Fill color while `entity` is active. Used when no {@link stateColor} rule matches. */
@@ -534,6 +553,17 @@ export function areaFiltersEntities(
 
 export const DEFAULT_AREA_OPACITY = 0.25;
 export const DEFAULT_AREA_BORDER_WIDTH = 3;
+
+/**
+ * Opacity band a light's `brightness` maps into (issue #6).
+ *
+ * Not 0–1: a room dimmed to 10% would be all but invisible, and "I can't see
+ * the room" is a worse reading than "the room is dim". The floor keeps a lit
+ * room legible, and the ceiling keeps a fully-lit room from swamping the
+ * icons drawn on top of it.
+ */
+export const LIGHT_MIN_OPACITY = 0.15;
+export const LIGHT_MAX_OPACITY = 0.5;
 
 export const DEFAULT_TRACKER_DOT_SIZE = 14;
 

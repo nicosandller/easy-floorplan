@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import type { Furniture, FurnitureType, ItemKind } from "./types";
-import { FURNITURE_DEFAULT_SIZE } from "./types";
+import { FURNITURE_DEFAULT_SIZE, LIGHT_MIN_OPACITY, LIGHT_MAX_OPACITY } from "./types";
 import {
   snapToWall,
   openingDefaultOpen,
@@ -45,7 +45,9 @@ import {
   planRotationTransform,
   polygonCentroid,
   renderArea,
-  areaColor,
+  resolveAreaPaint,
+  areaLightPaint,
+  matchStateColor,
 } from "./render";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
 
@@ -1365,19 +1367,19 @@ describe("renderArea", () => {
   });
 
   it("uses the live fill color over the resting one (#6)", () => {
-    const markup = flatten(renderArea({ id: "a", points: square, color: "#ff0000" }, "#4caf50"));
+    const markup = flatten(renderArea({ id: "a", points: square, color: "#ff0000" }, { color: "#4caf50" }));
     expect(markup).toContain("fill=#4caf50");
     expect(markup).not.toContain("fill=#ff0000");
   });
 
   it("applies activeOpacity only while live (#6)", () => {
     const a = { id: "a", points: square, opacity: 0.2, activeOpacity: 0.7 };
-    expect(flatten(renderArea(a, "#4caf50"))).toContain("fill-opacity=0.7");
+    expect(flatten(renderArea(a, { color: "#4caf50" }))).toContain("fill-opacity=0.7");
     expect(flatten(renderArea(a))).toContain("fill-opacity=0.2");
   });
 
   it("keeps the resting opacity when activeOpacity is unset (#6)", () => {
-    const markup = flatten(renderArea({ id: "a", points: square, opacity: 0.2 }, "#4caf50"));
+    const markup = flatten(renderArea({ id: "a", points: square, opacity: 0.2 }, { color: "#4caf50" }));
     expect(markup).toContain("fill-opacity=0.2");
   });
 
@@ -1409,7 +1411,7 @@ describe("renderArea", () => {
 
   it("highlight=border paints the outline and leaves the fill at rest (#6)", () => {
     const a = { id: "a", points: square, color: "#ff0000", highlight: "border" as const };
-    const markup = flatten(renderArea(a, "#4caf50"));
+    const markup = flatten(renderArea(a, { color: "#4caf50" }));
     expect(markup).toContain("stroke=#4caf50");
     expect(markup).toContain("fill=#ff0000");
   });
@@ -1422,27 +1424,27 @@ describe("renderArea", () => {
       activeOpacity: 0.7,
       highlight: "border" as const,
     };
-    expect(flatten(renderArea(a, "#4caf50"))).toContain("fill-opacity=0.2");
+    expect(flatten(renderArea(a, { color: "#4caf50" }))).toContain("fill-opacity=0.2");
   });
 
   it("highlight=both paints fill and outline (#6)", () => {
     const a = { id: "a", points: square, highlight: "both" as const };
-    const markup = flatten(renderArea(a, "#4caf50"));
+    const markup = flatten(renderArea(a, { color: "#4caf50" }));
     expect(markup).toContain("fill=#4caf50");
     expect(markup).toContain("stroke=#4caf50");
   });
 
   it("a live color overrides a static borderColor when it targets the border (#6)", () => {
     const a = { id: "a", points: square, borderColor: "#111111", highlight: "border" as const };
-    expect(flatten(renderArea(a, "#4caf50"))).toContain("stroke=#4caf50");
+    expect(flatten(renderArea(a, { color: "#4caf50" }))).toContain("stroke=#4caf50");
   });
 });
 
-describe("areaColor", () => {
+describe("resolveAreaPaint", () => {
   const base = { id: "a", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] };
 
   it("returns undefined for an unbound area", () => {
-    expect(areaColor({ ...base, activeColor: "#4caf50" }, "on")).toBeUndefined();
+    expect(resolveAreaPaint({ ...base, activeColor: "#4caf50" }, "on").color).toBeUndefined();
   });
 
   it("prefers a matching stateColor rule over activeColor", () => {
@@ -1452,23 +1454,203 @@ describe("areaColor", () => {
       activeColor: "#4caf50",
       stateColor: [{ above: 1000, color: "#ff0000" }, { color: "#00ff00" }],
     };
-    expect(areaColor(a, "1200")).toBe("#ff0000");
-    expect(areaColor(a, "400")).toBe("#00ff00");
+    expect(resolveAreaPaint(a, "1200").color).toBe("#ff0000");
+    expect(resolveAreaPaint(a, "400").color).toBe("#00ff00");
   });
 
   it("uses activeColor when active and no rule matches", () => {
     const a = { ...base, entity: "binary_sensor.occupancy", activeColor: "#4caf50" };
-    expect(areaColor(a, "on")).toBe("#4caf50");
+    expect(resolveAreaPaint(a, "on").color).toBe("#4caf50");
   });
 
   it("returns undefined when the bound entity is inactive", () => {
     const a = { ...base, entity: "binary_sensor.occupancy", activeColor: "#4caf50" };
-    expect(areaColor(a, "off")).toBeUndefined();
+    expect(resolveAreaPaint(a, "off").color).toBeUndefined();
   });
 
   it("gates an unsafe activeColor through css-safe (#64)", () => {
     const a = { ...base, entity: "binary_sensor.occupancy", activeColor: "red;position:fixed;inset:0" };
-    expect(areaColor(a, "on")).toBeUndefined();
+    expect(resolveAreaPaint(a, "on").color).toBeUndefined();
+  });
+});
+
+describe("areaLightPaint (issue #6)", () => {
+  const light = (state: string, attributes: Record<string, unknown> = {}) =>
+    ({ entity_id: "light.x", state, attributes }) as never;
+
+  it("paints a color-capable light's own rgb", () => {
+    const paint = areaLightPaint(light("on", { rgb_color: [255, 170, 80], brightness: 255 }));
+    expect(paint?.color).toBe("rgb(255, 170, 80)");
+    expect(paint?.opacity).toBeCloseTo(LIGHT_MAX_OPACITY, 5);
+  });
+
+  it("scales opacity with brightness, inside the legible band", () => {
+    const dim = areaLightPaint(light("on", { rgb_color: [255, 255, 255], brightness: 0 }));
+    const half = areaLightPaint(light("on", { rgb_color: [255, 255, 255], brightness: 128 }));
+    expect(dim?.opacity).toBeCloseTo(LIGHT_MIN_OPACITY, 5);
+    expect(half?.opacity).toBeGreaterThan(LIGHT_MIN_OPACITY);
+    expect(half?.opacity).toBeLessThan(LIGHT_MAX_OPACITY);
+    // The floor is the point: a dimmed room must stay visible, not vanish.
+    expect(dim?.opacity).toBeGreaterThan(0);
+  });
+
+  it("a brightness-only light offers opacity but no color of its own", () => {
+    // light.kitchen_lights on a real install: supported_color_modes ["brightness"].
+    const paint = areaLightPaint(light("on", { brightness: 255 }));
+    expect(paint).toBeDefined();
+    expect(paint?.color).toBeUndefined();
+    expect(paint?.opacity).toBeCloseTo(LIGHT_MAX_OPACITY, 5);
+  });
+
+  it("an on/off-only light goes fully lit, with no brightness to read", () => {
+    // light.main_living_room_switch_l1: supported_color_modes ["onoff"].
+    const paint = areaLightPaint(light("on"));
+    expect(paint?.color).toBeUndefined();
+    expect(paint?.opacity).toBeCloseTo(LIGHT_MAX_OPACITY, 5);
+  });
+
+  it("paints nothing when off, unavailable, unknown or missing (fails closed)", () => {
+    expect(areaLightPaint(light("off", { rgb_color: [255, 0, 0] }))).toBeUndefined();
+    expect(areaLightPaint(light("unavailable"))).toBeUndefined();
+    expect(areaLightPaint(light("unknown"))).toBeUndefined();
+    expect(areaLightPaint(undefined)).toBeUndefined();
+  });
+
+  it("ignores a malformed rgb_color rather than emitting a broken color", () => {
+    expect(areaLightPaint(light("on", { rgb_color: [255, 0] }))?.color).toBeUndefined();
+    expect(areaLightPaint(light("on", { rgb_color: "red;position:fixed" }))?.color).toBeUndefined();
+    expect(areaLightPaint(light("on", { rgb_color: [null, 1, 2] }))?.color).toBeUndefined();
+  });
+
+  it("clamps out-of-range channels instead of trusting the integration", () => {
+    expect(areaLightPaint(light("on", { rgb_color: [300, -20, 12.6] }))?.color)
+      .toBe("rgb(255, 0, 13)");
+  });
+});
+
+describe("resolveAreaPaint precedence (issue #6)", () => {
+  const base = { id: "a", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }] };
+  const lit = { entity_id: "light.x", state: "on", attributes: { rgb_color: [10, 20, 30], brightness: 255 } } as never;
+
+  it("a conditional rule that tested the value beats the light", () => {
+    const a = {
+      ...base,
+      entity: "binary_sensor.smoke",
+      lightEntity: "light.x",
+      stateColor: [{ state: "on", color: "#ff0000" }],
+    };
+    expect(resolveAreaPaint(a, "on", lit).color).toBe("#ff0000");
+  });
+
+  it("but a catch-all rule does NOT — it would mask the light on every config", () => {
+    const a = {
+      ...base,
+      entity: "sensor.co2",
+      lightEntity: "light.x",
+      stateColor: [{ above: 1000, color: "#ff0000" }, { color: "#00ff00" }],
+    };
+    // Below the threshold only the catch-all matches, so the light shows.
+    expect(resolveAreaPaint(a, "400", lit).color).toBe("rgb(10, 20, 30)");
+    // Above it, the room is in alarm and the rule takes over.
+    expect(resolveAreaPaint(a, "1200", lit).color).toBe("#ff0000");
+  });
+
+  it("falls back to the catch-all when the light is off", () => {
+    const a = {
+      ...base,
+      entity: "sensor.co2",
+      lightEntity: "light.x",
+      stateColor: [{ color: "#00ff00" }],
+    };
+    const off = { entity_id: "light.x", state: "off", attributes: {} } as never;
+    expect(resolveAreaPaint(a, "400", off).color).toBe("#00ff00");
+  });
+
+  it("the light beats activeColor", () => {
+    const a = {
+      ...base,
+      entity: "binary_sensor.occupancy",
+      lightEntity: "light.x",
+      activeColor: "#4caf50",
+    };
+    expect(resolveAreaPaint(a, "on", lit).color).toBe("rgb(10, 20, 30)");
+  });
+
+  it("ignores the light entirely when the area does not bind one", () => {
+    const a = { ...base, entity: "binary_sensor.occupancy", activeColor: "#4caf50" };
+    expect(resolveAreaPaint(a, "on", lit).color).toBe("#4caf50");
+  });
+
+  it("a light alone lights the room, with no conditional config at all", () => {
+    expect(resolveAreaPaint({ ...base, lightEntity: "light.x" }, undefined, lit)).toEqual({
+      color: "rgb(10, 20, 30)",
+      opacity: LIGHT_MAX_OPACITY,
+    });
+  });
+
+  it("an unsafe rule color falls through to the light rather than swallowing it", () => {
+    const a = {
+      ...base,
+      entity: "binary_sensor.smoke",
+      lightEntity: "light.x",
+      stateColor: [{ state: "on", color: "red;position:fixed;inset:0" }],
+    };
+    expect(resolveAreaPaint(a, "on", lit).color).toBe("rgb(10, 20, 30)");
+  });
+});
+
+describe("renderArea with a brightness-only light (issue #6)", () => {
+  const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+  const flatten = (node: unknown): string => {
+    if (node == null || typeof node === "boolean") return "";
+    if (Array.isArray(node)) return node.map(flatten).join("");
+    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+      const { strings, values } = node as { strings: string[]; values: unknown[] };
+      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
+    }
+    return String(node);
+  };
+
+  it("keeps the room's own color and varies only the opacity", () => {
+    const markup = flatten(renderArea({ id: "a", points: square, color: "#ff0000" }, { opacity: 0.4 }));
+    expect(markup).toContain("fill=#ff0000");
+    expect(markup).toContain("fill-opacity=0.4");
+  });
+
+  it("the light's opacity outranks activeOpacity", () => {
+    const a = { id: "a", points: square, opacity: 0.1, activeOpacity: 0.7 };
+    expect(flatten(renderArea(a, { color: "#4caf50", opacity: 0.33 }))).toContain("fill-opacity=0.33");
+  });
+
+  it("an opacity-only paint never draws an outline, having no color for one", () => {
+    const a = { id: "a", points: square, highlight: "border" as const };
+    const markup = flatten(renderArea(a, { opacity: 0.4 }));
+    expect(markup).toContain("stroke=none");
+    expect(markup).toContain("stroke-width=0");
+  });
+});
+
+describe("matchStateColor (issue #6)", () => {
+  it("reports whether the matched rule actually tested the value", () => {
+    const rules = [{ above: 10, color: "#f00" }, { state: "open", color: "#0f0" }, { color: "#00f" }];
+    expect(matchStateColor(rules, 20)).toEqual({ color: "#f00", specific: true });
+    expect(matchStateColor(rules, "open")).toEqual({ color: "#0f0", specific: true });
+    expect(matchStateColor(rules, 5)).toEqual({ color: "#00f", specific: false });
+    expect(matchStateColor([], 5)).toBeUndefined();
+  });
+});
+
+describe("collectWatchedEntities covers areas (issue #6)", () => {
+  it("watches an area's entity and light, or the card freezes their color", () => {
+    const cfg = {
+      type: "custom:easy-floorplan-card",
+      width: 100,
+      height: 100,
+      areas: [{ id: "a", points: [], entity: "binary_sensor.occupancy", lightEntity: "light.kitchen" }],
+    } as never;
+    const watched = collectWatchedEntities(cfg);
+    expect(watched.has("binary_sensor.occupancy")).toBe(true);
+    expect(watched.has("light.kitchen")).toBe(true);
   });
 });
 

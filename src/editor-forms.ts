@@ -630,11 +630,21 @@ export function areaForm(a: Area): FormSpec {
         helper: "Optional — lets the room fill change color with a sensor",
         selector: { entity: {} },
       },
+      // A light in this room paints it with its own color and brightness
+      // (issue #6). Separate from `entity` so a room can glow with the light
+      // while a smoke detector still overrides it.
+      {
+        name: "lightEntity",
+        label: "Light",
+        helper: "Optional — the room takes this light's color and brightness",
+        selector: { entity: { filter: [{ domain: "light" }] } },
+      },
     ],
     data: {
       showName: a.showName ?? true,
       opacity: a.opacity ?? DEFAULT_AREA_OPACITY,
       entity: a.entity ?? "",
+      lightEntity: a.lightEntity ?? "",
     },
     toPatch: identity,
   };

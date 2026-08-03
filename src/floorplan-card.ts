@@ -27,7 +27,7 @@ import {
   furnitureColor,
   renderTracker,
   renderArea,
-  areaColor,
+  resolveAreaPaint,
   polygonCentroid,
   trackerSensorReading,
   entityIsActive,
@@ -385,7 +385,14 @@ export class FloorplanCard extends LitElement {
                           preserveAspectRatio="none" opacity=${active.imageOpacity ?? 1} />`
               : nothing}
             ${active.areas?.map((a) =>
-              renderArea(a, areaColor(a, a.entity ? this.hass?.states[a.entity]?.state : undefined))
+              renderArea(
+                a,
+                resolveAreaPaint(
+                  a,
+                  a.entity ? this.hass?.states[a.entity]?.state : undefined,
+                  a.lightEntity ? this.hass?.states[a.lightEntity] : undefined
+                )
+              )
             )}
             ${active.furniture.map((f) =>
               renderFurniture(f, furnitureColor(f, f.entity ? this.hass?.states[f.entity]?.state : undefined))
