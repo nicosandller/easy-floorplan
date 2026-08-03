@@ -30,6 +30,7 @@ import {
   areaColor,
   glowPaint,
   renderGlow,
+  renderGlowMask,
   polygonCentroid,
   trackerSensorReading,
   entityIsActive,
@@ -398,11 +399,16 @@ export class FloorplanCard extends LitElement {
                  pools screen-blend with each other (two lamps brighten where
                  they meet) without screening against the plan beneath, which
                  would wash out on a light theme. -->
-            <g class="fp-glows">
+            ${renderGlowMask(active.furniture, c.width, c.height, `${this._glowIdBase}-mask`)}
+            <g class="fp-glows"
+               mask=${active.furniture.length ? `url(#${this._glowIdBase}-mask)` : nothing}>
               ${active.items.map((it, i) => {
                 if (!it.glow) return nothing;
                 const paint = glowPaint(it, this.hass?.states[it.entity]);
-                return paint ? renderGlow(it, paint, `${this._glowIdBase}-${i}`) : nothing;
+                // Walls block the pool (issue #108) — light stops at the room.
+                return paint
+                  ? renderGlow(it, paint, `${this._glowIdBase}-${i}`, active.walls)
+                  : nothing;
               })}
             </g>
             ${active.furniture.map((f) =>
@@ -582,6 +588,11 @@ export class FloorplanCard extends LitElement {
        so two lamps brighten where they meet instead of the topmost winning. */
     .fp-glows {
       isolation: isolate;
+      /* Light is decoration and must never take a click: these are filled
+         circles drawn over the plan, so without this they swallow every tap
+         inside the pool — devices stop responding under a lit lamp, and in
+         the editor whole rooms become unselectable (issue #108). */
+      pointer-events: none;
     }
     .fp-glow {
       mix-blend-mode: screen;

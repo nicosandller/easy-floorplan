@@ -648,6 +648,19 @@ cast onto the floor rather than painted over the plan. `glow` is independent of 
 combine it with `showIcon: false` for light with no badge, or with `hideWhenInactive` to
 drop both when the light is off.
 
+**Walls block the light.** A pool is clipped to what the lamp can actually see, so it stops
+at the walls of its room instead of washing into the next one, and spills through a doorway
+gap the way real light does. The result is an irregular shape rather than a clean circle —
+that's the point. A lamp with no wall inside its radius stays a plain circle.
+
+**Furniture keeps its own color.** Light falls on the floor, not on the furniture drawn over
+it: furniture footprints are cut out of the pools, so a sofa under a lit lamp stays its base
+gray rather than turning the color of the light. Only entity-bound furniture with
+`stateColor` / `activeColor` ever changes color.
+
+Pools never intercept clicks — a device under a lit lamp stays tappable, and in the editor
+rooms under one stay selectable.
+
 ### Text
 
 `{ id, x, y, text, size?, color?, angle? }` — `size` px (default 16), `color` CSS/hex,

@@ -1,4 +1,4 @@
-import { svg, html, type SVGTemplateResult, type TemplateResult } from "lit";
+import { svg, html, nothing, type SVGTemplateResult, type TemplateResult } from "lit";
 import type {
   FloorplanCardConfig,
   SectionalHand,
@@ -10,6 +10,7 @@ import type {
   Tracker,
   Area,
   AreaPoint,
+  Wall,
   RenderHass,
   HassEntity,
   FloorItem,
@@ -312,16 +313,152 @@ export function editorGlowPaint(
  * light behaves. The caller must isolate the layer (see `.fp-glows` in the
  * card) so the pools mix with each other and not with the plan beneath.
  */
-export function renderGlow(item: FloorItem, paint: GlowPaint, gradientId: string): SVGTemplateResult {
+/** Perpendicular distance from a point to a wall segment. */
+function pointWallDist(x: number, y: number, w: Wall): number {
+  const dx = w.x2 - w.x1;
+  const dy = w.y2 - w.y1;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - w.x1) * dx + (y - w.y1) * dy) / len2));
+  const px = w.x1 + t * dx;
+  const py = w.y1 + t * dy;
+  return Math.hypot(x - px, y - py);
+}
+
+/** Distance along a ray from (cx,cy) toward (dx,dy) to a segment, or undefined. */
+function rayWallHit(cx: number, cy: number, dx: number, dy: number, w: Wall): number | undefined {
+  const sx = w.x2 - w.x1;
+  const sy = w.y2 - w.y1;
+  const denom = dx * sy - dy * sx;
+  if (Math.abs(denom) < 1e-12) return undefined; // parallel
+  const qx = w.x1 - cx;
+  const qy = w.y1 - cy;
+  const t = (qx * sy - qy * sx) / denom; // along the ray
+  const u = (qx * dy - qy * dx) / denom; // along the wall
+  if (t <= 1e-9 || u < 0 || u > 1) return undefined;
+  return t;
+}
+
+/**
+ * How far a light at (cx,cy) actually reaches (issue #108): the visibility
+ * polygon of the walls that fall inside its radius, so a pool stops at a wall
+ * instead of washing into the next room. Classic angular sweep — a ray toward
+ * each wall endpoint (and just past it, so light grazes corners), cut at the
+ * nearest wall it hits; a bounding box just beyond the radius keeps every ray
+ * finite, and the circle itself still bounds the final shape.
+ *
+ * The wall the lamp is mounted on must not black out its own pool, so walls
+ * closer than one wall thickness are treated as non-blocking. Returns
+ * undefined when no wall is in reach — the common case, drawn as the plain
+ * circle with no clip at all.
+ */
+export function glowReach(
+  cx: number,
+  cy: number,
+  r: number,
+  walls: readonly Wall[],
+): Array<{ x: number; y: number }> | undefined {
+  const blocking = walls.filter((w) => {
+    const d = pointWallDist(cx, cy, w);
+    return d < r && d > WALL_THICKNESS;
+  });
+  if (!blocking.length) return undefined;
+  const m = r * 1.01;
+  const bounds: Wall[] = [
+    { id: "b1", x1: cx - m, y1: cy - m, x2: cx + m, y2: cy - m },
+    { id: "b2", x1: cx + m, y1: cy - m, x2: cx + m, y2: cy + m },
+    { id: "b3", x1: cx + m, y1: cy + m, x2: cx - m, y2: cy + m },
+    { id: "b4", x1: cx - m, y1: cy + m, x2: cx - m, y2: cy - m },
+  ];
+  const all = [...blocking, ...bounds];
+  const pts: Array<{ x: number; y: number; a: number }> = [];
+  for (const s of all) {
+    for (const [ex, ey] of [
+      [s.x1, s.y1],
+      [s.x2, s.y2],
+    ]) {
+      const base = Math.atan2(ey - cy, ex - cx);
+      for (const a of [base - 1e-4, base, base + 1e-4]) {
+        const dx = Math.cos(a);
+        const dy = Math.sin(a);
+        let best = Infinity;
+        for (const seg of all) {
+          const t = rayWallHit(cx, cy, dx, dy, seg);
+          if (t !== undefined && t < best) best = t;
+        }
+        if (best < Infinity) {
+          pts.push({ x: cx + dx * best, y: cy + dy * best, a });
+        }
+      }
+    }
+  }
+  pts.sort((p, q) => p.a - q.a);
+  const round = (v: number) => Math.round(v * 100) / 100;
+  return pts.map(({ x, y }) => ({ x: round(x), y: round(y) }));
+}
+
+export function renderGlow(
+  item: FloorItem,
+  paint: GlowPaint,
+  gradientId: string,
+  walls?: readonly Wall[],
+): SVGTemplateResult {
   const r = cssNumber(item.glowRadius, DEFAULT_GLOW_RADIUS);
+  // Walls block light (issue #108): clip the pool to what the lamp can see.
+  const reach = walls?.length ? glowReach(item.x, item.y, r, walls) : undefined;
+  const clipId = `${gradientId}-clip`;
   return svg`
+    ${
+      reach
+        ? svg`<clipPath id=${clipId}>
+                <polygon points=${reach.map((p) => `${p.x},${p.y}`).join(" ")} />
+              </clipPath>`
+        : nothing
+    }
     <radialGradient id=${gradientId} gradientUnits="userSpaceOnUse"
                     cx=${item.x} cy=${item.y} r=${r}>
       <stop offset="0" stop-color=${paint.color} stop-opacity=${paint.opacity} />
       <stop offset="1" stop-color=${paint.color} stop-opacity="0" />
     </radialGradient>
     <circle class="fp-glow" cx=${item.x} cy=${item.y} r=${r}
-            fill=${`url(#${gradientId})`} />`;
+            fill=${`url(#${gradientId})`}
+            clip-path=${reach ? `url(#${clipId})` : nothing} />`;
+}
+
+/**
+ * A `<mask>` for the whole glow layer that punches out every furniture
+ * footprint (issue #108): furniture keeps its base gray instead of reading
+ * as "active" whenever a lamp near it is on. The line-art fills at ~0.12
+ * opacity, so a warm pool under a sofa tinted the entire sofa — the report
+ * that opened the issue. Round-based types cut an ellipse, everything else
+ * its rotated rect.
+ *
+ * The region is stated explicitly rather than inherited — the viewport
+ * default clipped walls under rotation once already (issue #102).
+ */
+export function renderGlowMask(
+  furniture: readonly Furniture[],
+  width: number,
+  height: number,
+  id: string,
+): SVGTemplateResult {
+  const pad = WALL_THICKNESS;
+  return svg`
+    <defs>
+      <mask id=${id} maskUnits="userSpaceOnUse"
+            x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}>
+        <rect x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}
+              fill="white" />
+        ${furniture.map((f) => {
+          const rot = f.angle ? `rotate(${f.angle} ${f.x} ${f.y})` : undefined;
+          const roundBase = f.type === "roundTable" || f.type === "plant" || f.type === "waterHeater";
+          return roundBase
+            ? svg`<ellipse cx=${f.x} cy=${f.y} rx=${f.w / 2} ry=${f.h / 2}
+                           fill="black" transform=${rot ?? nothing} />`
+            : svg`<rect x=${f.x - f.w / 2} y=${f.y - f.h / 2} width=${f.w} height=${f.h}
+                        fill="black" transform=${rot ?? nothing} />`;
+        })}
+      </mask>
+    </defs>`;
 }
 
 /**

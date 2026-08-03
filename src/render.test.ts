@@ -54,6 +54,8 @@ import {
   areaColor,
   glowPaint,
   editorGlowPaint,
+  glowReach,
+  renderGlowMask,
   renderGlow,
 } from "./render";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
@@ -1558,6 +1560,102 @@ describe("glowPaint (issue #6)", () => {
 
   it("clamps out-of-range channels instead of trusting the integration", () => {
     expect(glowPaint({}, light("on", { rgb_color: [300, -20, 12.6] }))?.color).toBe("rgb(255, 0, 13)");
+  });
+});
+
+describe("glowReach — walls block light (issue #108)", () => {
+  const wall = (x1: number, y1: number, x2: number, y2: number, id = "w") => ({ id, x1, y1, x2, y2 });
+  // Even-odd point-in-polygon, for asserting what the light can reach.
+  const inside = (poly: Array<{ x: number; y: number }>, x: number, y: number) => {
+    let hit = false;
+    for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+      const a = poly[i];
+      const b = poly[j];
+      if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
+    }
+    return hit;
+  };
+
+  it("no wall in reach: undefined, so the pool stays an unclipped circle", () => {
+    expect(glowReach(500, 300, 140, [])).toBeUndefined();
+    expect(glowReach(500, 300, 140, [wall(0, 0, 1000, 0)])).toBeUndefined();
+  });
+
+  it("a wall between the light and the next room casts a shadow", () => {
+    // Light above a horizontal wall; the wall spans well past the pool.
+    const poly = glowReach(500, 300, 140, [wall(200, 360, 800, 360)])!;
+    expect(poly).toBeDefined();
+    expect(inside(poly, 500, 350)).toBe(true); // near side of the wall: lit
+    expect(inside(poly, 500, 380)).toBe(false); // far side: shadow
+    expect(inside(poly, 500, 200)).toBe(true); // away from the wall: untouched
+  });
+
+  it("light grazes past a wall's end instead of stopping at its angular span", () => {
+    // Wall ends at x=560; past its end the light should keep going.
+    const poly = glowReach(500, 300, 140, [wall(400, 360, 560, 360)])!;
+    expect(inside(poly, 500, 380)).toBe(false); // behind the wall
+    expect(inside(poly, 620, 380)).toBe(true); // around its end
+  });
+
+  it("a light in a closed room stays in the room", () => {
+    const room = [
+      wall(400, 200, 600, 200, "n"),
+      wall(600, 200, 600, 400, "e"),
+      wall(600, 400, 400, 400, "s"),
+      wall(400, 400, 400, 200, "w"),
+    ];
+    const poly = glowReach(500, 300, 300, room)!;
+    expect(inside(poly, 500, 300)).toBe(true);
+    expect(inside(poly, 700, 300)).toBe(false);
+    expect(inside(poly, 500, 500)).toBe(false);
+    expect(inside(poly, 300, 300)).toBe(false);
+  });
+
+  it("the wall the lamp is mounted on does not black out its own pool", () => {
+    // Wall within one wall thickness of the light: non-blocking.
+    expect(glowReach(500, 300, 140, [wall(200, 302, 800, 302)])).toBeUndefined();
+  });
+});
+
+describe("renderGlowMask — furniture stays base gray (issue #108)", () => {
+  const flatten = (node: unknown): string => {
+    if (node == null || typeof node === "boolean") return "";
+    if (Array.isArray(node)) return node.map(flatten).join("");
+    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+      const { strings, values } = node as { strings: string[]; values: unknown[] };
+      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
+    }
+    return String(node);
+  };
+
+  it("punches a black rotated rect per furniture piece, ellipse for round types", () => {
+    const markup = flatten(
+      renderGlowMask(
+        [
+          { id: "s", type: "sofa", x: 300, y: 200, w: 100, h: 50, angle: 90 },
+          { id: "t", type: "roundTable", x: 600, y: 300, w: 80, h: 80 },
+        ] as never,
+        1000,
+        600,
+        "gm"
+      )
+    );
+    expect(markup).toContain('id=gm');
+    expect(markup).toContain('fill="black"');
+    expect(markup).toContain("rotate(90 300 200)");
+    expect(markup).toContain("<ellipse");
+    // Explicit region, not the viewport default (the issue #102 lesson).
+    expect(markup).toContain("width=1016");
+  });
+
+  it("clips the pool with the reach polygon only when walls are in range", () => {
+    const item = { id: "i", entity: "light.x", kind: "light", x: 300, y: 200 } as never;
+    const paint = { color: "#fff", opacity: 0.4 };
+    const withWall = flatten(renderGlow(item, paint, "g1", [{ id: "w", x1: 0, y1: 260, x2: 1000, y2: 260 }]));
+    expect(withWall).toContain("<clipPath");
+    expect(withWall).toContain("clip-path=url(#g1-clip)");
+    const noWall = flatten(renderGlow(item, paint, "g2", []));
+    expect(noWall).not.toContain("<clipPath");
   });
 });
 

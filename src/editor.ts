@@ -53,6 +53,7 @@ import {
   renderWallMask,
   editorGlowPaint,
   renderGlow,
+  renderGlowMask,
   openingDefaultOpen,
   openingMotion,
   shutterStyleOf,
@@ -2711,13 +2712,17 @@ export class FloorplanCardEditor extends LitElement {
                    what you place is what you get. Previewed at full strength
                    with no hass in the editor, so the radius is adjustable
                    without having to turn the real light on. -->
-              <g class="fp-glows">
+              ${renderGlowMask(floor.furniture, c.width, c.height, `${this._wallMaskId}-glowmask`)}
+              <g class="fp-glows"
+                 mask=${floor.furniture.length ? `url(#${this._wallMaskId}-glowmask)` : nothing}>
                 ${floor.items.map((it, i) => {
                   if (!it.glow) return nothing;
                   // An off light draws nothing, as on the card; only a glow
                   // with no readable state previews lit (issue #108).
                   const paint = editorGlowPaint(it, this.hass?.states[it.entity]);
-                  return paint ? renderGlow(it, paint, `${this._wallMaskId}-glow-${i}`) : nothing;
+                  return paint
+                    ? renderGlow(it, paint, `${this._wallMaskId}-glow-${i}`, floor.walls)
+                    : nothing;
                 })}
               </g>
               ${
@@ -4596,6 +4601,18 @@ export class FloorplanCardEditor extends LitElement {
       stroke: var(--primary-color, #03a9f4);
       stroke-width: 2;
       pointer-events: none;
+    }
+    /* Light pools are decoration: they must never intercept a pointer. These
+       are filled circles drawn above the areas, so without this they swallow
+       pointerdown and areas under a lit lamp cannot be selected (issue #108).
+       The blend rules mirror the card's, so the editor previews the same
+       picture it will render — overlapping lamps add rather than stack. */
+    .fp-glows {
+      isolation: isolate;
+      pointer-events: none;
+    }
+    .fp-glow {
+      mix-blend-mode: screen;
     }
     /* Radius guide for the selected cast-light device (issue #108). Outline
        only — it shows how far the light reaches without pretending it is on. */
