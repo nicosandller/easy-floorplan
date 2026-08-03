@@ -28,7 +28,7 @@ import {
   getFloors,
   trackerAxisFraction,
 } from "./types";
-import { cssColor, cssColorOr, cssNumber } from "./css-safe";
+import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId } from "./css-safe";
 
 export const WALL_THICKNESS = 8;
 
@@ -1296,7 +1296,10 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
     }`;
   }
   const { sx, sy } = openingMirror(o);
-  return svg`<g transform="translate(${o.x} ${o.y}) rotate(${o.angle})">
+  return svg`<g class=${`fp-opening fp-opening-${cssIdent(o.type) ?? "unknown"}`}
+                data-id=${cssIdent(o.id) ?? nothing}
+                data-entity=${cssEntityId(o.entity) ?? nothing}
+                transform="translate(${o.x} ${o.y}) rotate(${o.angle})">
       <g transform="scale(${sx} ${sy})">${body}</g>
     </g>`;
 }
@@ -1440,7 +1443,8 @@ export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
       ? cssColorOr(a.borderColor, "none")
       : undefined;
 
-  return svg`<polygon points=${pts}
+  return svg`<polygon class="fp-area" data-id=${cssIdent(a.id) ?? nothing}
+                       points=${pts}
                        fill=${liveFill ? liveColor : cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
                        fill-opacity=${cssNumber(opacity, DEFAULT_AREA_OPACITY)}
                        stroke=${stroke ?? "none"}
@@ -1736,7 +1740,10 @@ export function renderFurniture(f: Furniture, override?: string): SVGTemplateRes
       detail = svg``;
       break;
   }
-  return svg`<g transform="translate(${f.x} ${f.y}) rotate(${f.angle ?? 0})">${base}${detail}</g>`;
+  return svg`<g class=${`fp-furniture fp-furniture-${cssIdent(f.type) ?? "unknown"}`}
+                data-id=${cssIdent(f.id) ?? nothing}
+                data-entity=${cssEntityId(f.entity) ?? nothing}
+                transform="translate(${f.x} ${f.y}) rotate(${f.angle ?? 0})">${base}${detail}</g>`;
 }
 
 /**
@@ -1905,7 +1912,8 @@ export function renderTracker(t: Tracker, opts: TrackerRenderOptions): SVGTempla
   }
 
   return svg`
-    <g class="tracker ${opts.editing ? "editing" : ""}"
+    <g class="tracker fp-tracker ${opts.editing ? "editing" : ""}"
+       data-id=${cssIdent(t.id) ?? nothing}
        transform="translate(${cx} ${cy}) rotate(${angle})">
       ${zone}${marker}
     </g>`;

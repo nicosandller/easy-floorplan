@@ -57,6 +57,7 @@ import {
   editorGlowPaint,
   glowReach,
   renderGlowMask,
+  renderOpening,
   renderGlow,
 } from "./render";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
@@ -1647,6 +1648,65 @@ describe("glowReach — walls block light (issue #108)", () => {
   it("the wall the lamp is mounted on does not black out its own pool", () => {
     // Wall within one wall thickness of the light: non-blocking.
     expect(glowReach(500, 300, 140, [wall(200, 302, 800, 302)])).toBeUndefined();
+  });
+});
+
+describe("styling hooks reach the DOM (issue #105)", () => {
+  const flatten = (node: unknown): string => {
+    if (node == null || typeof node === "boolean") return "";
+    if (Array.isArray(node)) return node.map(flatten).join("");
+    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+      const { strings, values } = node as { strings: string[]; values: unknown[] };
+      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
+    }
+    return String(node);
+  };
+  const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+
+  it("an area carries its config id and a type class", () => {
+    const markup = flatten(renderArea({ id: "area_a5r5nwl", points: square }));
+    expect(markup).toContain('class="fp-area"');
+    expect(markup).toContain("data-id=area_a5r5nwl");
+  });
+
+  it("furniture carries its id, its type class and its entity", () => {
+    const markup = flatten(
+      renderFurniture({ id: "furn_3j66s50", type: "sofa", x: 0, y: 0, w: 10, h: 10, entity: "light.k" } as never)
+    );
+    expect(markup).toContain("fp-furniture fp-furniture-sofa");
+    expect(markup).toContain("data-id=furn_3j66s50");
+    expect(markup).toContain("data-entity=light.k");
+  });
+
+  it("an opening carries its id and door/window class", () => {
+    const markup = flatten(
+      renderOpening(
+        { id: "door_1", type: "door", x: 0, y: 0, length: 40, angle: 0, entity: "binary_sensor.d" } as never,
+        { color: "#888", accent: "#0f0" } as never
+      )
+    );
+    expect(markup).toContain("fp-opening fp-opening-door");
+    expect(markup).toContain("data-id=door_1");
+    expect(markup).toContain("data-entity=binary_sensor.d");
+  });
+
+  it("omits the attribute entirely rather than emitting data-id=undefined", () => {
+    // A hand-written config need not carry ids; "undefined" would be a hook
+    // that silently matches every element that lacks one.
+    const markup = flatten(renderArea({ points: square } as never));
+    expect(markup).not.toContain("undefined");
+    const furn = flatten(renderFurniture({ type: "sofa", x: 0, y: 0, w: 10, h: 10 } as never));
+    expect(furn).not.toContain("undefined");
+  });
+
+  it("a hostile id stays one harmless token instead of a second class", () => {
+    const markup = flatten(renderArea({ id: 'x" class="fp-wall', points: square } as never));
+    // The class list is untouched, and the id collapses to a single token —
+    // no quote to close the attribute, no space to start another class.
+    expect(markup).toContain('class="fp-area"');
+    const id = /data-id=(\S*)/.exec(markup)?.[1];
+    expect(id).toBe("xclassfp-wall");
+    expect(id).not.toMatch(/["'\s=]/);
   });
 });
 

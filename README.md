@@ -908,6 +908,47 @@ trackers:
       presence: { entity: binary_sensor.living_room_presence }
 ```
 
+## Styling hooks (card-mod)
+
+Every rendered element carries its config `id` as `data-id`, plus a type class — so
+[card-mod](https://github.com/thomasloven/lovelace-card-mod) and any other CSS can target
+it by something stable, instead of by a colour that breaks the moment you change it in the
+editor.
+
+| Element | Class | Attributes |
+| --- | --- | --- |
+| Area | `fp-area` | `data-id` |
+| Furniture | `fp-furniture`, `fp-furniture-<type>` | `data-id`, `data-entity` |
+| Door / window | `fp-opening`, `fp-opening-door` \| `fp-opening-window` | `data-id`, `data-entity` |
+| Wall | `wall`, `fp-wall` | `data-id` |
+| Device | `item`, `fp-item` | `data-id`, `data-entity`, `data-kind` |
+| Text | `text`, `fp-text` | `data-id` |
+| Tracker | `tracker`, `fp-tracker` | `data-id` |
+
+Ids come from the editor (`area_a5r5nwl`, `furn_3j66s50`, …) and are stable across edits.
+An element with no id simply has no `data-id`, rather than `data-id="undefined"`.
+
+```yaml
+type: custom:easy-floorplan-card
+card_mod:
+  style: |
+    /* One specific room */
+    .fp-area[data-id="area_a5r5nwl"] { fill: #62f202; fill-opacity: 0.35; }
+    /* Every sofa on the plan */
+    .fp-furniture-sofa { opacity: 0.5; }
+    /* The element bound to one entity, whatever kind it is */
+    [data-entity="light.kitchen"] { filter: drop-shadow(0 0 6px gold); }
+```
+
+CSS wins over SVG presentation attributes, so `fill` and `fill-opacity` set this way
+override what the card draws.
+
+Two notes. **Colouring a room from a sensor no longer needs CSS** — areas take `entity`,
+`stateColor`, `activeColor` and `activeOpacity` natively; see **Area**. And these hooks are
+a *styling* surface, not an API: the class names are stable, but the SVG structure inside
+an element may change between releases, so prefer selecting the element itself over its
+internals.
+
 ## Development
 
 ```bash

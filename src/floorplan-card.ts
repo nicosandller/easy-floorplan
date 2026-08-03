@@ -2,7 +2,7 @@ import { LitElement, html, css, svg, nothing, type TemplateResult, type Property
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor, Area } from "./types";
-import { cssColor, cssColorOr, cssNumber } from "./css-safe";
+import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId } from "./css-safe";
 import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
@@ -288,7 +288,10 @@ export class FloorplanCard extends LitElement {
     const d = rotatedCanvasSize(c.width, c.height, rot);
     return html`
       <div
-        class="item ${on ? "on" : "off"} ${stateColor ? "state-colored" : ""}"
+        class="item fp-item ${on ? "on" : "off"} ${stateColor ? "state-colored" : ""}"
+        data-id=${cssIdent(item.id) ?? nothing}
+        data-entity=${cssEntityId(item.entity) ?? nothing}
+        data-kind=${cssIdent(item.kind) ?? nothing}
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${stateColor
           ? `--fp-state:${stateColor};`
           : ""}${activeColor
@@ -338,7 +341,8 @@ export class FloorplanCard extends LitElement {
     const d = rotatedCanvasSize(c.width, c.height, rot);
     return html`
       <div
-        class="text"
+        class="text fp-text"
+        data-id=${cssIdent(t.id) ?? nothing}
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
                font-size:${cssNumber(t.size, DEFAULT_TEXT_SIZE)}px;
                color:${cssColorOr(t.color, "var(--primary-text-color)")};
@@ -419,7 +423,8 @@ export class FloorplanCard extends LitElement {
               ${active.walls.map(
                 (w) => svg`
                 <line x1=${w.x1} y1=${w.y1} x2=${w.x2} y2=${w.y2}
-                      class="wall" stroke-width=${WALL_THICKNESS} stroke-linecap="round" />`
+                      class="wall fp-wall" data-id=${cssIdent(w.id) ?? nothing}
+                      stroke-width=${WALL_THICKNESS} stroke-linecap="round" />`
               )}
             </g>
             ${repeat(

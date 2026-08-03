@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cssColor } from "./css-safe";
+import { cssColor, cssIdent, cssEntityId } from "./css-safe";
 import { furnitureColor } from "./render";
 import type { Furniture } from "./types";
 
@@ -170,5 +170,46 @@ describe("entity-driven colors are gated (issues #68, #79, #82)", () => {
   it("a hostile item activeColor does not survive cssColor", () => {
     expect(cssColor(HOSTILE)).toBeUndefined();
     expect(cssColor("#fdd835")).toBe("#fdd835");
+  });
+});
+
+describe("cssIdent / cssEntityId — styling hooks (issue #105)", () => {
+  it("keeps the identifiers the editor actually generates", () => {
+    expect(cssIdent("area_a5r5nwl")).toBe("area_a5r5nwl");
+    expect(cssIdent("furn_3j66s50")).toBe("furn_3j66s50");
+    expect(cssIdent("roundTable")).toBe("roundTable");
+  });
+
+  it("drops whitespace, so a value cannot smuggle in a second class", () => {
+    // "sofa fp-wall" as a type would otherwise style every wall on the plan.
+    expect(cssIdent("sofa fp-wall")).toBe("sofafp-wall");
+    expect(cssIdent("  padded  ")).toBe("padded");
+  });
+
+  it("drops quotes and backslashes, so a selector still matches what was written", () => {
+    expect(cssIdent('a"b')).toBe("ab");
+    expect(cssIdent("a\\b")).toBe("ab");
+    expect(cssIdent("a<b>c")).toBe("abc");
+  });
+
+  it("returns undefined for nothing usable, so the attribute is omitted", () => {
+    // The alternative is data-id="undefined", which is worse than no hook.
+    expect(cssIdent(undefined)).toBeUndefined();
+    expect(cssIdent("")).toBeUndefined();
+    expect(cssIdent("   ")).toBeUndefined();
+    expect(cssIdent("!!!")).toBeUndefined();
+    expect(cssIdent(42)).toBeUndefined();
+  });
+
+  it("cssEntityId keeps the dot, which cssIdent deliberately does not", () => {
+    // [data-entity="light.kitchen"] is the selector people will write.
+    expect(cssEntityId("light.kitchen")).toBe("light.kitchen");
+    expect(cssEntityId("binary_sensor.front_door_contact")).toBe("binary_sensor.front_door_contact");
+    expect(cssIdent("light.kitchen")).toBe("lightkitchen");
+  });
+
+  it("cssEntityId still drops what would break the attribute selector", () => {
+    expect(cssEntityId('light.k"]{}')).toBe("light.k");
+    expect(cssEntityId("")).toBeUndefined();
   });
 });

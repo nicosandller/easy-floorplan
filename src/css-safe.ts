@@ -101,3 +101,35 @@ export function cssNumber(value: unknown, fallback: number): number {
   const n = typeof value === "number" ? value : Number(value);
   return Number.isFinite(n) ? n : fallback;
 }
+
+/**
+ * A config-supplied identifier safe to place in a `class` or `data-*`
+ * attribute (issue #105). Lit escapes attribute values, so this is not about
+ * breakout — it is about the emitted DOM being *predictable*, which is the
+ * whole point of a styling hook: whitespace in a value would silently add
+ * extra classes, and a stray `"` or `\` makes a selector that no longer
+ * matches what the author wrote.
+ *
+ * Keeps letters, digits, `-` and `_`; anything else is dropped. An empty or
+ * non-string value returns `undefined` so callers can emit Lit's `nothing`
+ * and leave the attribute off entirely, rather than `data-id="undefined"`.
+ */
+export function cssIdent(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim().replace(/[^a-zA-Z0-9_-]/g, "");
+  return v === "" ? undefined : v;
+}
+
+/**
+ * An entity id for a `data-entity` attribute (issue #105). Separate from
+ * {@link cssIdent} because an entity id is `domain.object_id` and the dot is
+ * load-bearing — `[data-entity="light.kitchen"]` is the selector people will
+ * write, and stripping the dot would silently make it never match. A dot is
+ * fine in an attribute *value*; it is only a problem in a class name, which is
+ * why the two are not the same function.
+ */
+export function cssEntityId(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim().replace(/[^a-zA-Z0-9_.-]/g, "");
+  return v === "" ? undefined : v;
+}
