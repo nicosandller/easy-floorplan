@@ -1520,6 +1520,29 @@ describe("renderAreaBorder", () => {
     expect(flatten(renderAreaBorder(wide, "#4caf50", "c"))).toContain("stroke-width=10");
   });
 
+  it("carries the CSS hooks under its own class, so fill and outline differ (#105)", () => {
+    const a = {
+      id: "area_hall",
+      points: square,
+      highlight: "border" as const,
+      entity: "binary_sensor.hall_occupancy",
+    };
+    const markup = flatten(renderAreaBorder(a, "#4caf50", "c"));
+    expect(markup).toContain('class="fp-area-border"');
+    expect(markup).toContain("data-id=area_hall");
+    expect(markup).toContain("data-entity=binary_sensor.hall_occupancy");
+  });
+
+  it("keeps the hooks off the clip path, which is never rendered (#105)", () => {
+    // A <clipPath> paints nothing, so a rule matching one would appear to do
+    // nothing at all. Only the drawn polygon carries the hooks.
+    const a = { id: "area_hall", points: square, highlight: "border" as const };
+    const markup = flatten(renderAreaBorder(a, "#4caf50", "c"));
+    expect(markup).toContain("<clipPath");
+    expect(markup.match(/data-id=/g)).toHaveLength(1);
+    expect(markup.match(/class="fp-area-border"/g)).toHaveLength(1);
+  });
+
   it("never clips a static border — decoration is drawn as authored (#6)", () => {
     const a = { id: "a", points: square, borderColor: "#123456" };
     const markup = flatten(renderAreaBorder(a, undefined, "clip-1"));
