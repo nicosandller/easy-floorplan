@@ -373,9 +373,25 @@ export class FloorplanCard extends LitElement {
       <ha-card .header=${c.title ?? nothing}>
         <div
           class="stage"
-          style="aspect-ratio: ${dims.w} / ${dims.h}; background:${cssColorOr(
-          c.background, "var(--card-background-color, #fff)")};"
+          style="aspect-ratio: ${dims.w} / ${dims.h};"
         >
+          <!-- The plan box: exactly the canvas ratio, fitted inside whatever
+               height the card was actually given, and centred there (closes
+               #115). Sized off the container's height so it shrinks when the
+               height is the binding axis — clamping a full-width box with
+               max-height instead would break the ratio rather than the box.
+
+               The stage carries the same aspect-ratio so it still has a
+               definite height in a content-sized (masonry) card; without it,
+               size containment leaves 100cqh with nothing to resolve against
+               and the plan collapses to nothing. -->
+          <div
+            class="plan"
+            style="aspect-ratio: ${dims.w} / ${dims.h};
+                   width: min(100%, calc(100cqh * ${dims.w} / ${dims.h}));
+                   background:${cssColorOr(
+                     c.background, "var(--card-background-color, #fff)")};"
+          >
 <!-- preserveAspectRatio="none" is correct here, and it took a wrong fix to
                see why. .stage pins aspect-ratio: width / height inline, so the
                SVG's box already matches its viewBox and "none" never distorts.
@@ -522,6 +538,7 @@ export class FloorplanCard extends LitElement {
               (it) => this._renderItem(it, c, rot)
             )}
           </div>
+          </div>
           ${floors.length > 1 ? this._renderFloorSwitcher(floors, active) : nothing}
         </div>
       </ha-card>
@@ -564,7 +581,18 @@ export class FloorplanCard extends LitElement {
     .stage {
       position: relative;
       width: 100%;
+      height: 100%;
       padding: 0;
+      /* Centres the plan box in whatever the card was given, and makes the
+         stage's own height queryable so the plan can size against it. */
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      container-type: size;
+    }
+    .plan {
+      position: relative;
+      height: auto;
     }
     .floor-switcher {
       position: absolute;
