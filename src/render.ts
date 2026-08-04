@@ -1435,6 +1435,9 @@ export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
   // activeOpacity is a fill concern, so it only applies when the fill is live.
   const opacity = liveFill ? a.activeOpacity ?? a.opacity : a.opacity;
 
+  // Stroke stays pinned off rather than omitted: this element is reused across
+  // live/rest updates, and stating it keeps the fill pass unable to draw an
+  // outline no matter what the border pass above the walls is doing.
   return svg`<polygon class="fp-area" data-id=${cssIdent(a.id) ?? nothing}
                        data-entity=${cssEntityId(a.entity) ?? nothing}
                        points=${pts}
@@ -1492,9 +1495,16 @@ export function renderAreaBorder(
 
   const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
   // `borderWidth` is always the width actually seen. A live border defaults to
-  // the thickness of the wall it covers; a static one keeps the thinner
-  // decorative default.
-  const width = cssNumber(a.borderWidth, liveBorder ? WALL_THICKNESS : DEFAULT_AREA_BORDER_WIDTH);
+  // half the wall: the wall is centered on the same line the polygon follows,
+  // so the room only owns the inner half of it. Anything wider runs past the
+  // wall's inner face onto the floor, over any furniture standing against that
+  // wall, and — since the opening mask only cuts WALL_THICKNESS + 4 — out
+  // through the doorways as a sliver either side of the cut. A static border is
+  // decoration and keeps its thinner default.
+  const width = cssNumber(
+    a.borderWidth,
+    liveBorder ? WALL_THICKNESS / 2 : DEFAULT_AREA_BORDER_WIDTH
+  );
 
   if (!liveBorder || clipId === undefined) {
     return svg`<polygon class="fp-area-border" data-id=${cssIdent(a.id) ?? nothing}

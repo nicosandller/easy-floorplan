@@ -781,8 +781,9 @@ trackers:
   between two rooms splits down the middle and each side reports its own room, and a
   corner where several rooms meet splits between them. An exterior wall colors on its
   inside face only, leaving the plan's silhouette intact. `borderWidth` is the width
-  you actually see on the room's own side, and defaults to the thickness of the wall
-  it covers (`8`).
+  you actually see on the room's own side, and defaults to `4` — the room's own half
+  of the wall, since the wall is centred on the line the polygon follows. Widen it and
+  the band runs past the wall onto the floor and over furniture standing against it.
 
 ```yaml
 areas:

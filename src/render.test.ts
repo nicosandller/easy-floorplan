@@ -1477,14 +1477,30 @@ describe("renderAreaBorder", () => {
     expect(markup).toContain("stroke-width=3");
   });
 
-  it("defaults a live border to the wall thickness it is drawn over", () => {
+  it("defaults a live border to the room's own half of the wall", () => {
+    // The wall is centered on the line the polygon follows, so the room owns
+    // half of it. Anything wider spills onto the floor and over furniture.
     const a = { id: "a", points: square, highlight: "border" as const };
-    expect(flatten(renderAreaBorder(a, "#4caf50"))).toContain(`stroke-width=${WALL_THICKNESS}`);
+    expect(flatten(renderAreaBorder(a, "#4caf50"))).toContain(
+      `stroke-width=${WALL_THICKNESS / 2}`
+    );
   });
 
   it("lets an explicit borderWidth override the live default", () => {
     const a = { id: "a", points: square, highlight: "border" as const, borderWidth: 2 };
     expect(flatten(renderAreaBorder(a, "#4caf50"))).toContain("stroke-width=2");
+  });
+
+  it("keeps a live border inside the opening cut, so it never crosses a doorway", () => {
+    // renderWallMask cuts WALL_THICKNESS + 4 across, so the hole reaches this
+    // far either side of the wall's centerline. A clipped border runs its
+    // visible width inward from that same line; outrun the cut and the overhang
+    // paints straight across every door and window on the plan.
+    const reach = (WALL_THICKNESS + 4) / 2;
+    const a = { id: "a", points: square, highlight: "border" as const };
+    const drawn = flatten(renderAreaBorder(a, "#4caf50", "c"));
+    const visible = Number(/stroke-width=([\d.]+)/.exec(drawn)![1]) / 2;
+    expect(visible).toBeLessThanOrEqual(reach);
   });
 
   it("clips a live border to its own room, so a shared wall splits", () => {
@@ -1496,9 +1512,9 @@ describe("renderAreaBorder", () => {
 
   it("draws a clipped border at double width, so borderWidth is what is seen", () => {
     const a = { id: "a", points: square, highlight: "border" as const };
-    // Half of the stroke is clipped away, leaving WALL_THICKNESS on this side.
+    // Half of the stroke is clipped away, leaving the room's half-wall showing.
     expect(flatten(renderAreaBorder(a, "#4caf50", "c"))).toContain(
-      `stroke-width=${WALL_THICKNESS * 2}`
+      `stroke-width=${WALL_THICKNESS}`
     );
     const wide = { ...a, borderWidth: 5 };
     expect(flatten(renderAreaBorder(wide, "#4caf50", "c"))).toContain("stroke-width=10");
