@@ -1,4 +1,4 @@
-import { svg, html, type SVGTemplateResult, type TemplateResult } from "lit";
+import { svg, html, nothing, type SVGTemplateResult, type TemplateResult } from "lit";
 import type {
   FloorplanCardConfig,
   Floor,
@@ -11,17 +11,25 @@ import type {
   Tracker,
   Area,
   AreaPoint,
+  Wall,
   RenderHass,
+  HassEntity,
+  FloorItem,
 } from "./types";
 import {
   FURNITURE_COLOR,
   DEFAULT_TRACKER_DOT_SIZE,
   DEFAULT_RIPPLE_SIZE,
   DEFAULT_AREA_OPACITY,
+  DEFAULT_AREA_BORDER_WIDTH,
+  DEFAULT_GLOW_RADIUS,
+  DEFAULT_GLOW_COLOR,
+  GLOW_MIN_OPACITY,
+  GLOW_MAX_OPACITY,
   getFloors,
   trackerAxisFraction,
 } from "./types";
-import { cssColor, cssColorOr, cssNumber } from "./css-safe";
+import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId } from "./css-safe";
 
 export const WALL_THICKNESS = 8;
 
@@ -83,6 +91,12 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
     // first-painted color forever.
     for (const fu of f.furniture) {
       if (fu.entity) ids.add(fu.entity);
+    }
+    // Entity-bound areas (issue #6) — same reasoning as furniture above: miss
+    // these and a room's color is painted once and then frozen, because
+    // shouldUpdate drops every hass tick that only moved an unwatched entity.
+    for (const a of f.areas) {
+      if (a.entity) ids.add(a.entity);
     }
     for (const tr of f.trackers) {
       for (const s of [tr.xSensor, tr.ySensor]) {
@@ -199,6 +213,253 @@ export function furnitureColor(f: Furniture, state: string | undefined): string 
   if (rule) return cssColor(rule);
   if (f.activeColor && entityIsActive(f.entity, state)) return cssColor(f.activeColor);
   return undefined;
+}
+
+/**
+ * Resolve the live fill color for an {@link Area} bound to an entity (issue #6),
+ * mirroring {@link furnitureColor}: `stateColor` rules win, then `activeColor`
+ * while the entity is active, else undefined so the static `color` applies.
+ *
+ * Returns a value already through the style-injection allowlist (#64), because
+ * it flows straight into a `fill` attribute.
+ */
+export function areaColor(a: Area, state: string | undefined): string | undefined {
+  if (!a.entity) return undefined;
+  const rule = resolveStateColor(a.stateColor, state);
+  if (rule) return cssColor(rule);
+  if (a.activeColor && entityIsActive(a.entity, state)) return cssColor(a.activeColor);
+  return undefined;
+}
+
+/** The light a device casts right now: a color and how strong at the center. */
+export interface GlowPaint {
+  /** Already through the style-injection allowlist (#64). */
+  color: string;
+  /** Opacity at the center of the pool, fading to 0 at the rim. */
+  opacity: number;
+}
+
+/**
+ * What a light contributes as a cast pool (issue #6), or undefined for "casts
+ * nothing".
+ *
+ * Lights vary in what they can report, so this degrades in rungs rather than
+ * demanding `rgb_color` and doing nothing without it — on a real install most
+ * lights are brightness-only or plain on/off switches:
+ *
+ * 1. **color-capable** — its own `rgb_color`. Home Assistant derives one even
+ *    for `color_temp`-only bulbs, so warm white still reads as amber.
+ * 2. **brightness-only** — `glowColor` (a warm white by default), with
+ *    `brightness` driving the strength.
+ * 3. **on/off-only** — `glowColor` at full strength.
+ *
+ * A light that is off, `unavailable` or `unknown` casts nothing — failing
+ * closed like every other state reader here, so a dead bulb never leaves a
+ * pool of light lying on the floor.
+ */
+export function glowPaint(
+  item: Pick<FloorItem, "glowColor">,
+  light: HassEntity | undefined,
+): GlowPaint | undefined {
+  if (!light || light.state !== "on") return undefined;
+  const attrs = (light.attributes ?? {}) as Record<string, unknown>;
+
+  // brightness is 0-255, and absent on on/off-only lights where "on" is full.
+  const raw = attrs.brightness;
+  const bright =
+    typeof raw === "number" && Number.isFinite(raw) ? Math.max(0, Math.min(255, raw)) : undefined;
+  const opacity =
+    bright === undefined
+      ? GLOW_MAX_OPACITY
+      : GLOW_MIN_OPACITY + (GLOW_MAX_OPACITY - GLOW_MIN_OPACITY) * (bright / 255);
+
+  const rgb = attrs.rgb_color;
+  if (Array.isArray(rgb) && rgb.length >= 3) {
+    const [r, g, b] = rgb;
+    if ([r, g, b].every((c) => typeof c === "number" && Number.isFinite(c))) {
+      const chan = (c: number) => Math.max(0, Math.min(255, Math.round(c)));
+      // Built from clamped integers, so it cannot carry a payload — but it
+      // still goes through the allowlist, as every color here does.
+      const color = cssColor(`rgb(${chan(r as number)}, ${chan(g as number)}, ${chan(b as number)})`);
+      if (color) return { color, opacity };
+    }
+  }
+  return { color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR), opacity };
+}
+
+/**
+ * {@link glowPaint} as the **editor** should apply it (issue #108).
+ *
+ * The editor must trust the entity when there is one — an off light draws
+ * nothing, exactly as on the card. Only a glow with no readable state at all
+ * (no hass, or an entity hass does not know) previews lit, so the feature is
+ * still visible outside Home Assistant. v1.1.0 shipped the fallback applied
+ * unconditionally, and every off light washed the canvas at full strength.
+ */
+export function editorGlowPaint(
+  item: Pick<FloorItem, "glowColor">,
+  state: HassEntity | undefined,
+): GlowPaint | undefined {
+  if (state) return glowPaint(item, state);
+  return { color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR), opacity: GLOW_MAX_OPACITY };
+}
+
+/**
+ * A light's cast pool: a radial gradient fading from `paint.color` at the
+ * device's position to fully transparent at `glowRadius`.
+ *
+ * Each pool carries `mix-blend-mode: screen` so overlapping lights **add**
+ * rather than the topmost one winning — two lamps in one room brighten where
+ * they meet, and a warm and a cool lamp blend between them, which is how real
+ * light behaves. The caller must isolate the layer (see `.fp-glows` in the
+ * card) so the pools mix with each other and not with the plan beneath.
+ */
+/** Perpendicular distance from a point to a wall segment. */
+function pointWallDist(x: number, y: number, w: Wall): number {
+  const dx = w.x2 - w.x1;
+  const dy = w.y2 - w.y1;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - w.x1) * dx + (y - w.y1) * dy) / len2));
+  const px = w.x1 + t * dx;
+  const py = w.y1 + t * dy;
+  return Math.hypot(x - px, y - py);
+}
+
+/** Distance along a ray from (cx,cy) toward (dx,dy) to a segment, or undefined. */
+function rayWallHit(cx: number, cy: number, dx: number, dy: number, w: Wall): number | undefined {
+  const sx = w.x2 - w.x1;
+  const sy = w.y2 - w.y1;
+  const denom = dx * sy - dy * sx;
+  if (Math.abs(denom) < 1e-12) return undefined; // parallel
+  const qx = w.x1 - cx;
+  const qy = w.y1 - cy;
+  const t = (qx * sy - qy * sx) / denom; // along the ray
+  const u = (qx * dy - qy * dx) / denom; // along the wall
+  if (t <= 1e-9 || u < 0 || u > 1) return undefined;
+  return t;
+}
+
+/**
+ * How far a light at (cx,cy) actually reaches (issue #108): the visibility
+ * polygon of the walls that fall inside its radius, so a pool stops at a wall
+ * instead of washing into the next room. Classic angular sweep — a ray toward
+ * each wall endpoint (and just past it, so light grazes corners), cut at the
+ * nearest wall it hits; a bounding box just beyond the radius keeps every ray
+ * finite, and the circle itself still bounds the final shape.
+ *
+ * The wall the lamp is mounted on must not black out its own pool, so walls
+ * closer than one wall thickness are treated as non-blocking. Returns
+ * undefined when no wall is in reach — the common case, drawn as the plain
+ * circle with no clip at all.
+ */
+export function glowReach(
+  cx: number,
+  cy: number,
+  r: number,
+  walls: readonly Wall[],
+): Array<{ x: number; y: number }> | undefined {
+  const blocking = walls.filter((w) => {
+    const d = pointWallDist(cx, cy, w);
+    return d < r && d > WALL_THICKNESS;
+  });
+  if (!blocking.length) return undefined;
+  const m = r * 1.01;
+  const bounds: Wall[] = [
+    { id: "b1", x1: cx - m, y1: cy - m, x2: cx + m, y2: cy - m },
+    { id: "b2", x1: cx + m, y1: cy - m, x2: cx + m, y2: cy + m },
+    { id: "b3", x1: cx + m, y1: cy + m, x2: cx - m, y2: cy + m },
+    { id: "b4", x1: cx - m, y1: cy + m, x2: cx - m, y2: cy - m },
+  ];
+  const all = [...blocking, ...bounds];
+  const pts: Array<{ x: number; y: number; a: number }> = [];
+  for (const s of all) {
+    for (const [ex, ey] of [
+      [s.x1, s.y1],
+      [s.x2, s.y2],
+    ]) {
+      const base = Math.atan2(ey - cy, ex - cx);
+      for (const a of [base - 1e-4, base, base + 1e-4]) {
+        const dx = Math.cos(a);
+        const dy = Math.sin(a);
+        let best = Infinity;
+        for (const seg of all) {
+          const t = rayWallHit(cx, cy, dx, dy, seg);
+          if (t !== undefined && t < best) best = t;
+        }
+        if (best < Infinity) {
+          pts.push({ x: cx + dx * best, y: cy + dy * best, a });
+        }
+      }
+    }
+  }
+  pts.sort((p, q) => p.a - q.a);
+  const round = (v: number) => Math.round(v * 100) / 100;
+  return pts.map(({ x, y }) => ({ x: round(x), y: round(y) }));
+}
+
+export function renderGlow(
+  item: FloorItem,
+  paint: GlowPaint,
+  gradientId: string,
+  walls?: readonly Wall[],
+): SVGTemplateResult {
+  const r = cssNumber(item.glowRadius, DEFAULT_GLOW_RADIUS);
+  // Walls block light (issue #108): clip the pool to what the lamp can see.
+  const reach = walls?.length ? glowReach(item.x, item.y, r, walls) : undefined;
+  const clipId = `${gradientId}-clip`;
+  return svg`
+    ${
+      reach
+        ? svg`<clipPath id=${clipId}>
+                <polygon points=${reach.map((p) => `${p.x},${p.y}`).join(" ")} />
+              </clipPath>`
+        : nothing
+    }
+    <radialGradient id=${gradientId} gradientUnits="userSpaceOnUse"
+                    cx=${item.x} cy=${item.y} r=${r}>
+      <stop offset="0" stop-color=${paint.color} stop-opacity=${paint.opacity} />
+      <stop offset="1" stop-color=${paint.color} stop-opacity="0" />
+    </radialGradient>
+    <circle class="fp-glow" cx=${item.x} cy=${item.y} r=${r}
+            fill=${`url(#${gradientId})`}
+            clip-path=${reach ? `url(#${clipId})` : nothing} />`;
+}
+
+/**
+ * A `<mask>` for the whole glow layer that punches out every furniture
+ * footprint (issue #108): furniture keeps its base gray instead of reading
+ * as "active" whenever a lamp near it is on. The line-art fills at ~0.12
+ * opacity, so a warm pool under a sofa tinted the entire sofa — the report
+ * that opened the issue. Round-based types cut an ellipse, everything else
+ * its rotated rect.
+ *
+ * The region is stated explicitly rather than inherited — the viewport
+ * default clipped walls under rotation once already (issue #102).
+ */
+export function renderGlowMask(
+  furniture: readonly Furniture[],
+  width: number,
+  height: number,
+  id: string,
+): SVGTemplateResult {
+  const pad = WALL_THICKNESS;
+  return svg`
+    <defs>
+      <mask id=${id} maskUnits="userSpaceOnUse"
+            x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}>
+        <rect x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}
+              fill="white" />
+        ${furniture.map((f) => {
+          const rot = f.angle ? `rotate(${f.angle} ${f.x} ${f.y})` : undefined;
+          const roundBase = f.type === "roundTable" || f.type === "plant" || f.type === "waterHeater";
+          return roundBase
+            ? svg`<ellipse cx=${f.x} cy=${f.y} rx=${f.w / 2} ry=${f.h / 2}
+                           fill="black" transform=${rot ?? nothing} />`
+            : svg`<rect x=${f.x - f.w / 2} y=${f.y - f.h / 2} width=${f.w} height=${f.h}
+                        fill="black" transform=${rot ?? nothing} />`;
+        })}
+      </mask>
+    </defs>`;
 }
 
 /**
@@ -1036,7 +1297,10 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
     }`;
   }
   const { sx, sy } = openingMirror(o);
-  return svg`<g transform="translate(${o.x} ${o.y}) rotate(${o.angle})">
+  return svg`<g class=${`fp-opening fp-opening-${cssIdent(o.type) ?? "unknown"}`}
+                data-id=${cssIdent(o.id) ?? nothing}
+                data-entity=${cssEntityId(o.entity) ?? nothing}
+                transform="translate(${o.x} ${o.y}) rotate(${o.angle})">
       <g transform="scale(${sx} ${sy})">${body}</g>
     </g>`;
 }
@@ -1135,6 +1399,13 @@ export function imageFitRatio(fit: Floor["imageFit"]): string {
  * shows through — including any background image. Shared by the live card and the
  * editor so both cut walls identically. Wrap the wall strokes in
  * `<g mask="url(#id)">` (or set `mask="url(#id)"` on each wall line).
+ *
+ * The mask's own region is stated explicitly (issue #102). Left unset it defaults
+ * to -10%..110% *of the viewport*, and the rotated card (issue #33) swaps the
+ * viewport's width and height while the mask content stays in plan coordinates —
+ * so on a 1000x600 plan turned 90°, the region ended at 110% of 600 and every
+ * wall past x=660 was masked away. Only walls, because only walls wear the mask.
+ * A margin of one wall thickness keeps strokes that sit on the canvas edge whole.
  */
 export function renderWallMask(
   openings: Opening[],
@@ -1143,10 +1414,13 @@ export function renderWallMask(
   id: string
 ): SVGTemplateResult {
   const cutH = WALL_THICKNESS + 4;
+  const pad = WALL_THICKNESS;
   return svg`
     <defs>
-      <mask id=${id} maskUnits="userSpaceOnUse">
-        <rect x="0" y="0" width=${width} height=${height} fill="white" />
+      <mask id=${id} maskUnits="userSpaceOnUse"
+            x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}>
+        <rect x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}
+              fill="white" />
         ${openings.map((o) => {
           const half = o.length / 2;
           return svg`<rect x=${o.x - half} y=${o.y - cutH / 2}
@@ -1170,16 +1444,107 @@ export function polygonCentroid(points: readonly AreaPoint[]): { x: number; y: n
 }
 
 /**
- * A room's translucent fill polygon. Drawn with no stroke — the walls drawn
- * on top of it already imply an outline, so a second one would double it up.
+ * A room's translucent fill polygon, with no stroke of its own — the outline
+ * is a separate pass, drawn above the walls by {@link renderAreaBorder}.
  * `color`/`opacity` are config-supplied style values, so they go through the
  * same injection allowlist as every other color/number field (see css-safe.ts).
  */
-export function renderArea(a: Area): SVGTemplateResult {
+export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
   const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
-  return svg`<polygon points=${pts}
-                       fill=${cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
-                       fill-opacity=${cssNumber(a.opacity, DEFAULT_AREA_OPACITY)} />`;
+  // `liveColor` has already been through the allowlist by areaColor(). When it
+  // is present the area is "live" and `highlight` decides whether that color
+  // lands on the fill, the outline, or both.
+  const liveFill = liveColor !== undefined && (a.highlight ?? "fill") !== "border";
+
+  // activeOpacity is a fill concern, so it only applies when the fill is live.
+  const opacity = liveFill ? a.activeOpacity ?? a.opacity : a.opacity;
+
+  // Stroke stays pinned off rather than omitted: this element is reused across
+  // live/rest updates, and stating it keeps the fill pass unable to draw an
+  // outline no matter what the border pass above the walls is doing.
+  return svg`<polygon class="fp-area" data-id=${cssIdent(a.id) ?? nothing}
+                       data-entity=${cssEntityId(a.entity) ?? nothing}
+                       points=${pts}
+                       fill=${liveFill ? liveColor : cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
+                       fill-opacity=${cssNumber(opacity, DEFAULT_AREA_OPACITY)}
+                       stroke="none"
+                       stroke-width="0" />`;
+}
+
+/**
+ * A room's outline — drawn as its own pass **above the walls**.
+ *
+ * An area polygon almost always traces the room it encloses, which means it
+ * runs down the centerline of that room's walls. Walls are stroked at
+ * {@link WALL_THICKNESS} over the top of the fills, so an outline drawn with
+ * the fill lands underneath the very wall it follows and cannot be seen at
+ * all. That left `highlight: "border"` (#107) inert on any plan whose areas
+ * follow its walls, which is very nearly all of them.
+ *
+ * Drawn above, the outline colors the room's own walls: an occupied or lit
+ * room announces itself along its boundary instead of tinting everything
+ * inside it, which is what `highlight: "border"` was for. The caller draws
+ * this inside the wall mask, so doorways and windows stay cut out of the
+ * outline exactly as they are cut out of the wall.
+ *
+ * A **live** border is clipped to its own room (`clipId` names the clip path
+ * the caller must keep unique). Rooms share walls, and an unclipped stroke
+ * straddles the boundary and paints the neighbour's face as well as its own —
+ * so on a wall between two live rooms whichever area sits later in `areas:`
+ * simply wins the whole wall, and reordering the config silently changes what
+ * the plan says. Clipped, each room paints its own side and a corner where
+ * several rooms meet splits between them. A **static** `borderColor` is drawn
+ * as authored — centered on the polygon, unclipped — since it is decoration
+ * placed deliberately rather than a per-room signal.
+ *
+ * Carries the same `data-id` / `data-entity` hooks as the fill (#111) under its
+ * own `fp-area-border` class, so a rule can target a room's outline and its
+ * fill separately. They go on the drawn polygon only: a `<clipPath>` is never
+ * rendered, so a rule matching one would look like it silently does nothing.
+ *
+ * Returns `nothing` when there is no outline to draw — the default.
+ */
+export function renderAreaBorder(
+  a: Area,
+  liveColor?: string,
+  clipId?: string
+): SVGTemplateResult | typeof nothing {
+  const liveBorder = liveColor !== undefined && (a.highlight ?? "fill") !== "fill";
+  const stroke = liveBorder
+    ? liveColor
+    : a.borderColor
+      ? cssColorOr(a.borderColor, "none")
+      : undefined;
+  if (stroke === undefined || stroke === "none") return nothing;
+
+  const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
+  // `borderWidth` is always the width actually seen. A live border defaults to
+  // half the wall: the wall is centered on the same line the polygon follows,
+  // so the room only owns the inner half of it. Anything wider runs past the
+  // wall's inner face onto the floor, over any furniture standing against that
+  // wall, and — since the opening mask only cuts WALL_THICKNESS + 4 — out
+  // through the doorways as a sliver either side of the cut. A static border is
+  // decoration and keeps its thinner default.
+  const width = cssNumber(
+    a.borderWidth,
+    liveBorder ? WALL_THICKNESS / 2 : DEFAULT_AREA_BORDER_WIDTH
+  );
+
+  if (!liveBorder || clipId === undefined) {
+    return svg`<polygon class="fp-area-border" data-id=${cssIdent(a.id) ?? nothing}
+                        data-entity=${cssEntityId(a.entity) ?? nothing}
+                        points=${pts} fill="none"
+                        stroke=${stroke} stroke-width=${width} />`;
+  }
+
+  // Clipping keeps only the inner half of the stroke, so it is drawn at twice
+  // the width to leave `width` showing on this room's own side.
+  return svg`
+    <clipPath id=${clipId}><polygon points=${pts} /></clipPath>
+    <polygon class="fp-area-border" data-id=${cssIdent(a.id) ?? nothing}
+             data-entity=${cssEntityId(a.entity) ?? nothing}
+             points=${pts} fill="none" clip-path=${`url(#${clipId})`}
+             stroke=${stroke} stroke-width=${width * 2} />`;
 }
 
 /**
@@ -1471,7 +1836,10 @@ export function renderFurniture(f: Furniture, override?: string): SVGTemplateRes
       detail = svg``;
       break;
   }
-  return svg`<g transform="translate(${f.x} ${f.y}) rotate(${f.angle ?? 0})">${base}${detail}</g>`;
+  return svg`<g class=${`fp-furniture fp-furniture-${cssIdent(f.type) ?? "unknown"}`}
+                data-id=${cssIdent(f.id) ?? nothing}
+                data-entity=${cssEntityId(f.entity) ?? nothing}
+                transform="translate(${f.x} ${f.y}) rotate(${f.angle ?? 0})">${base}${detail}</g>`;
 }
 
 /**
@@ -1640,7 +2008,8 @@ export function renderTracker(t: Tracker, opts: TrackerRenderOptions): SVGTempla
   }
 
   return svg`
-    <g class="tracker ${opts.editing ? "editing" : ""}"
+    <g class="tracker fp-tracker ${opts.editing ? "editing" : ""}"
+       data-id=${cssIdent(t.id) ?? nothing}
        transform="translate(${cx} ${cy}) rotate(${angle})">
       ${zone}${marker}
     </g>`;

@@ -22,6 +22,7 @@ import {
   DEFAULT_GRID,
   DEFAULT_ITEM_SIZE,
   DEFAULT_RIPPLE_SIZE,
+  DEFAULT_GLOW_RADIUS,
   DEFAULT_TEXT_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
 } from "./types";
@@ -415,6 +416,31 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
       selector: { number: { min: 40, max: 400, step: 4, mode: "slider", unit_of_measurement: "px" } },
     });
   }
+  // A light can cast a pool of light onto the plan from where it sits (issue
+  // #6). Offered only for lights, since nothing else has a color to cast.
+  if (it.kind === "light" || it.entity?.startsWith("light.")) {
+    fields.push({
+      name: "glow",
+      label: "Cast light",
+      helper: "Pools the light's own color onto the plan; overlapping lights mix",
+      selector: { boolean: {} },
+    });
+    if (it.glow) {
+      fields.push(
+        {
+          name: "glowRadius",
+          label: "Light radius",
+          selector: { number: { min: 20, max: 600, step: 10, mode: "slider" } },
+        },
+        {
+          name: "glowColor",
+          label: "Light color",
+          helper: "Only for bulbs that can't report a color; others use their own",
+          selector: { text: {} },
+        }
+      );
+    }
+  }
   fields.push(
     { name: "showIcon", label: "Show icon", selector: { boolean: {} } },
     {
@@ -466,6 +492,9 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
       display,
       iconAnimation: it.iconAnimation ?? "auto",
       rippleSize: it.rippleSize ?? DEFAULT_RIPPLE_SIZE,
+      glow: it.glow ?? false,
+      glowRadius: it.glowRadius ?? DEFAULT_GLOW_RADIUS,
+      glowColor: it.glowColor ?? "",
       showIcon: it.showIcon ?? true,
       hideWhenInactive: it.hideWhenInactive ?? false,
       showState: it.showState ?? false,
@@ -621,12 +650,48 @@ export function areaForm(a: Area): FormSpec {
         label: "Fill opacity",
         selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
       },
+      // Optional entity that makes the room itself live (issue #6) — a presence
+      // sensor that lights the room while it is occupied. Last, because most
+      // areas are just outlines and never bind anything.
+      {
+        name: "entity",
+        label: "Entity",
+        helper: "Optional — lets the room fill change color with a sensor",
+        selector: { entity: {} },
+      },
+      // Only meaningful once something drives the colour. Offered here rather
+      // than in the editor's colour rows because both are plain selectors, and
+      // "Active opacity" belongs beside "Fill opacity".
+      ...(a.entity
+        ? [
+            {
+              name: "activeOpacity",
+              label: "Active opacity",
+              helper: "Fill opacity while the entity resolves a color",
+              selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
+            },
+            {
+              name: "highlight",
+              label: "Highlight",
+              helper: "Border only outlines the room without tinting what's inside",
+              selector: dropdown(
+                opt("fill", "Fill"),
+                opt("border", "Border only"),
+                opt("both", "Fill and border")
+              ),
+            },
+          ]
+        : []),
     ],
     data: {
       showName: a.showName ?? true,
       opacity: a.opacity ?? DEFAULT_AREA_OPACITY,
+      entity: a.entity ?? "",
+      activeOpacity: a.activeOpacity ?? a.opacity ?? DEFAULT_AREA_OPACITY,
+      highlight: a.highlight ?? "fill",
     },
-    toPatch: identity,
+    // "fill" is the default, so keep it out of the YAML.
+    toPatch: (p) => ("highlight" in p && p.highlight === "fill" ? { ...p, highlight: undefined } : p),
   };
 }
 

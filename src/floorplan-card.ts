@@ -2,7 +2,7 @@ import { LitElement, html, css, svg, nothing, type TemplateResult, type Property
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor, Area } from "./types";
-import { cssColor, cssColorOr, cssNumber } from "./css-safe";
+import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId } from "./css-safe";
 import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
@@ -28,6 +28,11 @@ import {
   furnitureColor,
   renderTracker,
   renderArea,
+  renderAreaBorder,
+  areaColor,
+  glowPaint,
+  renderGlow,
+  renderGlowMask,
   polygonCentroid,
   trackerSensorReading,
   entityIsActive,
@@ -70,12 +75,15 @@ function floorMemoryKey(floors: readonly Floor[]): string {
 @customElement("easy-floorplan-card")
 export class FloorplanCard extends LitElement {
   private static _nextWallMaskId = 0;
+  private static _nextGlowId = 0;
 
   @property({ attribute: false }) public hass?: HomeAssistant;
   @state() private _config?: FloorplanCardConfig;
   /** View-state: which floor is shown. Never persisted to config. */
   @state() private _activeFloorId?: string;
   private readonly _wallMaskId = `fp-wall-mask-${FloorplanCard._nextWallMaskId++}`;
+  /** Prefix for this card's glow gradient ids, unique per instance (issue #6). */
+  private readonly _glowIdBase = `fp-glow-${FloorplanCard._nextGlowId++}`;
   /** Entity ids this plan actually displays; used to skip irrelevant hass updates. */
   private _watchedEntities: Set<string> = new Set();
 
@@ -282,7 +290,10 @@ export class FloorplanCard extends LitElement {
     const d = rotatedCanvasSize(c.width, c.height, rot);
     return html`
       <div
-        class="item ${on ? "on" : "off"} ${stateColor ? "state-colored" : ""}"
+        class="item fp-item ${on ? "on" : "off"} ${stateColor ? "state-colored" : ""}"
+        data-id=${cssIdent(item.id) ?? nothing}
+        data-entity=${cssEntityId(item.entity) ?? nothing}
+        data-kind=${cssIdent(item.kind) ?? nothing}
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${stateColor
           ? `--fp-state:${stateColor};`
           : ""}${activeColor
@@ -332,7 +343,8 @@ export class FloorplanCard extends LitElement {
     const d = rotatedCanvasSize(c.width, c.height, rot);
     return html`
       <div
-        class="text"
+        class="text fp-text"
+        data-id=${cssIdent(t.id) ?? nothing}
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
                font-size:${cssNumber(t.size, DEFAULT_TEXT_SIZE)}px;
                color:${cssColorOr(t.color, "var(--primary-text-color)")};
@@ -385,7 +397,27 @@ export class FloorplanCard extends LitElement {
                           preserveAspectRatio=${imageFitRatio(active.imageFit)}
                           opacity=${active.imageOpacity ?? 1} />`
               : nothing}
-            ${active.areas?.map((a) => renderArea(a))}
+            ${active.areas?.map((a) =>
+              renderArea(a, areaColor(a, a.entity ? this.hass?.states[a.entity]?.state : undefined))
+            )}
+            <!-- Light pools (issue #6). Above the room fills but below the
+                 furniture and walls, so light reads as cast onto the floor
+                 rather than painted over the plan. Isolated as one layer: the
+                 pools screen-blend with each other (two lamps brighten where
+                 they meet) without screening against the plan beneath, which
+                 would wash out on a light theme. -->
+            ${renderGlowMask(active.furniture, c.width, c.height, `${this._glowIdBase}-mask`)}
+            <g class="fp-glows"
+               mask=${active.furniture.length ? `url(#${this._glowIdBase}-mask)` : nothing}>
+              ${active.items.map((it, i) => {
+                if (!it.glow) return nothing;
+                const paint = glowPaint(it, this.hass?.states[it.entity]);
+                // Walls block the pool (issue #108) — light stops at the room.
+                return paint
+                  ? renderGlow(it, paint, `${this._glowIdBase}-${i}`, active.walls)
+                  : nothing;
+              })}
+            </g>
             ${active.furniture.map((f) =>
               renderFurniture(f, furnitureColor(f, f.entity ? this.hass?.states[f.entity]?.state : undefined))
             )}
@@ -394,7 +426,25 @@ export class FloorplanCard extends LitElement {
               ${active.walls.map(
                 (w) => svg`
                 <line x1=${w.x1} y1=${w.y1} x2=${w.x2} y2=${w.y2}
-                      class="wall" stroke-width=${WALL_THICKNESS} stroke-linecap="round" />`
+                      class="wall fp-wall" data-id=${cssIdent(w.id) ?? nothing}
+                      stroke-width=${WALL_THICKNESS} stroke-linecap="round" />`
+              )}
+            </g>
+            <!-- Room outlines, above the walls they trace. An area polygon runs
+                 down the centerline of the room's walls, so an outline drawn
+                 with the fill is buried under the wall and never seen. Drawn
+                 here it colors the wall instead. Same mask as the walls above,
+                 so a doorway is a gap in the outline exactly as it is a gap in
+                 the wall. Each live outline is clipped to its own room, so a
+                 shared wall splits down the middle rather than going to
+                 whichever area happens to sit later in the config. -->
+            <g mask=${`url(#${this._wallMaskId})`}>
+              ${active.areas?.map((a, i) =>
+                renderAreaBorder(
+                  a,
+                  areaColor(a, a.entity ? this.hass?.states[a.entity]?.state : undefined),
+                  `${this._wallMaskId}-area-${i}`
+                )
               )}
             </g>
             ${repeat(
@@ -555,6 +605,29 @@ export class FloorplanCard extends LitElement {
     }
     .wall {
       stroke: var(--primary-text-color);
+    }
+    /* Light pools (issue #6). "isolation" gives the layer its own compositing
+       group, so the pools blend with each other but not with the plan beneath
+       — screening against a light theme's white background would wash them
+       out entirely. Inside that group "screen" makes overlapping lights add,
+       so two lamps brighten where they meet instead of the topmost winning. */
+    .fp-glows {
+      isolation: isolate;
+      /* Light is decoration and must never take a click: these are filled
+         circles drawn over the plan, so without this they swallow every tap
+         inside the pool — devices stop responding under a lit lamp, and in
+         the editor whole rooms become unselectable (issue #108). */
+      pointer-events: none;
+    }
+    .fp-glow {
+      mix-blend-mode: screen;
+      /* Follow the light rather than snapping: a dimmer ramp reads as a ramp. */
+      transition: opacity 0.4s ease;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .fp-glow {
+        transition: none;
+      }
     }
     .fp-door-leaf,
     .fp-leaf-r {

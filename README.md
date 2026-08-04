@@ -21,6 +21,10 @@ automatically to the card and screen size.
   entity), custom icon (with autocomplete + preview), size and rotation.
 - **Presence ripples** — render presence/movement sensors as animated concentric rings
   that pulse while active and fade to a faint dot when idle.
+- **Cast light** — a light can pool its own color and brightness onto the plan from where
+  it sits. Several lights in one room each cast their own pool, and overlapping pools
+  *mix* — so a warm lamp and a cool lamp blend between them, and you can read the tones
+  set across the house at a glance.
 - **Animated doors & windows** — link a contact `binary_sensor` or `cover` so doors swing
   and windows open on the plan as their real state changes, with an optional accent color
   while open.
@@ -29,7 +33,9 @@ automatically to the card and screen size.
   dishwasher, water heater, air handler, bathtub, vanity, sectional, fish tank,
   piano, hot tub.
 - **Areas** — trace a room's outline point-by-point (points snap to wall corners and to
-  neighboring areas' corners) to get a colored, named room polygon. Naming a room after
+  neighboring areas' corners) to get a colored, named room polygon. Bind an entity to a
+  room and its fill goes live — green while a presence sensor is occupied, red when a CO2
+  sensor crosses a threshold. Naming a room after
   one of your Home Assistant areas (the name field autocompletes against them) links the
   two, which scopes the entity picker — for any device dropped inside it — to that HA
   area's entities, and can bulk-add every device in the area.
@@ -126,7 +132,10 @@ background):
   corners or another area's corners, and clicking back on the starting point closes the
   shape (3+ points required; Backspace removes the last point while drawing, Escape
   discards the whole outline). Once placed, drag anywhere inside the fill to move the
-  whole room, or drag a corner handle to reshape it — see **Areas**.
+  whole room, or drag a corner handle to reshape it — see **Areas**. Bind an **Entity** in
+  the Element section and the room's conditional-color controls appear beside it — **Active
+  color**, **Active opacity**, **Highlight**, and the **Color by state** rule list — the same
+  set devices and furniture already offer.
 - **+ Add** — one popover for everything droppable: device, text, and all furniture
   types shown as their actual glyphs (pick a sofa by seeing a sofa). The new element is
   selected immediately so the **Element** section is ready for configuring it.
@@ -611,6 +620,9 @@ shape it occupies on screen.
 | `activeColor` | string                                 | theme color  | Badge color while the device is on — lets domains be told apart at a glance. Ignored while `stateColor` rules match. |
 | `rippleColor` | string                                 | `activeColor`| Ripple ring color (ripple modes). Falls back to `activeColor`, then the primary color. |
 | `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
+| `glow`        | boolean                                | `false`      | Cast a pool of light onto the plan from this device (lights only). See **Cast light**. |
+| `glowRadius`  | number                                 | `140`        | Radius of the cast pool, in canvas units.              |
+| `glowColor`   | string                                 | `#ffd9a0`    | Color for a bulb that can't report one. A color-capable light always uses its own. |
 | `showIcon`    | boolean                                | `true`       | Show the icon badge.                                   |
 | `hideWhenInactive` | boolean                           | `false`      | Hide the device on the card while its entity is inactive (issue #55). Always shown, dimmed, in the editor. |
 | `showState`   | boolean                                | sensors only | Show the entity state in the label line.               |
@@ -619,6 +631,58 @@ shape it occupies on screen.
 
 Clicking a `light`, `switch`, `cover`, `fan` or `input_boolean` toggles it; other
 domains open the more-info dialog.
+
+#### Cast light
+
+Set `glow: true` on a light and it pools its own color and brightness onto the plan,
+centered where the device sits. The light falls **where the lamp is**, not across the
+whole room — so several lights in one room each cast their own pool, and where the pools
+overlap they **mix additively**: a warm lamp and a cool one blend to a neutral tone
+between them, exactly as they would in the room. That's something a single room-wide fill
+can't express, and it's what makes an open-plan space read correctly.
+
+```yaml
+items:
+  - id: lamp_warm
+    entity: light.living_standing_lamp
+    kind: light
+    x: 400
+    y: 300
+    glow: true
+    glowRadius: 200
+```
+
+Lights differ in what they can report, so this degrades in rungs and every light does
+something sensible:
+
+| The light | The pool |
+| --- | --- |
+| Reports a color (`rgb`, `xy`, or even `color_temp`) | Its own color, strength from `brightness` |
+| Brightness only | `glowColor` (warm white), strength from `brightness` |
+| On/off only | `glowColor`, at full strength |
+| Off, `unavailable` or `unknown` | Casts nothing |
+
+Home Assistant derives an `rgb_color` even for `color_temp`-only bulbs, so a warm-white
+bulb still reads as amber. Brightness maps into a **0.18–0.6** opacity band rather than
+0–1: a lamp dimmed to 10% would otherwise be invisible.
+
+The pools are drawn above the room fills but below furniture and walls, so light reads as
+cast onto the floor rather than painted over the plan. `glow` is independent of the icon —
+combine it with `showIcon: false` for light with no badge, or with `hideWhenInactive` to
+drop both when the light is off.
+
+**Walls block the light.** A pool is clipped to what the lamp can actually see, so it stops
+at the walls of its room instead of washing into the next one, and spills through a doorway
+gap the way real light does. The result is an irregular shape rather than a clean circle —
+that's the point. A lamp with no wall inside its radius stays a plain circle.
+
+**Furniture keeps its own color.** Light falls on the floor, not on the furniture drawn over
+it: furniture footprints are cut out of the pools, so a sofa under a lit lamp stays its base
+gray rather than turning the color of the light. Only entity-bound furniture with
+`stateColor` / `activeColor` ever changes color.
+
+Pools never intercept clicks — a device under a lit lamp stays tappable, and in the editor
+rooms under one stay selectable.
 
 ### Text
 
@@ -699,7 +763,7 @@ trackers:
 
 ### Area
 
-`{ id, points, name?, showName?, color?, opacity?, haArea?, filterEntities? }`
+`{ id, points, name?, showName?, color?, opacity?, haArea?, filterEntities?, entity?, stateColor?, activeColor?, activeOpacity?, borderColor?, borderWidth?, highlight? }`
 
 - `points` — an array of `{ x, y }` vertices (canvas units), in drawing order; the shape
   is implicitly closed from the last point back to the first.
@@ -712,6 +776,34 @@ trackers:
 - `filterEntities` — with `haArea` set, scopes the entity picker (for any device placed
   inside this polygon) to that HA area's entities. Default `true`; has no effect without
   a linked `haArea`.
+- `entity` — optional entity that makes the room itself live, in the same shape furniture
+  uses. Drives `stateColor` and `activeColor`; an unbound area stays a static polygon.
+  Setting it in the editor reveals the colour controls below — on its own it changes
+  nothing, since there is no colour yet for it to resolve.
+- `stateColor` — threshold/state rules for the fill (same shape as a device's
+  `stateColor`). Evaluated against `entity`'s state; takes precedence over `activeColor`
+  and `color`.
+- `activeColor` — fill color while `entity` is active, used when no `stateColor` rule
+  matches.
+- `activeOpacity` — fill opacity while `entity` resolves a color. Lets a room lift out of
+  the plan while it is live without permanently darkening it. Falls back to `opacity`.
+- `borderColor` / `borderWidth` — a static outline for the room. No outline is drawn by
+  default; `borderWidth` defaults to `3` canvas units once a color is set.
+- `highlight` — where a live color paints: `fill` (default), `border`, or `both`. Use
+  `border` for a room that outlines itself while occupied without tinting everything
+  inside it, which reads better on a busy plan.
+
+  An area's outline is drawn **on top of the walls it traces**, so `border` colors the
+  room's own walls rather than hiding a line underneath them. Doorways and windows are
+  cut out of the outline exactly as they are cut out of the wall.
+
+  A live outline is clipped to its own room, so rooms never paint each other: a wall
+  between two rooms splits down the middle and each side reports its own room, and a
+  corner where several rooms meet splits between them. An exterior wall colors on its
+  inside face only, leaving the plan's silhouette intact. `borderWidth` is the width
+  you actually see on the room's own side, and defaults to `4` — the room's own half
+  of the wall, since the wall is centred on the line the polygon follows. Widen it and
+  the band runs past the wall onto the floor and over furniture standing against it.
 
 ```yaml
 areas:
@@ -725,6 +817,51 @@ areas:
       - { x: 900, y: 100 }
       - { x: 900, y: 500 }
       - { x: 100, y: 500 }
+
+  # The room lights up green while it is occupied, and lifts to a stronger
+  # fill so it reads at a glance.
+  - id: kitchen
+    name: Kitchen
+    haArea: kitchen
+    entity: binary_sensor.kitchen_occupancy
+    activeColor: "#4caf50"
+    opacity: 0.12
+    activeOpacity: 0.35
+    points:
+      - { x: 100, y: 500 }
+      - { x: 500, y: 500 }
+      - { x: 500, y: 900 }
+      - { x: 100, y: 900 }
+
+  # Outline-only highlight: the hall's own walls turn green while it is
+  # occupied and its fill never changes. activeOpacity is a fill concern, so it
+  # does not apply here. Without borderWidth the outline matches the wall it is
+  # painted over; 4 draws a thinner line down the middle of that wall instead.
+  - id: hall
+    name: Hall
+    entity: binary_sensor.hall_occupancy
+    activeColor: "#4caf50"
+    highlight: border
+    points:
+      - { x: 500, y: 100 }
+      - { x: 900, y: 100 }
+      - { x: 900, y: 500 }
+      - { x: 500, y: 500 }
+
+  # Or bind a numeric sensor and threshold it, so the whole room reddens
+  # when air quality goes bad.
+  - id: study
+    name: Study
+    entity: sensor.study_co2
+    stateColor:
+      - { above: 1200, color: "#e1243b" }
+      - { above: 800, color: "#ff9300" }
+      - { color: "#58d32f" }
+    points:
+      - { x: 500, y: 500 }
+      - { x: 900, y: 500 }
+      - { x: 900, y: 900 }
+      - { x: 500, y: 900 }
 ```
 
 ### Example
@@ -802,6 +939,47 @@ trackers:
       max: 3.5
       presence: { entity: binary_sensor.living_room_presence }
 ```
+
+## Styling hooks (card-mod)
+
+Every rendered element carries its config `id` as `data-id`, plus a type class — so
+[card-mod](https://github.com/thomasloven/lovelace-card-mod) and any other CSS can target
+it by something stable, instead of by a colour that breaks the moment you change it in the
+editor.
+
+| Element | Class | Attributes |
+| --- | --- | --- |
+| Area | `fp-area` | `data-id`, `data-entity` |
+| Furniture | `fp-furniture`, `fp-furniture-<type>` | `data-id`, `data-entity` |
+| Door / window | `fp-opening`, `fp-opening-door` \| `fp-opening-window` | `data-id`, `data-entity` |
+| Wall | `wall`, `fp-wall` | `data-id` |
+| Device | `item`, `fp-item` | `data-id`, `data-entity`, `data-kind` |
+| Text | `text`, `fp-text` | `data-id` |
+| Tracker | `tracker`, `fp-tracker` | `data-id` |
+
+Ids come from the editor (`area_a5r5nwl`, `furn_3j66s50`, …) and are stable across edits.
+An element with no id simply has no `data-id`, rather than `data-id="undefined"`.
+
+```yaml
+type: custom:easy-floorplan-card
+card_mod:
+  style: |
+    /* One specific room */
+    .fp-area[data-id="area_a5r5nwl"] { fill: #62f202; fill-opacity: 0.35; }
+    /* Every sofa on the plan */
+    .fp-furniture-sofa { opacity: 0.5; }
+    /* The element bound to one entity, whatever kind it is */
+    [data-entity="light.kitchen"] { filter: drop-shadow(0 0 6px gold); }
+```
+
+CSS wins over SVG presentation attributes, so `fill` and `fill-opacity` set this way
+override what the card draws.
+
+Two notes. **Colouring a room from a sensor no longer needs CSS** — areas take `entity`,
+`stateColor`, `activeColor` and `activeOpacity` natively; see **Area**. And these hooks are
+a *styling* surface, not an API: the class names are stable, but the SVG structure inside
+an element may change between releases, so prefer selecting the element itself over its
+internals.
 
 ## Development
 

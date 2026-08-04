@@ -245,6 +245,26 @@ export interface FloorItem {
   rippleColor?: string;
   /** Max ripple ring diameter in pixels. Default 80. */
   rippleSize?: number;
+  /**
+   * Cast a pool of light onto the plan from this device's position (issue #6).
+   *
+   * The room is not tinted as a whole — the light falls where the device sits,
+   * so several lights in one room each cast their own pool and the pools mix
+   * where they overlap. That handles an open-plan room, or one lamp warm and
+   * another cool, which a single room-wide fill cannot express.
+   *
+   * The device's own `x`/`y` are the position, so a light icon already placed
+   * on the plan needs nothing but this flag.
+   */
+  glow?: boolean;
+  /** Radius of the cast pool in canvas units. Default {@link DEFAULT_GLOW_RADIUS}. */
+  glowRadius?: number;
+  /**
+   * Color for a light that cannot report one — a brightness-only or on/off
+   * bulb. A color-capable light always paints its own `rgb_color` instead.
+   * Defaults to {@link DEFAULT_GLOW_COLOR}, a warm white.
+   */
+  glowColor?: string;
   /** Lovelace actions. Defaults: tap = toggle (controllable domains) or more-info; hold/double = none. */
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
@@ -484,6 +504,41 @@ export interface Area {
    * without a linked `haArea`.
    */
   filterEntities?: boolean;
+  /**
+   * Optional entity that makes the room itself live (issue #6) — a presence
+   * sensor that lights the room while it is occupied, an air quality sensor
+   * that reddens it when readings go bad. Drives {@link stateColor} and
+   * {@link activeColor}; an unbound area is still just a static polygon.
+   */
+  entity?: string;
+  /**
+   * Threshold/state colors for the fill, in the same shape as
+   * {@link FloorItem.stateColor}. Evaluated against `entity`'s state; takes
+   * precedence over {@link activeColor} and {@link color}.
+   */
+  stateColor?: StateColorRule[];
+  /** Fill color while `entity` is active. Used when no {@link stateColor} rule matches. */
+  activeColor?: string;
+  /**
+   * Fill opacity while `entity` resolves a color, 0-1. Lets a room lift out of
+   * the plan while it is live without permanently darkening it when it is not.
+   * Falls back to {@link opacity}.
+   */
+  activeOpacity?: number;
+  /**
+   * Static outline color for the polygon. No outline is drawn by default, so
+   * existing plans render unchanged.
+   */
+  borderColor?: string;
+  /** Outline width in canvas units. Defaults to {@link DEFAULT_AREA_BORDER_WIDTH}. */
+  borderWidth?: number;
+  /**
+   * Where a resolved live color paints: the `fill` (default, and the only
+   * behaviour before this option existed), the `border`, or `both`. Use
+   * `border` for a room that outlines itself while occupied without tinting
+   * everything inside it — which reads better on a busy plan.
+   */
+  highlight?: "fill" | "border" | "both";
 }
 
 /**
@@ -498,6 +553,21 @@ export function areaFiltersEntities(
 }
 
 export const DEFAULT_AREA_OPACITY = 0.25;
+export const DEFAULT_AREA_BORDER_WIDTH = 3;
+
+/** Radius of a light's cast pool, in canvas units (issue #6). */
+export const DEFAULT_GLOW_RADIUS = 140;
+/** Warm white, for a light that cannot report a color of its own. */
+export const DEFAULT_GLOW_COLOR = "#ffd9a0";
+/**
+ * Opacity band a light's `brightness` maps into at the center of its pool.
+ *
+ * Not 0–1: a lamp dimmed to 10% would be invisible, and "I can't see it" reads
+ * worse than "it's dim". The ceiling keeps a bright lamp from burying the
+ * furniture and icons it sits on top of.
+ */
+export const GLOW_MIN_OPACITY = 0.18;
+export const GLOW_MAX_OPACITY = 0.6;
 
 export const DEFAULT_TRACKER_DOT_SIZE = 14;
 
