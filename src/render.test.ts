@@ -1763,6 +1763,40 @@ describe("renderSunDimMask — lit rooms hold back the night (issue #113)", () =
     expect(markup).toContain("height=616");
   });
 
+  it("keeps every lamp's gradient id pinned to its item index, not its rank", () => {
+    // The bug this guards: compacting the list to only-lit lamps shifted every
+    // later lamp's DOM position when one toggled, rewriting the id on an
+    // existing <radialGradient> and stranding the circle that referenced it on
+    // a stale paint server — a hard-edged disc at full strength instead of a
+    // falloff. Only lamps *after* the toggled one were affected, which is what
+    // made it look intermittent.
+    const items = [
+      lamp({ id: "A", entity: "light.a", x: 150 }),
+      lamp({ id: "B", entity: "light.b", x: 450 }),
+      lamp({ id: "C", entity: "light.c", x: 750 }),
+    ];
+    const states = (bOn: boolean) =>
+      ({
+        "light.a": { entity_id: "light.a", state: "on", attributes: { brightness: 255 } },
+        "light.b": { entity_id: "light.b", state: bOn ? "on" : "off", attributes: {} },
+        "light.c": { entity_id: "light.c", state: "on", attributes: { brightness: 255 } },
+      }) as never;
+
+    const idsFor = (bOn: boolean) => {
+      const m = flatten(renderSunDimMask(items, states(bOn), 1000, 600, "sd"));
+      return [...m.matchAll(/id=(sd-\d+)/g)].map((x) => x[1]);
+    };
+    // C is index 2 and must stay sd-2 whether or not B is lit.
+    expect(idsFor(false)).toEqual(["sd-0", "sd-2"]);
+    expect(idsFor(true)).toEqual(["sd-0", "sd-1", "sd-2"]);
+
+    // And each circle still points at its own lamp's gradient.
+    const off = flatten(renderSunDimMask(items, states(false), 1000, 600, "sd"));
+    expect(off).toContain("cx=750");
+    expect(off).toContain("url(#sd-2)");
+    expect(off).not.toContain("sd-1");
+  });
+
   it("gives each lamp its own gradient id, so pools do not share a falloff", () => {
     const two = [lamp(), lamp({ id: "i2", x: 700 })];
     const markup = flatten(renderSunDimMask(two, on(), 1000, 600, "sd"));
