@@ -1,4 +1,5 @@
 import { describe, it, expect } from "vitest";
+import { nothing } from "lit";
 import type { Furniture, FurnitureType, ItemKind } from "./types";
 import {
   FURNITURE_DEFAULT_SIZE,
@@ -1654,6 +1655,9 @@ describe("glowReach — walls block light (issue #108)", () => {
 describe("styling hooks reach the DOM (issue #105)", () => {
   const flatten = (node: unknown): string => {
     if (node == null || typeof node === "boolean") return "";
+    // Lit's `nothing` is a symbol; stringifying it would put the literal text
+    // "Symbol(lit-nothing)" in the markup, which is not what renders.
+    if (typeof node === "symbol") return "";
     if (Array.isArray(node)) return node.map(flatten).join("");
     if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
       const { strings, values } = node as { strings: string[]; values: unknown[] };
@@ -1706,13 +1710,33 @@ describe("styling hooks reach the DOM (issue #105)", () => {
     expect(markup).toContain("data-entity=binary_sensor.d");
   });
 
-  it("omits the attribute entirely rather than emitting data-id=undefined", () => {
-    // A hand-written config need not carry ids; "undefined" would be a hook
-    // that silently matches every element that lacks one.
-    const markup = flatten(renderArea({ points: square } as never));
-    expect(markup).not.toContain("undefined");
-    const furn = flatten(renderFurniture({ type: "sofa", x: 0, y: 0, w: 10, h: 10 } as never));
-    expect(furn).not.toContain("undefined");
+  it("hands Lit its omit sentinel, so the attribute is absent not \"undefined\"", () => {
+    // A hand-written config need not carry ids, and data-id="undefined" would
+    // be a hook that silently matches every element lacking one.
+    //
+    // Asserting on flattened markup cannot show this: String(nothing) is
+    // "Symbol(lit-nothing)", so a `not.toContain("undefined")` check passes
+    // without the attribute being omitted at all. Assert the slot itself is
+    // Lit's `nothing` — that is the documented contract for removing an
+    // attribute.
+    const slotFor = (tpl: unknown, attr: string): unknown => {
+      const { strings, values } = tpl as { strings: string[]; values: unknown[] };
+      const i = strings.findIndex((s) => s.trimEnd().endsWith(`${attr}=`));
+      expect(i, `no ${attr}= slot found`).toBeGreaterThanOrEqual(0);
+      return values[i];
+    };
+
+    const area = renderArea({ points: square } as never);
+    expect(slotFor(area, "data-id")).toBe(nothing);
+    expect(slotFor(area, "data-entity")).toBe(nothing);
+
+    const furn = renderFurniture({ type: "sofa", x: 0, y: 0, w: 10, h: 10 } as never);
+    expect(slotFor(furn, "data-id")).toBe(nothing);
+    expect(slotFor(furn, "data-entity")).toBe(nothing);
+
+    // And the sentinel really is distinct from the failure it guards against.
+    expect(nothing).not.toBe(undefined);
+    expect(String(nothing)).not.toContain("undefined");
   });
 
   it("a hostile id stays one harmless token instead of a second class", () => {
