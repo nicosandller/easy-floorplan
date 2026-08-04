@@ -465,16 +465,17 @@ export function renderSunDimMask(
   height: number,
   id: string,
 ): SVGTemplateResult | typeof nothing {
-  const lit = items.flatMap((it, i) => {
-    if (!it.glow) return [];
+  // Strength per item, by INDEX — undefined where the lamp contributes nothing.
+  // Deliberately not compacted: see the map below.
+  const strengths = items.map((it) => {
+    if (!it.glow) return undefined;
     const paint = glowPaint(it, states?.[it.entity]);
-    if (!paint) return [];
+    if (!paint) return undefined;
     // Normalized against the glow's own ceiling, so a full-brightness lamp
     // clears the dim entirely and a dim one clears proportionally.
-    const strength = Math.max(0, Math.min(1, paint.opacity / GLOW_MAX_OPACITY));
-    return [{ it, i, strength }];
+    return Math.max(0, Math.min(1, paint.opacity / GLOW_MAX_OPACITY));
   });
-  if (!lit.length) return nothing;
+  if (!strengths.some((v) => v !== undefined)) return nothing;
 
   const pad = WALL_THICKNESS;
   return svg`
@@ -483,7 +484,18 @@ export function renderSunDimMask(
             x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}>
         <rect x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}
               fill="white" />
-        ${lit.map(({ it, i, strength }) => {
+        ${items.map((it, i) => {
+          // One slot per item, holes included — exactly how the glow layer
+          // itself is emitted. Compacting the list instead shifts every later
+          // lamp's DOM position when one toggles, which rewrites the `id` on
+          // an existing <radialGradient> and leaves the circle that referenced
+          // it pointing at a paint server the browser has already cached under
+          // that name. The symptom is a lamp suddenly clearing the dim as a
+          // hard-edged disc at full strength rather than a soft falloff, and
+          // it only bites lamps positioned *after* the one that toggled —
+          // which is what made it look intermittent.
+          const strength = strengths[i];
+          if (strength === undefined) return nothing;
           const r = cssNumber(it.glowRadius, DEFAULT_GLOW_RADIUS);
           const gid = `${id}-${i}`;
           return svg`
