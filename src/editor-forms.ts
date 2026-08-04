@@ -25,6 +25,9 @@ import {
   DEFAULT_GLOW_RADIUS,
   DEFAULT_TEXT_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
+  WARDROBE_DOORS_DEFAULT,
+  WARDROBE_DOORS_MIN,
+  WARDROBE_DOORS_MAX,
 } from "./types";
 import {
   DEFAULT_LABEL_SIZE,
@@ -555,6 +558,24 @@ export function furnitureForm(f: Furniture, areaScope?: AreaEntityScope): FormSp
             },
           ]
         : []),
+      // Wardrobe only (#90): how many door panels the run is divided into, so
+      // a fitted wall of doors doesn't have to be drawn as a row of boxes.
+      ...(f.type === "wardrobe"
+        ? [
+            {
+              name: "doors",
+              label: "Doors",
+              helper: "Panels across the front — they pair up from the left",
+              selector: {
+                number: {
+                  min: WARDROBE_DOORS_MIN,
+                  max: WARDROBE_DOORS_MAX,
+                  mode: "box" as const,
+                },
+              },
+            },
+          ]
+        : []),
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
       angleField(),
@@ -571,6 +592,7 @@ export function furnitureForm(f: Furniture, areaScope?: AreaEntityScope): FormSp
     data: {
       type: f.type,
       ...(f.type === "sectional" ? { hand: f.hand ?? "right" } : {}),
+      ...(f.type === "wardrobe" ? { doors: f.doors ?? WARDROBE_DOORS_DEFAULT } : {}),
       w: f.w,
       h: f.h,
       angle: f.angle ?? 0,
