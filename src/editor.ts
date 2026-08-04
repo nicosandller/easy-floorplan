@@ -110,6 +110,7 @@ import {
   openingForm,
   projectForm,
   projectRotationForm,
+  projectSunForm,
   textForm,
   trackerForm,
   wallForm,
@@ -3486,6 +3487,9 @@ export class FloorplanCardEditor extends LitElement {
           else this._commitFloor(patch as Partial<Floor>);
         })}
         ${this._renderForm(projectRotationForm(this._config), (patch) =>
+          this._patchConfig(patch as Partial<FloorplanCardConfig>)
+        )}
+        ${this._renderForm(projectSunForm(this._config), (patch) =>
           this._patchConfig(patch as Partial<FloorplanCardConfig>)
         )}
       </div>

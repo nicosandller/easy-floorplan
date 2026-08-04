@@ -25,6 +25,8 @@ import {
   DEFAULT_GLOW_RADIUS,
   DEFAULT_TEXT_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
+  DEFAULT_SUN_MIN,
+  DEFAULT_SUN_MAX,
 } from "./types";
 import {
   DEFAULT_LABEL_SIZE,
@@ -748,6 +750,50 @@ export function projectRotationForm(c: FloorplanCardConfig): FormSpec {
       "rotation" in p
         ? // Stored as a number; 0 means "not rotated", so keep it out of the YAML.
           { ...p, rotation: p.rotation === "0" ? undefined : Number(p.rotation) }
+        : p,
+  };
+}
+
+/**
+ * Follow the real sun (issue #113). Its own form so the editor can put it
+ * beside the other project settings, and so the two brightness sliders appear
+ * only once the toggle is on — they mean nothing otherwise.
+ */
+export function projectSunForm(c: FloorplanCardConfig): FormSpec {
+  const fields: FormField[] = [
+    {
+      name: "sunDimming",
+      label: "Follow the sun",
+      helper: "Dims the plan at night, using your Home Assistant's own sunrise and sunset",
+      selector: { boolean: {} },
+    },
+  ];
+  if (c.sunDimming) {
+    fields.push(
+      {
+        name: "sunBrightnessMin",
+        label: "Night brightness",
+        selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
+      },
+      {
+        name: "sunBrightnessMax",
+        label: "Day brightness",
+        selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
+      }
+    );
+  }
+  return {
+    fields,
+    data: {
+      sunDimming: c.sunDimming ?? false,
+      sunBrightnessMin: c.sunBrightnessMin ?? DEFAULT_SUN_MIN,
+      sunBrightnessMax: c.sunBrightnessMax ?? DEFAULT_SUN_MAX,
+    },
+    // Off is the default, so keep the whole feature out of the YAML until it
+    // is switched on — including the two sliders it drags along with it.
+    toPatch: (p) =>
+      "sunDimming" in p && !p.sunDimming
+        ? { ...p, sunDimming: undefined, sunBrightnessMin: undefined, sunBrightnessMax: undefined }
         : p,
   };
 }

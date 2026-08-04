@@ -22,6 +22,10 @@ import {
   DEFAULT_RIPPLE_SIZE,
   DEFAULT_AREA_OPACITY,
   DEFAULT_AREA_BORDER_WIDTH,
+  SUN_ELEVATION_NIGHT,
+  SUN_ELEVATION_DAY,
+  DEFAULT_SUN_MIN,
+  DEFAULT_SUN_MAX,
   DEFAULT_GLOW_RADIUS,
   DEFAULT_GLOW_COLOR,
   GLOW_MIN_OPACITY,
@@ -77,6 +81,12 @@ export function hassRenderInputsChanged(
 /** Every entity id whose state can change what a plan draws (all floors). */
 export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
   const ids = new Set<string>();
+  // Sun dimming (issue #113) reads sun.sun's elevation. Miss this and the
+  // plan is lit once and then frozen at whatever the sun was doing when the
+  // card loaded — the same trap entity-bound furniture (#82) and areas (#6)
+  // each fell into. HA replaces the state object when the attribute moves,
+  // so identity comparison in hassRenderInputsChanged catches it.
+  if (c.sunDimming) ids.add("sun.sun");
   for (const f of getFloors(c)) {
     for (const o of f.openings) {
       if (o.entity) ids.add(o.entity);
@@ -1368,6 +1378,47 @@ export function planRotationTransform(w: number, h: number, rot: PlanRotation): 
     default:
       return "";
   }
+}
+
+/**
+ * How bright the plan should be for a given sun elevation (issue #113).
+ *
+ * `sun.sun`'s `elevation` is the signal rather than sunrise/sunset timestamps:
+ * Home Assistant already computes it continuously from the instance's own
+ * latitude, longitude and clock, so it is smooth by construction and it comes
+ * from the **server**. A phone in another timezone showing the same dashboard
+ * therefore sees the same picture, which is the point of the issue.
+ *
+ * The ramp spans civil twilight ({@link SUN_ELEVATION_NIGHT} to
+ * {@link SUN_ELEVATION_DAY}) — roughly the hour around sunrise and sunset when
+ * the light outside actually changes. Smoothstepped rather than linear so the
+ * rate eases in and out instead of cornering at each end.
+ *
+ * A missing or unreadable elevation returns `max`: an outage should leave the
+ * plan at full brightness, never stuck dark with no way to tell why.
+ */
+export function sunBrightness(
+  elevation: unknown,
+  min: number = DEFAULT_SUN_MIN,
+  max: number = DEFAULT_SUN_MAX,
+): number {
+  const lo = Math.min(min, max);
+  const hi = Math.max(min, max);
+  // Allowlist the input rather than enumerate the coercions: Number(null),
+  // Number(""), Number(false) and Number([]) are every one of them 0 — finite,
+  // and 0° is the *middle* of this ramp. Left unguarded a dead sun.sun would
+  // not fail bright at all, it would quietly settle the plan at half light and
+  // read as a dusk that never ends. Same trap cssNumber documents.
+  const usable =
+    typeof elevation === "number" ||
+    (typeof elevation === "string" && elevation.trim() !== "");
+  if (!usable) return hi;
+  const e = typeof elevation === "number" ? elevation : Number(elevation);
+  if (!Number.isFinite(e)) return hi;
+  const span = SUN_ELEVATION_DAY - SUN_ELEVATION_NIGHT;
+  const t = Math.max(0, Math.min(1, (e - SUN_ELEVATION_NIGHT) / span));
+  const eased = t * t * (3 - 2 * t);
+  return lo + (hi - lo) * eased;
 }
 
 /**

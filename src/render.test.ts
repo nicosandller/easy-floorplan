@@ -7,6 +7,8 @@ import {
   DEFAULT_GLOW_COLOR,
   GLOW_MIN_OPACITY,
   GLOW_MAX_OPACITY,
+  SUN_ELEVATION_NIGHT,
+  SUN_ELEVATION_DAY,
 } from "./types";
 import {
   snapToWall,
@@ -19,6 +21,7 @@ import {
   shutterAmount,
   shutterStyleOf,
   imageFitRatio,
+  sunBrightness,
   renderWallMask,
   shutterActive,
   openingClickAction,
@@ -1643,6 +1646,67 @@ describe("renderWallMask region (issue #102)", () => {
     const nums = [...markup.matchAll(/(?:x|y|width|height)=(-?\d+)/g)].map((m) => Number(m[1]));
     const right = 1000 + 8;
     expect(Math.max(...nums)).toBeGreaterThanOrEqual(right);
+  });
+});
+
+describe("sunBrightness (issue #113)", () => {
+  it("is min deep at night and max in full daylight", () => {
+    expect(sunBrightness(-40, 0.45, 1)).toBeCloseTo(0.45, 5);
+    expect(sunBrightness(SUN_ELEVATION_NIGHT, 0.45, 1)).toBeCloseTo(0.45, 5);
+    expect(sunBrightness(60, 0.45, 1)).toBeCloseTo(1, 5);
+    expect(sunBrightness(SUN_ELEVATION_DAY, 0.45, 1)).toBeCloseTo(1, 5);
+  });
+
+  it("ramps smoothly and monotonically across civil twilight", () => {
+    const xs = [-6, -4, -2, 0, 2, 4, 6];
+    const ys = xs.map((e) => sunBrightness(e, 0.45, 1));
+    for (let i = 1; i < ys.length; i++) expect(ys[i]).toBeGreaterThan(ys[i - 1]);
+    // Sunset (0°) sits halfway: the ramp is symmetric about the horizon.
+    expect(sunBrightness(0, 0, 1)).toBeCloseTo(0.5, 5);
+  });
+
+  it("eases at both ends rather than cornering", () => {
+    // Smoothstep: near the clamps the rate is slower than in the middle.
+    const nearEnd = sunBrightness(-5, 0, 1) - sunBrightness(-6, 0, 1);
+    const middle = sunBrightness(0.5, 0, 1) - sunBrightness(-0.5, 0, 1);
+    expect(middle).toBeGreaterThan(nearEnd);
+  });
+
+  it("fails bright: a missing or unreadable elevation leaves the plan lit", () => {
+    // The opposite would strand a plan dark with nothing on screen to explain
+    // why — worse than ignoring the feature until sun.sun comes back.
+    expect(sunBrightness(undefined, 0.45, 1)).toBe(1);
+    expect(sunBrightness(null, 0.45, 1)).toBe(1);
+    expect(sunBrightness("unavailable", 0.45, 1)).toBe(1);
+    expect(sunBrightness(Number.NaN, 0.45, 1)).toBe(1);
+    // The nasty ones: all of these coerce to 0, which is mid-ramp, not night.
+    expect(sunBrightness("", 0.45, 1)).toBe(1);
+    expect(sunBrightness("   ", 0.45, 1)).toBe(1);
+    expect(sunBrightness(false, 0.45, 1)).toBe(1);
+    expect(sunBrightness([], 0.45, 1)).toBe(1);
+    // But a real 0° is sunset, and must still ramp.
+    expect(sunBrightness(0, 0.45, 1)).toBeCloseTo(0.725, 3);
+  });
+
+  it("tolerates min and max given the wrong way round", () => {
+    expect(sunBrightness(-40, 1, 0.3)).toBeCloseTo(0.3, 5);
+    expect(sunBrightness(40, 1, 0.3)).toBeCloseTo(1, 5);
+  });
+
+  it("reads a numeric string, as HA attributes sometimes arrive", () => {
+    expect(sunBrightness("6", 0.45, 1)).toBeCloseTo(1, 5);
+  });
+});
+
+describe("collectWatchedEntities watches the sun (issue #113)", () => {
+  const base = { type: "custom:easy-floorplan-card", width: 100, height: 100 } as never;
+
+  it("watches sun.sun only when the option is on", () => {
+    expect(collectWatchedEntities(base).has("sun.sun")).toBe(false);
+    // Without this the plan is lit once and then frozen — the trap #82 and #6
+    // each fell into.
+    expect(collectWatchedEntities({ ...(base as object), sunDimming: true } as never).has("sun.sun"))
+      .toBe(true);
   });
 });
 
