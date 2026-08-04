@@ -364,6 +364,13 @@ export interface Furniture {
   type: FurnitureType;
   /** L-shaped sectional only: which side the chaise extends on. Default `right`. */
   hand?: SectionalHand;
+  /**
+   * Wardrobe only (issue #90): how many door panels the run is divided into.
+   * Default 2, which is the classic pair meeting in the middle. Doors pair up
+   * from the left, so an odd count ends in a single door — a seven-door
+   * wardrobe reads as three double bays plus one.
+   */
+  doors?: number;
   x: number;
   y: number;
   /** Width / height in virtual units. */
@@ -575,6 +582,15 @@ export const DEFAULT_ITEM_SIZE = 34;
 export const DEFAULT_TEXT_SIZE = 16;
 export const DEFAULT_RIPPLE_SIZE = 80;
 export const FURNITURE_COLOR = "#9e9e9e";
+
+/**
+ * How many door panels a wardrobe is divided into (issue #90). The default of
+ * two is the classic pair meeting in the middle; a fitted run can be a wall of
+ * them. The bounds keep a hand-written config from asking for a hairline comb.
+ */
+export const WARDROBE_DOORS_DEFAULT = 2;
+export const WARDROBE_DOORS_MIN = 1;
+export const WARDROBE_DOORS_MAX = 12;
 
 /** Default width/height per furniture type, in virtual units. */
 export const FURNITURE_DEFAULT_SIZE: Record<FurnitureType, { w: number; h: number }> = {

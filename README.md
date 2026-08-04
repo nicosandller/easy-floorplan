@@ -691,10 +691,19 @@ rooms under one stay selectable.
 
 ### Furniture
 
-`{ id, type, x, y, w, h, angle?, color?, entity?, activeColor?, stateColor? }` where
+`{ id, type, x, y, w, h, angle?, color?, doors?, entity?, activeColor?, stateColor? }` where
 `type` is one of `table`, `roundTable`, `desk`, `chair`, `sofa`, `bed`, `wardrobe`,
 `rug`, `plant`, `fridge`, `stove`, `sink`, `toilet`, `stairs`, `tv`. `color` defaults
 to gray so furniture reads differently from walls.
+
+A **wardrobe** takes `doors` (1–12, default 2) for how many panels the front is
+divided into, so a fitted run doesn't have to be faked with a row of boxes. Doors
+pair up from the left and their handles meet at the seam between them; an odd
+count ends in a single door, so seven reads as three double bays plus one.
+
+```yaml
+{ id: closet, type: wardrobe, x: 240, y: 90, w: 420, h: 55, doors: 7 }
+```
 
 Furniture can bind an **entity** to make the drawing live: `stateColor` and
 `activeColor` then recolor the whole diagram the same way they do a device label.
