@@ -1763,6 +1763,43 @@ describe("renderSunDimMask — lit rooms hold back the night (issue #113)", () =
     expect(markup).toContain("height=616");
   });
 
+  it("clips the clearing at walls, like the pool it mirrors (issue #108)", () => {
+    const walls = [{ id: "w", x1: 300, y1: 0, x2: 300, y2: 400 }];
+    const withWalls = flatten(
+      renderSunDimMask([lamp({ x: 190, glowRadius: 200 })], on(), 600, 400, "sd", walls)
+    );
+    expect(withWalls).toContain("<clipPath");
+    expect(withWalls).toContain("clip-path=url(#sd-0-clip)");
+    // No wall in reach: a plain circle, no clip, no wasted work.
+    const noWalls = flatten(renderSunDimMask([lamp()], on(), 600, 400, "sd", []));
+    expect(noWalls).not.toContain("<clipPath");
+    const farWall = [{ id: "w", x1: 9000, y1: 0, x2: 9000, y2: 400 }];
+    expect(flatten(renderSunDimMask([lamp()], on(), 600, 400, "sd", farWall))).not.toContain("<clipPath");
+  });
+
+  it("hangs the clip id off the gradient id, so it stays pinned too (issue #119)", () => {
+    // Same trap as the gradient: a clip id that renumbered on toggle would
+    // strand the circle on a stale clip path.
+    const walls = [{ id: "w", x1: 300, y1: 0, x2: 300, y2: 400 }];
+    const items = [
+      lamp({ id: "A", entity: "light.a", x: 150, glowRadius: 200 }),
+      lamp({ id: "B", entity: "light.b", x: 190, glowRadius: 200 }),
+      lamp({ id: "C", entity: "light.c", x: 200, glowRadius: 200 }),
+    ];
+    const states = (bOn: boolean) =>
+      ({
+        "light.a": { entity_id: "light.a", state: "on", attributes: { brightness: 255 } },
+        "light.b": { entity_id: "light.b", state: bOn ? "on" : "off", attributes: {} },
+        "light.c": { entity_id: "light.c", state: "on", attributes: { brightness: 255 } },
+      }) as never;
+    const clips = (bOn: boolean) => {
+      const m = flatten(renderSunDimMask(items, states(bOn), 600, 400, "sd", walls));
+      return [...m.matchAll(/id=(sd-\d+-clip)/g)].map((x) => x[1]);
+    };
+    expect(clips(false)).toEqual(["sd-0-clip", "sd-2-clip"]);
+    expect(clips(true)).toEqual(["sd-0-clip", "sd-1-clip", "sd-2-clip"]);
+  });
+
   it("keeps every lamp's gradient id pinned to its item index, not its rank", () => {
     // The bug this guards: compacting the list to only-lit lamps shifted every
     // later lamp's DOM position when one toggled, rewriting the id on an

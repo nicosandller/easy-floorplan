@@ -993,10 +993,9 @@ Strength follows brightness the way the pool does: a full-brightness lamp clears
 one dimmed to nothing clears about a third. A light that is off, `unavailable`, or has no
 Cast light enabled clears nothing.
 
-One limitation: the clearing is a plain circle, so it bleeds a little through a wall into the
-next room — measured at roughly 6% of the lit room's brightness just past the wall, fading to
-nothing within about 80 units. The pools themselves already stop at walls; the clearing does
-not yet.
+**Walls stop the clearing**, using the same visibility polygon that stops the pools — so a lit
+room brightens itself and not the room next door. Note this treats a wall as solid along its
+whole length: light does not reach through a doorway, for the clearing or for the pool.
 
 Toggle it in the editor under **Project → Follow the sun**; the two brightness sliders
 appear once it is on.

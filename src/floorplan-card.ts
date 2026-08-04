@@ -387,7 +387,14 @@ export class FloorplanCard extends LitElement {
     // visible after dark than at noon.
     const sunDimMaskId = `${this._glowIdBase}-sundim`;
     const sunDimMask = c.sunDimming
-      ? renderSunDimMask(active.items, this.hass?.states, c.width, c.height, sunDimMaskId)
+      ? renderSunDimMask(
+          active.items,
+          this.hass?.states,
+          c.width,
+          c.height,
+          sunDimMaskId,
+          active.walls
+        )
       : nothing;
     return html`
       <ha-card .header=${c.title ?? nothing}>

@@ -464,6 +464,7 @@ export function renderSunDimMask(
   width: number,
   height: number,
   id: string,
+  walls?: readonly Wall[],
 ): SVGTemplateResult | typeof nothing {
   // Strength per item, by INDEX — undefined where the lamp contributes nothing.
   // Deliberately not compacted: see the map below.
@@ -498,13 +499,28 @@ export function renderSunDimMask(
           if (strength === undefined) return nothing;
           const r = cssNumber(it.glowRadius, DEFAULT_GLOW_RADIUS);
           const gid = `${id}-${i}`;
+          // Walls stop the clearing exactly as they stop the pool (issue #108),
+          // reusing the same visibility polygon — otherwise a lit room lifts
+          // the darkness in the room next door, through the wall between them.
+          // The clip id hangs off `gid`, so it is pinned to the item index and
+          // stays stable when another lamp toggles (issue #119).
+          const reach = walls?.length ? glowReach(it.x, it.y, r, walls) : undefined;
+          const clipId = `${gid}-clip`;
           return svg`
+            ${
+              reach
+                ? svg`<clipPath id=${clipId}>
+                        <polygon points=${reach.map((pt) => `${pt.x},${pt.y}`).join(" ")} />
+                      </clipPath>`
+                : nothing
+            }
             <radialGradient id=${gid} gradientUnits="userSpaceOnUse"
                             cx=${it.x} cy=${it.y} r=${r}>
               <stop offset="0" stop-color="#000" stop-opacity=${strength} />
               <stop offset="1" stop-color="#000" stop-opacity="0" />
             </radialGradient>
-            <circle cx=${it.x} cy=${it.y} r=${r} fill=${`url(#${gid})`} />`;
+            <circle cx=${it.x} cy=${it.y} r=${r} fill=${`url(#${gid})`}
+                    clip-path=${reach ? `url(#${clipId})` : nothing} />`;
         })}
       </mask>
     </defs>`;
