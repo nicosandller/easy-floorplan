@@ -14,6 +14,9 @@ import {
   FURNITURE_GLOW_TRANSMISSION,
   SUN_ELEVATION_NIGHT,
   SUN_ELEVATION_DAY,
+  WARDROBE_DOORS_DEFAULT,
+  WARDROBE_DOORS_MIN,
+  WARDROBE_DOORS_MAX,
 } from "./types";
 import {
   snapToWall,
@@ -44,6 +47,8 @@ import {
   sectionalPoints,
   SECTIONAL_CHAISE_FRACTION,
   SECTIONAL_SEAT_FRACTION,
+  wardrobeDoorLines,
+  wardrobeDoorCount,
   entityDefaultIcon,
   trackerSensorReading,
   openingInMotion,
@@ -1065,6 +1070,112 @@ describe("sectionalPoints", () => {
   });
 });
 
+describe("wardrobeDoorLines", () => {
+  const w = 200;
+
+  it("draws the historic two-door glyph when nothing is configured", () => {
+    // The pair-meeting-in-the-middle wardrobe every existing config already
+    // has: one seam down the centre, handles at ±0.06w. Issue #90 generalized
+    // this glyph, so it must not have moved.
+    expect(wardrobeDoorLines(w)).toEqual({ seams: [0], handles: [-w * 0.06, w * 0.06] });
+    expect(wardrobeDoorLines(w, 2)).toEqual(wardrobeDoorLines(w));
+  });
+
+  it("splits the front into n panels with n-1 seams", () => {
+    for (const n of [1, 2, 3, 5, 7, 12]) {
+      const { seams, handles } = wardrobeDoorLines(w, n);
+      expect(seams, `${n} doors`).toHaveLength(n - 1);
+      expect(handles, `${n} doors`).toHaveLength(n);
+    }
+  });
+
+  it("spaces the seams evenly across the width", () => {
+    expect(wardrobeDoorLines(w, 4).seams).toEqual([-50, 0, 50]);
+  });
+
+  it("gives a single door one handle rather than a bare box", () => {
+    const { seams, handles } = wardrobeDoorLines(w, 1);
+    expect(seams).toEqual([]);
+    expect(handles).toHaveLength(1);
+  });
+
+  it("pairs handles at the seams they meet on", () => {
+    // Seven doors read as three double bays plus a single: handles 0/1 meet at
+    // seam 0, 2/3 at seam 2, 4/5 at seam 4, and door 6 is left over.
+    const { seams, handles } = wardrobeDoorLines(w, 7);
+    for (const [a, b, seam] of [[0, 1, 0], [2, 3, 2], [4, 5, 4]] as const) {
+      expect(handles[a]).toBeLessThan(seams[seam]);
+      expect(handles[b]).toBeGreaterThan(seams[seam]);
+      // symmetric about the seam they share
+      expect(seams[seam] - handles[a]).toBeCloseTo(handles[b] - seams[seam], 9);
+    }
+    expect(handles[6]).toBeGreaterThan(seams[5]);
+  });
+
+  it("keeps the leftover door's handle off the carcass outline", () => {
+    // The handle inset scales with one door's width, so on a long run an
+    // outward-opening last door would put its handle on the outer edge. The
+    // leftover opens inward instead, landing beside the final seam.
+    for (const n of [3, 5, 7, 11]) {
+      const { seams, handles } = wardrobeDoorLines(w, n);
+      const last = handles[n - 1];
+      const doorW = w / n;
+      expect(last, `${n} doors`).toBeCloseTo(seams[n - 2] + doorW * 0.12, 9);
+      // comfortably clear of the right-hand outline
+      expect(w / 2 - last, `${n} doors`).toBeGreaterThan(doorW / 2);
+    }
+  });
+
+  it("still swings the single door outward, where there is room", () => {
+    // One door has no seam to sit beside, and its inset is a full 12% of the
+    // whole box, so the ordinary outward swing reads fine.
+    expect(wardrobeDoorLines(w, 1).handles).toEqual([w / 2 - w * 0.12]);
+  });
+
+  it("keeps every seam and handle inside the box", () => {
+    for (const n of [1, 2, 3, 7, 12]) {
+      for (const x of [...wardrobeDoorLines(w, n).seams, ...wardrobeDoorLines(w, n).handles]) {
+        expect(Math.abs(x), `${n} doors`).toBeLessThanOrEqual(w / 2 + 1e-9);
+      }
+    }
+  });
+
+  it("never lets a handle drift onto a neighbouring door", () => {
+    for (const n of [1, 2, 3, 7, 12]) {
+      const { handles } = wardrobeDoorLines(w, n);
+      const doorW = w / n;
+      handles.forEach((x, i) => {
+        const left = -w / 2 + doorW * i;
+        expect(x, `door ${i} of ${n}`).toBeGreaterThan(left);
+        expect(x, `door ${i} of ${n}`).toBeLessThan(left + doorW);
+      });
+    }
+  });
+});
+
+describe("wardrobeDoorCount", () => {
+  it("falls back to two for anything a hand-written config might carry", () => {
+    for (const bad of [undefined, NaN, Infinity, -Infinity, "3" as unknown as number]) {
+      expect(wardrobeDoorCount(bad), String(bad)).toBe(WARDROBE_DOORS_DEFAULT);
+    }
+  });
+
+  it("clamps to the supported range instead of drawing a comb", () => {
+    expect(wardrobeDoorCount(0)).toBe(WARDROBE_DOORS_MIN);
+    expect(wardrobeDoorCount(-5)).toBe(WARDROBE_DOORS_MIN);
+    expect(wardrobeDoorCount(999)).toBe(WARDROBE_DOORS_MAX);
+  });
+
+  it("rounds a fractional count to whole doors", () => {
+    expect(wardrobeDoorCount(3.4)).toBe(3);
+    expect(wardrobeDoorCount(3.6)).toBe(4);
+  });
+
+  it("passes a sane count through", () => {
+    expect(wardrobeDoorCount(7)).toBe(7);
+  });
+});
+
 describe("every furniture type renders and has a default size", () => {
   const types: FurnitureType[] = [
     "table", "roundTable", "desk", "chair", "sofa", "bed", "wardrobe", "rug",
@@ -1093,6 +1204,16 @@ describe("every furniture type renders and has a default size", () => {
     for (const hand of ["left", "right"] as const) {
       expect(() =>
         renderFurniture({ id: "s", type: "sectional", x: 0, y: 0, w: 230, h: 180, hand }),
+      ).not.toThrow();
+    }
+  });
+
+  it("renders a wardrobe of any door count, including junk from YAML", () => {
+    const { w, h } = FURNITURE_DEFAULT_SIZE.wardrobe;
+    for (const doors of [undefined, 1, 2, 7, 12, 0, -3, 999, NaN, 3.5]) {
+      expect(() =>
+        renderFurniture({ id: "wd", type: "wardrobe", x: 0, y: 0, w, h, doors }),
+        `doors=${doors}`,
       ).not.toThrow();
     }
   });

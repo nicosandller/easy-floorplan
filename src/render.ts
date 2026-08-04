@@ -38,6 +38,9 @@ import {
   DEFAULT_PRESS_EFFECT,
   BADGE_MIN_LIGHTNESS,
   FURNITURE_GLOW_TRANSMISSION,
+  WARDROBE_DOORS_DEFAULT,
+  WARDROBE_DOORS_MIN,
+  WARDROBE_DOORS_MAX,
   getFloors,
   trackerAxisFraction,
 } from "./types";
@@ -2426,6 +2429,60 @@ export function sectionalPoints(
   return hand === "left" ? pts.map(([x, y]) => [-x, y] as [number, number]) : pts;
 }
 
+/** How far a handle sits from its door's opening edge, as a fraction of one door's width. */
+export const WARDROBE_HANDLE_INSET = 0.12;
+
+/**
+ * Normalize a configured door count. Hand-written YAML can carry anything, and
+ * a zero or a NaN here would divide the wardrobe into nothing.
+ */
+export function wardrobeDoorCount(doors: number | undefined): number {
+  if (typeof doors !== "number" || !Number.isFinite(doors)) return WARDROBE_DOORS_DEFAULT;
+  return Math.min(WARDROBE_DOORS_MAX, Math.max(WARDROBE_DOORS_MIN, Math.round(doors)));
+}
+
+/**
+ * Where a wardrobe's seams and handles fall, as x offsets from the centre of a
+ * box `w` units wide (issue #90).
+ *
+ * Doors hang in pairs from the left: door 0 opens to the right and door 1 to
+ * the left, so their handles meet at the seam between them. An odd count
+ * leaves the last door single; it hangs from the outer edge and opens inward,
+ * putting its handle beside the final seam. That last part matters visually —
+ * the inset scales with one door's width, so on a seven-door run an
+ * outward-opening leftover would park its handle right on top of the carcass
+ * outline. A seven-door run therefore reads as three double bays plus one.
+ *
+ * At the default of two this reproduces the pair-meeting-in-the-middle glyph
+ * the card has always drawn, handles included.
+ */
+export function wardrobeDoorLines(
+  w: number,
+  doors?: number,
+): { seams: number[]; handles: number[] } {
+  const n = wardrobeDoorCount(doors);
+  const hw = w / 2;
+  const doorW = w / n;
+  const inset = doorW * WARDROBE_HANDLE_INSET;
+
+  const seams: number[] = [];
+  for (let i = 1; i < n; i++) seams.push(-hw + doorW * i);
+
+  // A lone door at the end of an odd run opens inward, so its handle lands by
+  // the last seam rather than on the outer edge. With a single door there is
+  // no seam to fall beside, and the inset is a full 12% of the box, so that
+  // one keeps the ordinary outward swing.
+  const leftover = n > 1 && n % 2 === 1 ? n - 1 : -1;
+
+  const handles: number[] = [];
+  for (let i = 0; i < n; i++) {
+    const left = -hw + doorW * i;
+    const opensRight = i % 2 === 0 && i !== leftover;
+    handles.push(opensRight ? left + doorW - inset : left + inset);
+  }
+  return { seams, handles };
+}
+
 /**
  * A furniture diagram. `override` is the entity-driven color resolved by the
  * caller (issue #82) — see {@link furnitureColor}; the editor passes nothing
@@ -2533,14 +2590,19 @@ export function renderFurniture(f: Furniture, override?: string): SVGTemplateRes
       detail = svg`<line x1=${-hw} y1=${-hh + h * 0.55} x2=${hw} y2=${-hh + h * 0.55}
                          stroke=${color} stroke-width="1.5" opacity="0.7" />`;
       break;
-    case "wardrobe":
+    case "wardrobe": {
+      // Issue #90: any number of door panels, not just the fitted pair.
+      const { seams, handles } = wardrobeDoorLines(w, f.doors);
       detail = svg`
-        <line x1="0" y1=${-hh} x2="0" y2=${hh} stroke=${color} stroke-width="2" />
-        <line x1=${-w * 0.06} y1=${-h * 0.1} x2=${-w * 0.06} y2=${h * 0.1}
-              stroke=${color} stroke-width="2" />
-        <line x1=${w * 0.06} y1=${-h * 0.1} x2=${w * 0.06} y2=${h * 0.1}
-              stroke=${color} stroke-width="2" />`;
+        ${seams.map(
+          (x) => svg`<line x1=${x} y1=${-hh} x2=${x} y2=${hh} stroke=${color} stroke-width="2" />`,
+        )}
+        ${handles.map(
+          (x) => svg`<line x1=${x} y1=${-h * 0.1} x2=${x} y2=${h * 0.1}
+                           stroke=${color} stroke-width="2" />`,
+        )}`;
       break;
+    }
     case "plant": {
       const r = Math.min(w, h) * 0.18;
       detail = svg`

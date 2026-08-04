@@ -592,6 +592,38 @@ describe("textForm / furnitureForm / trackerForm", () => {
     expect(form.fields.map((x) => x.name)).not.toContain("hand");
     expect("hand" in form.data).toBe(false);
   });
+
+  it("wardrobe offers a door count, defaulting to the classic pair (#90)", () => {
+    const form = furnitureForm({ id: "f", type: "wardrobe", x: 0, y: 0, w: 10, h: 10 } as never);
+    expect(form.fields.map((x) => x.name)).toContain("doors");
+    expect(form.data).toMatchObject({ doors: 2 });
+  });
+
+  it("wardrobe door count is bounded, so the field can't ask for a comb", () => {
+    const form = furnitureForm({ id: "f", type: "wardrobe", x: 0, y: 0, w: 10, h: 10 } as never);
+    expect(form.fields.find((x) => x.name === "doors")!.selector).toEqual({
+      number: { min: 1, max: 12, mode: "box" },
+    });
+  });
+
+  it("keeps a configured door count instead of resetting it", () => {
+    const form = furnitureForm({
+      id: "f",
+      type: "wardrobe",
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+      doors: 7,
+    } as never);
+    expect(form.data).toMatchObject({ doors: 7 });
+  });
+
+  it("non-wardrobe furniture has no door field or data", () => {
+    const form = furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10 } as never);
+    expect(form.fields.map((x) => x.name)).not.toContain("doors");
+    expect("doors" in form.data).toBe(false);
+  });
 });
 
 describe("wallForm / projectForm / floorImageForm", () => {

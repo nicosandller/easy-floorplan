@@ -472,13 +472,22 @@ without turning into the color of the light. Pools never intercept clicks.
 
 ### Furniture
 
-`{ id, type, x, y, w, h, angle?, hand?, color?, entity?, activeColor?, stateColor? }`
+`{ id, type, x, y, w, h, angle?, hand?, doors?, color?, entity?, activeColor?, stateColor? }`
 
 `type` is one of `table`, `roundTable`, `desk`, `chair`, `sofa`, `sectional`, `bed`,
 `wardrobe`, `rug`, `plant`, `fridge`, `stove`, `sink`, `dishwasher`, `washer`, `dryer`,
 `toilet`, `bathtub`, `vanity`, `stairs`, `tv`, `piano`, `fishTank`, `hotTub`,
 `waterHeater`, `airHandler`. `color` defaults to gray so furniture reads differently from
 walls; `hand` (`left` / `right`) picks which end an L-shaped `sectional`'s chaise sits on.
+
+A **wardrobe** takes `doors` (1–12, default 2) for how many panels the front is divided
+into, so a fitted run doesn't have to be faked with a row of boxes. Doors pair up from the
+left and their handles meet at the seam between them; an odd count ends in a single door,
+so seven reads as three double bays plus one.
+
+```yaml
+{ id: closet, type: wardrobe, x: 240, y: 90, w: 420, h: 55, doors: 7 }
+```
 
 Bind an **entity** and `stateColor` / `activeColor` recolor the whole diagram — a plant
 goes red when its soil sensor says it needs watering, a cabinet highlights while its
