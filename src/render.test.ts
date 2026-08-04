@@ -22,6 +22,7 @@ import {
   shutterStyleOf,
   imageFitRatio,
   sunBrightness,
+  renderSunDimMask,
   renderWallMask,
   shutterActive,
   openingClickAction,
@@ -1695,6 +1696,78 @@ describe("sunBrightness (issue #113)", () => {
 
   it("reads a numeric string, as HA attributes sometimes arrive", () => {
     expect(sunBrightness("6", 0.45, 1)).toBeCloseTo(1, 5);
+  });
+});
+
+describe("renderSunDimMask — lit rooms hold back the night (issue #113)", () => {
+  const flatten = (node: unknown): string => {
+    if (node == null || typeof node === "boolean") return "";
+    if (typeof node === "symbol") return "";
+    if (Array.isArray(node)) return node.map(flatten).join("");
+    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+      const { strings, values } = node as { strings: string[]; values: unknown[] };
+      return strings.reduce((acc, x, i) => acc + x + (i < values.length ? flatten(values[i]) : ""), "");
+    }
+    return String(node);
+  };
+  const lamp = (extra = {}) =>
+    ({ id: "i1", entity: "light.a", kind: "light", x: 200, y: 150, glow: true, ...extra }) as never;
+  const on = (attributes: Record<string, unknown> = { brightness: 255 }) =>
+    ({ "light.a": { entity_id: "light.a", state: "on", attributes } }) as never;
+
+  it("clears fully at the centre and fades to nothing at the radius", () => {
+    const markup = flatten(renderSunDimMask([lamp()], on(), 1000, 600, "sd"));
+    // Black hides the dim; white keeps it. Full brightness clears completely.
+    expect(markup).toContain('stop-opacity=1');
+    expect(markup).toContain('stop-opacity="0"');
+    expect(markup).toContain('fill="white"');
+    expect(markup).toContain("cx=200");
+    expect(markup).toContain(`r=${DEFAULT_GLOW_RADIUS}`);
+  });
+
+  it("honours a custom glowRadius, so clearing and pool share a shape", () => {
+    const markup = flatten(renderSunDimMask([lamp({ glowRadius: 90 })], on(), 1000, 600, "sd"));
+    expect(markup).toContain("r=90");
+  });
+
+  it("clears in proportion to brightness, like the pool itself", () => {
+    const at = (brightness: number) => {
+      const m = flatten(renderSunDimMask([lamp()], on({ brightness }), 1000, 600, "sd"));
+      return Number(/stop-opacity=([\d.]+)/.exec(m)?.[1]);
+    };
+    expect(at(255)).toBeCloseTo(1, 5);
+    // GLOW_MIN_OPACITY / GLOW_MAX_OPACITY — a lamp dimmed to nothing still
+    // clears about a third, matching the pool it casts.
+    expect(at(0)).toBeCloseTo(GLOW_MIN_OPACITY / GLOW_MAX_OPACITY, 5);
+    expect(at(128)).toBeGreaterThan(at(0));
+    expect(at(128)).toBeLessThan(at(255));
+  });
+
+  it("a light that is off, unavailable or missing clears nothing", () => {
+    const off = { "light.a": { entity_id: "light.a", state: "off", attributes: {} } } as never;
+    expect(renderSunDimMask([lamp()], off, 1000, 600, "sd")).toBe(nothing);
+    const dead = { "light.a": { entity_id: "light.a", state: "unavailable", attributes: {} } } as never;
+    expect(renderSunDimMask([lamp()], dead, 1000, 600, "sd")).toBe(nothing);
+    expect(renderSunDimMask([lamp()], undefined, 1000, 600, "sd")).toBe(nothing);
+  });
+
+  it("a device without Cast light never clears, however bright its entity", () => {
+    // Only glow devices define a radius, so only they can hold back the dark.
+    expect(renderSunDimMask([lamp({ glow: false })], on(), 1000, 600, "sd")).toBe(nothing);
+    expect(renderSunDimMask([], on(), 1000, 600, "sd")).toBe(nothing);
+  });
+
+  it("states its own region, so rotation cannot clip the clearing (issue #102)", () => {
+    const markup = flatten(renderSunDimMask([lamp()], on(), 1000, 600, "sd"));
+    expect(markup).toContain("width=1016");
+    expect(markup).toContain("height=616");
+  });
+
+  it("gives each lamp its own gradient id, so pools do not share a falloff", () => {
+    const two = [lamp(), lamp({ id: "i2", x: 700 })];
+    const markup = flatten(renderSunDimMask(two, on(), 1000, 600, "sd"));
+    expect(markup).toContain("id=sd-0");
+    expect(markup).toContain("id=sd-1");
   });
 });
 

@@ -976,8 +976,27 @@ A few deliberate choices:
   than one that is merely dim. Set it lower if you want a darker house.
 - **It fails bright.** If `sun.sun` is missing or unreadable the plan stays at full
   brightness, rather than being stranded dark with nothing on screen to explain why.
-- **Cast-light pools dim with the plan.** They still stand out against the darkened rooms,
-  but if you want them to blaze at night, raise `sunBrightnessMin`.
+
+### Lit rooms hold back the night
+
+A flat dim would darken a lit room as much as an empty one — multiplying the whole picture,
+contrast included — so a lamp would end up *less* noticeable at night than at noon. Instead,
+**light withholds the dim**: any device with **Cast light** on clears the darkness around
+itself, full at the centre and diffusing to nothing at its `glowRadius`, the same shape and
+falloff as the pool it casts.
+
+The result is a dark house with genuinely lit rooms. Measured against the same spot in an
+unlit room, a lamp's contrast goes from **100 by day to 116 at night** on a dark theme, and
+from 25 to 106 on a light one — where a flat dim would have cut both to 45%.
+
+Strength follows brightness the way the pool does: a full-brightness lamp clears completely,
+one dimmed to nothing clears about a third. A light that is off, `unavailable`, or has no
+Cast light enabled clears nothing.
+
+One limitation: the clearing is a plain circle, so it bleeds a little through a wall into the
+next room — measured at roughly 6% of the lit room's brightness just past the wall, fading to
+nothing within about 80 units. The pools themselves already stop at walls; the clearing does
+not yet.
 
 Toggle it in the editor under **Project → Follow the sun**; the two brightness sliders
 appear once it is on.

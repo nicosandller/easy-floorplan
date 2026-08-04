@@ -36,6 +36,7 @@ import {
   glowPaint,
   renderGlow,
   renderGlowMask,
+  renderSunDimMask,
   polygonCentroid,
   trackerSensorReading,
   entityIsActive,
@@ -381,6 +382,13 @@ export class FloorplanCard extends LitElement {
           cssNumber(c.sunBrightnessMax, DEFAULT_SUN_MAX)
         )
       : DEFAULT_SUN_MAX;
+    // Lit rooms hold back the night (issue #113): without this the flat dim
+    // multiplies the lit-vs-unlit contrast too, and a lamp ends up *less*
+    // visible after dark than at noon.
+    const sunDimMaskId = `${this._glowIdBase}-sundim`;
+    const sunDimMask = c.sunDimming
+      ? renderSunDimMask(active.items, this.hass?.states, c.width, c.height, sunDimMaskId)
+      : nothing;
     return html`
       <ha-card .header=${c.title ?? nothing}>
         <div
@@ -520,11 +528,12 @@ export class FloorplanCard extends LitElement {
                  stops responding (the lesson from #108). -->
             ${
               c.sunDimming
-                ? svg`<rect class="fp-sun-dim"
+                ? svg`${sunDimMask}<rect class="fp-sun-dim"
                             x=${-WALL_THICKNESS} y=${-WALL_THICKNESS}
                             width=${c.width + WALL_THICKNESS * 2}
                             height=${c.height + WALL_THICKNESS * 2}
                             fill="#000"
+                            mask=${sunDimMask === nothing ? nothing : `url(#${sunDimMaskId})`}
                             opacity=${1 - sunLevel} />`
                 : nothing
             }

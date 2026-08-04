@@ -436,6 +436,69 @@ export function renderGlow(
 }
 
 /**
+ * A `<mask>` for the sun-dimming layer that lets lit rooms hold back the night
+ * (issue #113).
+ *
+ * The dim is one flat black rect, and a flat overlay multiplies the *whole*
+ * image — including the contrast between a lit room and an unlit one. Measured
+ * on the unmasked build, a lamp's pool read at 45% of its daytime contrast
+ * after dark, i.e. exactly `1 - dimOpacity`: lamps became *less* visible at
+ * night, the reverse of both physics and expectation.
+ *
+ * So rather than dimming over the light, the light withholds the dim. Each
+ * Cast-light lamp that is on paints a black radial falloff into this mask —
+ * black hides the dim — full clearing at the pool's centre, diffusing to full
+ * dim at its `glowRadius`. Same centre, same radius, same falloff as
+ * {@link renderGlow}, so the clearing and the pool are the same shape by
+ * construction.
+ *
+ * Strength tracks brightness the way the glow does: a full-brightness lamp
+ * clears completely, a lamp dimmed to nothing clears about a third.
+ *
+ * Only Cast-light devices qualify — they are the ones that define a radius.
+ * Returns `nothing` when no lamp does, so an ordinary plan pays for no mask.
+ */
+export function renderSunDimMask(
+  items: readonly FloorItem[],
+  states: Record<string, HassEntity | undefined> | undefined,
+  width: number,
+  height: number,
+  id: string,
+): SVGTemplateResult | typeof nothing {
+  const lit = items.flatMap((it, i) => {
+    if (!it.glow) return [];
+    const paint = glowPaint(it, states?.[it.entity]);
+    if (!paint) return [];
+    // Normalized against the glow's own ceiling, so a full-brightness lamp
+    // clears the dim entirely and a dim one clears proportionally.
+    const strength = Math.max(0, Math.min(1, paint.opacity / GLOW_MAX_OPACITY));
+    return [{ it, i, strength }];
+  });
+  if (!lit.length) return nothing;
+
+  const pad = WALL_THICKNESS;
+  return svg`
+    <defs>
+      <mask id=${id} maskUnits="userSpaceOnUse"
+            x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}>
+        <rect x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}
+              fill="white" />
+        ${lit.map(({ it, i, strength }) => {
+          const r = cssNumber(it.glowRadius, DEFAULT_GLOW_RADIUS);
+          const gid = `${id}-${i}`;
+          return svg`
+            <radialGradient id=${gid} gradientUnits="userSpaceOnUse"
+                            cx=${it.x} cy=${it.y} r=${r}>
+              <stop offset="0" stop-color="#000" stop-opacity=${strength} />
+              <stop offset="1" stop-color="#000" stop-opacity="0" />
+            </radialGradient>
+            <circle cx=${it.x} cy=${it.y} r=${r} fill=${`url(#${gid})`} />`;
+        })}
+      </mask>
+    </defs>`;
+}
+
+/**
  * A `<mask>` for the whole glow layer that punches out every furniture
  * footprint (issue #108): furniture keeps its base gray instead of reading
  * as "active" whenever a lamp near it is on. The line-art fills at ~0.12
