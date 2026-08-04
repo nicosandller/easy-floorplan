@@ -577,11 +577,21 @@ export class FloorplanCard extends LitElement {
       height: 100%;
       box-sizing: border-box;
       overflow: hidden;
+      /* A column, so the stage takes the height left over after the card's
+         own header rather than the card's whole height. With a title set, a
+         full-height stage measures past the bottom of the card by exactly the
+         header, and the plan is cut off by that much. */
+      display: flex;
+      flex-direction: column;
     }
     .stage {
       position: relative;
       width: 100%;
-      height: 100%;
+      /* Takes the space the header leaves, and may shrink below its content:
+         without min-height a flex item floors at its content size and the
+         plan pushes the stage past the card again. */
+      flex: 1 1 auto;
+      min-height: 0;
       padding: 0;
       /* Centres the plan box in whatever the card was given, and makes the
          stage's own height queryable so the plan can size against it. */
