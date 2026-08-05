@@ -65,7 +65,8 @@ automatically to the card and screen size.
 
 ## What you can end up with
 
-<img width="1103" height="592" alt="demo_screenshot" src="https://github.com/user-attachments/assets/c05d32e3-8a9e-4643-8c25-79c1128dbb59" />
+<img width="1550" height="761" alt="Screenshot 2026-08-05 at 2 54 49 PM" src="https://github.com/user-attachments/assets/7130f94f-f591-486b-bf9d-ecf137b653a9" />
+
 
 ## Installation
 
