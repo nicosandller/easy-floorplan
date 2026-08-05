@@ -259,8 +259,9 @@ export interface FloorItem {
    *
    * "auto" has no counterpart in the editor's menu (issue #127): it shows the
    * animation auto resolves to for this entity instead of the word, and writes
-   * that value on any edit. The default stays "auto" for configs nobody has
-   * touched, so nothing about the card changed.
+   * that value out the moment the badge dropdown is touched. Editing anything
+   * else leaves the key alone, so a config keeps its "auto" — and its meaning —
+   * until someone actually decides about the animation.
    */
   iconAnimation?: IconAnimation;
   /**

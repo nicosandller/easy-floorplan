@@ -487,7 +487,9 @@ export function itemForm(
     fields.push({
       name: "ripple",
       label: "Ripple",
-      helper: "Draws a pulsing ring while the sensor detects something",
+      // "Presence detected" rather than "the sensor is on": this is offered to
+      // a device_tracker and a person too, and neither of those is a sensor.
+      helper: "Draws a pulsing ring while presence is detected here",
       selector: { boolean: {} },
     });
     if (ripple) {

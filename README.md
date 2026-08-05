@@ -324,9 +324,10 @@ By default it shows an icon badge:
 Turn on a device's **Ripple** toggle and it draws animated concentric rings behind the
 badge — set **Badge shows** to *Nothing* for the rings alone:
 
-- **Active** (sensor on) → the rings continuously pulse outward and fade, drawing the
-  eye to where motion is happening.
-- **Idle** (sensor off) → the rings stop and only a faint dot remains, so the spot stays
+- **Active** (presence detected — the sensor reads on, the tracker reads home) → the
+  rings continuously pulse outward and fade, drawing the eye to where motion is
+  happening.
+- **Idle** (clear) → the rings stop and only a faint dot remains, so the spot stays
   marked without being distracting.
 
 You can set the **ripple color** and **ripple size** per device, so e.g. a calm blue
