@@ -440,20 +440,19 @@ export class FloorplanCard extends LitElement {
                    background:${cssColorOr(
                      c.background, "var(--card-background-color, #fff)")};"
           >
-<!-- preserveAspectRatio="none" is correct here, and it took a wrong fix to
-               see why. .stage pins aspect-ratio: width / height inline, so the
-               SVG's box already matches its viewBox and "none" never distorts.
+          <!-- preserveAspectRatio="none" is correct here, and it took a wrong
+               fix to see why. Fitting the plan into a card that is the wrong
+               shape for it is .plan's job, not this line's (#115): .plan
+               carries the canvas ratio, so the SVG's box always matches its
+               viewBox, and "none" and "meet" are equivalent while that holds.
 
-               "meet" letterboxes the SVG inside its box. The .items overlay is
-               HTML, positioned with raw left/top percentages of .stage, and it
-               does not letterbox. So the moment anything overrides the stage's
-               ratio (card-mod, a grid row count) the drawing shrinks away from
-               the badges and every icon drifts off the wall it was placed on.
-               "none" stretches both layers identically: distorted, but aligned.
-
-               The real fix letterboxes both layers together -- wrap the svg and
-               the overlay in one aspect-ratio box and centre it. Until then, do
-               not "fix" this line. -->
+               "none" is still the deliberate choice, because it is the one
+               that fails safely. The .items overlay is HTML, positioned with
+               raw left/top percentages of .plan, and it does not letterbox. So
+               if anything ever overrides .plan's ratio (card-mod, a grid row
+               count), "meet" letterboxes the SVG away from the overlay and
+               every icon drifts off the wall it was placed on, while "none"
+               stretches both layers identically: distorted, but aligned. -->
           <svg viewBox="0 0 ${dims.w} ${dims.h}" preserveAspectRatio="none">
             <g transform=${rotTransform || nothing}>
             ${active.image
