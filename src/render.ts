@@ -32,6 +32,7 @@ import {
   DEFAULT_ITEM_SIZE,
   GLOW_MIN_OPACITY,
   GLOW_MAX_OPACITY,
+  GLOW_MIN_RADIUS,
   BADGE_MIN_LIGHTNESS,
   FURNITURE_GLOW_TRANSMISSION,
   getFloors,
@@ -267,6 +268,16 @@ export interface GlowPaint {
   color: string;
   /** Opacity at the center of the pool, fading to 0 at the rim. */
   opacity: number;
+  /**
+   * How far the pool actually reaches, in canvas units (issue #123): the
+   * configured `glowRadius` scaled by the lamp's brightness.
+   *
+   * Carried on the paint rather than recomputed by each caller so the pool and
+   * the sun-dimming clearing cannot disagree about the same lamp's size — they
+   * are documented as the same shape by construction, and two copies of this
+   * arithmetic is exactly how that stops being true.
+   */
+  radius: number;
 }
 
 /**
@@ -286,9 +297,15 @@ export interface GlowPaint {
  * A light that is off, `unavailable` or `unknown` casts nothing — failing
  * closed like every other state reader here, so a dead bulb never leaves a
  * pool of light lying on the floor.
+ *
+ * Brightness drives the pool's **reach** as well as its strength (issue #123):
+ * dimming a lamp draws the light in rather than only thinning it, which is what
+ * dimming actually looks like. The configured `glowRadius` is the full-brightness
+ * size, so nothing changes for a lamp at 100% or for a bulb that reports no
+ * brightness at all.
  */
 export function glowPaint(
-  item: Pick<FloorItem, "glowColor">,
+  item: Pick<FloorItem, "glowColor" | "glowRadius">,
   light: HassEntity | undefined,
 ): GlowPaint | undefined {
   if (!light || light.state !== "on") return undefined;
@@ -302,6 +319,11 @@ export function glowPaint(
     bright === undefined
       ? GLOW_MAX_OPACITY
       : GLOW_MIN_OPACITY + (GLOW_MAX_OPACITY - GLOW_MIN_OPACITY) * (bright / 255);
+  // Same shape as the opacity band above, and a floor for the same reason: a
+  // lamp dimmed to 10% should read as dim, not as switched off.
+  const radius =
+    cssNumber(item.glowRadius, DEFAULT_GLOW_RADIUS) *
+    (bright === undefined ? 1 : GLOW_MIN_RADIUS + (1 - GLOW_MIN_RADIUS) * (bright / 255));
 
   const rgb = attrs.rgb_color;
   if (Array.isArray(rgb) && rgb.length >= 3) {
@@ -311,10 +333,10 @@ export function glowPaint(
       // Built from clamped integers, so it cannot carry a payload — but it
       // still goes through the allowlist, as every color here does.
       const color = cssColor(`rgb(${chan(r as number)}, ${chan(g as number)}, ${chan(b as number)})`);
-      if (color) return { color, opacity };
+      if (color) return { color, opacity, radius };
     }
   }
-  return { color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR), opacity };
+  return { color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR), opacity, radius };
 }
 
 /**
@@ -364,11 +386,15 @@ export function lightBadgePaint(light: HassEntity | undefined): string | undefin
  * unconditionally, and every off light washed the canvas at full strength.
  */
 export function editorGlowPaint(
-  item: Pick<FloorItem, "glowColor">,
+  item: Pick<FloorItem, "glowColor" | "glowRadius">,
   state: HassEntity | undefined,
 ): GlowPaint | undefined {
   if (state) return glowPaint(item, state);
-  return { color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR), opacity: GLOW_MAX_OPACITY };
+  return {
+    color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR),
+    opacity: GLOW_MAX_OPACITY,
+    radius: cssNumber(item.glowRadius, DEFAULT_GLOW_RADIUS),
+  };
 }
 
 /**
@@ -407,12 +433,65 @@ function rayWallHit(cx: number, cy: number, dx: number, dy: number, w: Wall): nu
 }
 
 /**
+ * Clip a segment to an axis-aligned box (Liang–Barsky), or undefined when it
+ * falls entirely outside. Used by {@link glowReach} — see the note there on
+ * why the sweep needs the clipped wall rather than the configured one.
+ */
+function clipWallToBox(
+  w: Wall,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+): Wall | undefined {
+  const dx = w.x2 - w.x1;
+  const dy = w.y2 - w.y1;
+  const p = [-dx, dx, -dy, dy];
+  const q = [w.x1 - minX, maxX - w.x1, w.y1 - minY, maxY - w.y1];
+  let t0 = 0;
+  let t1 = 1;
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return undefined; // parallel to this edge and outside it
+      continue;
+    }
+    const t = q[i] / p[i];
+    if (p[i] < 0) {
+      if (t > t1) return undefined;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return undefined;
+      if (t < t1) t1 = t;
+    }
+  }
+  return {
+    ...w,
+    x1: w.x1 + t0 * dx,
+    y1: w.y1 + t0 * dy,
+    x2: w.x1 + t1 * dx,
+    y2: w.y1 + t1 * dy,
+  };
+}
+
+/**
  * How far a light at (cx,cy) actually reaches (issue #108): the visibility
  * polygon of the walls that fall inside its radius, so a pool stops at a wall
  * instead of washing into the next room. Classic angular sweep — a ray toward
  * each wall endpoint (and just past it, so light grazes corners), cut at the
  * nearest wall it hits; a bounding box just beyond the radius keeps every ray
  * finite, and the circle itself still bounds the final shape.
+ *
+ * **Blocking walls are clipped to that box first (issue #123).** The sweep's
+ * only vertices are the angles of the segment endpoints it is given, and the
+ * boundary between two of them is drawn as a straight chord. An ordinary room
+ * wall runs well past the pool, so its *declared* endpoints sit outside the
+ * box at the wrong angle entirely, and no ray is ever cast where the wall
+ * actually enters the lit region — the point where the boundary hands over
+ * from the box to the wall. The chord spanning that gap sliced a wedge out of
+ * the pool beside every long wall: the reported artifact. Clipping makes the
+ * wall's endpoints *be* those hand-over points, so the sweep samples them.
+ * A wall already inside the box is unchanged, which is why short walls never
+ * showed this.
  *
  * The wall the lamp is mounted on must not black out its own pool, so walls
  * closer than one wall thickness are treated as non-blocking. Returns
@@ -437,7 +516,13 @@ export function glowReach(
     { id: "b3", x1: cx + m, y1: cy + m, x2: cx - m, y2: cy + m },
     { id: "b4", x1: cx - m, y1: cy + m, x2: cx - m, y2: cy - m },
   ];
-  const all = [...blocking, ...bounds];
+  // Trim each wall to the swept region so its endpoints land where it enters
+  // that region — those are the silhouette vertices the sweep has to sample.
+  const clipped = blocking
+    .map((w) => clipWallToBox(w, cx - m, cy - m, cx + m, cy + m))
+    .filter((w): w is Wall => w !== undefined);
+  if (!clipped.length) return undefined;
+  const all = [...clipped, ...bounds];
   const pts: Array<{ x: number; y: number; a: number }> = [];
   for (const s of all) {
     for (const [ex, ey] of [
@@ -470,7 +555,9 @@ export function renderGlow(
   gradientId: string,
   walls?: readonly Wall[],
 ): SVGTemplateResult {
-  const r = cssNumber(item.glowRadius, DEFAULT_GLOW_RADIUS);
+  // Brightness-scaled (issue #123), computed once on the paint so the pool and
+  // the sun-dimming clearing are the same size for the same lamp.
+  const r = paint.radius;
   // Walls block light (issue #108): clip the pool to what the lamp can see.
   const reach = walls?.length ? glowReach(item.x, item.y, r, walls) : undefined;
   const clipId = `${gradientId}-clip`;
@@ -525,15 +612,20 @@ export function renderSunDimMask(
 ): SVGTemplateResult | typeof nothing {
   // Strength per item, by INDEX — undefined where the lamp contributes nothing.
   // Deliberately not compacted: see the map below.
-  const strengths = items.map((it) => {
+  const clearings = items.map((it) => {
     if (!it.glow) return undefined;
     const paint = glowPaint(it, states?.[it.entity]);
     if (!paint) return undefined;
-    // Normalized against the glow's own ceiling, so a full-brightness lamp
-    // clears the dim entirely and a dim one clears proportionally.
-    return Math.max(0, Math.min(1, paint.opacity / GLOW_MAX_OPACITY));
+    return {
+      // Normalized against the glow's own ceiling, so a full-brightness lamp
+      // clears the dim entirely and a dim one clears proportionally.
+      strength: Math.max(0, Math.min(1, paint.opacity / GLOW_MAX_OPACITY)),
+      // Straight off the paint, so the clearing tracks the pool as it shrinks
+      // with brightness (issue #123) instead of staying at the configured size.
+      radius: paint.radius,
+    };
   });
-  if (!strengths.some((v) => v !== undefined)) return nothing;
+  if (!clearings.some((v) => v !== undefined)) return nothing;
 
   const pad = WALL_THICKNESS;
   return svg`
@@ -552,9 +644,9 @@ export function renderSunDimMask(
           // hard-edged disc at full strength rather than a soft falloff, and
           // it only bites lamps positioned *after* the one that toggled —
           // which is what made it look intermittent.
-          const strength = strengths[i];
-          if (strength === undefined) return nothing;
-          const r = cssNumber(it.glowRadius, DEFAULT_GLOW_RADIUS);
+          const clearing = clearings[i];
+          if (clearing === undefined) return nothing;
+          const { strength, radius: r } = clearing;
           const gid = `${id}-${i}`;
           // Walls stop the clearing exactly as they stop the pool (issue #108),
           // reusing the same visibility polygon — otherwise a lit room lifts
