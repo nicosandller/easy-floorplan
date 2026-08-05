@@ -204,12 +204,16 @@ By default it shows an icon badge:
   itself uses. An explicit icon on the entity, or an **icon** override on the device,
   still wins.
 - **Make it yours** — override the **icon** (with autocomplete + live preview), set a
-  custom **name**, change the **size**, **rotate** it, or hide the icon entirely.
+  custom **name**, change the **size**, or **rotate** it. The icon sits at the bottom
+  of the device's options, next to the state rules that can swap it.
+- **One badge control** — **Badge shows** is the single dropdown for what the device
+  draws: an icon (**still**, **spinning** or **pulsing**), its **Value**, or **Nothing**
+  at all.
 - **Icons that move** — while an entity is active its icon can animate, the way
-  Home Assistant's own Tile card does it: by default a running **fan spins** and an
-  active **media player** (playing, or simply on) or **vacuum** (cleaning /
-  returning) **pulses**. The **Animate icon**
-  dropdown per device switches to `none`, or forces `spin` / `pulse` on any entity
+  Home Assistant's own Tile card does it: a running **fan** spins and an active
+  **media player** (playing, or simply on) or **vacuum** (cleaning / returning) pulses,
+  with no setup — those devices simply open on *Icon, spinning* / *Icon, pulsing*.
+  Change the dropdown to turn it off, or to force an animation on any other entity
   (a spinning icon still only plays while the entity is actually active — an
   unavailable fan never spins). Respects the OS *reduced motion* preference.
 - **Label line** — **Show state** displays the live value (sensors do this by
@@ -298,6 +302,12 @@ By default it shows an icon badge:
   a device is never badged one color and ringed another), so the editor hides the
   **Active color** field once rules exist rather than leaving a control that would
   silently lose.
+
+  A rule's `icon` works the other way round: it is optional, and a rule without one
+  keeps the device's own **Icon** — so colouring by state costs you nothing if the
+  glyph never changes, and you never name the same icon in every row. That is why the
+  **Icon** field stays visible next to the rules (it is still what they fall back to)
+  while **Active color** disappears.
 - **Only when active** — tick it and the device disappears from the card while its
   entity is off/idle, so a busy room only shows what's actually doing something.
   "Active" is the same domain-aware test the badge highlight uses (a lock counts as
@@ -311,9 +321,8 @@ By default it shows an icon badge:
 
 ### Presence ripples
 
-For motion/occupancy/presence sensors, switch a device's **Display** mode from *Icon
-badge* to **Ripple** or **Icon + ripple**. Instead of a static icon it draws animated
-concentric rings:
+Turn on a device's **Ripple** toggle and it draws animated concentric rings behind the
+badge — set **Badge shows** to *Nothing* for the rings alone:
 
 - **Active** (sensor on) → the rings continuously pulse outward and fade, drawing the
   eye to where motion is happening.
@@ -321,8 +330,13 @@ concentric rings:
   marked without being distracting.
 
 You can set the **ripple color** and **ripple size** per device, so e.g. a calm blue
-ring in the living room and a warmer one by the entrance. It works with any entity that
-reports an on/off-like state, not just presence sensors.
+ring in the living room and a warmer one by the entrance.
+
+The toggle only appears on devices that detect presence — a `binary_sensor` whose
+**device class** is `motion`, `occupancy` or `presence`, or a `device_tracker` /
+`person` — the same way **Cast light** only appears on lights. A ring is a claim that
+someone is there, so it is offered where that claim can be true. The underlying
+`display` key still works on any entity if you write it in YAML.
 
 <img width="540" height="304" alt="ripple_demo_gif" src="https://github.com/user-attachments/assets/e43949cf-13a2-48f8-804d-73738299475f" />
 
@@ -667,8 +681,8 @@ shape it occupies on screen.
 | `name`        | string                                 | friendly name| Label / tooltip override.                             |
 | `size`        | number                                 | `34`         | Icon badge diameter (px).                              |
 | `angle`       | number                                 | `0`          | Icon rotation (deg).                                   |
-| `display`     | `badge` \| `ripple` \| `iconRipple`    | `badge`      | How the device is drawn.                               |
-| `iconAnimation` | `auto` \| `none` \| `spin` \| `pulse` | `auto`       | Animate the icon while active. `auto`: fan spins; media player / vacuum pulse. |
+| `display`     | `badge` \| `ripple` \| `iconRipple`    | `badge`      | How the device is drawn. The editor spells this as the **Ripple** toggle (plus **Badge shows: Nothing** for `ripple`), and offers it on presence devices only — in YAML it works on any entity. |
+| `iconAnimation` | `auto` \| `none` \| `spin` \| `pulse` | `auto`       | Animate the icon while active. `auto`: fan spins; media player / vacuum pulse. The editor spells this as the icon options of **Badge shows**, showing `auto` as the animation it resolves to rather than offering the word. |
 | `activeColor` | string                                 | theme color  | Badge color while the device is on — lets domains be told apart at a glance. Ignored while `stateColor` rules match. |
 | `rippleColor` | string                                 | `activeColor`| Ripple ring color (ripple modes). Falls back to `activeColor`, then the primary color. |
 | `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |

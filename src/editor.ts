@@ -71,6 +71,7 @@ import {
   entityIsActive,
   lightBadgePaint,
   itemRawValue,
+  isPresenceEntity,
   badgeContentOf,
   badgeValue,
   badgeValueSize,
@@ -112,6 +113,7 @@ import {
   furnitureForm,
   isLiveField,
   itemForm,
+  itemHasRipple,
   normalizeFormPatch,
   openingForm,
   projectForm,
@@ -1852,6 +1854,50 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
+   * The glyph a device shows when no state rule names one — what a rule's
+   * empty icon box falls back to. Resolved exactly as the card resolves it,
+   * with the rules removed so a currently-matching rule cannot report itself
+   * as the default.
+   */
+  private _itemDefaultIcon(it: FloorItem): string {
+    const st = it.entity ? this.hass?.states[it.entity] : undefined;
+    return resolveItemIcon(
+      { ...it, stateColor: undefined },
+      st,
+      it.entity ? this.hass?.entities?.[it.entity]?.icon : undefined
+    );
+  }
+
+  /**
+   * The device's icon, rendered here rather than up in the form (issue #127):
+   * it is the same setting the state rules below override, so it belongs
+   * beside them — like "Active color" beside the colours those rules replace.
+   *
+   * Unlike the colour it stays on screen once rules exist, because rules do
+   * *not* replace it: a rule with no icon of its own falls through to this
+   * one, which is what lets someone colour by state without naming the same
+   * glyph in every row. Hiding it would strand a setting that is still
+   * drawing.
+   */
+  private _renderItemIconRow(it: FloorItem): TemplateResult {
+    const title = "Icon for this device; a state rule below can swap it";
+    return html`
+      <div class="row wide">
+        <label title=${title}>Icon</label>
+        ${this._renderIconPicker(it.icon ?? "", (icon) => this._updateItem(it.id, { icon: icon || undefined }), {
+          // The entity's own glyph, so leaving the box empty is visibly a
+          // choice rather than a blank.
+          placeholder: this._itemDefaultIcon(it),
+          title,
+        })}
+      </div>
+      ${it.stateColor?.length
+        ? html`<p class="hint rule-note">Shown while no rule below names an icon of its own.</p>`
+        : nothing}
+    `;
+  }
+
+  /**
    * The "Color by state" block (issues #68, #79, #82): a list of rules, each
    * one a condition and a colour, plus an "Add rule" button.
    *
@@ -1867,7 +1913,7 @@ export class FloorplanCardEditor extends LitElement {
   private _renderStateColorRules(
     rules: StateColorRule[] | undefined,
     onChange: (next: StateColorRule[] | undefined) => void,
-    opts?: { icons?: boolean }
+    opts?: { icons?: boolean; iconPlaceholder?: string }
   ): TemplateResult {
     const list = rules ?? [];
     const patch = (i: number, part: Partial<StateColorRule>): void => {
@@ -1934,7 +1980,13 @@ export class FloorplanCardEditor extends LitElement {
               @change=${(e: Event) => patch(i, { color: (e.target as HTMLInputElement).value })}
             />
             ${opts?.icons
-              ? this._renderIconPicker(rule.icon ?? "", (icon) => patch(i, { icon: icon || undefined }))
+              ? // Empty means "keep the device's icon", so the device's icon is
+                // the placeholder — the rule shows what leaving it blank gives
+                // you, and colour-only rules need no icon at all (issue #127).
+                this._renderIconPicker(rule.icon ?? "", (icon) => patch(i, { icon: icon || undefined }), {
+                  placeholder: opts.iconPlaceholder,
+                  title: "Icon while this rule matches — empty keeps the device's own",
+                })
               : nothing}
             <button
               class="rule-remove"
@@ -3064,23 +3116,29 @@ export class FloorplanCardEditor extends LitElement {
    * Icon field for the hand-rolled rows (issue #106), mirroring
    * {@link _renderEntityPicker}: HA's searchable picker when the frontend has
    * registered it, a plain text input otherwise. Used by the state-rule list,
-   * which cannot go through `ha-form` because it is repeatable.
+   * which cannot go through `ha-form` because it is repeatable, and by the
+   * device's own icon row that sits beside it (issue #127).
    */
-  private _renderIconPicker(value: string, onChange: (icon: string) => void): TemplateResult {
+  private _renderIconPicker(
+    value: string,
+    onChange: (icon: string) => void,
+    opts?: { placeholder?: string; title?: string }
+  ): TemplateResult {
     if (customElements.get("ha-icon-picker")) {
       return html`<ha-icon-picker
         class="rule-icon"
         .hass=${this.hass}
         .value=${value}
-        placeholder="Icon"
+        placeholder=${opts?.placeholder ?? "Icon"}
+        title=${opts?.title ?? nothing}
         @value-changed=${(e: CustomEvent) => onChange((e.detail.value as string) ?? "")}
       ></ha-icon-picker>`;
     }
     return html`<input
       type="text"
       class="rule-icon"
-      placeholder="mdi:blinds"
-      title="Icon while this rule matches (optional)"
+      placeholder=${opts?.placeholder ?? "mdi:blinds"}
+      title=${opts?.title ?? nothing}
       .value=${value}
       @change=${(e: Event) => onChange((e.target as HTMLInputElement).value)}
     />`;
@@ -3410,7 +3468,7 @@ export class FloorplanCardEditor extends LitElement {
     const rippleSize = it.rippleSize ?? DEFAULT_RIPPLE_SIZE;
 
     // Live preview: the icon animates exactly when the card would animate it
-    // (entity currently active), so the "Animate icon" dropdown shows its
+    // (entity currently active), so the "Badge shows" dropdown shows its
     // effect without leaving the editor.
     const anim = resolveIconAnimation(it, st?.state);
     const badge = html`<div
@@ -3601,8 +3659,13 @@ export class FloorplanCardEditor extends LitElement {
       const it = this._floor().items.find((x) => x.id === sel.id);
       if (!it) return html`${nothing}`;
       const areaEntities = this._areaEntitiesAt(it.x, it.y);
+      // The entity's device class decides whether this is a presence device,
+      // and so whether the ripple is on offer at all (issue #127).
+      const deviceClass = it.entity
+        ? (this.hass?.states[it.entity]?.attributes?.device_class as string | undefined)
+        : undefined;
       return html`
-        ${this._renderForm(itemForm(it, areaEntities), (patch, live) => {
+        ${this._renderForm(itemForm(it, areaEntities, deviceClass), (patch, live) => {
           // Any entity change re-derives the item kind (icon defaults etc.) —
           // including clearing it, which resets kind to "generic".
           if ("entity" in patch && typeof patch.entity === "string") {
@@ -3626,7 +3689,7 @@ export class FloorplanCardEditor extends LitElement {
               onLive: (activeColor) => this._updateItemLive(it.id, { activeColor }),
               onCommit: (activeColor) => this._updateItem(it.id, { activeColor }),
             })}
-        ${(it.display ?? "badge") !== "badge"
+        ${isPresenceEntity(it.entity, deviceClass) && itemHasRipple(it)
           ? this._renderColorRow({
               label: "Ripple color",
               value: it.rippleColor,
@@ -3636,13 +3699,14 @@ export class FloorplanCardEditor extends LitElement {
               onCommit: (rippleColor) => this._updateItem(it.id, { rippleColor }),
             })
           : nothing}
+        ${this._renderItemIconRow(it)}
         ${this._renderStateColorRules(
           it.stateColor,
           (stateColor) => this._updateItem(it.id, { stateColor }),
           // Only a device draws a glyph, so only a device's rules offer an
           // icon — furniture and areas share this rule shape but paint
           // polygons (issue #106).
-          { icons: true }
+          { icons: true, iconPlaceholder: this._itemDefaultIcon(it) }
         )}
       `;
     }

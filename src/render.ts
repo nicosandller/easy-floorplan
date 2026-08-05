@@ -852,6 +852,19 @@ const AUTO_ICON_ANIMATION: Record<string, "spin" | "pulse"> = {
 };
 
 /**
+ * What `iconAnimation: "auto"` means for an entity — the animation its domain
+ * plays by default, or undefined for the domains that stay still.
+ *
+ * Exported so the editor can *name* it (issue #127): its dropdown offers no
+ * "auto" option, and instead shows a fan as "spinning" and a media player as
+ * "pulsing" — the animation the card is already playing. Both sides therefore
+ * read the domain defaults from this one table.
+ */
+export function domainIconAnimation(entity: string | undefined): "spin" | "pulse" | undefined {
+  return AUTO_ICON_ANIMATION[entity?.split(".")[0] ?? ""];
+}
+
+/**
  * Which animation an item's icon should play right now, or undefined for
  * none. Shared by card and editor. Never animates an inactive (or
  * unavailable) entity — including when the config forces "spin"/"pulse": a
@@ -866,7 +879,33 @@ export function resolveIconAnimation(
   if (mode === "none") return undefined;
   if (!entityIsActive(item.entity, state)) return undefined;
   if (mode === "spin" || mode === "pulse") return mode;
-  return AUTO_ICON_ANIMATION[item.entity?.split(".")[0] ?? ""];
+  return domainIconAnimation(item.entity);
+}
+
+/**
+ * Device classes that mean "something is here" — the sensors a ripple ring was
+ * drawn for (issue #127). `motion` and `occupancy` are HA's own binary-sensor
+ * classes; `presence` is the home/away one.
+ */
+const PRESENCE_DEVICE_CLASSES = new Set(["motion", "occupancy", "presence"]);
+
+/**
+ * Whether a device detects presence, and so should be offered the ripple ring
+ * (issue #127) — the same shape of gate as "Cast light" on a `light`.
+ *
+ * A `device_tracker` or `person` qualifies on its domain alone; a
+ * `binary_sensor` needs the device class to say so, which is what separates a
+ * motion sensor from a door contact or a leak detector. A binary sensor with
+ * no device class set is therefore *not* presence: it could be anything, and
+ * guessing from the entity id would ring doorbells and smoke alarms.
+ */
+export function isPresenceEntity(
+  entity: string | undefined,
+  deviceClass: string | undefined,
+): boolean {
+  const domain = entity?.split(".")[0];
+  if (domain === "device_tracker" || domain === "person") return true;
+  return domain === "binary_sensor" && !!deviceClass && PRESENCE_DEVICE_CLASSES.has(deviceClass);
 }
 
 /**

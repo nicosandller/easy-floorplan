@@ -57,6 +57,8 @@ import {
   badgeValue,
   badgeValueSize,
   resolveIconAnimation,
+  domainIconAnimation,
+  isPresenceEntity,
   itemIconSize,
   normalizePlanRotation,
   rotatedCanvasSize,
@@ -1072,6 +1074,50 @@ describe("resolveIconAnimation (issue #48)", () => {
 
   it("none disables the domain default", () => {
     expect(resolveIconAnimation({ entity: "fan.ceiling", iconAnimation: "none" }, "on")).toBeUndefined();
+  });
+});
+
+describe("domainIconAnimation (issue #127)", () => {
+  it("names what auto means, so the editor can offer it by name", () => {
+    expect(domainIconAnimation("fan.ceiling")).toBe("spin");
+    expect(domainIconAnimation("media_player.tv")).toBe("pulse");
+    expect(domainIconAnimation("vacuum.robo")).toBe("pulse");
+    expect(domainIconAnimation("light.a")).toBeUndefined();
+    expect(domainIconAnimation(undefined)).toBeUndefined();
+  });
+
+  it("is the same table resolveIconAnimation applies, so the two cannot drift", () => {
+    // Active fan, nothing configured → auto → spin, both ways round.
+    expect(resolveIconAnimation({ entity: "fan.ceiling" }, "on")).toBe(
+      domainIconAnimation("fan.ceiling"),
+    );
+  });
+});
+
+describe("isPresenceEntity (issue #127)", () => {
+  it("accepts the binary-sensor classes that mean someone is there", () => {
+    for (const dc of ["motion", "occupancy", "presence"]) {
+      expect(isPresenceEntity("binary_sensor.hall", dc)).toBe(true);
+    }
+  });
+
+  it("accepts trackers and people on their domain alone", () => {
+    expect(isPresenceEntity("device_tracker.phone", undefined)).toBe(true);
+    expect(isPresenceEntity("person.sam", undefined)).toBe(true);
+  });
+
+  it("rejects sensors that detect something else, and an unclassed one", () => {
+    expect(isPresenceEntity("binary_sensor.front_door", "door")).toBe(false);
+    expect(isPresenceEntity("binary_sensor.leak", "moisture")).toBe(false);
+    // No class at all could be anything — guessing from the name would ring
+    // doorbells and smoke alarms.
+    expect(isPresenceEntity("binary_sensor.presence", undefined)).toBe(false);
+  });
+
+  it("rejects other domains, whatever class they carry", () => {
+    expect(isPresenceEntity("light.a", "motion")).toBe(false);
+    expect(isPresenceEntity("sensor.motion", "motion")).toBe(false);
+    expect(isPresenceEntity(undefined, "motion")).toBe(false);
   });
 });
 

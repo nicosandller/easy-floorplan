@@ -241,7 +241,13 @@ export interface FloorItem {
   size?: number;
   /** Icon rotation in degrees. Default 0. */
   angle?: number;
-  /** How the device is drawn. Default "badge". */
+  /**
+   * How the device is drawn. Default "badge".
+   *
+   * The ripple modes render on any entity. The editor only *offers* them on a
+   * presence device (issue #127) — a ring says "someone is there" — so a ring
+   * on anything else is a YAML-only choice.
+   */
   display?: ItemDisplay;
   /**
    * Animate the icon while the entity is active (issue #48). "auto" (the
@@ -250,6 +256,11 @@ export interface FloorItem {
    * means `playing` or plain `on`, matching the badge highlight);
    * "spin"/"pulse" force that animation (still only while active); "none"
    * disables it.
+   *
+   * "auto" has no counterpart in the editor's menu (issue #127): it shows the
+   * animation auto resolves to for this entity instead of the word, and writes
+   * that value on any edit. The default stays "auto" for configs nobody has
+   * touched, so nothing about the card changed.
    */
   iconAnimation?: IconAnimation;
   /**
