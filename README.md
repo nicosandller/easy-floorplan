@@ -34,8 +34,9 @@ automatically to the card and screen size.
   piano, hot tub.
 - **Areas** — trace a room's outline point-by-point (points snap to wall corners and to
   neighboring areas' corners) to get a colored, named room polygon. Bind an entity to a
-  room and its fill goes live — green while a presence sensor is occupied, red when a CO2
-  sensor crosses a threshold. Naming a room after
+  room and it goes live — green while a presence sensor is occupied, red when a CO2
+  sensor crosses a threshold — as a fill, or as the room's own walls lighting up if you
+  would rather not tint everything inside it. Naming a room after
   one of your Home Assistant areas (the name field autocompletes against them) links the
   two, which scopes the entity picker — for any device dropped inside it — to that HA
   area's entities, and can bulk-add every device in the area.
@@ -65,7 +66,8 @@ automatically to the card and screen size.
 
 ## What you can end up with
 
-<img width="1103" height="592" alt="demo_screenshot" src="https://github.com/user-attachments/assets/c05d32e3-8a9e-4643-8c25-79c1128dbb59" />
+<img width="1550" height="761" alt="Screenshot 2026-08-05 at 2 54 49 PM" src="https://github.com/user-attachments/assets/7130f94f-f591-486b-bf9d-ecf137b653a9" />
+
 
 ## Installation
 
@@ -202,12 +204,16 @@ By default it shows an icon badge:
   itself uses. An explicit icon on the entity, or an **icon** override on the device,
   still wins.
 - **Make it yours** — override the **icon** (with autocomplete + live preview), set a
-  custom **name**, change the **size**, **rotate** it, or hide the icon entirely.
+  custom **name**, change the **size**, or **rotate** it. The icon sits at the bottom
+  of the device's options, next to the state rules that can swap it.
+- **One badge control** — **Badge shows** is the single dropdown for what the device
+  draws: an icon (**still**, **spinning** or **pulsing**), its **Value**, or **Nothing**
+  at all.
 - **Icons that move** — while an entity is active its icon can animate, the way
-  Home Assistant's own Tile card does it: by default a running **fan spins** and an
-  active **media player** (playing, or simply on) or **vacuum** (cleaning /
-  returning) **pulses**. The **Animate icon**
-  dropdown per device switches to `none`, or forces `spin` / `pulse` on any entity
+  Home Assistant's own Tile card does it: a running **fan** spins and an active
+  **media player** (playing, or simply on) or **vacuum** (cleaning / returning) pulses,
+  with no setup — those devices simply open on *Icon, spinning* / *Icon, pulsing*.
+  Change the dropdown to turn it off, or to force an animation on any other entity
   (a spinning icon still only plays while the entity is actually active — an
   unavailable fan never spins). Respects the OS *reduced motion* preference.
 - **Label line** — **Show state** displays the live value (sensors do this by
@@ -222,9 +228,52 @@ By default it shows an icon badge:
   makes a wall of lights, covers and switches hard to read. Set **Active color**
   per device to tell them apart at a glance — lights yellow, covers purple,
   thermostats orange. Ripples follow it unless you set a ripple color too.
-- **Color by state** — the **Color by state** rules color the element by what the
-  entity reads: both the **icon badge** and the label, whether or not the entity is
-  "on" (a temperature sensor never is). Add rules in the editor, or in YAML:
+- **Lights badge themselves** — a bulb that reports an `rgb_color` wears it: a lamp set to
+  green gets a green badge, and the badge darkens as the lamp dims, so you can read the
+  room's lighting from the badges alone. Nothing to configure, and nothing changes for a
+  bulb that has no color to report (a plain on/off or brightness-only light keeps the theme
+  color). The full order is **state rules → Active color → the bulb's own color → the
+  theme** — anything you set by hand still wins.
+- **The icon stays readable** — the glyph (or the value) picks black or white to suit
+  whatever the badge ended up painted, so a white state color no longer hides a white icon
+  on a dark theme. A color the card can't resolve on its own — `var(--accent)`,
+  `color-mix(...)`, a gradient — keeps the theme's text color as before.
+- **Value in the badge** — set **Badge shows** to *Value* and the device draws its
+  reading inside the badge instead of an icon: a thermostat reads `21°` in the same
+  circle your state rules already paint red while it's heating, with no text line
+  hanging underneath. The card picks the reading per domain, so there is nothing to
+  configure — a climate shows its current temperature (its *state* is the mode,
+  "heat"), a humidifier its humidity, a sensor its own value. Long units are dropped
+  to keep the number legible: `°C` becomes `°`, CO₂ reads plainly as `780`.
+
+  An **Attribute** you set wins when it's a number, so you can colour by one reading
+  and display another — `attribute: hvac_action` colours the badge by whether the
+  boiler is firing while the badge still shows the temperature. For a smart plug, point
+  **2nd entity** at its power sensor: the badge reads `1.2kW` and tapping still toggles
+  the switch. A device with no number anywhere keeps its icon, so this can never leave
+  an empty circle. *Nothing* is the third setting — no badge at all, label only.
+- **Color and icon by state** — the **Color & icon by state** rules restyle the element
+  by what the entity reads: both the **icon badge** and the label, whether or not the
+  entity is "on" (a temperature sensor never is). Each rule can also swap the **icon**,
+  so blinds get an open glyph and a closed one:
+
+  ```yaml
+  stateColor:
+    - state: open
+      color: "#4caf50"
+      icon: mdi:blinds-open
+    - state: closed
+      color: "#9e9e9e"
+      icon: mdi:blinds
+  ```
+
+  `icon` is optional — a rule without one only changes the colour, exactly as before.
+  A matching rule's icon beats the device's fixed **icon** override, which is what makes
+  a custom icon and state-dependent icons usable together; previously setting one froze
+  the glyph for good. (Covers that carry a **device class** already get open/closed icons
+  with no rules at all — this is for everything else, and for a third state.)
+
+  Add rules in the editor, or in YAML:
 
   ```yaml
   stateColor:
@@ -253,6 +302,12 @@ By default it shows an icon badge:
   a device is never badged one color and ringed another), so the editor hides the
   **Active color** field once rules exist rather than leaving a control that would
   silently lose.
+
+  A rule's `icon` works the other way round: it is optional, and a rule without one
+  keeps the device's own **Icon** — so colouring by state costs you nothing if the
+  glyph never changes, and you never name the same icon in every row. That is why the
+  **Icon** field stays visible next to the rules (it is still what they fall back to)
+  while **Active color** disappears.
 - **Only when active** — tick it and the device disappears from the card while its
   entity is off/idle, so a busy room only shows what's actually doing something.
   "Active" is the same domain-aware test the badge highlight uses (a lock counts as
@@ -266,18 +321,23 @@ By default it shows an icon badge:
 
 ### Presence ripples
 
-For motion/occupancy/presence sensors, switch a device's **Display** mode from *Icon
-badge* to **Ripple** or **Icon + ripple**. Instead of a static icon it draws animated
-concentric rings:
+Turn on a device's **Ripple** toggle and it draws animated concentric rings behind the
+badge — set **Badge shows** to *Nothing* for the rings alone:
 
-- **Active** (sensor on) → the rings continuously pulse outward and fade, drawing the
-  eye to where motion is happening.
-- **Idle** (sensor off) → the rings stop and only a faint dot remains, so the spot stays
+- **Active** (presence detected — the sensor reads on, the tracker reads home) → the
+  rings continuously pulse outward and fade, drawing the eye to where motion is
+  happening.
+- **Idle** (clear) → the rings stop and only a faint dot remains, so the spot stays
   marked without being distracting.
 
 You can set the **ripple color** and **ripple size** per device, so e.g. a calm blue
-ring in the living room and a warmer one by the entrance. It works with any entity that
-reports an on/off-like state, not just presence sensors.
+ring in the living room and a warmer one by the entrance.
+
+The toggle only appears on devices that detect presence — a `binary_sensor` whose
+**device class** is `motion`, `occupancy` or `presence`, or a `device_tracker` /
+`person` — the same way **Cast light** only appears on lights. A ring is a claim that
+someone is there, so it is offered where that claim can be true. The underlying
+`display` key still works on any entity if you write it in YAML.
 
 <img width="540" height="304" alt="ripple_demo_gif" src="https://github.com/user-attachments/assets/e43949cf-13a2-48f8-804d-73738299475f" />
 
@@ -615,22 +675,23 @@ shape it occupies on screen.
 | `secondaryEntity` | string                             | —            | Optional 2nd entity shown alongside (e.g. humidity).   |
 | `attribute`   | string                                 | —            | Show this attribute of `entity` instead of its state (e.g. `current_temperature`). |
 | `secondaryAttribute` | string                          | —            | Attribute for the 2nd reading — from `secondaryEntity`, or from `entity` when none. |
-| `stateColor`  | rule[]                                 | —            | Colors for the badge and label (regardless of on/off; beats `activeColor`): `[{above: 26, color: red}, {color: white}]`. A rule matches `above: <n>` or `state: <value>`; an exact state beats a threshold, the highest matching `above` beats a lower one, and a rule with neither is the default. |
+| `stateColor`  | rule[]                                 | —            | Colors for the badge and label (regardless of on/off; beats `activeColor`): `[{above: 26, color: red}, {color: white}]`. A rule matches `above: <n>` or `state: <value>`; an exact state beats a threshold, the highest matching `above` beats a lower one, and a rule with neither is the default. A rule may also carry an optional `icon`, which beats the device's own `icon` while that rule matches. |
 | `x`, `y`      | number                                 | —            | Position.                                              |
-| `kind`        | light/switch/sensor/binary_sensor/climate/cover/generic | inferred | Used for the default icon.            |
+| `kind`        | light/switch/sensor/binary_sensor/climate/cover/media_player/fan/camera/lock/humidifier/vacuum/generic | inferred | Used for the default icon. |
 | `icon`        | string                                 | entity icon  | Override mdi icon.                                     |
 | `name`        | string                                 | friendly name| Label / tooltip override.                             |
 | `size`        | number                                 | `34`         | Icon badge diameter (px).                              |
 | `angle`       | number                                 | `0`          | Icon rotation (deg).                                   |
-| `display`     | `badge` \| `ripple` \| `iconRipple`    | `badge`      | How the device is drawn.                               |
-| `iconAnimation` | `auto` \| `none` \| `spin` \| `pulse` | `auto`       | Animate the icon while active. `auto`: fan spins; media player / vacuum pulse. |
+| `display`     | `badge` \| `ripple` \| `iconRipple`    | `badge`      | How the device is drawn. The editor spells this as the **Ripple** toggle (plus **Badge shows: Nothing** for `ripple`), and offers it on presence devices only — in YAML it works on any entity. |
+| `iconAnimation` | `auto` \| `none` \| `spin` \| `pulse` | `auto`       | Animate the icon while active. `auto`: fan spins; media player / vacuum pulse. The editor spells this as the icon options of **Badge shows**, showing `auto` as the animation it resolves to rather than offering the word. |
 | `activeColor` | string                                 | theme color  | Badge color while the device is on — lets domains be told apart at a glance. Ignored while `stateColor` rules match. |
 | `rippleColor` | string                                 | `activeColor`| Ripple ring color (ripple modes). Falls back to `activeColor`, then the primary color. |
 | `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
 | `glow`        | boolean                                | `false`      | Cast a pool of light onto the plan from this device (lights only). See **Cast light**. |
-| `glowRadius`  | number                                 | `140`        | Radius of the cast pool, in canvas units.              |
+| `glowRadius`  | number                                 | `140`        | Radius of the cast pool at full brightness, in canvas units. A dimmer lamp casts a proportionally smaller pool, down to half this. |
 | `glowColor`   | string                                 | `#ffd9a0`    | Color for a bulb that can't report one. A color-capable light always uses its own. |
-| `showIcon`    | boolean                                | `true`       | Show the icon badge.                                   |
+| `badgeContent` | `icon` \| `value` \| `none`           | `icon`       | What the badge holds. `value` draws the device's reading inside it (see **Value in the badge**), falling back to the icon when there is no number; `none` hides the badge, leaving the label. |
+| `showIcon`    | boolean                                | `true`       | **Deprecated** — superseded by `badgeContent`. Still honoured when `badgeContent` is unset: `false` means `none`. |
 | `hideWhenInactive` | boolean                           | `false`      | Hide the device on the card while its entity is inactive (issue #55). Always shown, dimmed, in the editor. |
 | `showState`   | boolean                                | sensors only | Show the entity state in the label line.               |
 | `showName`    | boolean                                | `false`      | Show the device's name in the label line (`Name · state` when combined). |
@@ -673,6 +734,14 @@ Home Assistant derives an `rgb_color` even for `color_temp`-only bulbs, so a war
 bulb still reads as amber. Brightness maps into a **0.18–0.6** opacity band rather than
 0–1: a lamp dimmed to 10% would otherwise be invisible.
 
+**Brightness also sets how far the light reaches**, not just how strong it is — dimming a
+lamp draws its pool in, the way dimming one does in a room. `glowRadius` is the size at
+**full brightness**, and the pool shrinks to no less than half that as the lamp dims, so a
+lamp at 5% still reads as a dim lamp rather than vanishing under its own icon. A bulb that
+reports no brightness (plain on/off) always casts the full radius. The dashed radius guide
+in the editor shows the configured, full-brightness size — it is the handle for the value
+you are setting.
+
 The pools are drawn above the room fills but below furniture and walls, so light reads as
 cast onto the floor rather than painted over the plan. `glow` is independent of the icon —
 combine it with `showIcon: false` for light with no badge, or with `hideWhenInactive` to
@@ -683,10 +752,13 @@ at the walls of its room instead of washing into the next one, and spills throug
 gap the way real light does. The result is an irregular shape rather than a clean circle —
 that's the point. A lamp with no wall inside its radius stays a plain circle.
 
-**Furniture keeps its own color.** Light falls on the floor, not on the furniture drawn over
-it: furniture footprints are cut out of the pools, so a sofa under a lit lamp stays its base
-gray rather than turning the color of the light. Only entity-bound furniture with
-`stateColor` / `activeColor` ever changes color.
+**Light lands on furniture, at half strength.** A table under a lit lamp is lit — but it
+picks up only about half the color cast the open floor beside it gets, so it still reads as
+furniture rather than turning into the color of the light. This is a deliberate middle:
+furniture line art is translucent, so at full strength a warm pool shone straight through
+and every sofa in the room looked highlighted, while cutting furniture out of the pool
+entirely made a lit table *darker* than the floor around it — a shadow. Only entity-bound
+furniture with `stateColor` / `activeColor` ever changes color outright.
 
 Pools never intercept clicks — a device under a lit lamp stays tappable, and in the editor
 rooms under one stay selectable.
@@ -795,7 +867,8 @@ trackers:
 - `activeOpacity` — fill opacity while `entity` resolves a color. Lets a room lift out of
   the plan while it is live without permanently darkening it. Falls back to `opacity`.
 - `borderColor` / `borderWidth` — a static outline for the room. No outline is drawn by
-  default; `borderWidth` defaults to `3` canvas units once a color is set.
+  default; `borderWidth` defaults to `3` canvas units once a color is set. (A *live*
+  outline — see `highlight` — has its own default of `4`, for the reason given below.)
 - `highlight` — where a live color paints: `fill` (default), `border`, or `both`. Use
   `border` for a room that outlines itself while occupied without tinting everything
   inside it, which reads better on a busy plan.
@@ -808,9 +881,10 @@ trackers:
   between two rooms splits down the middle and each side reports its own room, and a
   corner where several rooms meet splits between them. An exterior wall colors on its
   inside face only, leaving the plan's silhouette intact. `borderWidth` is the width
-  you actually see on the room's own side, and defaults to `4` — the room's own half
-  of the wall, since the wall is centred on the line the polygon follows. Widen it and
-  the band runs past the wall onto the floor and over furniture standing against it.
+  you actually see on the room's own side, and defaults to `4` here rather than the `3`
+  a static `borderColor` uses — it is the room's own half of the wall, the wall being
+  centred on the line the polygon follows. Widen it and the band runs past the wall onto
+  the floor and over furniture standing against it.
 
 ```yaml
 areas:
@@ -1009,7 +1083,8 @@ editor.
 
 | Element | Class | Attributes |
 | --- | --- | --- |
-| Area | `fp-area` | `data-id`, `data-entity` |
+| Area (fill) | `fp-area` | `data-id`, `data-entity` |
+| Area (outline) | `fp-area-border` | `data-id`, `data-entity` |
 | Furniture | `fp-furniture`, `fp-furniture-<type>` | `data-id`, `data-entity` |
 | Door / window | `fp-opening`, `fp-opening-door` \| `fp-opening-window` | `data-id`, `data-entity` |
 | Wall | `wall`, `fp-wall` | `data-id` |
@@ -1019,6 +1094,19 @@ editor.
 
 Ids come from the editor (`area_a5r5nwl`, `furn_3j66s50`, …) and are stable across edits.
 An element with no id simply has no `data-id`, rather than `data-id="undefined"`.
+
+An area is **two** elements answering the same `data-id`: the fill, drawn under the walls,
+and the outline, drawn over them. Scope a `fill` rule to `.fp-area`, or it lands on the
+outline too — the outline is drawn `fill="none"`, so an unscoped rule floods it solid:
+
+```css
+[data-id="area_hall"]          { fill: #62f202; }  /* also floods the outline */
+.fp-area[data-id="area_hall"]  { fill: #62f202; }  /* the fill, as intended */
+.fp-area-border[data-id="area_hall"] { stroke-dasharray: 6 4; }
+```
+
+Properties that are not `fill` — `opacity`, `filter`, `stroke` — are usually fine on both,
+which is why the `data-entity` example below is left unscoped deliberately.
 
 ```yaml
 type: custom:easy-floorplan-card

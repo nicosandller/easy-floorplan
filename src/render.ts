@@ -7,6 +7,7 @@ import type {
   ItemKind,
   IconAnimation,
   StateColorRule,
+  BadgeContent,
   Furniture,
   Tracker,
   Area,
@@ -28,12 +29,16 @@ import {
   DEFAULT_SUN_MAX,
   DEFAULT_GLOW_RADIUS,
   DEFAULT_GLOW_COLOR,
+  DEFAULT_ITEM_SIZE,
   GLOW_MIN_OPACITY,
   GLOW_MAX_OPACITY,
+  GLOW_MIN_RADIUS,
+  BADGE_MIN_LIGHTNESS,
+  FURNITURE_GLOW_TRANSMISSION,
   getFloors,
   trackerAxisFraction,
 } from "./types";
-import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId } from "./css-safe";
+import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, cssIcon } from "./css-safe";
 
 export const WALL_THICKNESS = 8;
 
@@ -182,30 +187,46 @@ export function resolveStateColor(
   rules: readonly StateColorRule[] | undefined,
   raw: unknown,
 ): string | undefined {
+  return matchStateRule(rules, raw)?.color;
+}
+
+/**
+ * The rule that applies to a value, by the precedence documented on
+ * {@link resolveStateColor} — which is now a one-line wrapper around this.
+ *
+ * Split out for issue #106: a rule can carry an `icon` as well as a `color`,
+ * and both must come from the *same* matched rule. Re-running the precedence
+ * once per property would be two chances to drift apart, and would quietly
+ * allow one rule's colour beside another rule's icon.
+ */
+export function matchStateRule(
+  rules: readonly StateColorRule[] | undefined,
+  raw: unknown,
+): StateColorRule | undefined {
   if (!rules?.length) return undefined;
   const n = typeof raw === "number" ? raw : Number(raw);
   const numeric = typeof raw !== "boolean" && raw !== "" && raw != null && Number.isFinite(n);
   const text = raw == null ? "" : String(raw).trim().toLowerCase();
-  let exact: string | undefined;
+  let exact: StateColorRule | undefined;
   let best: StateColorRule | undefined;
-  let fallback: string | undefined;
+  let fallback: StateColorRule | undefined;
   for (const rule of rules) {
     if (!rule || typeof rule !== "object" || typeof rule.color !== "string") continue;
     if (typeof rule.state === "string" && rule.state !== "") {
       // First matching state rule wins, so an earlier rule shadows a later
       // duplicate — the same "first one listed" reading as the default rule.
       if (exact === undefined && text !== "" && rule.state.trim().toLowerCase() === text) {
-        exact = rule.color;
+        exact = rule;
       }
     } else if (typeof rule.above === "number") {
       if (numeric && n > rule.above && (!best || rule.above > (best.above ?? -Infinity))) {
         best = rule;
       }
     } else if (fallback === undefined) {
-      fallback = rule.color;
+      fallback = rule;
     }
   }
-  return exact ?? best?.color ?? fallback;
+  return exact ?? best ?? fallback;
 }
 
 /**
@@ -247,6 +268,16 @@ export interface GlowPaint {
   color: string;
   /** Opacity at the center of the pool, fading to 0 at the rim. */
   opacity: number;
+  /**
+   * How far the pool actually reaches, in canvas units (issue #123): the
+   * configured `glowRadius` scaled by the lamp's brightness.
+   *
+   * Carried on the paint rather than recomputed by each caller so the pool and
+   * the sun-dimming clearing cannot disagree about the same lamp's size — they
+   * are documented as the same shape by construction, and two copies of this
+   * arithmetic is exactly how that stops being true.
+   */
+  radius: number;
 }
 
 /**
@@ -266,9 +297,15 @@ export interface GlowPaint {
  * A light that is off, `unavailable` or `unknown` casts nothing — failing
  * closed like every other state reader here, so a dead bulb never leaves a
  * pool of light lying on the floor.
+ *
+ * Brightness drives the pool's **reach** as well as its strength (issue #123):
+ * dimming a lamp draws the light in rather than only thinning it, which is what
+ * dimming actually looks like. The configured `glowRadius` is the full-brightness
+ * size, so nothing changes for a lamp at 100% or for a bulb that reports no
+ * brightness at all.
  */
 export function glowPaint(
-  item: Pick<FloorItem, "glowColor">,
+  item: Pick<FloorItem, "glowColor" | "glowRadius">,
   light: HassEntity | undefined,
 ): GlowPaint | undefined {
   if (!light || light.state !== "on") return undefined;
@@ -282,6 +319,11 @@ export function glowPaint(
     bright === undefined
       ? GLOW_MAX_OPACITY
       : GLOW_MIN_OPACITY + (GLOW_MAX_OPACITY - GLOW_MIN_OPACITY) * (bright / 255);
+  // Same shape as the opacity band above, and a floor for the same reason: a
+  // lamp dimmed to 10% should read as dim, not as switched off.
+  const radius =
+    cssNumber(item.glowRadius, DEFAULT_GLOW_RADIUS) *
+    (bright === undefined ? 1 : GLOW_MIN_RADIUS + (1 - GLOW_MIN_RADIUS) * (bright / 255));
 
   const rgb = attrs.rgb_color;
   if (Array.isArray(rgb) && rgb.length >= 3) {
@@ -291,10 +333,47 @@ export function glowPaint(
       // Built from clamped integers, so it cannot carry a payload — but it
       // still goes through the allowlist, as every color here does.
       const color = cssColor(`rgb(${chan(r as number)}, ${chan(g as number)}, ${chan(b as number)})`);
-      if (color) return { color, opacity };
+      if (color) return { color, opacity, radius };
     }
   }
-  return { color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR), opacity };
+  return { color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR), opacity, radius };
+}
+
+/**
+ * The colour a light's **badge** should wear (issue #106, @ombre33): its own
+ * `rgb_color`, darkened toward black in step with `brightness`, or `undefined`
+ * to leave the badge exactly as it is today.
+ *
+ * Deliberately *not* {@link glowPaint}, which looks almost identical. That one
+ * falls back to `glowColor` / {@link DEFAULT_GLOW_COLOR} so a pool always has a
+ * colour to cast; reusing it here would turn every plain on/off bulb's badge
+ * warm amber — a look change on installs that never asked for one. Only a
+ * light that genuinely reports a colour changes appearance.
+ *
+ * Brightness scales the channels rather than the alpha on purpose: a
+ * translucent badge composites against the *plan* behind it, so the same lamp
+ * would read differently over a dark room than over a light one.
+ */
+export function lightBadgePaint(light: HassEntity | undefined): string | undefined {
+  if (!light || light.state !== "on") return undefined;
+  const attrs = (light.attributes ?? {}) as Record<string, unknown>;
+  const rgb = attrs.rgb_color;
+  if (!Array.isArray(rgb) || rgb.length < 3) return undefined;
+  const [r, g, b] = rgb;
+  if (![r, g, b].every((c) => typeof c === "number" && Number.isFinite(c))) return undefined;
+
+  const raw = attrs.brightness;
+  const bright =
+    typeof raw === "number" && Number.isFinite(raw) ? Math.max(0, Math.min(255, raw)) : undefined;
+  const factor =
+    bright === undefined
+      ? 1
+      : BADGE_MIN_LIGHTNESS + (1 - BADGE_MIN_LIGHTNESS) * (bright / 255);
+
+  const chan = (c: number) => Math.max(0, Math.min(255, Math.round((c as number) * factor)));
+  // Built from clamped integers, so it cannot carry a payload — but it still
+  // goes through the allowlist, as every colour here does.
+  return cssColor(`rgb(${chan(r as number)}, ${chan(g as number)}, ${chan(b as number)})`);
 }
 
 /**
@@ -307,11 +386,15 @@ export function glowPaint(
  * unconditionally, and every off light washed the canvas at full strength.
  */
 export function editorGlowPaint(
-  item: Pick<FloorItem, "glowColor">,
+  item: Pick<FloorItem, "glowColor" | "glowRadius">,
   state: HassEntity | undefined,
 ): GlowPaint | undefined {
   if (state) return glowPaint(item, state);
-  return { color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR), opacity: GLOW_MAX_OPACITY };
+  return {
+    color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR),
+    opacity: GLOW_MAX_OPACITY,
+    radius: cssNumber(item.glowRadius, DEFAULT_GLOW_RADIUS),
+  };
 }
 
 /**
@@ -350,12 +433,65 @@ function rayWallHit(cx: number, cy: number, dx: number, dy: number, w: Wall): nu
 }
 
 /**
+ * Clip a segment to an axis-aligned box (Liang–Barsky), or undefined when it
+ * falls entirely outside. Used by {@link glowReach} — see the note there on
+ * why the sweep needs the clipped wall rather than the configured one.
+ */
+function clipWallToBox(
+  w: Wall,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+): Wall | undefined {
+  const dx = w.x2 - w.x1;
+  const dy = w.y2 - w.y1;
+  const p = [-dx, dx, -dy, dy];
+  const q = [w.x1 - minX, maxX - w.x1, w.y1 - minY, maxY - w.y1];
+  let t0 = 0;
+  let t1 = 1;
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return undefined; // parallel to this edge and outside it
+      continue;
+    }
+    const t = q[i] / p[i];
+    if (p[i] < 0) {
+      if (t > t1) return undefined;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return undefined;
+      if (t < t1) t1 = t;
+    }
+  }
+  return {
+    ...w,
+    x1: w.x1 + t0 * dx,
+    y1: w.y1 + t0 * dy,
+    x2: w.x1 + t1 * dx,
+    y2: w.y1 + t1 * dy,
+  };
+}
+
+/**
  * How far a light at (cx,cy) actually reaches (issue #108): the visibility
  * polygon of the walls that fall inside its radius, so a pool stops at a wall
  * instead of washing into the next room. Classic angular sweep — a ray toward
  * each wall endpoint (and just past it, so light grazes corners), cut at the
  * nearest wall it hits; a bounding box just beyond the radius keeps every ray
  * finite, and the circle itself still bounds the final shape.
+ *
+ * **Blocking walls are clipped to that box first (issue #123).** The sweep's
+ * only vertices are the angles of the segment endpoints it is given, and the
+ * boundary between two of them is drawn as a straight chord. An ordinary room
+ * wall runs well past the pool, so its *declared* endpoints sit outside the
+ * box at the wrong angle entirely, and no ray is ever cast where the wall
+ * actually enters the lit region — the point where the boundary hands over
+ * from the box to the wall. The chord spanning that gap sliced a wedge out of
+ * the pool beside every long wall: the reported artifact. Clipping makes the
+ * wall's endpoints *be* those hand-over points, so the sweep samples them.
+ * A wall already inside the box is unchanged, which is why short walls never
+ * showed this.
  *
  * The wall the lamp is mounted on must not black out its own pool, so walls
  * closer than one wall thickness are treated as non-blocking. Returns
@@ -380,7 +516,13 @@ export function glowReach(
     { id: "b3", x1: cx + m, y1: cy + m, x2: cx - m, y2: cy + m },
     { id: "b4", x1: cx - m, y1: cy + m, x2: cx - m, y2: cy - m },
   ];
-  const all = [...blocking, ...bounds];
+  // Trim each wall to the swept region so its endpoints land where it enters
+  // that region — those are the silhouette vertices the sweep has to sample.
+  const clipped = blocking
+    .map((w) => clipWallToBox(w, cx - m, cy - m, cx + m, cy + m))
+    .filter((w): w is Wall => w !== undefined);
+  if (!clipped.length) return undefined;
+  const all = [...clipped, ...bounds];
   const pts: Array<{ x: number; y: number; a: number }> = [];
   for (const s of all) {
     for (const [ex, ey] of [
@@ -413,7 +555,9 @@ export function renderGlow(
   gradientId: string,
   walls?: readonly Wall[],
 ): SVGTemplateResult {
-  const r = cssNumber(item.glowRadius, DEFAULT_GLOW_RADIUS);
+  // Brightness-scaled (issue #123), computed once on the paint so the pool and
+  // the sun-dimming clearing are the same size for the same lamp.
+  const r = paint.radius;
   // Walls block light (issue #108): clip the pool to what the lamp can see.
   const reach = walls?.length ? glowReach(item.x, item.y, r, walls) : undefined;
   const clipId = `${gradientId}-clip`;
@@ -468,15 +612,20 @@ export function renderSunDimMask(
 ): SVGTemplateResult | typeof nothing {
   // Strength per item, by INDEX — undefined where the lamp contributes nothing.
   // Deliberately not compacted: see the map below.
-  const strengths = items.map((it) => {
+  const clearings = items.map((it) => {
     if (!it.glow) return undefined;
     const paint = glowPaint(it, states?.[it.entity]);
     if (!paint) return undefined;
-    // Normalized against the glow's own ceiling, so a full-brightness lamp
-    // clears the dim entirely and a dim one clears proportionally.
-    return Math.max(0, Math.min(1, paint.opacity / GLOW_MAX_OPACITY));
+    return {
+      // Normalized against the glow's own ceiling, so a full-brightness lamp
+      // clears the dim entirely and a dim one clears proportionally.
+      strength: Math.max(0, Math.min(1, paint.opacity / GLOW_MAX_OPACITY)),
+      // Straight off the paint, so the clearing tracks the pool as it shrinks
+      // with brightness (issue #123) instead of staying at the configured size.
+      radius: paint.radius,
+    };
   });
-  if (!strengths.some((v) => v !== undefined)) return nothing;
+  if (!clearings.some((v) => v !== undefined)) return nothing;
 
   const pad = WALL_THICKNESS;
   return svg`
@@ -495,9 +644,9 @@ export function renderSunDimMask(
           // hard-edged disc at full strength rather than a soft falloff, and
           // it only bites lamps positioned *after* the one that toggled —
           // which is what made it look intermittent.
-          const strength = strengths[i];
-          if (strength === undefined) return nothing;
-          const r = cssNumber(it.glowRadius, DEFAULT_GLOW_RADIUS);
+          const clearing = clearings[i];
+          if (clearing === undefined) return nothing;
+          const { strength, radius: r } = clearing;
           const gid = `${id}-${i}`;
           // Walls stop the clearing exactly as they stop the pool (issue #108),
           // reusing the same visibility polygon — otherwise a lit room lifts
@@ -527,12 +676,22 @@ export function renderSunDimMask(
 }
 
 /**
- * A `<mask>` for the whole glow layer that punches out every furniture
- * footprint (issue #108): furniture keeps its base gray instead of reading
- * as "active" whenever a lamp near it is on. The line-art fills at ~0.12
- * opacity, so a warm pool under a sofa tinted the entire sofa — the report
- * that opened the issue. Round-based types cut an ellipse, everything else
- * its rotated rect.
+ * A `<mask>` for the whole glow layer that **dims** the light over every
+ * furniture footprint. Round-based types cut an ellipse, everything else its
+ * rotated rect.
+ *
+ * This is a dial with a reported bug at each end, which is why it is a grey
+ * and not `black` ({@link FURNITURE_GLOW_TRANSMISSION}):
+ *
+ * - Full light (no mask at all) was **#108**. Furniture line art fills at ~0.12
+ *   opacity and draws *above* this layer, so a warm pool shone straight through
+ *   and every sofa in the room read as highlighted-active.
+ * - No light (a solid `black` hole, the first fix for that) turned furniture
+ *   into a *shadow* — a lit table came out darker than the floor around it,
+ *   which is what @MrMcFlyy reported on #106.
+ *
+ * Half-strength keeps both away: light visibly lands on a table, while the
+ * furniture's own gray still reads as gray rather than taking the pool's hue.
  *
  * The region is stated explicitly rather than inherited — the viewport
  * default clipped walls under rotation once already (issue #102).
@@ -553,11 +712,15 @@ export function renderGlowMask(
         ${furniture.map((f) => {
           const rot = f.angle ? `rotate(${f.angle} ${f.x} ${f.y})` : undefined;
           const roundBase = f.type === "roundTable" || f.type === "plant" || f.type === "waterHeater";
+          // A mask's luminance is its transmission, and the region is already
+          // white ("all the light"). So furniture paints *black* at the share
+          // it blocks, leaving the share it lets through.
+          const blocked = 1 - FURNITURE_GLOW_TRANSMISSION;
           return roundBase
             ? svg`<ellipse cx=${f.x} cy=${f.y} rx=${f.w / 2} ry=${f.h / 2}
-                           fill="black" transform=${rot ?? nothing} />`
+                           fill="#000" fill-opacity=${blocked} transform=${rot ?? nothing} />`
             : svg`<rect x=${f.x - f.w / 2} y=${f.y - f.h / 2} width=${f.w} height=${f.h}
-                        fill="black" transform=${rot ?? nothing} />`;
+                        fill="#000" fill-opacity=${blocked} transform=${rot ?? nothing} />`;
         })}
       </mask>
     </defs>`;
@@ -781,6 +944,19 @@ const AUTO_ICON_ANIMATION: Record<string, "spin" | "pulse"> = {
 };
 
 /**
+ * What `iconAnimation: "auto"` means for an entity — the animation its domain
+ * plays by default, or undefined for the domains that stay still.
+ *
+ * Exported so the editor can *name* it (issue #127): its dropdown offers no
+ * "auto" option, and instead shows a fan as "spinning" and a media player as
+ * "pulsing" — the animation the card is already playing. Both sides therefore
+ * read the domain defaults from this one table.
+ */
+export function domainIconAnimation(entity: string | undefined): "spin" | "pulse" | undefined {
+  return AUTO_ICON_ANIMATION[entity?.split(".")[0] ?? ""];
+}
+
+/**
  * Which animation an item's icon should play right now, or undefined for
  * none. Shared by card and editor. Never animates an inactive (or
  * unavailable) entity — including when the config forces "spin"/"pulse": a
@@ -795,7 +971,33 @@ export function resolveIconAnimation(
   if (mode === "none") return undefined;
   if (!entityIsActive(item.entity, state)) return undefined;
   if (mode === "spin" || mode === "pulse") return mode;
-  return AUTO_ICON_ANIMATION[item.entity?.split(".")[0] ?? ""];
+  return domainIconAnimation(item.entity);
+}
+
+/**
+ * Device classes that mean "something is here" — the sensors a ripple ring was
+ * drawn for (issue #127). `motion` and `occupancy` are HA's own binary-sensor
+ * classes; `presence` is the home/away one.
+ */
+const PRESENCE_DEVICE_CLASSES = new Set(["motion", "occupancy", "presence"]);
+
+/**
+ * Whether a device detects presence, and so should be offered the ripple ring
+ * (issue #127) — the same shape of gate as "Cast light" on a `light`.
+ *
+ * A `device_tracker` or `person` qualifies on its domain alone; a
+ * `binary_sensor` needs the device class to say so, which is what separates a
+ * motion sensor from a door contact or a leak detector. A binary sensor with
+ * no device class set is therefore *not* presence: it could be anything, and
+ * guessing from the entity id would ring doorbells and smoke alarms.
+ */
+export function isPresenceEntity(
+  entity: string | undefined,
+  deviceClass: string | undefined,
+): boolean {
+  const domain = entity?.split(".")[0];
+  if (domain === "device_tracker" || domain === "person") return true;
+  return domain === "binary_sensor" && !!deviceClass && PRESENCE_DEVICE_CLASSES.has(deviceClass);
 }
 
 /**
@@ -831,10 +1033,30 @@ export function entityDefaultIcon(
 }
 
 /**
- * Icon precedence shared by card and editor: config override → the user's
- * entity-registry icon → entity's explicit icon → device_class-implied icon
- * ("show as") → the kind default. The on-state comes from {@link entityIsActive},
- * so domains that never say "on" (lock/vacuum/camera) reach their active icons here.
+ * The value an item's rules are judged on: the chosen `attribute` when set
+ * (issue #70), else the plain state. Shared by card and editor so the colour
+ * and the icon can never be resolved from two different readings.
+ */
+export function itemRawValue(
+  item: { entity?: string; attribute?: string },
+  st: { state: string; attributes: Record<string, unknown> } | undefined,
+): unknown {
+  if (!st) return undefined;
+  return item.attribute ? st.attributes?.[item.attribute] : st.state;
+}
+
+/**
+ * Icon precedence shared by card and editor: matching state rule's icon →
+ * config override → the user's entity-registry icon → entity's explicit icon →
+ * device_class-implied icon ("show as") → the kind default. The on-state comes
+ * from {@link entityIsActive}, so domains that never say "on" (lock/vacuum/camera)
+ * reach their active icons here.
+ *
+ * A state rule's icon (issue #106) sits *above* the config `icon` for the same
+ * reason its colour already beats `activeColor`: it is the more specific
+ * statement about what this device looks like right now. It also undoes a trap
+ * — setting a config `icon` used to return early here, freezing the glyph and
+ * silently disabling every state-dependent icon below.
  *
  * The registry override lives at `hass.entities[id].icon` and never reaches
  * `attributes.icon`, so a user who set an icon in Settings → Entities sees it
@@ -843,11 +1065,23 @@ export function entityDefaultIcon(
  * takes the state object, not `hass`.
  */
 export function resolveItemIcon(
-  item: { entity?: string; kind: ItemKind; icon?: string },
+  item: {
+    entity?: string;
+    kind: ItemKind;
+    icon?: string;
+    attribute?: string;
+    stateColor?: StateColorRule[];
+  },
   st: { state: string; attributes: Record<string, unknown> } | undefined,
   registryIcon?: string,
 ): string {
-  if (item.icon) return item.icon;
+  // Config strings, so the icon goes through the allowlist (#106): an
+  // unusable value falls through to the next candidate rather than rendering
+  // an empty box.
+  const ruleIcon = cssIcon(matchStateRule(item.stateColor, itemRawValue(item, st))?.icon);
+  if (ruleIcon) return ruleIcon;
+  const configIcon = cssIcon(item.icon);
+  if (configIcon) return configIcon;
   // No entity bound (issue #39: devices that exist physically but not in HA):
   // nothing to derive from, fall straight through to the kind default.
   if (!item.entity) return defaultIcon(item.kind);
@@ -875,6 +1109,205 @@ export function itemIconSize(badgeSize: number): number {
   let s = Math.round(b * 0.62);
   if (s % 2 !== b % 2) s += 1;
   return Math.max(2, s);
+}
+
+/**
+ * What a device's badge holds, resolving {@link FloorItem.badgeContent} against
+ * the `showIcon` boolean it replaced (issue #106). One function so the card,
+ * the editor canvas and the form cannot drift on the migration rule: an
+ * explicit `badgeContent` wins, else a legacy `showIcon: false` means "no
+ * badge", else the icon as always.
+ */
+export function badgeContentOf(item: {
+  badgeContent?: BadgeContent;
+  showIcon?: boolean;
+}): BadgeContent {
+  if (item.badgeContent === "icon" || item.badgeContent === "value" || item.badgeContent === "none")
+    return item.badgeContent;
+  return item.showIcon === false ? "none" : "icon";
+}
+
+/**
+ * The reading a domain shows in its badge when the config does not name one,
+ * with the compact unit that goes with it (issue #106). A thermostat's *state*
+ * is its mode — "heat" — so without this the one device the issue was opened
+ * about would have no number to show.
+ *
+ * The unit is spelled out here rather than read from the entity: `climate` has
+ * no `unit_of_measurement` attribute at all (HA carries the temperature unit on
+ * the system config), so there is nothing to read.
+ */
+const DOMAIN_BADGE_READING: Record<string, { attribute: string; unit: string }> = {
+  climate: { attribute: "current_temperature", unit: "°" },
+  water_heater: { attribute: "current_temperature", unit: "°" },
+  humidifier: { attribute: "current_humidity", unit: "%" },
+};
+
+/** A finite number from a state/attribute value, or undefined. Booleans and blanks are not readings. */
+function numericReading(raw: unknown): number | undefined {
+  if (raw == null || typeof raw === "boolean") return undefined;
+  if (typeof raw === "string" && raw.trim() === "") return undefined;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * A unit short enough to sit inside a 34px circle, or "" to drop it. Degrees
+ * collapse to `°` (the C/F is not in doubt on your own floorplan) and
+ * concentrations lose their unit entirely — CO₂ reads `780`, because `780ppm`
+ * does not fit and the number alone is what people recognise. Anything longer
+ * than three characters is dropped rather than shrinking the number to fit.
+ */
+function compactUnit(unit: unknown): string {
+  if (typeof unit !== "string") return "";
+  const u = unit.trim();
+  if (u === "°C" || u === "°F" || u === "K") return "°";
+  if (u === "ppm" || u === "ppb") return "";
+  return u.length <= 3 ? u : "";
+}
+
+/** Round for the badge: whole numbers, keeping one decimal only where it carries meaning. */
+function compactNumber(n: number): string {
+  return Math.abs(n) < 10 && !Number.isInteger(n) ? n.toFixed(1) : String(Math.round(n));
+}
+
+/**
+ * Fold a big reading into the next unit up, so a plug reads `1.2kW` instead of
+ * `1240W`. Four digits and a unit letter is the widest thing a badge ever has
+ * to hold, and power sensors report watts, so this is the common case rather
+ * than an exotic one. Only W→kW: it is the pair this card actually meets, and
+ * a general unit-prefix engine would be guessing at units it has never seen.
+ */
+function scaleUnit(n: number, unit: string): { n: number; unit: string } {
+  if (unit === "W" && Math.abs(n) >= 1000) return { n: n / 1000, unit: "kW" };
+  return { n, unit };
+}
+
+/** A reading and its own unit, compacted and scaled for the badge. */
+function formatReading(n: number, rawUnit: unknown): string {
+  const scaled = scaleUnit(n, compactUnit(rawUnit));
+  return compactNumber(scaled.n) + scaled.unit;
+}
+
+/**
+ * The number to draw inside a device's badge (issue #106), or undefined when
+ * the device has no numeric reading — in which case the badge keeps its icon,
+ * so turning this on can never leave an empty circle.
+ *
+ * Candidates are tried in order and the first *numeric* one wins:
+ *
+ * 1. the configured `attribute`;
+ * 2. the domain's default reading ({@link DOMAIN_BADGE_READING});
+ * 3. the entity's state;
+ * 4. the secondary entity's reading — which is what makes a smart plug work: a
+ *    `switch` item with `secondaryEntity: sensor.plug_power` shows `1.2kW` and
+ *    still toggles the switch on tap.
+ *
+ * The numeric gate at every step is what makes step 1 safe to put first. The
+ * thermostat in the issue is coloured by `attribute: hvac_action`, whose value
+ * is "heating" — text, so it falls through and the badge still shows the
+ * temperature. Colouring by one reading and displaying another needs no extra
+ * config because of this.
+ *
+ * Deliberately *not* routed through `hass.formatEntityState`: that applies the
+ * user's display precision and the full unit ("21.5 °C"), which is exactly what
+ * does not fit in a badge. This is the one place reading `state` raw is correct.
+ */
+export function badgeValue(
+  hass: RenderHass | undefined,
+  item: {
+    entity?: string;
+    attribute?: string;
+    secondaryEntity?: string;
+    secondaryAttribute?: string;
+  },
+): string | undefined {
+  if (!hass || !item.entity) return undefined;
+  const st = hass.states[item.entity];
+  const attrs = st?.attributes as Record<string, unknown> | undefined;
+  const reading = DOMAIN_BADGE_READING[item.entity.split(".")[0]];
+
+  if (item.attribute) {
+    const n = numericReading(attrs?.[item.attribute]);
+    // A unit only when we know it belongs to *this* attribute:
+    // `unit_of_measurement` describes the state, not an arbitrary attribute, so
+    // borrowing it here would label a battery percentage "°C".
+    if (n !== undefined)
+      return compactNumber(n) + (item.attribute === reading?.attribute ? reading.unit : "");
+  }
+  if (reading) {
+    const n = numericReading(attrs?.[reading.attribute]);
+    if (n !== undefined) return compactNumber(n) + reading.unit;
+  }
+  const own = numericReading(st?.state);
+  if (own !== undefined) return formatReading(own, attrs?.unit_of_measurement);
+
+  // Same secondary resolution as the label line ({@link itemStateText}), so the
+  // two never disagree about which entity the second reading comes from.
+  const secondaryEntity = item.secondaryEntity ?? (item.secondaryAttribute ? item.entity : undefined);
+  if (!secondaryEntity) return undefined;
+  const sec = hass.states[secondaryEntity];
+  const secAttrs = sec?.attributes as Record<string, unknown> | undefined;
+  if (item.secondaryAttribute) {
+    const n = numericReading(secAttrs?.[item.secondaryAttribute]);
+    return n === undefined ? undefined : compactNumber(n);
+  }
+  const n = numericReading(sec?.state);
+  return n === undefined ? undefined : formatReading(n, secAttrs?.unit_of_measurement);
+}
+
+/**
+ * Advance width per character, in units of font-size, for the badge's 600-weight
+ * face. Measured off the rendered card rather than guessed, and rounded *up* at
+ * every entry so the estimate errs wide and the text never overflows the circle.
+ *
+ * Character width is what matters here, not character count: `45%` is wider
+ * than `9999`, and `21°` is narrower than `782`. Sizing by string length — the
+ * obvious first approach — put `1240W` 3.2px outside an 18px badge.
+ */
+const GLYPH_WIDTH: Record<string, number> = { ".": 0.28, "-": 0.38, "°": 0.45, "%": 1.0, k: 0.58 };
+/**
+ * Taken at the *small* end: a font's advance width per font-pixel grows as the
+ * size shrinks (a digit measures 0.637 at 16px but 0.688 at 6px), so the large
+ * figure would under-budget exactly the badges with least room to spare.
+ */
+const DIGIT_WIDTH = 0.7;
+/** Unit letters (W, A, V, lx…) — uppercase is the wide case, so assume it. */
+const LETTER_WIDTH = 0.85;
+
+function estimatedWidth(text: string): number {
+  let w = 0;
+  for (const ch of text) {
+    w += GLYPH_WIDTH[ch] ?? (ch >= "0" && ch <= "9" ? DIGIT_WIDTH : LETTER_WIDTH);
+  }
+  return w;
+}
+
+/**
+ * Font size for a value badge, shared by card and editor: the largest size at
+ * which the reading still fits inside the circle, capped so a short value like
+ * `9°` does not balloon. Uses the same parity nudge as {@link itemIconSize} so
+ * the text box centres on a whole pixel.
+ *
+ * The default 34px badge reads `21°` at 16px, `45%` at 12px and `1240W` at 8px.
+ *
+ * The 6px floor is a legibility floor, not a fitting one: below it nothing is
+ * readable anyway, so a long reading in a very small badge is allowed to reach
+ * the rim rather than shrinking into a smudge. A 5-glyph value wants a badge of
+ * about 30px or more.
+ */
+export function badgeValueSize(badgeSize: number, text: string): number {
+  const b = Math.round(cssNumber(badgeSize, DEFAULT_ITEM_SIZE));
+  // The 1.5px border each side, plus breathing room off the curve.
+  const usable = Math.max(0, b - 6);
+  const fit = estimatedWidth(text) > 0 ? usable / estimatedWidth(text) : b;
+  let s = Math.round(Math.min(b * 0.46, fit));
+  // Nudge *down* to the badge's parity, where itemIconSize nudges up: this
+  // size was just clamped to a width budget, and rounding up would spend a
+  // pixel the reading does not have. (9999 in a 24px badge overflowed by 1.1px
+  // when this went the other way.)
+  if (s % 2 !== b % 2) s -= 1;
+  return Math.max(6, s);
 }
 
 /** Infer a sensible item kind from an entity id's domain. */

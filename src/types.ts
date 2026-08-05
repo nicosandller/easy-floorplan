@@ -209,8 +209,26 @@ export interface FloorItem {
   showName?: boolean;
   /** Label line font size in pixels (issue #59). Default 12. */
   labelSize?: number;
-  /** Show the icon badge. When false only the state/label shows. Default true. */
+  /**
+   * @deprecated Superseded by {@link badgeContent} (issue #106), which is the
+   * same switch with a third position. Still honoured when `badgeContent` is
+   * absent, so every existing config keeps rendering identically —
+   * {@link badgeContentOf} owns that fallback.
+   */
   showIcon?: boolean;
+  /**
+   * What the badge holds (issue #106):
+   *
+   * - `"icon"` (default) — the glyph, as always;
+   * - `"value"` — the device's reading, rounded and compact, *inside* the
+   *   badge: a thermostat reads `21°` in the same circle `stateColor` already
+   *   paints red while it heats, instead of a text line hanging underneath.
+   *   Which reading is worked out per domain by {@link badgeValue}; when
+   *   nothing numeric is available the badge falls back to its icon, so this
+   *   can never leave an empty circle;
+   * - `"none"` — no badge at all, label only (the old `showIcon: false`).
+   */
+  badgeContent?: BadgeContent;
   /**
    * Hide this device on the live card while its entity is inactive (issue
    * #55), so a busy room only shows what is actually doing something. The
@@ -223,7 +241,13 @@ export interface FloorItem {
   size?: number;
   /** Icon rotation in degrees. Default 0. */
   angle?: number;
-  /** How the device is drawn. Default "badge". */
+  /**
+   * How the device is drawn. Default "badge".
+   *
+   * The ripple modes render on any entity. The editor only *offers* them on a
+   * presence device (issue #127) — a ring says "someone is there" — so a ring
+   * on anything else is a YAML-only choice.
+   */
   display?: ItemDisplay;
   /**
    * Animate the icon while the entity is active (issue #48). "auto" (the
@@ -232,6 +256,12 @@ export interface FloorItem {
    * means `playing` or plain `on`, matching the badge highlight);
    * "spin"/"pulse" force that animation (still only while active); "none"
    * disables it.
+   *
+   * "auto" has no counterpart in the editor's menu (issue #127): it shows the
+   * animation auto resolves to for this entity instead of the word, and writes
+   * that value out the moment the badge dropdown is touched. Editing anything
+   * else leaves the key alone, so a config keeps its "auto" — and its meaning —
+   * until someone actually decides about the animation.
    */
   iconAnimation?: IconAnimation;
   /**
@@ -273,6 +303,9 @@ export interface FloorItem {
 
 export type ItemDisplay = "badge" | "ripple" | "iconRipple";
 
+/** What a device badge holds — see {@link FloorItem.badgeContent} (issue #106). */
+export type BadgeContent = "icon" | "value" | "none";
+
 /**
  * One colour rule for {@link FloorItem.stateColor} / {@link Furniture.stateColor}.
  *
@@ -287,6 +320,15 @@ export interface StateColorRule {
   /** Applies when the value equals this exactly (case-insensitive). */
   state?: string;
   color: string;
+  /**
+   * Icon to show while this rule matches (issue #106) — "blinds open" and
+   * "blinds closed" as two glyphs, not just two colours. Optional: a rule
+   * without one only changes the colour, exactly as before.
+   *
+   * Only {@link FloorItem} reads this; furniture and areas share this rule
+   * shape but draw polygons, so an `icon` on their rules is ignored.
+   */
+  icon?: string;
 }
 
 export type IconAnimation = "auto" | "none" | "spin" | "pulse";
@@ -579,6 +621,42 @@ export const DEFAULT_GLOW_COLOR = "#ffd9a0";
  */
 export const GLOW_MIN_OPACITY = 0.18;
 export const GLOW_MAX_OPACITY = 0.6;
+
+/**
+ * Smallest share of its configured `glowRadius` a lamp's pool shrinks to as it
+ * dims (issue #123). Dimming a lamp draws the light *in* as well as thinning
+ * it, which is what dimming looks like in a room.
+ *
+ * Floored for the same reason {@link GLOW_MIN_OPACITY} is: a lamp at 5% would
+ * otherwise collapse to a dot under its own icon and read as switched off.
+ * `glowRadius` stays the full-brightness size, so a lamp at 100% — and any
+ * bulb that reports no brightness at all — is unaffected.
+ */
+export const GLOW_MIN_RADIUS = 0.5;
+
+/**
+ * How far a light's `brightness` may darken its **badge** colour (issue #106,
+ * @ombre33): a lamp at full brightness badges its true `rgb_color`, one dimmed
+ * to nothing badges this fraction of it.
+ *
+ * A floor, not zero, for the same reason {@link GLOW_MIN_OPACITY} is: a badge
+ * that fades to black is a badge you can no longer identify, and a barely-lit
+ * lamp should still read as *that* lamp.
+ */
+export const BADGE_MIN_LIGHTNESS = 0.45;
+
+/**
+ * How much of a light pool passes **through** furniture (issue #106,
+ * @MrMcFlyy) — see {@link renderGlowMask}, which paints this as the mask's
+ * grey level.
+ *
+ * A dial, not a switch, and both ends have been reported as bugs. At 1 a warm
+ * pool floods every sofa in the room and furniture reads as highlighted, which
+ * is #108. At 0 furniture is a hole in the light — darker than the floor
+ * around it, so a lit table looks shadowed, which is what reopened this. In
+ * between, light lands on furniture while its own gray still reads as gray.
+ */
+export const FURNITURE_GLOW_TRANSMISSION = 0.5;
 
 export const DEFAULT_TRACKER_DOT_SIZE = 14;
 

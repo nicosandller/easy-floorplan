@@ -30,7 +30,9 @@ import {
 } from "./types";
 import {
   DEFAULT_LABEL_SIZE,
-  defaultIcon,
+  badgeContentOf,
+  domainIconAnimation,
+  isPresenceEntity,
   normalizePlanRotation,
   openingMotion,
   sliderStyleOf,
@@ -354,8 +356,81 @@ function areaScopeHelper(scope: AreaEntityScope | undefined, base?: string): str
   return base ? `${base}. ${note}` : note;
 }
 
-export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
-  const display = it.display ?? "badge";
+/**
+ * The badge as one choice (issue #127), collapsing the three switches that
+ * used to spell it out — `display`, `badgeContent` and `iconAnimation`.
+ *
+ * They were never three independent questions: `iconAnimation` only means
+ * something while the badge holds an icon, `badgeContent` means nothing at all
+ * while `display: ripple` draws no badge, and picking "Value" left an "Animate
+ * icon" dropdown on screen that did nothing. What is left is one question —
+ * *what is in the badge* — with the animation as three of its answers.
+ *
+ * The ring is the one genuinely separate axis (a spinning fan icon inside a
+ * ripple is a real combination), so it stays its own toggle rather than
+ * becoming options that would multiply this list by two.
+ *
+ * There is no `auto`: "auto" is a fact about the config format, not about what
+ * the user is looking at. The dropdown names the animation the card is
+ * actually playing — a fan reads *spinning*, a media player *pulsing* — by
+ * resolving `auto` through {@link domainIconAnimation}. Nothing about the card
+ * changes; `auto` stays the default `render.ts` applies to configs nobody has
+ * touched.
+ *
+ * The config keys are untouched: this is the editor's view of them, so every
+ * existing YAML — including combinations this dropdown cannot name — keeps
+ * rendering exactly as before.
+ */
+export type BadgeMode = "icon" | "spin" | "pulse" | "value" | "none";
+
+/** {@link BadgeMode} for an item, reading the three keys it stands in for. */
+function badgeModeOf(it: FloorItem): BadgeMode {
+  // A ripple-only device draws no badge, whatever `badgeContent` says.
+  if ((it.display ?? "badge") === "ripple") return "none";
+  const content = badgeContentOf(it);
+  if (content !== "icon") return content;
+  const anim = it.iconAnimation ?? "auto";
+  if (anim === "spin" || anim === "pulse") return anim;
+  // "auto" (and an absent key) shows as whatever it resolves to for this
+  // entity, so the menu never says one thing while the badge does another.
+  return anim === "auto" ? (domainIconAnimation(it.entity) ?? "icon") : "icon";
+}
+
+/** Whether the device draws a ripple ring — the other half of `display`. */
+export function itemHasRipple(it: FloorItem): boolean {
+  return (it.display ?? "badge") !== "badge";
+}
+
+/** The three config keys implied by a badge mode + ring choice. */
+function badgeModePatch(mode: BadgeMode, ripple: boolean): Record<string, unknown> {
+  const out: Record<string, unknown> = {
+    badgeContent: mode === "value" ? "value" : mode === "none" ? "none" : "icon",
+    // Touching the badge retires the `showIcon` boolean it replaced (issue
+    // #106), so a migrated config carries one setting rather than two that
+    // could later be edited into disagreeing. Configs nobody touches keep
+    // working through badgeContentOf's fallback.
+    showIcon: undefined,
+    display: !ripple ? "badge" : mode === "none" ? "ripple" : "iconRipple",
+  };
+  // Only the icon modes say anything about animation; "Value"/"Nothing" leave
+  // the stored setting alone, so switching away and back does not lose it.
+  if (mode !== "value" && mode !== "none") out.iconAnimation = mode === "icon" ? "none" : mode;
+  return out;
+}
+
+/**
+ * `deviceClass` is the entity's HA device class, the one hass-derived fact the
+ * device form needs: it is what separates a motion sensor from a door contact,
+ * and so decides whether the ripple ring is offered at all (issue #127). The
+ * editor reads it off `hass` at the call site, as it already does for openings.
+ */
+export function itemForm(
+  it: FloorItem,
+  areaScope?: AreaEntityScope,
+  deviceClass?: string
+): FormSpec {
+  const ripple = itemHasRipple(it);
+  const presence = isPresenceEntity(it.entity, deviceClass);
   const fields: FormField[] = [
     {
       name: "entity",
@@ -382,7 +457,8 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
       helper: "From the second entity, or this entity if none",
       selector: { attribute: { entity_id: it.secondaryEntity || it.entity } },
     },
-    { name: "icon", label: "Icon", selector: { icon: { placeholder: defaultIcon(it.kind) } } },
+    // The icon is *not* here: it sits by the state rules that can override it
+    // (issue #127), rendered by the editor next to them.
     { name: "name", label: "Name", selector: { text: {} } },
     {
       name: "size",
@@ -391,32 +467,40 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
     },
     angleField(),
     {
-      name: "display",
-      label: "Display",
+      name: "badgeMode",
+      label: "Badge shows",
+      helper:
+        "Animations play only while the entity is active. Value puts the reading in the badge, falling back to the icon when there is no number",
       selector: dropdown(
-        opt("badge", "Icon badge"),
-        opt("ripple", "Ripple"),
-        opt("iconRipple", "Icon + ripple")
-      ),
-    },
-    {
-      name: "iconAnimation",
-      label: "Animate icon",
-      helper: "Plays only while the entity is active",
-      selector: dropdown(
-        opt("auto", "Auto (fan spins; media & vacuum pulse)"),
-        opt("none", "None"),
-        opt("spin", "Spin"),
-        opt("pulse", "Pulse")
+        opt("icon", "Icon, still"),
+        opt("spin", "Icon, spinning"),
+        opt("pulse", "Icon, pulsing"),
+        opt("value", "Value"),
+        opt("none", "Nothing")
       ),
     },
   ];
-  if (display !== "badge") {
+  // A presence device can ring the spot it watches (issue #127) — the same
+  // shape of option as "Cast light" below, offered only where it means
+  // something. A ring on a thermostat says "someone is here", which is a lie.
+  if (presence) {
     fields.push({
-      name: "rippleSize",
-      label: "Ripple size",
-      selector: { number: { min: 40, max: 400, step: 4, mode: "slider", unit_of_measurement: "px" } },
+      name: "ripple",
+      label: "Ripple",
+      // "Presence detected" rather than "the sensor is on": this is offered to
+      // a device_tracker and a person too, and neither of those is a sensor.
+      helper: "Draws a pulsing ring while presence is detected here",
+      selector: { boolean: {} },
     });
+    if (ripple) {
+      fields.push({
+        name: "rippleSize",
+        label: "Ripple size",
+        selector: {
+          number: { min: 40, max: 400, step: 4, mode: "slider", unit_of_measurement: "px" },
+        },
+      });
+    }
   }
   // A light can cast a pool of light onto the plan from where it sits (issue
   // #6). Offered only for lights, since nothing else has a color to cast.
@@ -444,7 +528,6 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
     }
   }
   fields.push(
-    { name: "showIcon", label: "Show icon", selector: { boolean: {} } },
     {
       name: "hideWhenInactive",
       label: "Only when active",
@@ -487,17 +570,15 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
       secondaryEntity: it.secondaryEntity ?? "",
       attribute: it.attribute ?? "",
       secondaryAttribute: it.secondaryAttribute ?? "",
-      icon: it.icon ?? "",
       name: it.name ?? "",
       size: it.size ?? DEFAULT_ITEM_SIZE,
       angle: it.angle ?? 0,
-      display,
-      iconAnimation: it.iconAnimation ?? "auto",
+      badgeMode: badgeModeOf(it),
+      ripple,
       rippleSize: it.rippleSize ?? DEFAULT_RIPPLE_SIZE,
       glow: it.glow ?? false,
       glowRadius: it.glowRadius ?? DEFAULT_GLOW_RADIUS,
       glowColor: it.glowColor ?? "",
-      showIcon: it.showIcon ?? true,
       hideWhenInactive: it.hideWhenInactive ?? false,
       showState: it.showState ?? false,
       showName: it.showName ?? false,
@@ -506,7 +587,20 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
       hold_action: it.hold_action,
       double_tap_action: it.double_tap_action,
     },
-    toPatch: identity,
+    // "Badge shows" and "Ripple" are the editor's spelling of three config
+    // keys (issue #127) — expand them back. Either control alone is a complete
+    // statement about both, so the untouched one is read off the item.
+    toPatch: (patch) => {
+      if (!("badgeMode" in patch) && !("ripple" in patch)) return patch;
+      const { badgeMode, ripple: ring, ...rest } = patch;
+      return {
+        ...rest,
+        ...badgeModePatch(
+          (badgeMode as BadgeMode | undefined) ?? badgeModeOf(it),
+          ring === undefined ? ripple : !!ring
+        ),
+      };
+    },
   };
 }
 

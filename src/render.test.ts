@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { nothing } from "lit";
+import { html, nothing } from "lit";
 import type { Area, Furniture, FurnitureType, ItemKind } from "./types";
 import {
   FURNITURE_DEFAULT_SIZE,
@@ -7,6 +7,9 @@ import {
   DEFAULT_GLOW_COLOR,
   GLOW_MIN_OPACITY,
   GLOW_MAX_OPACITY,
+  GLOW_MIN_RADIUS,
+  BADGE_MIN_LIGHTNESS,
+  FURNITURE_GLOW_TRANSMISSION,
   SUN_ELEVATION_NIGHT,
   SUN_ELEVATION_DAY,
 } from "./types";
@@ -50,7 +53,13 @@ import {
   isEntityOn,
   entityIsActive,
   resolveItemIcon,
+  matchStateRule,
+  badgeContentOf,
+  badgeValue,
+  badgeValueSize,
   resolveIconAnimation,
+  domainIconAnimation,
+  isPresenceEntity,
   itemIconSize,
   normalizePlanRotation,
   rotatedCanvasSize,
@@ -62,6 +71,7 @@ import {
   WALL_THICKNESS,
   areaColor,
   glowPaint,
+  lightBadgePaint,
   editorGlowPaint,
   glowReach,
   renderGlowMask,
@@ -69,6 +79,53 @@ import {
   renderGlow,
 } from "./render";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
+
+/**
+ * Render a Lit template to the string it would emit, for asserting on markup.
+ *
+ * One copy on purpose. There were nine, in three variants that had already
+ * drifted: the weakest stringified Lit's `nothing` **symbol** into the markup
+ * as the literal text "Symbol(lit-nothing)", which is how a vacuous assertion
+ * slipped through once before (#111) — a test looking for an absent value
+ * found that text and passed. This is the strict variant: `nothing`, null and
+ * booleans all render as nothing at all, which is what the browser does.
+ *
+ * Note the output is Lit's *interpolated* form, so attribute values come out
+ * unquoted — assertions read `toContain("fill=#4caf50")`, not `fill="#4caf50"`.
+ */
+const flattenMarkup = (node: unknown): string => {
+  if (node == null || typeof node === "boolean") return "";
+  if (typeof node === "symbol") return "";
+  if (Array.isArray(node)) return node.map(flattenMarkup).join("");
+  if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+    const { strings, values } = node as { strings: string[]; values: unknown[] };
+    return strings.reduce(
+      (acc, s, i) => acc + s + (i < values.length ? flattenMarkup(values[i]) : ""),
+      "",
+    );
+  }
+  return String(node);
+};
+
+describe("flattenMarkup — the test helper itself", () => {
+  // Every markup assertion in this file runs through it, so a weakened copy
+  // would not fail loudly: it would quietly make assertions pass. This is the
+  // guard on the consolidation.
+  it("renders Lit's omit sentinel as nothing at all, not as its symbol text", () => {
+    expect(flattenMarkup(nothing)).toBe("");
+    expect(flattenMarkup(html`<i a=${nothing}></i>`)).toBe("<i a=></i>");
+    expect(flattenMarkup(html`<i a=${nothing}></i>`)).not.toContain("Symbol");
+  });
+
+  it("drops null, undefined and booleans, as the browser does", () => {
+    for (const v of [null, undefined, true, false]) expect(flattenMarkup(v)).toBe("");
+  });
+
+  it("still interpolates real values, so assertions are not vacuous", () => {
+    expect(flattenMarkup(html`<i a=${"x"} b=${2}></i>`)).toBe("<i a=x b=2></i>");
+    expect(flattenMarkup([html`<a></a>`, html`<b></b>`])).toBe("<a></a><b></b>");
+  });
+});
 
 describe("snapToWall", () => {
   const hWall = { x1: 0, y1: 0, x2: 100, y2: 0 }; // horizontal
@@ -699,6 +756,79 @@ describe("isEntityOn / resolveItemIcon", () => {
       resolveItemIcon(item, { state: "on", attributes: { icon: "mdi:from-entity" } }, undefined)
     ).toBe("mdi:from-entity");
   });
+
+  // Issue #106: "you can not only change the color, but also the icon
+  // depending on the state" — blinds open vs. blinds closed.
+  describe("icon from a state rule (#106)", () => {
+    const blind = {
+      entity: "cover.blind",
+      kind: "cover" as const,
+      stateColor: [
+        { state: "open", color: "#4caf50", icon: "mdi:blinds-open" },
+        { state: "closed", color: "#9e9e9e", icon: "mdi:blinds" },
+      ],
+    };
+    const st = (state: string) => ({ state, attributes: {} });
+
+    it("swaps the glyph with the state", () => {
+      expect(resolveItemIcon(blind, st("open"))).toBe("mdi:blinds-open");
+      expect(resolveItemIcon(blind, st("closed"))).toBe("mdi:blinds");
+    });
+
+    it("beats a config icon — which used to freeze the glyph outright", () => {
+      const pinned = { ...blind, icon: "mdi:pinned" };
+      expect(resolveItemIcon(pinned, st("open"))).toBe("mdi:blinds-open");
+      // No rule matches: the config icon is still in charge.
+      expect(resolveItemIcon(pinned, st("opening"))).toBe("mdi:pinned");
+    });
+
+    it("a rule with no icon changes nothing (colour-only rules are unaffected)", () => {
+      const colourOnly = { ...blind, stateColor: [{ state: "open", color: "#4caf50" }] };
+      expect(resolveItemIcon(colourOnly, st("open"))).toBe(
+        entityDefaultIcon("cover.blind", undefined, true) ?? defaultIcon("cover")
+      );
+      expect(resolveItemIcon({ ...colourOnly, icon: "mdi:pinned" }, st("open"))).toBe("mdi:pinned");
+    });
+
+    it("judges the rule on the same reading the colour uses (an attribute when set)", () => {
+      const climate = {
+        entity: "climate.hall",
+        kind: "climate" as const,
+        attribute: "hvac_action",
+        stateColor: [{ state: "heating", color: "red", icon: "mdi:fire" }],
+      };
+      expect(resolveItemIcon(climate, { state: "heat", attributes: { hvac_action: "heating" } })).toBe(
+        "mdi:fire"
+      );
+      expect(resolveItemIcon(climate, { state: "heat", attributes: { hvac_action: "idle" } })).toBe(
+        defaultIcon("climate")
+      );
+    });
+
+    it("drops an unusable icon rather than rendering an empty box", () => {
+      const hostile = {
+        ...blind,
+        icon: "mdi:fallback",
+        stateColor: [{ state: "open", color: "red", icon: '"><script>' }],
+      };
+      const icon = resolveItemIcon(hostile, st("open"));
+      expect(icon).toBe("mdi:fallback");
+      expect(icon).not.toContain("<");
+    });
+
+    it("a threshold rule can carry an icon too", () => {
+      const battery = {
+        entity: "sensor.battery",
+        kind: "sensor" as const,
+        stateColor: [
+          { above: 80, color: "green", icon: "mdi:battery" },
+          { color: "red", icon: "mdi:battery-alert" },
+        ],
+      };
+      expect(resolveItemIcon(battery, st("95"))).toBe("mdi:battery");
+      expect(resolveItemIcon(battery, st("12"))).toBe("mdi:battery-alert");
+    });
+  });
 });
 
 describe("collectWatchedEntities", () => {
@@ -995,6 +1125,50 @@ describe("resolveIconAnimation (issue #48)", () => {
   });
 });
 
+describe("domainIconAnimation (issue #127)", () => {
+  it("names what auto means, so the editor can offer it by name", () => {
+    expect(domainIconAnimation("fan.ceiling")).toBe("spin");
+    expect(domainIconAnimation("media_player.tv")).toBe("pulse");
+    expect(domainIconAnimation("vacuum.robo")).toBe("pulse");
+    expect(domainIconAnimation("light.a")).toBeUndefined();
+    expect(domainIconAnimation(undefined)).toBeUndefined();
+  });
+
+  it("is the same table resolveIconAnimation applies, so the two cannot drift", () => {
+    // Active fan, nothing configured → auto → spin, both ways round.
+    expect(resolveIconAnimation({ entity: "fan.ceiling" }, "on")).toBe(
+      domainIconAnimation("fan.ceiling"),
+    );
+  });
+});
+
+describe("isPresenceEntity (issue #127)", () => {
+  it("accepts the binary-sensor classes that mean someone is there", () => {
+    for (const dc of ["motion", "occupancy", "presence"]) {
+      expect(isPresenceEntity("binary_sensor.hall", dc)).toBe(true);
+    }
+  });
+
+  it("accepts trackers and people on their domain alone", () => {
+    expect(isPresenceEntity("device_tracker.phone", undefined)).toBe(true);
+    expect(isPresenceEntity("person.sam", undefined)).toBe(true);
+  });
+
+  it("rejects sensors that detect something else, and an unclassed one", () => {
+    expect(isPresenceEntity("binary_sensor.front_door", "door")).toBe(false);
+    expect(isPresenceEntity("binary_sensor.leak", "moisture")).toBe(false);
+    // No class at all could be anything — guessing from the name would ring
+    // doorbells and smoke alarms.
+    expect(isPresenceEntity("binary_sensor.presence", undefined)).toBe(false);
+  });
+
+  it("rejects other domains, whatever class they carry", () => {
+    expect(isPresenceEntity("light.a", "motion")).toBe(false);
+    expect(isPresenceEntity("sensor.motion", "motion")).toBe(false);
+    expect(isPresenceEntity(undefined, "motion")).toBe(false);
+  });
+});
+
 describe("resolveItemIcon without an entity (issue #39)", () => {
   it("falls back to the kind default when no entity is bound", () => {
     expect(resolveItemIcon({ entity: "", kind: "sensor" }, undefined)).toBe(
@@ -1102,17 +1276,8 @@ describe("plan rotation (issue #33)", () => {
 
 describe("fishTank glyph scales with its size (issue #72 review)", () => {
   /** Flatten a Lit template (and nested ones) back to markup. */
-  const flatten = (node: unknown): string => {
-    if (node == null || node === false) return "";
-    if (Array.isArray(node)) return node.map(flatten).join("");
-    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
-      const { strings, values } = node as { strings: string[]; values: unknown[] };
-      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
-    }
-    return String(node);
-  };
   const bubbleRadius = (w: number, h: number) => {
-    const markup = flatten(renderFurniture({ id: "f", type: "fishTank", x: 0, y: 0, w, h }));
+    const markup = flattenMarkup(renderFurniture({ id: "f", type: "fishTank", x: 0, y: 0, w, h }));
     return Number(markup.match(/<circle[^>]*\sr=([\d.]+)/)?.[1]);
   };
 
@@ -1127,7 +1292,7 @@ describe("fishTank glyph scales with its size (issue #72 review)", () => {
   // whole drawing — base shape and detail strokes alike, not just the outline.
   describe("renderFurniture color override", () => {
     const markupOf = (override?: string) =>
-      flatten(
+      flattenMarkup(
         renderFurniture(
           { id: "f", type: "plant", x: 0, y: 0, w: 40, h: 40, color: "#111111" },
           override,
@@ -1284,6 +1449,219 @@ describe("resolveStateColor (issue #68)", () => {
       expect(resolveStateColor(rules, "")).toBe("red");
     });
   });
+
+  // The colour and the icon (#106) must come off the *same* matched rule, so
+  // the matcher returns the rule and resolveStateColor is a wrapper over it.
+  describe("matchStateRule (#106)", () => {
+    it("returns the very rule object that supplied the colour", () => {
+      const hot = { above: 26, color: "red", icon: "mdi:fire" };
+      const rs = [hot, { above: 24, color: "orange" }, { color: "white" }];
+      expect(matchStateRule(rs, 30)).toBe(hot);
+      expect(matchStateRule(rs, 30)?.icon).toBe("mdi:fire");
+      // …and the wrapper still answers exactly as it did.
+      expect(resolveStateColor(rs, 30)).toBe(hot.color);
+    });
+
+    it("agrees with resolveStateColor across the whole precedence table", () => {
+      const rs = [
+        { above: 26, color: "red" },
+        { above: 24, color: "orange" },
+        { state: "heat", color: "blue" },
+        { color: "white" },
+      ];
+      for (const v of [30, 25, 20, "heat", "HEAT", "", null, undefined, true, "nonsense"]) {
+        expect(matchStateRule(rs, v)?.color).toBe(resolveStateColor(rs, v));
+      }
+    });
+
+    it("no rules, no match", () => {
+      expect(matchStateRule(undefined, 1)).toBeUndefined();
+      expect(matchStateRule([], 1)).toBeUndefined();
+    });
+  });
+});
+
+describe("badgeContentOf (#106)", () => {
+  it("defaults to the icon", () => {
+    expect(badgeContentOf({})).toBe("icon");
+    expect(badgeContentOf({ showIcon: true })).toBe("icon");
+  });
+
+  it("honours a legacy showIcon: false as 'no badge'", () => {
+    expect(badgeContentOf({ showIcon: false })).toBe("none");
+  });
+
+  it("an explicit badgeContent wins over the boolean it replaced", () => {
+    expect(badgeContentOf({ badgeContent: "value", showIcon: false })).toBe("value");
+    expect(badgeContentOf({ badgeContent: "icon", showIcon: false })).toBe("icon");
+    expect(badgeContentOf({ badgeContent: "none", showIcon: true })).toBe("none");
+  });
+
+  it("ignores a junk value rather than blanking the badge", () => {
+    expect(badgeContentOf({ badgeContent: "bogus" as never })).toBe("icon");
+    expect(badgeContentOf({ badgeContent: "bogus" as never, showIcon: false })).toBe("none");
+  });
+});
+
+describe("badgeValue (#106)", () => {
+  const hass = (states: Record<string, { state: string; attributes?: object }>) =>
+    ({
+      states: Object.fromEntries(
+        Object.entries(states).map(([id, s]) => [id, { entity_id: id, attributes: {}, ...s }]),
+      ),
+    }) as unknown as RenderHass;
+
+  it("shows a thermostat's temperature — its state is a mode, not a number", () => {
+    const h = hass({
+      "climate.hall": { state: "heat", attributes: { current_temperature: 21.4 } },
+    });
+    expect(badgeValue(h, { entity: "climate.hall" })).toBe("21°");
+  });
+
+  // The case from the issue: colour by hvac_action, still read the temperature.
+  it("falls through a non-numeric configured attribute to the domain reading", () => {
+    const h = hass({
+      "climate.hall": {
+        state: "heat",
+        attributes: { hvac_action: "heating", current_temperature: 21.4 },
+      },
+    });
+    expect(badgeValue(h, { entity: "climate.hall", attribute: "hvac_action" })).toBe("21°");
+  });
+
+  it("uses a numeric configured attribute when there is one", () => {
+    const h = hass({
+      "climate.hall": { state: "heat", attributes: { temperature: 19, current_temperature: 21.4 } },
+    });
+    expect(badgeValue(h, { entity: "climate.hall", attribute: "temperature" })).toBe("19");
+  });
+
+  it("reads a sensor's own state, with a compact unit", () => {
+    const h = hass({
+      "sensor.co2": { state: "780", attributes: { unit_of_measurement: "ppm" } },
+      "sensor.temp": { state: "17.94", attributes: { unit_of_measurement: "°C" } },
+      "sensor.hum": { state: "45.2", attributes: { unit_of_measurement: "%" } },
+      "sensor.lux": { state: "1200", attributes: { unit_of_measurement: "lx" } },
+      "sensor.aqi": { state: "12", attributes: { unit_of_measurement: "µg/m³" } },
+    });
+    expect(badgeValue(h, { entity: "sensor.co2" })).toBe("780"); // ppm dropped
+    expect(badgeValue(h, { entity: "sensor.temp" })).toBe("18°"); // °C collapses
+    expect(badgeValue(h, { entity: "sensor.hum" })).toBe("45%");
+    expect(badgeValue(h, { entity: "sensor.lux" })).toBe("1200lx");
+    expect(badgeValue(h, { entity: "sensor.aqi" })).toBe("12"); // too long to fit
+  });
+
+  it("keeps one decimal only for small non-integers", () => {
+    const h = hass({
+      "sensor.power": { state: "1.24", attributes: { unit_of_measurement: "kW" } },
+      "sensor.big": { state: "1234.6", attributes: { unit_of_measurement: "W" } },
+      "sensor.whole": { state: "9", attributes: {} },
+    });
+    expect(badgeValue(h, { entity: "sensor.power" })).toBe("1.2kW");
+    // Watts fold into kW rather than becoming a five-glyph reading.
+    expect(badgeValue(h, { entity: "sensor.big" })).toBe("1.2kW");
+    expect(badgeValue(h, { entity: "sensor.whole" })).toBe("9");
+  });
+
+  // A smart plug: the switch has no reading, its power sensor does.
+  it("falls back to the secondary entity, which is what makes a plug work", () => {
+    const h = hass({
+      "switch.plug": { state: "on" },
+      "sensor.plug_power": { state: "1240", attributes: { unit_of_measurement: "W" } },
+    });
+    expect(
+      badgeValue(h, { entity: "switch.plug", secondaryEntity: "sensor.plug_power" }),
+    ).toBe("1.2kW");
+  });
+
+  it("returns undefined when nothing numeric exists, so the badge keeps its icon", () => {
+    const h = hass({
+      "light.kitchen": { state: "on" },
+      "cover.blind": { state: "closed" },
+      "sensor.dead": { state: "unavailable", attributes: { unit_of_measurement: "°C" } },
+      "sensor.blank": { state: "" },
+    });
+    expect(badgeValue(h, { entity: "light.kitchen" })).toBeUndefined();
+    expect(badgeValue(h, { entity: "cover.blind" })).toBeUndefined();
+    expect(badgeValue(h, { entity: "sensor.dead" })).toBeUndefined();
+    expect(badgeValue(h, { entity: "sensor.blank" })).toBeUndefined();
+    expect(badgeValue(h, { entity: "" })).toBeUndefined();
+    expect(badgeValue(undefined, { entity: "sensor.temp" })).toBeUndefined();
+  });
+
+  it("does not borrow the state's unit for an unrelated attribute", () => {
+    const h = hass({
+      "sensor.temp": { state: "18", attributes: { unit_of_measurement: "°C", battery_level: 87 } },
+    });
+    expect(badgeValue(h, { entity: "sensor.temp", attribute: "battery_level" })).toBe("87");
+  });
+
+  it("a humidifier reads its current humidity", () => {
+    const h = hass({ "humidifier.bed": { state: "on", attributes: { current_humidity: 44 } } });
+    expect(badgeValue(h, { entity: "humidifier.bed" })).toBe("44%");
+  });
+});
+
+describe("badgeValueSize (#106)", () => {
+  // Measured advance widths for the badge's 600-weight face, in units of
+  // font-size. Sizing must keep the rendered text inside the circle for every
+  // one of these — the bug this replaced sized by string length, which put
+  // "1240W" 3.2px outside an 18px badge.
+  const MEASURED: Record<string, number> = {
+    "9°": 1.18,
+    "21°": 1.66,
+    "-12°": 2.17,
+    "45%": 2.38,
+    "100%": 2.91,
+    "782": 1.95,
+    "9999": 2.76,
+    "1240W": 3.54,
+    "1.2kW": 3.07,
+    "12.5A": 2.88,
+  };
+
+  it("keeps the rendered text inside the badge at every realistic size", () => {
+    for (const badge of [24, 30, 34, 48, 80]) {
+      for (const [text, perPx] of Object.entries(MEASURED)) {
+        const size = badgeValueSize(badge, text);
+        const width = size * perPx;
+        // Either it fits, or sizing hit the documented 6px legibility floor —
+        // below which shrinking further would trade an overhang for a smudge.
+        const ok = width <= badge - 3 || size === 6;
+        expect({ badge, text, size, width: +width.toFixed(1), ok }).toEqual({
+          badge, text, size, width: +width.toFixed(1), ok: true,
+        });
+      }
+    }
+  });
+
+  it("sizes by glyph width, not string length", () => {
+    // Same length, very different widths: all three must not get one size.
+    const sizes = ["21°", "782", "45%"].map((t) => badgeValueSize(34, t));
+    expect(new Set(sizes).size).toBeGreaterThan(1);
+    // The narrowest reading gets the largest type.
+    expect(badgeValueSize(34, "21°")).toBeGreaterThan(badgeValueSize(34, "45%"));
+    expect(badgeValueSize(34, "45%")).toBeGreaterThan(badgeValueSize(34, "1240W"));
+  });
+
+  it("gives the default badge a legible 21° and a fitting 1240W", () => {
+    expect(badgeValueSize(34, "21°")).toBe(14);
+    expect(badgeValueSize(34, "1240W")).toBe(8);
+  });
+
+  it("caps short readings so 9° does not balloon, and floors long ones at 6px", () => {
+    // 46% of 80 is 36.8 → 37, nudged down to 36 for the badge's even parity.
+    expect(badgeValueSize(80, "9°")).toBe(36);
+    // A 5-glyph reading in a tiny badge hits the legibility floor rather than
+    // shrinking into a smudge; it wants a bigger badge instead.
+    expect(badgeValueSize(18, "1240W")).toBe(6);
+  });
+
+  it("shares itemIconSize's parity nudge, and survives a junk size", () => {
+    expect(badgeValueSize(34, "21°") % 2).toBe(0);
+    expect(badgeValueSize(19, "9°") % 2).toBe(1);
+    expect(badgeValueSize("40px;color:red" as never, "21°")).toBe(badgeValueSize(34, "21°"));
+  });
 });
 
 describe("windowSash (issue #73)", () => {
@@ -1353,32 +1731,23 @@ describe("polygonCentroid", () => {
 
 describe("renderArea", () => {
   /** Flatten a Lit template back to markup (see the fishTank glyph test above). */
-  const flatten = (node: unknown): string => {
-    if (node == null || node === false) return "";
-    if (Array.isArray(node)) return node.map(flatten).join("");
-    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
-      const { strings, values } = node as { strings: string[]; values: unknown[] };
-      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
-    }
-    return String(node);
-  };
   const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
 
   it("emits the vertex points and the default fill/opacity", () => {
-    const markup = flatten(renderArea({ id: "a", points: square }));
+    const markup = flattenMarkup(renderArea({ id: "a", points: square }));
     expect(markup).toContain("points=0,0 10,0 10,10 0,10");
     expect(markup).toContain("fill=var(--primary-color, #03a9f4)");
     expect(markup).toContain("fill-opacity=0.25");
   });
 
   it("honors a custom color and opacity", () => {
-    const markup = flatten(renderArea({ id: "a", points: square, color: "#ff0000", opacity: 0.6 }));
+    const markup = flattenMarkup(renderArea({ id: "a", points: square, color: "#ff0000", opacity: 0.6 }));
     expect(markup).toContain("fill=#ff0000");
     expect(markup).toContain("fill-opacity=0.6");
   });
 
   it("falls back to the default color for an unsafe value (css-safe gate)", () => {
-    const markup = flatten(
+    const markup = flattenMarkup(
       renderArea({ id: "a", points: square, color: "red;position:fixed;inset:0" })
     );
     expect(markup).toContain("fill=var(--primary-color, #03a9f4)");
@@ -1386,19 +1755,19 @@ describe("renderArea", () => {
   });
 
   it("uses the live fill color over the resting one (#6)", () => {
-    const markup = flatten(renderArea({ id: "a", points: square, color: "#ff0000" }, "#4caf50"));
+    const markup = flattenMarkup(renderArea({ id: "a", points: square, color: "#ff0000" }, "#4caf50"));
     expect(markup).toContain("fill=#4caf50");
     expect(markup).not.toContain("fill=#ff0000");
   });
 
   it("applies activeOpacity only while live (#6)", () => {
     const a = { id: "a", points: square, opacity: 0.2, activeOpacity: 0.7 };
-    expect(flatten(renderArea(a, "#4caf50"))).toContain("fill-opacity=0.7");
-    expect(flatten(renderArea(a))).toContain("fill-opacity=0.2");
+    expect(flattenMarkup(renderArea(a, "#4caf50"))).toContain("fill-opacity=0.7");
+    expect(flattenMarkup(renderArea(a))).toContain("fill-opacity=0.2");
   });
 
   it("keeps the resting opacity when activeOpacity is unset (#6)", () => {
-    const markup = flatten(renderArea({ id: "a", points: square, opacity: 0.2 }, "#4caf50"));
+    const markup = flattenMarkup(renderArea({ id: "a", points: square, opacity: 0.2 }, "#4caf50"));
     expect(markup).toContain("fill-opacity=0.2");
   });
 
@@ -1410,7 +1779,7 @@ describe("renderArea", () => {
       { id: "a", points: square, highlight: "both" },
     ];
     for (const a of cases) {
-      const markup = flatten(renderArea(a, "#4caf50"));
+      const markup = flattenMarkup(renderArea(a, "#4caf50"));
       expect(markup).toContain('stroke="none"');
       expect(markup).toContain('stroke-width="0"');
       expect(markup).not.toContain("stroke=#123456");
@@ -1419,7 +1788,7 @@ describe("renderArea", () => {
 
   it("highlight=border leaves the fill at rest (#6)", () => {
     const a = { id: "a", points: square, color: "#ff0000", highlight: "border" as const };
-    expect(flatten(renderArea(a, "#4caf50"))).toContain("fill=#ff0000");
+    expect(flattenMarkup(renderArea(a, "#4caf50"))).toContain("fill=#ff0000");
   });
 
   it("highlight=border ignores activeOpacity, which is a fill concern (#6)", () => {
@@ -1430,26 +1799,17 @@ describe("renderArea", () => {
       activeOpacity: 0.7,
       highlight: "border" as const,
     };
-    expect(flatten(renderArea(a, "#4caf50"))).toContain("fill-opacity=0.2");
+    expect(flattenMarkup(renderArea(a, "#4caf50"))).toContain("fill-opacity=0.2");
   });
 
   it("highlight=both still paints the live fill (#6)", () => {
     const a = { id: "a", points: square, highlight: "both" as const };
-    expect(flatten(renderArea(a, "#4caf50"))).toContain("fill=#4caf50");
+    expect(flattenMarkup(renderArea(a, "#4caf50"))).toContain("fill=#4caf50");
   });
 });
 
 describe("renderAreaBorder", () => {
   /** Flatten a Lit template back to markup (see the fishTank glyph test above). */
-  const flatten = (node: unknown): string => {
-    if (node == null || node === false) return "";
-    if (Array.isArray(node)) return node.map(flatten).join("");
-    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
-      const { strings, values } = node as { strings: string[]; values: unknown[] };
-      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
-    }
-    return String(node);
-  };
   const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
 
   it("draws nothing by default (#6)", () => {
@@ -1464,13 +1824,13 @@ describe("renderAreaBorder", () => {
   });
 
   it("never fills — the fill is renderArea's pass, below the walls", () => {
-    const markup = flatten(renderAreaBorder({ id: "a", points: square, borderColor: "#123456" }));
+    const markup = flattenMarkup(renderAreaBorder({ id: "a", points: square, borderColor: "#123456" }));
     expect(markup).toContain('fill="none"');
     expect(markup).toContain("points=0,0 10,0 10,10 0,10");
   });
 
   it("honors a static borderColor and borderWidth (#6)", () => {
-    const markup = flatten(
+    const markup = flattenMarkup(
       renderAreaBorder({ id: "a", points: square, borderColor: "#123456", borderWidth: 5 })
     );
     expect(markup).toContain("stroke=#123456");
@@ -1478,7 +1838,7 @@ describe("renderAreaBorder", () => {
   });
 
   it("falls back to the thinner default width for a static border (#6)", () => {
-    const markup = flatten(renderAreaBorder({ id: "a", points: square, borderColor: "#123456" }));
+    const markup = flattenMarkup(renderAreaBorder({ id: "a", points: square, borderColor: "#123456" }));
     expect(markup).toContain("stroke-width=3");
   });
 
@@ -1486,14 +1846,14 @@ describe("renderAreaBorder", () => {
     // The wall is centered on the line the polygon follows, so the room owns
     // half of it. Anything wider spills onto the floor and over furniture.
     const a = { id: "a", points: square, highlight: "border" as const };
-    expect(flatten(renderAreaBorder(a, "#4caf50"))).toContain(
+    expect(flattenMarkup(renderAreaBorder(a, "#4caf50"))).toContain(
       `stroke-width=${WALL_THICKNESS / 2}`
     );
   });
 
   it("lets an explicit borderWidth override the live default", () => {
     const a = { id: "a", points: square, highlight: "border" as const, borderWidth: 2 };
-    expect(flatten(renderAreaBorder(a, "#4caf50"))).toContain("stroke-width=2");
+    expect(flattenMarkup(renderAreaBorder(a, "#4caf50"))).toContain("stroke-width=2");
   });
 
   it("keeps a live border inside the opening cut, so it never crosses a doorway", () => {
@@ -1503,14 +1863,14 @@ describe("renderAreaBorder", () => {
     // paints straight across every door and window on the plan.
     const reach = (WALL_THICKNESS + 4) / 2;
     const a = { id: "a", points: square, highlight: "border" as const };
-    const drawn = flatten(renderAreaBorder(a, "#4caf50", "c"));
+    const drawn = flattenMarkup(renderAreaBorder(a, "#4caf50", "c"));
     const visible = Number(/stroke-width=([\d.]+)/.exec(drawn)![1]) / 2;
     expect(visible).toBeLessThanOrEqual(reach);
   });
 
   it("clips a live border to its own room, so a shared wall splits", () => {
     const a = { id: "a", points: square, highlight: "border" as const };
-    const markup = flatten(renderAreaBorder(a, "#4caf50", "clip-1"));
+    const markup = flattenMarkup(renderAreaBorder(a, "#4caf50", "clip-1"));
     expect(markup).toContain('<clipPath id=clip-1>');
     expect(markup).toContain("clip-path=url(#clip-1)");
   });
@@ -1518,11 +1878,11 @@ describe("renderAreaBorder", () => {
   it("draws a clipped border at double width, so borderWidth is what is seen", () => {
     const a = { id: "a", points: square, highlight: "border" as const };
     // Half of the stroke is clipped away, leaving the room's half-wall showing.
-    expect(flatten(renderAreaBorder(a, "#4caf50", "c"))).toContain(
+    expect(flattenMarkup(renderAreaBorder(a, "#4caf50", "c"))).toContain(
       `stroke-width=${WALL_THICKNESS}`
     );
     const wide = { ...a, borderWidth: 5 };
-    expect(flatten(renderAreaBorder(wide, "#4caf50", "c"))).toContain("stroke-width=10");
+    expect(flattenMarkup(renderAreaBorder(wide, "#4caf50", "c"))).toContain("stroke-width=10");
   });
 
   it("carries the CSS hooks under its own class, so fill and outline differ (#105)", () => {
@@ -1532,7 +1892,7 @@ describe("renderAreaBorder", () => {
       highlight: "border" as const,
       entity: "binary_sensor.hall_occupancy",
     };
-    const markup = flatten(renderAreaBorder(a, "#4caf50", "c"));
+    const markup = flattenMarkup(renderAreaBorder(a, "#4caf50", "c"));
     expect(markup).toContain('class="fp-area-border"');
     expect(markup).toContain("data-id=area_hall");
     expect(markup).toContain("data-entity=binary_sensor.hall_occupancy");
@@ -1542,7 +1902,7 @@ describe("renderAreaBorder", () => {
     // A <clipPath> paints nothing, so a rule matching one would appear to do
     // nothing at all. Only the drawn polygon carries the hooks.
     const a = { id: "area_hall", points: square, highlight: "border" as const };
-    const markup = flatten(renderAreaBorder(a, "#4caf50", "c"));
+    const markup = flattenMarkup(renderAreaBorder(a, "#4caf50", "c"));
     expect(markup).toContain("<clipPath");
     expect(markup.match(/data-id=/g)).toHaveLength(1);
     expect(markup.match(/class="fp-area-border"/g)).toHaveLength(1);
@@ -1550,7 +1910,7 @@ describe("renderAreaBorder", () => {
 
   it("never clips a static border — decoration is drawn as authored (#6)", () => {
     const a = { id: "a", points: square, borderColor: "#123456" };
-    const markup = flatten(renderAreaBorder(a, undefined, "clip-1"));
+    const markup = flattenMarkup(renderAreaBorder(a, undefined, "clip-1"));
     expect(markup).not.toContain("clip-path");
     expect(markup).toContain("stroke-width=3");
   });
@@ -1563,24 +1923,24 @@ describe("renderAreaBorder", () => {
 
   it("highlight=border paints the live color (#6)", () => {
     const a = { id: "a", points: square, highlight: "border" as const };
-    expect(flatten(renderAreaBorder(a, "#4caf50"))).toContain("stroke=#4caf50");
+    expect(flattenMarkup(renderAreaBorder(a, "#4caf50"))).toContain("stroke=#4caf50");
   });
 
   it("highlight=both paints the outline too (#6)", () => {
     const a = { id: "a", points: square, highlight: "both" as const };
-    expect(flatten(renderAreaBorder(a, "#4caf50"))).toContain("stroke=#4caf50");
+    expect(flattenMarkup(renderAreaBorder(a, "#4caf50"))).toContain("stroke=#4caf50");
   });
 
   it("a live color overrides a static borderColor when it targets the border (#6)", () => {
     const a = { id: "a", points: square, borderColor: "#111111", highlight: "border" as const };
-    const markup = flatten(renderAreaBorder(a, "#4caf50"));
+    const markup = flattenMarkup(renderAreaBorder(a, "#4caf50"));
     expect(markup).toContain("stroke=#4caf50");
     expect(markup).not.toContain("#111111");
   });
 
   it("keeps the static borderColor while the area is at rest (#6)", () => {
     const a = { id: "a", points: square, borderColor: "#111111", highlight: "border" as const };
-    expect(flatten(renderAreaBorder(a))).toContain("stroke=#111111");
+    expect(flattenMarkup(renderAreaBorder(a))).toContain("stroke=#111111");
   });
 });
 
@@ -1619,18 +1979,9 @@ describe("areaColor", () => {
 });
 
 describe("renderWallMask region (issue #102)", () => {
-  const flatten = (node: unknown): string => {
-    if (node == null || typeof node === "boolean") return "";
-    if (Array.isArray(node)) return node.map(flatten).join("");
-    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
-      const { strings, values } = node as { strings: string[]; values: unknown[] };
-      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
-    }
-    return String(node);
-  };
 
   it("states its own region instead of inheriting the viewport default", () => {
-    const markup = flatten(renderWallMask([], 1000, 600, "m1"));
+    const markup = flattenMarkup(renderWallMask([], 1000, 600, "m1"));
     const mask = markup.slice(markup.indexOf("<mask"), markup.indexOf(">", markup.indexOf("<mask")));
     // Without these, the region falls back to -10%..110% of the viewport, which
     // the rotated card swaps — clipping walls past x=660 on a 1000x600 plan.
@@ -1643,7 +1994,7 @@ describe("renderWallMask region (issue #102)", () => {
   it("covers the whole plan even where the viewport is narrower than it", () => {
     // A 90°-rotated 1000x600 plan is drawn into a 600x1000 viewport, so the
     // region must reach plan x=1000 regardless of that 600.
-    const markup = flatten(renderWallMask([], 1000, 600, "m2"));
+    const markup = flattenMarkup(renderWallMask([], 1000, 600, "m2"));
     const nums = [...markup.matchAll(/(?:x|y|width|height)=(-?\d+)/g)].map((m) => Number(m[1]));
     const right = 1000 + 8;
     expect(Math.max(...nums)).toBeGreaterThanOrEqual(right);
@@ -1700,23 +2051,13 @@ describe("sunBrightness (issue #113)", () => {
 });
 
 describe("renderSunDimMask — lit rooms hold back the night (issue #113)", () => {
-  const flatten = (node: unknown): string => {
-    if (node == null || typeof node === "boolean") return "";
-    if (typeof node === "symbol") return "";
-    if (Array.isArray(node)) return node.map(flatten).join("");
-    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
-      const { strings, values } = node as { strings: string[]; values: unknown[] };
-      return strings.reduce((acc, x, i) => acc + x + (i < values.length ? flatten(values[i]) : ""), "");
-    }
-    return String(node);
-  };
   const lamp = (extra = {}) =>
     ({ id: "i1", entity: "light.a", kind: "light", x: 200, y: 150, glow: true, ...extra }) as never;
   const on = (attributes: Record<string, unknown> = { brightness: 255 }) =>
     ({ "light.a": { entity_id: "light.a", state: "on", attributes } }) as never;
 
   it("clears fully at the centre and fades to nothing at the radius", () => {
-    const markup = flatten(renderSunDimMask([lamp()], on(), 1000, 600, "sd"));
+    const markup = flattenMarkup(renderSunDimMask([lamp()], on(), 1000, 600, "sd"));
     // Black hides the dim; white keeps it. Full brightness clears completely.
     expect(markup).toContain('stop-opacity=1');
     expect(markup).toContain('stop-opacity="0"');
@@ -1726,13 +2067,13 @@ describe("renderSunDimMask — lit rooms hold back the night (issue #113)", () =
   });
 
   it("honours a custom glowRadius, so clearing and pool share a shape", () => {
-    const markup = flatten(renderSunDimMask([lamp({ glowRadius: 90 })], on(), 1000, 600, "sd"));
+    const markup = flattenMarkup(renderSunDimMask([lamp({ glowRadius: 90 })], on(), 1000, 600, "sd"));
     expect(markup).toContain("r=90");
   });
 
   it("clears in proportion to brightness, like the pool itself", () => {
     const at = (brightness: number) => {
-      const m = flatten(renderSunDimMask([lamp()], on({ brightness }), 1000, 600, "sd"));
+      const m = flattenMarkup(renderSunDimMask([lamp()], on({ brightness }), 1000, 600, "sd"));
       return Number(/stop-opacity=([\d.]+)/.exec(m)?.[1]);
     };
     expect(at(255)).toBeCloseTo(1, 5);
@@ -1758,23 +2099,23 @@ describe("renderSunDimMask — lit rooms hold back the night (issue #113)", () =
   });
 
   it("states its own region, so rotation cannot clip the clearing (issue #102)", () => {
-    const markup = flatten(renderSunDimMask([lamp()], on(), 1000, 600, "sd"));
+    const markup = flattenMarkup(renderSunDimMask([lamp()], on(), 1000, 600, "sd"));
     expect(markup).toContain("width=1016");
     expect(markup).toContain("height=616");
   });
 
   it("clips the clearing at walls, like the pool it mirrors (issue #108)", () => {
     const walls = [{ id: "w", x1: 300, y1: 0, x2: 300, y2: 400 }];
-    const withWalls = flatten(
+    const withWalls = flattenMarkup(
       renderSunDimMask([lamp({ x: 190, glowRadius: 200 })], on(), 600, 400, "sd", walls)
     );
     expect(withWalls).toContain("<clipPath");
     expect(withWalls).toContain("clip-path=url(#sd-0-clip)");
     // No wall in reach: a plain circle, no clip, no wasted work.
-    const noWalls = flatten(renderSunDimMask([lamp()], on(), 600, 400, "sd", []));
+    const noWalls = flattenMarkup(renderSunDimMask([lamp()], on(), 600, 400, "sd", []));
     expect(noWalls).not.toContain("<clipPath");
     const farWall = [{ id: "w", x1: 9000, y1: 0, x2: 9000, y2: 400 }];
-    expect(flatten(renderSunDimMask([lamp()], on(), 600, 400, "sd", farWall))).not.toContain("<clipPath");
+    expect(flattenMarkup(renderSunDimMask([lamp()], on(), 600, 400, "sd", farWall))).not.toContain("<clipPath");
   });
 
   it("hangs the clip id off the gradient id, so it stays pinned too (issue #119)", () => {
@@ -1793,7 +2134,7 @@ describe("renderSunDimMask — lit rooms hold back the night (issue #113)", () =
         "light.c": { entity_id: "light.c", state: "on", attributes: { brightness: 255 } },
       }) as never;
     const clips = (bOn: boolean) => {
-      const m = flatten(renderSunDimMask(items, states(bOn), 600, 400, "sd", walls));
+      const m = flattenMarkup(renderSunDimMask(items, states(bOn), 600, 400, "sd", walls));
       return [...m.matchAll(/id=(sd-\d+-clip)/g)].map((x) => x[1]);
     };
     expect(clips(false)).toEqual(["sd-0-clip", "sd-2-clip"]);
@@ -1820,7 +2161,7 @@ describe("renderSunDimMask — lit rooms hold back the night (issue #113)", () =
       }) as never;
 
     const idsFor = (bOn: boolean) => {
-      const m = flatten(renderSunDimMask(items, states(bOn), 1000, 600, "sd"));
+      const m = flattenMarkup(renderSunDimMask(items, states(bOn), 1000, 600, "sd"));
       return [...m.matchAll(/id=(sd-\d+)/g)].map((x) => x[1]);
     };
     // C is index 2 and must stay sd-2 whether or not B is lit.
@@ -1828,7 +2169,7 @@ describe("renderSunDimMask — lit rooms hold back the night (issue #113)", () =
     expect(idsFor(true)).toEqual(["sd-0", "sd-1", "sd-2"]);
 
     // And each circle still points at its own lamp's gradient.
-    const off = flatten(renderSunDimMask(items, states(false), 1000, 600, "sd"));
+    const off = flattenMarkup(renderSunDimMask(items, states(false), 1000, 600, "sd"));
     expect(off).toContain("cx=750");
     expect(off).toContain("url(#sd-2)");
     expect(off).not.toContain("sd-1");
@@ -1836,7 +2177,7 @@ describe("renderSunDimMask — lit rooms hold back the night (issue #113)", () =
 
   it("gives each lamp its own gradient id, so pools do not share a falloff", () => {
     const two = [lamp(), lamp({ id: "i2", x: 700 })];
-    const markup = flatten(renderSunDimMask(two, on(), 1000, 600, "sd"));
+    const markup = flattenMarkup(renderSunDimMask(two, on(), 1000, 600, "sd"));
     expect(markup).toContain("id=sd-0");
     expect(markup).toContain("id=sd-1");
   });
@@ -1947,6 +2288,114 @@ describe("glowPaint (issue #6)", () => {
   it("clamps out-of-range channels instead of trusting the integration", () => {
     expect(glowPaint({}, light("on", { rgb_color: [300, -20, 12.6] }))?.color).toBe("rgb(255, 0, 13)");
   });
+
+  // Issue #123: dimming should draw the light in, not only thin it.
+  describe("brightness scales the pool's reach (#123)", () => {
+    it("full brightness casts the configured radius, unchanged", () => {
+      expect(glowPaint({ glowRadius: 200 }, light("on", { brightness: 255 }))?.radius).toBe(200);
+    });
+
+    it("a dimmer lamp reaches less far, down to a floor that stays visible", () => {
+      const at = (b: number) => glowPaint({ glowRadius: 200 }, light("on", { brightness: b }))!.radius;
+      expect(at(255)).toBe(200);
+      expect(at(128)).toBeCloseTo(200 * (GLOW_MIN_RADIUS + (1 - GLOW_MIN_RADIUS) * (128 / 255)), 5);
+      expect(at(0)).toBeCloseTo(200 * GLOW_MIN_RADIUS, 5);
+      // Monotonic, and never collapses to a dot under the lamp's own icon.
+      expect(at(0)).toBeLessThan(at(128));
+      expect(at(128)).toBeLessThan(at(255));
+      expect(at(0)).toBeGreaterThan(0);
+    });
+
+    it("a bulb with no brightness to report keeps the full radius", () => {
+      // An on/off-only light: "on" means fully on, so nothing shrinks.
+      expect(glowPaint({ glowRadius: 200 }, light("on"))?.radius).toBe(200);
+    });
+
+    it("defaults and gates the configured radius through css-safe", () => {
+      expect(glowPaint({}, light("on", { brightness: 255 }))?.radius).toBe(DEFAULT_GLOW_RADIUS);
+      // A hostile value falls back rather than reaching the SVG (#64/#65).
+      expect(glowPaint({ glowRadius: "6; evil" as never }, light("on", { brightness: 255 }))?.radius)
+        .toBe(DEFAULT_GLOW_RADIUS);
+    });
+
+    it("the sun-dimming clearing shrinks with the pool, staying the same shape", () => {
+      // These are documented as the same shape by construction; the clearing
+      // reading glowRadius directly would silently break that once the pool
+      // started scaling.
+      const items = [
+        { id: "i1", entity: "light.a", kind: "light", x: 300, y: 200, glow: true, glowRadius: 200 },
+      ] as never;
+      const at = (brightness: number) => {
+        const states = {
+          "light.a": { entity_id: "light.a", state: "on", attributes: { brightness } },
+        } as never;
+        const markup = flattenMarkup(renderSunDimMask(items, states, 1000, 600, "sd"));
+        return Number(/r=(\d+(?:\.\d+)?)/.exec(markup)![1]);
+      };
+      expect(at(255)).toBe(200);
+      expect(at(0)).toBeCloseTo(200 * GLOW_MIN_RADIUS, 5);
+      expect(at(0)).toBeLessThan(at(255));
+    });
+  });
+});
+
+// @ombre33 on #106: every badge is the theme yellow while the lamps are green,
+// blue and pink. The badge should look like the bulb.
+describe("lightBadgePaint (#106)", () => {
+  const light = (state: string, attributes: Record<string, unknown> = {}) =>
+    ({ entity_id: "light.x", state, attributes }) as never;
+
+  it("wears a colour-capable bulb's own rgb at full brightness", () => {
+    expect(lightBadgePaint(light("on", { rgb_color: [0, 200, 100], brightness: 255 }))).toBe(
+      "rgb(0, 200, 100)",
+    );
+  });
+
+  it("darkens with brightness, down to a floor that is still recognisably the bulb", () => {
+    const full = lightBadgePaint(light("on", { rgb_color: [200, 100, 50], brightness: 255 }));
+    const half = lightBadgePaint(light("on", { rgb_color: [200, 100, 50], brightness: 128 }));
+    const off = lightBadgePaint(light("on", { rgb_color: [200, 100, 50], brightness: 0 }));
+    expect(full).toBe("rgb(200, 100, 50)");
+    // Each channel scaled by the same factor — the hue is preserved, only the
+    // lightness moves.
+    expect(half).toBe(
+      `rgb(${[200, 100, 50]
+        .map((c) => Math.round(c * (BADGE_MIN_LIGHTNESS + (1 - BADGE_MIN_LIGHTNESS) * (128 / 255))))
+        .join(", ")})`,
+    );
+    expect(off).toBe(
+      `rgb(${[200, 100, 50].map((c) => Math.round(c * BADGE_MIN_LIGHTNESS)).join(", ")})`,
+    );
+    // The floor is the point: a barely-lit lamp is still identifiable.
+    expect(off).not.toBe("rgb(0, 0, 0)");
+  });
+
+  it("leaves a bulb that reports no colour completely alone", () => {
+    // The no-surprise guarantee, and the reason this is not glowPaint: that one
+    // falls back to a warm white, which would repaint every plain bulb amber.
+    expect(lightBadgePaint(light("on", { brightness: 255 }))).toBeUndefined();
+    expect(lightBadgePaint(light("on"))).toBeUndefined();
+    expect(glowPaint({}, light("on"))?.color).toBe(DEFAULT_GLOW_COLOR);
+  });
+
+  it("paints nothing when off, unavailable, unknown or missing (fails closed)", () => {
+    expect(lightBadgePaint(light("off", { rgb_color: [255, 0, 0] }))).toBeUndefined();
+    expect(lightBadgePaint(light("unavailable", { rgb_color: [255, 0, 0] }))).toBeUndefined();
+    expect(lightBadgePaint(light("unknown", { rgb_color: [255, 0, 0] }))).toBeUndefined();
+    expect(lightBadgePaint(undefined)).toBeUndefined();
+  });
+
+  it("ignores a malformed rgb_color rather than emitting a broken colour", () => {
+    expect(lightBadgePaint(light("on", { rgb_color: [255, 0] }))).toBeUndefined();
+    expect(lightBadgePaint(light("on", { rgb_color: "red;position:fixed" }))).toBeUndefined();
+    expect(lightBadgePaint(light("on", { rgb_color: [null, 1, 2] }))).toBeUndefined();
+  });
+
+  it("clamps out-of-range channels instead of trusting the integration", () => {
+    expect(lightBadgePaint(light("on", { rgb_color: [300, -20, 12.6], brightness: 255 }))).toBe(
+      "rgb(255, 0, 13)",
+    );
+  });
 });
 
 describe("glowReach — walls block light (issue #108)", () => {
@@ -2001,25 +2450,63 @@ describe("glowReach — walls block light (issue #108)", () => {
     // Wall within one wall thickness of the light: non-blocking.
     expect(glowReach(500, 300, 140, [wall(200, 302, 800, 302)])).toBeUndefined();
   });
+
+  // Issue #123: a wedge of the pool went missing beside long walls. The sweep
+  // only has vertices where it casts rays, and it cast them at the wall's
+  // *declared* endpoints — far outside the swept region for an ordinary room
+  // wall — so nothing sampled the angle where the boundary hands over from the
+  // region's edge to the wall, and the chord across that gap cut the pool.
+  describe("a long wall does not slice the pool (#123)", () => {
+    const r = 140;
+    // An ordinary room wall: 60 below the lamp and running well past the pool.
+    const longWall = [wall(0, 360, 1000, 360)];
+
+    it("lights the whole strip beside the wall, out to the radius", () => {
+      const poly = glowReach(500, 300, r, longWall)!;
+      // 5px above the wall — nothing between these and the lamp — stepping out
+      // to the edge of the radius. Every one must be lit; before the fix the
+      // last three were not.
+      for (const dx of [0, 20, 40, 60, 80, 100, 120]) {
+        const dist = Math.hypot(dx, 55);
+        expect({ dx, dist: Math.round(dist), lit: inside(poly, 500 + dx, 355) }).toEqual({
+          dx,
+          dist: Math.round(dist),
+          lit: true,
+        });
+      }
+    });
+
+    it("still blocks the far side, so the fix did not just delete the clipping", () => {
+      const poly = glowReach(500, 300, r, longWall)!;
+      expect(inside(poly, 500, 380)).toBe(false);
+      expect(inside(poly, 560, 400)).toBe(false);
+    });
+
+    it("samples the angle where the wall enters the swept region", () => {
+      const poly = glowReach(500, 300, r, longWall)!;
+      const angles = poly.map((p) => (Math.atan2(p.y - 300, p.x - 500) * 180) / Math.PI);
+      // The hand-over sits at atan2(60, 141.4) ≈ 23°, not at the declared
+      // endpoint's atan2(60, 500) ≈ 6.8°.
+      expect(angles.some((a) => Math.abs(a - 23.0) < 1)).toBe(true);
+      expect(angles.some((a) => Math.abs(a - 6.8) < 1)).toBe(false);
+    });
+
+    it("leaves a wall that already fits inside the region alone", () => {
+      // Short wall, both endpoints within the sweep: clipping is a no-op, so
+      // the shadow it casts is unchanged.
+      const short = [wall(480, 360, 520, 360)];
+      const poly = glowReach(500, 300, r, short)!;
+      expect(inside(poly, 500, 380)).toBe(false); // directly behind it
+      expect(inside(poly, 600, 380)).toBe(true); // past its end
+    });
+  });
 });
 
 describe("styling hooks reach the DOM (issue #105)", () => {
-  const flatten = (node: unknown): string => {
-    if (node == null || typeof node === "boolean") return "";
-    // Lit's `nothing` is a symbol; stringifying it would put the literal text
-    // "Symbol(lit-nothing)" in the markup, which is not what renders.
-    if (typeof node === "symbol") return "";
-    if (Array.isArray(node)) return node.map(flatten).join("");
-    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
-      const { strings, values } = node as { strings: string[]; values: unknown[] };
-      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
-    }
-    return String(node);
-  };
   const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
 
   it("an area carries its config id, type class and bound entity", () => {
-    const markup = flatten(
+    const markup = flattenMarkup(
       renderArea({ id: "area_a5r5nwl", points: square, entity: "binary_sensor.smoke" } as never)
     );
     expect(markup).toContain('class="fp-area"');
@@ -2031,9 +2518,9 @@ describe("styling hooks reach the DOM (issue #105)", () => {
 
   it("every entity-bindable element answers the same [data-entity] selector", () => {
     const ent = "light.kitchen";
-    const area = flatten(renderArea({ id: "a", points: square, entity: ent } as never));
-    const furn = flatten(renderFurniture({ id: "f", type: "sofa", x: 0, y: 0, w: 10, h: 10, entity: ent } as never));
-    const open = flatten(
+    const area = flattenMarkup(renderArea({ id: "a", points: square, entity: ent } as never));
+    const furn = flattenMarkup(renderFurniture({ id: "f", type: "sofa", x: 0, y: 0, w: 10, h: 10, entity: ent } as never));
+    const open = flattenMarkup(
       renderOpening({ id: "o", type: "door", x: 0, y: 0, length: 40, angle: 0, entity: ent } as never,
         { color: "#888", accent: "#0f0" } as never)
     );
@@ -2041,7 +2528,7 @@ describe("styling hooks reach the DOM (issue #105)", () => {
   });
 
   it("furniture carries its id, its type class and its entity", () => {
-    const markup = flatten(
+    const markup = flattenMarkup(
       renderFurniture({ id: "furn_3j66s50", type: "sofa", x: 0, y: 0, w: 10, h: 10, entity: "light.k" } as never)
     );
     expect(markup).toContain("fp-furniture fp-furniture-sofa");
@@ -2050,7 +2537,7 @@ describe("styling hooks reach the DOM (issue #105)", () => {
   });
 
   it("an opening carries its id and door/window class", () => {
-    const markup = flatten(
+    const markup = flattenMarkup(
       renderOpening(
         { id: "door_1", type: "door", x: 0, y: 0, length: 40, angle: 0, entity: "binary_sensor.d" } as never,
         { color: "#888", accent: "#0f0" } as never
@@ -2091,7 +2578,7 @@ describe("styling hooks reach the DOM (issue #105)", () => {
   });
 
   it("a hostile id stays one harmless token instead of a second class", () => {
-    const markup = flatten(renderArea({ id: 'x" class="fp-wall', points: square } as never));
+    const markup = flattenMarkup(renderArea({ id: 'x" class="fp-wall', points: square } as never));
     // The class list is untouched, and the id collapses to a single token —
     // no quote to close the attribute, no space to start another class.
     expect(markup).toContain('class="fp-area"');
@@ -2101,19 +2588,10 @@ describe("styling hooks reach the DOM (issue #105)", () => {
   });
 });
 
-describe("renderGlowMask — furniture stays base gray (issue #108)", () => {
-  const flatten = (node: unknown): string => {
-    if (node == null || typeof node === "boolean") return "";
-    if (Array.isArray(node)) return node.map(flatten).join("");
-    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
-      const { strings, values } = node as { strings: string[]; values: unknown[] };
-      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
-    }
-    return String(node);
-  };
+describe("renderGlowMask — furniture is dimmed, not blacked out (#108, #106)", () => {
 
-  it("punches a black rotated rect per furniture piece, ellipse for round types", () => {
-    const markup = flatten(
+  const twoPieces = () =>
+    flattenMarkup(
       renderGlowMask(
         [
           { id: "s", type: "sofa", x: 300, y: 200, w: 100, h: 50, angle: 90 },
@@ -2124,21 +2602,39 @@ describe("renderGlowMask — furniture stays base gray (issue #108)", () => {
         "gm"
       )
     );
-    expect(markup).toContain('id=gm');
-    expect(markup).toContain('fill="black"');
+
+  it("shades a rotated rect per furniture piece, ellipse for round types", () => {
+    const markup = twoPieces();
+    expect(markup).toContain("id=gm");
     expect(markup).toContain("rotate(90 300 200)");
     expect(markup).toContain("<ellipse");
     // Explicit region, not the viewport default (the issue #102 lesson).
     expect(markup).toContain("width=1016");
   });
 
+  // This is the guard in *both* directions, and the reason the level is a
+  // named constant. Each end of this dial has shipped as a bug: fully lit was
+  // #108 (every sofa read as highlighted), fully dark was #106 (a lit table
+  // came out as a shadow). Only a value strictly between the two is correct.
+  it("blocks some of the light but not all of it", () => {
+    const markup = twoPieces();
+    expect(FURNITURE_GLOW_TRANSMISSION).toBeGreaterThan(0);
+    expect(FURNITURE_GLOW_TRANSMISSION).toBeLessThan(1);
+    // A solid black hole (a shadow) or no shape at all (a flood) would both
+    // fail here: furniture must paint, and paint partially.
+    const blocked = 1 - FURNITURE_GLOW_TRANSMISSION;
+    expect(markup).toContain(`fill-opacity=${blocked}`);
+    expect(markup).not.toContain('fill-opacity="1"');
+    expect(markup).not.toContain('fill="black"');
+  });
+
   it("clips the pool with the reach polygon only when walls are in range", () => {
     const item = { id: "i", entity: "light.x", kind: "light", x: 300, y: 200 } as never;
-    const paint = { color: "#fff", opacity: 0.4 };
-    const withWall = flatten(renderGlow(item, paint, "g1", [{ id: "w", x1: 0, y1: 260, x2: 1000, y2: 260 }]));
+    const paint = { color: "#fff", opacity: 0.4, radius: DEFAULT_GLOW_RADIUS };
+    const withWall = flattenMarkup(renderGlow(item, paint, "g1", [{ id: "w", x1: 0, y1: 260, x2: 1000, y2: 260 }]));
     expect(withWall).toContain("<clipPath");
     expect(withWall).toContain("clip-path=url(#g1-clip)");
-    const noWall = flatten(renderGlow(item, paint, "g2", []));
+    const noWall = flattenMarkup(renderGlow(item, paint, "g2", []));
     expect(noWall).not.toContain("<clipPath");
   });
 });
@@ -2164,26 +2660,22 @@ describe("editorGlowPaint (issue #108)", () => {
     expect(editorGlowPaint({}, undefined)).toEqual({
       color: DEFAULT_GLOW_COLOR,
       opacity: GLOW_MAX_OPACITY,
+      // No state to read a brightness from: the configured size, unscaled.
+      radius: DEFAULT_GLOW_RADIUS,
     });
+    expect(editorGlowPaint({ glowRadius: 200 }, undefined)?.radius).toBe(200);
     expect(editorGlowPaint({ glowColor: "#00ff00" }, undefined)?.color).toBe("#00ff00");
   });
 });
 
 describe("renderGlow (issue #6)", () => {
-  const flatten = (node: unknown): string => {
-    if (node == null || typeof node === "boolean") return "";
-    if (Array.isArray(node)) return node.map(flatten).join("");
-    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
-      const { strings, values } = node as { strings: string[]; values: unknown[] };
-      return strings.reduce((acc, s, i) => acc + s + (i < values.length ? flatten(values[i]) : ""), "");
-    }
-    return String(node);
-  };
   const item = (extra: Record<string, unknown> = {}) =>
     ({ id: "i", entity: "light.x", kind: "light", x: 300, y: 200, ...extra }) as never;
 
   it("centers the pool on the device and fades to nothing at the rim", () => {
-    const markup = flatten(renderGlow(item(), { color: "rgb(1, 2, 3)", opacity: 0.5 }, "g1"));
+    const markup = flattenMarkup(
+      renderGlow(item(), { color: "rgb(1, 2, 3)", opacity: 0.5, radius: DEFAULT_GLOW_RADIUS }, "g1"),
+    );
     expect(markup).toContain("cx=300");
     expect(markup).toContain("cy=200");
     expect(markup).toContain(`r=${DEFAULT_GLOW_RADIUS}`);
@@ -2193,14 +2685,20 @@ describe("renderGlow (issue #6)", () => {
     expect(markup).toContain('fill=url(#g1)');
   });
 
-  it("honors glowRadius, and gates a garbage one through css-safe", () => {
-    expect(flatten(renderGlow(item({ glowRadius: 250 }), { color: "#fff", opacity: 0.4 }, "g"))).toContain("r=250");
-    expect(flatten(renderGlow(item({ glowRadius: "6; evil" }), { color: "#fff", opacity: 0.4 }, "g")))
-      .toContain(`r=${DEFAULT_GLOW_RADIUS}`);
+  it("draws at the radius the paint carries, not the configured one (#123)", () => {
+    // The size is brightness-scaled in glowPaint, so renderGlow must use what
+    // it is handed — reading item.glowRadius here again would silently undo it.
+    const markup = flattenMarkup(
+      renderGlow(item({ glowRadius: 250 }), { color: "#fff", opacity: 0.4, radius: 137 }, "g"),
+    );
+    expect(markup).toContain("r=137");
+    expect(markup).not.toContain("r=250");
   });
 
   it("carries the class the blend mode hangs off, or lights would not mix", () => {
-    expect(flatten(renderGlow(item(), { color: "#fff", opacity: 0.4 }, "g"))).toContain('class="fp-glow"');
+    expect(
+      flattenMarkup(renderGlow(item(), { color: "#fff", opacity: 0.4, radius: DEFAULT_GLOW_RADIUS }, "g")),
+    ).toContain('class="fp-glow"');
   });
 });
 
