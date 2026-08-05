@@ -7,6 +7,8 @@ import {
   DEFAULT_GLOW_COLOR,
   GLOW_MIN_OPACITY,
   GLOW_MAX_OPACITY,
+  SUN_ELEVATION_NIGHT,
+  SUN_ELEVATION_DAY,
 } from "./types";
 import {
   snapToWall,
@@ -19,6 +21,8 @@ import {
   shutterAmount,
   shutterStyleOf,
   imageFitRatio,
+  sunBrightness,
+  renderSunDimMask,
   renderWallMask,
   shutterActive,
   openingClickAction,
@@ -1643,6 +1647,210 @@ describe("renderWallMask region (issue #102)", () => {
     const nums = [...markup.matchAll(/(?:x|y|width|height)=(-?\d+)/g)].map((m) => Number(m[1]));
     const right = 1000 + 8;
     expect(Math.max(...nums)).toBeGreaterThanOrEqual(right);
+  });
+});
+
+describe("sunBrightness (issue #113)", () => {
+  it("is min deep at night and max in full daylight", () => {
+    expect(sunBrightness(-40, 0.45, 1)).toBeCloseTo(0.45, 5);
+    expect(sunBrightness(SUN_ELEVATION_NIGHT, 0.45, 1)).toBeCloseTo(0.45, 5);
+    expect(sunBrightness(60, 0.45, 1)).toBeCloseTo(1, 5);
+    expect(sunBrightness(SUN_ELEVATION_DAY, 0.45, 1)).toBeCloseTo(1, 5);
+  });
+
+  it("ramps smoothly and monotonically across civil twilight", () => {
+    const xs = [-6, -4, -2, 0, 2, 4, 6];
+    const ys = xs.map((e) => sunBrightness(e, 0.45, 1));
+    for (let i = 1; i < ys.length; i++) expect(ys[i]).toBeGreaterThan(ys[i - 1]);
+    // Sunset (0°) sits halfway: the ramp is symmetric about the horizon.
+    expect(sunBrightness(0, 0, 1)).toBeCloseTo(0.5, 5);
+  });
+
+  it("eases at both ends rather than cornering", () => {
+    // Smoothstep: near the clamps the rate is slower than in the middle.
+    const nearEnd = sunBrightness(-5, 0, 1) - sunBrightness(-6, 0, 1);
+    const middle = sunBrightness(0.5, 0, 1) - sunBrightness(-0.5, 0, 1);
+    expect(middle).toBeGreaterThan(nearEnd);
+  });
+
+  it("fails bright: a missing or unreadable elevation leaves the plan lit", () => {
+    // The opposite would strand a plan dark with nothing on screen to explain
+    // why — worse than ignoring the feature until sun.sun comes back.
+    expect(sunBrightness(undefined, 0.45, 1)).toBe(1);
+    expect(sunBrightness(null, 0.45, 1)).toBe(1);
+    expect(sunBrightness("unavailable", 0.45, 1)).toBe(1);
+    expect(sunBrightness(Number.NaN, 0.45, 1)).toBe(1);
+    // The nasty ones: all of these coerce to 0, which is mid-ramp, not night.
+    expect(sunBrightness("", 0.45, 1)).toBe(1);
+    expect(sunBrightness("   ", 0.45, 1)).toBe(1);
+    expect(sunBrightness(false, 0.45, 1)).toBe(1);
+    expect(sunBrightness([], 0.45, 1)).toBe(1);
+    // But a real 0° is sunset, and must still ramp.
+    expect(sunBrightness(0, 0.45, 1)).toBeCloseTo(0.725, 3);
+  });
+
+  it("tolerates min and max given the wrong way round", () => {
+    expect(sunBrightness(-40, 1, 0.3)).toBeCloseTo(0.3, 5);
+    expect(sunBrightness(40, 1, 0.3)).toBeCloseTo(1, 5);
+  });
+
+  it("reads a numeric string, as HA attributes sometimes arrive", () => {
+    expect(sunBrightness("6", 0.45, 1)).toBeCloseTo(1, 5);
+  });
+});
+
+describe("renderSunDimMask — lit rooms hold back the night (issue #113)", () => {
+  const flatten = (node: unknown): string => {
+    if (node == null || typeof node === "boolean") return "";
+    if (typeof node === "symbol") return "";
+    if (Array.isArray(node)) return node.map(flatten).join("");
+    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+      const { strings, values } = node as { strings: string[]; values: unknown[] };
+      return strings.reduce((acc, x, i) => acc + x + (i < values.length ? flatten(values[i]) : ""), "");
+    }
+    return String(node);
+  };
+  const lamp = (extra = {}) =>
+    ({ id: "i1", entity: "light.a", kind: "light", x: 200, y: 150, glow: true, ...extra }) as never;
+  const on = (attributes: Record<string, unknown> = { brightness: 255 }) =>
+    ({ "light.a": { entity_id: "light.a", state: "on", attributes } }) as never;
+
+  it("clears fully at the centre and fades to nothing at the radius", () => {
+    const markup = flatten(renderSunDimMask([lamp()], on(), 1000, 600, "sd"));
+    // Black hides the dim; white keeps it. Full brightness clears completely.
+    expect(markup).toContain('stop-opacity=1');
+    expect(markup).toContain('stop-opacity="0"');
+    expect(markup).toContain('fill="white"');
+    expect(markup).toContain("cx=200");
+    expect(markup).toContain(`r=${DEFAULT_GLOW_RADIUS}`);
+  });
+
+  it("honours a custom glowRadius, so clearing and pool share a shape", () => {
+    const markup = flatten(renderSunDimMask([lamp({ glowRadius: 90 })], on(), 1000, 600, "sd"));
+    expect(markup).toContain("r=90");
+  });
+
+  it("clears in proportion to brightness, like the pool itself", () => {
+    const at = (brightness: number) => {
+      const m = flatten(renderSunDimMask([lamp()], on({ brightness }), 1000, 600, "sd"));
+      return Number(/stop-opacity=([\d.]+)/.exec(m)?.[1]);
+    };
+    expect(at(255)).toBeCloseTo(1, 5);
+    // GLOW_MIN_OPACITY / GLOW_MAX_OPACITY — a lamp dimmed to nothing still
+    // clears about a third, matching the pool it casts.
+    expect(at(0)).toBeCloseTo(GLOW_MIN_OPACITY / GLOW_MAX_OPACITY, 5);
+    expect(at(128)).toBeGreaterThan(at(0));
+    expect(at(128)).toBeLessThan(at(255));
+  });
+
+  it("a light that is off, unavailable or missing clears nothing", () => {
+    const off = { "light.a": { entity_id: "light.a", state: "off", attributes: {} } } as never;
+    expect(renderSunDimMask([lamp()], off, 1000, 600, "sd")).toBe(nothing);
+    const dead = { "light.a": { entity_id: "light.a", state: "unavailable", attributes: {} } } as never;
+    expect(renderSunDimMask([lamp()], dead, 1000, 600, "sd")).toBe(nothing);
+    expect(renderSunDimMask([lamp()], undefined, 1000, 600, "sd")).toBe(nothing);
+  });
+
+  it("a device without Cast light never clears, however bright its entity", () => {
+    // Only glow devices define a radius, so only they can hold back the dark.
+    expect(renderSunDimMask([lamp({ glow: false })], on(), 1000, 600, "sd")).toBe(nothing);
+    expect(renderSunDimMask([], on(), 1000, 600, "sd")).toBe(nothing);
+  });
+
+  it("states its own region, so rotation cannot clip the clearing (issue #102)", () => {
+    const markup = flatten(renderSunDimMask([lamp()], on(), 1000, 600, "sd"));
+    expect(markup).toContain("width=1016");
+    expect(markup).toContain("height=616");
+  });
+
+  it("clips the clearing at walls, like the pool it mirrors (issue #108)", () => {
+    const walls = [{ id: "w", x1: 300, y1: 0, x2: 300, y2: 400 }];
+    const withWalls = flatten(
+      renderSunDimMask([lamp({ x: 190, glowRadius: 200 })], on(), 600, 400, "sd", walls)
+    );
+    expect(withWalls).toContain("<clipPath");
+    expect(withWalls).toContain("clip-path=url(#sd-0-clip)");
+    // No wall in reach: a plain circle, no clip, no wasted work.
+    const noWalls = flatten(renderSunDimMask([lamp()], on(), 600, 400, "sd", []));
+    expect(noWalls).not.toContain("<clipPath");
+    const farWall = [{ id: "w", x1: 9000, y1: 0, x2: 9000, y2: 400 }];
+    expect(flatten(renderSunDimMask([lamp()], on(), 600, 400, "sd", farWall))).not.toContain("<clipPath");
+  });
+
+  it("hangs the clip id off the gradient id, so it stays pinned too (issue #119)", () => {
+    // Same trap as the gradient: a clip id that renumbered on toggle would
+    // strand the circle on a stale clip path.
+    const walls = [{ id: "w", x1: 300, y1: 0, x2: 300, y2: 400 }];
+    const items = [
+      lamp({ id: "A", entity: "light.a", x: 150, glowRadius: 200 }),
+      lamp({ id: "B", entity: "light.b", x: 190, glowRadius: 200 }),
+      lamp({ id: "C", entity: "light.c", x: 200, glowRadius: 200 }),
+    ];
+    const states = (bOn: boolean) =>
+      ({
+        "light.a": { entity_id: "light.a", state: "on", attributes: { brightness: 255 } },
+        "light.b": { entity_id: "light.b", state: bOn ? "on" : "off", attributes: {} },
+        "light.c": { entity_id: "light.c", state: "on", attributes: { brightness: 255 } },
+      }) as never;
+    const clips = (bOn: boolean) => {
+      const m = flatten(renderSunDimMask(items, states(bOn), 600, 400, "sd", walls));
+      return [...m.matchAll(/id=(sd-\d+-clip)/g)].map((x) => x[1]);
+    };
+    expect(clips(false)).toEqual(["sd-0-clip", "sd-2-clip"]);
+    expect(clips(true)).toEqual(["sd-0-clip", "sd-1-clip", "sd-2-clip"]);
+  });
+
+  it("keeps every lamp's gradient id pinned to its item index, not its rank", () => {
+    // The bug this guards: compacting the list to only-lit lamps shifted every
+    // later lamp's DOM position when one toggled, rewriting the id on an
+    // existing <radialGradient> and stranding the circle that referenced it on
+    // a stale paint server — a hard-edged disc at full strength instead of a
+    // falloff. Only lamps *after* the toggled one were affected, which is what
+    // made it look intermittent.
+    const items = [
+      lamp({ id: "A", entity: "light.a", x: 150 }),
+      lamp({ id: "B", entity: "light.b", x: 450 }),
+      lamp({ id: "C", entity: "light.c", x: 750 }),
+    ];
+    const states = (bOn: boolean) =>
+      ({
+        "light.a": { entity_id: "light.a", state: "on", attributes: { brightness: 255 } },
+        "light.b": { entity_id: "light.b", state: bOn ? "on" : "off", attributes: {} },
+        "light.c": { entity_id: "light.c", state: "on", attributes: { brightness: 255 } },
+      }) as never;
+
+    const idsFor = (bOn: boolean) => {
+      const m = flatten(renderSunDimMask(items, states(bOn), 1000, 600, "sd"));
+      return [...m.matchAll(/id=(sd-\d+)/g)].map((x) => x[1]);
+    };
+    // C is index 2 and must stay sd-2 whether or not B is lit.
+    expect(idsFor(false)).toEqual(["sd-0", "sd-2"]);
+    expect(idsFor(true)).toEqual(["sd-0", "sd-1", "sd-2"]);
+
+    // And each circle still points at its own lamp's gradient.
+    const off = flatten(renderSunDimMask(items, states(false), 1000, 600, "sd"));
+    expect(off).toContain("cx=750");
+    expect(off).toContain("url(#sd-2)");
+    expect(off).not.toContain("sd-1");
+  });
+
+  it("gives each lamp its own gradient id, so pools do not share a falloff", () => {
+    const two = [lamp(), lamp({ id: "i2", x: 700 })];
+    const markup = flatten(renderSunDimMask(two, on(), 1000, 600, "sd"));
+    expect(markup).toContain("id=sd-0");
+    expect(markup).toContain("id=sd-1");
+  });
+});
+
+describe("collectWatchedEntities watches the sun (issue #113)", () => {
+  const base = { type: "custom:easy-floorplan-card", width: 100, height: 100 } as never;
+
+  it("watches sun.sun only when the option is on", () => {
+    expect(collectWatchedEntities(base).has("sun.sun")).toBe(false);
+    // Without this the plan is lit once and then frozen — the trap #82 and #6
+    // each fell into.
+    expect(collectWatchedEntities({ ...(base as object), sunDimming: true } as never).has("sun.sun"))
+      .toBe(true);
   });
 });
 

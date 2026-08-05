@@ -22,6 +22,10 @@ import {
   DEFAULT_RIPPLE_SIZE,
   DEFAULT_AREA_OPACITY,
   DEFAULT_AREA_BORDER_WIDTH,
+  SUN_ELEVATION_NIGHT,
+  SUN_ELEVATION_DAY,
+  DEFAULT_SUN_MIN,
+  DEFAULT_SUN_MAX,
   DEFAULT_GLOW_RADIUS,
   DEFAULT_GLOW_COLOR,
   GLOW_MIN_OPACITY,
@@ -77,6 +81,12 @@ export function hassRenderInputsChanged(
 /** Every entity id whose state can change what a plan draws (all floors). */
 export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
   const ids = new Set<string>();
+  // Sun dimming (issue #113) reads sun.sun's elevation. Miss this and the
+  // plan is lit once and then frozen at whatever the sun was doing when the
+  // card loaded — the same trap entity-bound furniture (#82) and areas (#6)
+  // each fell into. HA replaces the state object when the attribute moves,
+  // so identity comparison in hassRenderInputsChanged catches it.
+  if (c.sunDimming) ids.add("sun.sun");
   for (const f of getFloors(c)) {
     for (const o of f.openings) {
       if (o.entity) ids.add(o.entity);
@@ -423,6 +433,97 @@ export function renderGlow(
     <circle class="fp-glow" cx=${item.x} cy=${item.y} r=${r}
             fill=${`url(#${gradientId})`}
             clip-path=${reach ? `url(#${clipId})` : nothing} />`;
+}
+
+/**
+ * A `<mask>` for the sun-dimming layer that lets lit rooms hold back the night
+ * (issue #113).
+ *
+ * The dim is one flat black rect, and a flat overlay multiplies the *whole*
+ * image — including the contrast between a lit room and an unlit one. Measured
+ * on the unmasked build, a lamp's pool read at 45% of its daytime contrast
+ * after dark, i.e. exactly `1 - dimOpacity`: lamps became *less* visible at
+ * night, the reverse of both physics and expectation.
+ *
+ * So rather than dimming over the light, the light withholds the dim. Each
+ * Cast-light lamp that is on paints a black radial falloff into this mask —
+ * black hides the dim — full clearing at the pool's centre, diffusing to full
+ * dim at its `glowRadius`. Same centre, same radius, same falloff as
+ * {@link renderGlow}, so the clearing and the pool are the same shape by
+ * construction.
+ *
+ * Strength tracks brightness the way the glow does: a full-brightness lamp
+ * clears completely, a lamp dimmed to nothing clears about a third.
+ *
+ * Only Cast-light devices qualify — they are the ones that define a radius.
+ * Returns `nothing` when no lamp does, so an ordinary plan pays for no mask.
+ */
+export function renderSunDimMask(
+  items: readonly FloorItem[],
+  states: Record<string, HassEntity | undefined> | undefined,
+  width: number,
+  height: number,
+  id: string,
+  walls?: readonly Wall[],
+): SVGTemplateResult | typeof nothing {
+  // Strength per item, by INDEX — undefined where the lamp contributes nothing.
+  // Deliberately not compacted: see the map below.
+  const strengths = items.map((it) => {
+    if (!it.glow) return undefined;
+    const paint = glowPaint(it, states?.[it.entity]);
+    if (!paint) return undefined;
+    // Normalized against the glow's own ceiling, so a full-brightness lamp
+    // clears the dim entirely and a dim one clears proportionally.
+    return Math.max(0, Math.min(1, paint.opacity / GLOW_MAX_OPACITY));
+  });
+  if (!strengths.some((v) => v !== undefined)) return nothing;
+
+  const pad = WALL_THICKNESS;
+  return svg`
+    <defs>
+      <mask id=${id} maskUnits="userSpaceOnUse"
+            x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}>
+        <rect x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}
+              fill="white" />
+        ${items.map((it, i) => {
+          // One slot per item, holes included — exactly how the glow layer
+          // itself is emitted. Compacting the list instead shifts every later
+          // lamp's DOM position when one toggles, which rewrites the `id` on
+          // an existing <radialGradient> and leaves the circle that referenced
+          // it pointing at a paint server the browser has already cached under
+          // that name. The symptom is a lamp suddenly clearing the dim as a
+          // hard-edged disc at full strength rather than a soft falloff, and
+          // it only bites lamps positioned *after* the one that toggled —
+          // which is what made it look intermittent.
+          const strength = strengths[i];
+          if (strength === undefined) return nothing;
+          const r = cssNumber(it.glowRadius, DEFAULT_GLOW_RADIUS);
+          const gid = `${id}-${i}`;
+          // Walls stop the clearing exactly as they stop the pool (issue #108),
+          // reusing the same visibility polygon — otherwise a lit room lifts
+          // the darkness in the room next door, through the wall between them.
+          // The clip id hangs off `gid`, so it is pinned to the item index and
+          // stays stable when another lamp toggles (issue #119).
+          const reach = walls?.length ? glowReach(it.x, it.y, r, walls) : undefined;
+          const clipId = `${gid}-clip`;
+          return svg`
+            ${
+              reach
+                ? svg`<clipPath id=${clipId}>
+                        <polygon points=${reach.map((pt) => `${pt.x},${pt.y}`).join(" ")} />
+                      </clipPath>`
+                : nothing
+            }
+            <radialGradient id=${gid} gradientUnits="userSpaceOnUse"
+                            cx=${it.x} cy=${it.y} r=${r}>
+              <stop offset="0" stop-color="#000" stop-opacity=${strength} />
+              <stop offset="1" stop-color="#000" stop-opacity="0" />
+            </radialGradient>
+            <circle cx=${it.x} cy=${it.y} r=${r} fill=${`url(#${gid})`}
+                    clip-path=${reach ? `url(#${clipId})` : nothing} />`;
+        })}
+      </mask>
+    </defs>`;
 }
 
 /**
@@ -1368,6 +1469,47 @@ export function planRotationTransform(w: number, h: number, rot: PlanRotation): 
     default:
       return "";
   }
+}
+
+/**
+ * How bright the plan should be for a given sun elevation (issue #113).
+ *
+ * `sun.sun`'s `elevation` is the signal rather than sunrise/sunset timestamps:
+ * Home Assistant already computes it continuously from the instance's own
+ * latitude, longitude and clock, so it is smooth by construction and it comes
+ * from the **server**. A phone in another timezone showing the same dashboard
+ * therefore sees the same picture, which is the point of the issue.
+ *
+ * The ramp spans civil twilight ({@link SUN_ELEVATION_NIGHT} to
+ * {@link SUN_ELEVATION_DAY}) — roughly the hour around sunrise and sunset when
+ * the light outside actually changes. Smoothstepped rather than linear so the
+ * rate eases in and out instead of cornering at each end.
+ *
+ * A missing or unreadable elevation returns `max`: an outage should leave the
+ * plan at full brightness, never stuck dark with no way to tell why.
+ */
+export function sunBrightness(
+  elevation: unknown,
+  min: number = DEFAULT_SUN_MIN,
+  max: number = DEFAULT_SUN_MAX,
+): number {
+  const lo = Math.min(min, max);
+  const hi = Math.max(min, max);
+  // Allowlist the input rather than enumerate the coercions: Number(null),
+  // Number(""), Number(false) and Number([]) are every one of them 0 — finite,
+  // and 0° is the *middle* of this ramp. Left unguarded a dead sun.sun would
+  // not fail bright at all, it would quietly settle the plan at half light and
+  // read as a dusk that never ends. Same trap cssNumber documents.
+  const usable =
+    typeof elevation === "number" ||
+    (typeof elevation === "string" && elevation.trim() !== "");
+  if (!usable) return hi;
+  const e = typeof elevation === "number" ? elevation : Number(elevation);
+  if (!Number.isFinite(e)) return hi;
+  const span = SUN_ELEVATION_DAY - SUN_ELEVATION_NIGHT;
+  const t = Math.max(0, Math.min(1, (e - SUN_ELEVATION_NIGHT) / span));
+  const eased = t * t * (3 - 2 * t);
+  return lo + (hi - lo) * eased;
 }
 
 /**

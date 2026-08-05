@@ -11,6 +11,7 @@ import {
   wallForm,
   projectForm,
   projectRotationForm,
+  projectSunForm,
   floorImageForm,
   areaForm,
   areaNameForm,
@@ -555,5 +556,42 @@ describe("area scoping never traps you (issue reported on #83)", () => {
       itemForm(item, { entities: [], name: "Spare" }).fields.find((x) => x.name === "entity")!
         .selector
     ).toEqual({ entity: {} });
+  });
+});
+
+describe("projectSunForm (issue #113)", () => {
+  const cfg = (extra = {}) =>
+    ({ type: "custom:easy-floorplan-card", width: 100, height: 100, ...extra }) as FloorplanCardConfig;
+
+  it("hides the brightness sliders until the option is on", () => {
+    const names = (c: FloorplanCardConfig) => projectSunForm(c).fields.map((f) => f.name);
+    expect(names(cfg())).toEqual(["sunDimming"]);
+    expect(names(cfg({ sunDimming: true }))).toEqual([
+      "sunDimming",
+      "sunBrightnessMin",
+      "sunBrightnessMax",
+    ]);
+  });
+
+  it("presents the effective defaults", () => {
+    expect(projectSunForm(cfg()).data).toMatchObject({
+      sunDimming: false,
+      sunBrightnessMin: 0.45,
+      sunBrightnessMax: 1,
+    });
+    expect(projectSunForm(cfg({ sunDimming: true, sunBrightnessMin: 0.2 })).data)
+      .toMatchObject({ sunDimming: true, sunBrightnessMin: 0.2 });
+  });
+
+  it("switching off clears the sliders it dragged along, not just the toggle", () => {
+    const { toPatch } = projectSunForm(cfg({ sunDimming: true }));
+    expect(toPatch({ sunDimming: false })).toEqual({
+      sunDimming: undefined,
+      sunBrightnessMin: undefined,
+      sunBrightnessMax: undefined,
+    });
+    // Leaving them behind would resurrect stale values on re-enable.
+    expect(toPatch({ sunDimming: true }).sunDimming).toBe(true);
+    expect(toPatch({ sunBrightnessMin: 0.3 })).toEqual({ sunBrightnessMin: 0.3 });
   });
 });

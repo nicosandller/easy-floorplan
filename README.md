@@ -47,6 +47,10 @@ automatically to the card and screen size.
   An optional occupancy `binary_sensor` per axis gates the animation so the
   marker hides cleanly when the room is empty. The zone outline is visible only
   in the editor — the live card shows just the animation.
+- **Follow the sun** — optionally dim the whole plan through dusk and brighten it through
+  dawn, tracking your Home Assistant's own sunrise and sunset rather than the viewer's
+  browser. Device icons stay at full brightness, so a night plan reads as a dark house
+  with its lit rooms glowing.
 - **Text labels** and a configurable **canvas background color**.
 - **Background image** — drop in a floor-plan image (per floor) and trace walls, doors and
   devices over it, with adjustable opacity.
@@ -514,6 +518,9 @@ The editor writes this config for you; manual editing is optional.
 | `grid`       | number   | `20`               | Gap between grid lines, in canvas units (so on a 1000-wide canvas, `20` ≈ 50 columns). A **smaller** number means a **finer** grid with more lines. |
 | `snap`       | number   | follows `grid`     | Snap step for placement / drag / nudge / wall drawing, in canvas units. Omit to snap to the visible grid; set `0` for free placement; set any other number for a custom step. The editor shows a custom step as a **percentage of the grid** (e.g. `50` % of a `20` grid is stored here as `10`), but the value here is always absolute. |
 | `rotation`   | number   | `0`                | Rotate the displayed card by `90`, `180` or `270` degrees — e.g. a landscape plan on a portrait wall tablet. Editing always shows the plan as drawn. Icons and labels stay upright. |
+| `sunDimming` | boolean | `false` | Dim the plan through dusk and brighten it through dawn, following the **Home Assistant instance's** sunrise and sunset (not the browser's). See **Follow the sun**. |
+| `sunBrightnessMin` | number | `0.45` | Plan brightness once the sun is fully down, 0–1. Only used when `sunDimming` is on. |
+| `sunBrightnessMax` | number | `1` | Plan brightness in full daylight, 0–1. Only used when `sunDimming` is on. |
 | `background` | string   | card background    | Canvas background color (CSS / hex).         |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see **Floors**).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
@@ -939,6 +946,59 @@ trackers:
       max: 3.5
       presence: { entity: binary_sensor.living_room_presence }
 ```
+
+## Follow the sun
+
+Set **`sunDimming: true`** and the plan dims through dusk and brightens through dawn.
+
+```yaml
+type: custom:easy-floorplan-card
+sunDimming: true
+sunBrightnessMin: 0.45   # brightness once the sun is fully down (default 0.45)
+sunBrightnessMax: 1      # brightness in full daylight (default 1)
+```
+
+It reads **`sun.sun`'s `elevation`** — the angle of the sun above the horizon, which Home
+Assistant computes continuously from your instance's latitude, longitude and clock. That
+matters for two reasons: it is already a smooth signal, so there is no interpolating
+between sunrise and sunset timestamps; and it comes from the **server**, so a phone in
+another timezone showing the same dashboard sees the same picture.
+
+The ramp spans civil twilight, −6° to +6° — roughly the hour around sunrise and sunset
+when the light outside actually changes. Below that is night, above it is day, and the
+curve eases at both ends rather than cornering.
+
+A few deliberate choices:
+
+- **Device icons and labels are not dimmed.** They sit above the dimming layer, so a dark
+  plan stays readable and lit rooms still glow — which is the look worth having at night.
+- **`sunBrightnessMin` defaults to 0.45, not 0.** A plan you cannot read at night is worse
+  than one that is merely dim. Set it lower if you want a darker house.
+- **It fails bright.** If `sun.sun` is missing or unreadable the plan stays at full
+  brightness, rather than being stranded dark with nothing on screen to explain why.
+
+### Lit rooms hold back the night
+
+A flat dim would darken a lit room as much as an empty one — multiplying the whole picture,
+contrast included — so a lamp would end up *less* noticeable at night than at noon. Instead,
+**light withholds the dim**: any device with **Cast light** on clears the darkness around
+itself, full at the centre and diffusing to nothing at its `glowRadius`, the same shape and
+falloff as the pool it casts.
+
+The result is a dark house with genuinely lit rooms. Measured against the same spot in an
+unlit room, a lamp's contrast goes from **100 by day to 116 at night** on a dark theme, and
+from 25 to 106 on a light one — where a flat dim would have cut both to 45%.
+
+Strength follows brightness the way the pool does: a full-brightness lamp clears completely,
+one dimmed to nothing clears about a third. A light that is off, `unavailable`, or has no
+Cast light enabled clears nothing.
+
+**Walls stop the clearing**, using the same visibility polygon that stops the pools — so a lit
+room brightens itself and not the room next door. Note this treats a wall as solid along its
+whole length: light does not reach through a doorway, for the clearing or for the pool.
+
+Toggle it in the editor under **Project → Follow the sun**; the two brightness sliders
+appear once it is on.
 
 ## Styling hooks (card-mod)
 
