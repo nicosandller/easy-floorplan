@@ -98,83 +98,6 @@ HACS adds the dashboard resource automatically.
    - Type **JavaScript module**
 4. Hard-refresh your browser.
 
-## Usage
-
-Edit a dashboard → **Add card** → search **Easy Floorplan**. The editor is laid out
-top-to-bottom as a **tools row**, a **context row** with options/actions for whatever
-you're doing, the **canvas**, and two sections below — **Element** (per-element editor
-for the current selection) and **Project** (page-level settings like canvas size, grid,
-background):
-
-- **Select** — the default tool. Click an element to select it; Shift/Ctrl-click or drag
-  a box to select several at once. Where elements **overlap**, the first click takes the
-  most specific one (a device beats the tracker zone it sits in), and clicking again
-  without moving steps to the next element underneath, wrapping around — so nothing is
-  ever unreachable. Move the pointer and the next click starts over. Arrow keys nudge the selection (Shift+arrow jumps a
-  full grid cell); **Ctrl/Cmd+C/V/D** copy / paste / duplicate — pasting also works
-  across floors (copy, switch floor, paste); **Ctrl/Cmd+Z** undoes
-  (**Shift+Z** or **Ctrl+Y** redoes); **Escape** cancels an in-progress draw or clears
-  the selection. The **Element** section below the canvas names the selection
-  (e.g. *Door · 60 units*) and carries its **duplicate** / **delete** buttons along
-  with the full property editor.
-- **Wall** — drag to draw. Endpoints snap to nearby corners; start a new wall on an
-  existing corner to continue the perimeter. The context row's **straighten** toggle
-  keeps walls horizontal/vertical and corner-snapped (turn it off to draw freely), and
-  the **Snap** segmented control (`On` / `Off` / `Custom`) governs snapping for *all*
-  tools — `Custom` lets you snap to a percentage of the grid (e.g. 50% = half a cell).
-  Rooms **stretch** instead of tearing: dragging a wall — or one of its corner
-  handles — carries every wall corner that touches it, so you can widen a room by
-  just pulling its wall. Hold **Alt** while dragging to detach and move only the
-  grabbed wall.
-- **Door / Window** — click to drop; it snaps onto the nearest wall. The context row
-  shows a **Length** field for the *next* opening you place, so you can size doors and
-  windows before placing them. Assign a sensor after placement (in the **Element**
-  section) to animate the opening open/closed — see **Doors & windows**.
-- **Tracker** — drag to draw a rectangular tracked area, then bind one or two distance
-  sensors (X axis and/or Y axis) in the **Element** section to animate a live position
-  marker inside the zone — see **Tracker**. The zone outline is visible only in the
-  editor; the live card shows just the marker.
-- **Area** — click to place each corner of a room outline; points snap onto nearby wall
-  corners or another area's corners, and clicking back on the starting point closes the
-  shape (3+ points required; Backspace removes the last point while drawing, Escape
-  discards the whole outline). Once placed, drag anywhere inside the fill to move the
-  whole room, or drag a corner handle to reshape it — see **Areas**. Bind an **Entity** in
-  the Element section and the room's conditional-color controls appear beside it — **Active
-  color**, **Active opacity**, **Highlight**, and the **Color by state** rule list — the same
-  set devices and furniture already offer.
-- **+ Add** — one popover for everything droppable: device, text, and all furniture
-  types shown as their actual glyphs (pick a sofa by seeing a sofa). The new element is
-  selected immediately so the **Element** section is ready for configuring it.
-- **floor** — switch floors with the dropdown, add one with **+**; rename, **reorder**
-  (▲/▼ move the current floor up/down the list — the order of the dropdown and the
-  card's floor switcher) and delete live behind the gear button. The gear also offers
-  an **HA floor** dropdown listing your Home Assistant floors — linking one names the
-  plan floor after it (rename afterwards if you like; the link sticks either way).
-  Prefer the ▲/▼ buttons over reordering floor blocks in YAML: hand-editing easily
-  drops or duplicates floor `id`s (the card now repairs both, but edits made while
-  ids collide can land on the wrong floor).
-
-When a device sits inside an **Area** linked to a Home Assistant area, its entity pickers
-list only that area's entities — and the room is highlighted on the canvas (a breathing
-tint with a marching-ants border) with a matching note above the fields carrying a **Show all**
-link, so it's obvious *why* the list is short and it takes one click to widen it. An area with nothing assigned to it in HA
-filters nothing, the entity already bound always stays pickable, and an element outside
-every area is never filtered.
-
-The **Labels** toolbar toggle hides the element name labels on the canvas — useful on a
-dense plan where labels overlap the things you are trying to click. It only affects the
-editor view; the live card is unchanged.
-
-Undo/redo buttons sit at the right of the tools row. Zoom controls live on the canvas
-itself (bottom-right): **−** / **+** step, click the percentage to reset, the fit button
-snaps back to 100%, and **Ctrl/Cmd+scroll** zooms from the keyboard/trackpad. On touch
-screens, **pinch** directly on the canvas — it zooms just the plan (anchored between
-your fingers), not the whole editor. The **Project** section (canvas size, grid,
-background) is collapsed by default — click its header to expand. Its last row,
-**Rotate display**, turns the *live card* in 90° steps for portrait wall tablets — the
-editor keeps showing the plan as drawn, and icons and labels stay upright at any
-rotation.
-
 ## Elements
 
 Everything you place on the plan is an **element** you can select, move (freely or
@@ -309,24 +232,11 @@ By default it shows an icon badge:
   entity — a dumb smoke detector, a wired doorbell — can still be marked on the plan.
   It never highlights and tapping does nothing.
 
-### Presence ripples
+### Animations
 
-For motion/occupancy/presence sensors, switch a device's **Display** mode from *Icon
-badge* to **Ripple** or **Icon + ripple**. Instead of a static icon it draws animated
-concentric rings:
 
-- **Active** (sensor on) → the rings continuously pulse outward and fade, drawing the
-  eye to where motion is happening.
-- **Idle** (sensor off) → the rings stop and only a faint dot remains, so the spot stays
-  marked without being distracting.
 
-You can set the **ripple color** and **ripple size** per device, so e.g. a calm blue
-ring in the living room and a warmer one by the entrance. It works with any entity that
-reports an on/off-like state, not just presence sensors.
-
-<img width="540" height="304" alt="ripple_demo_gif" src="https://github.com/user-attachments/assets/e43949cf-13a2-48f8-804d-73738299475f" />
-
-### Doors & windows
+#### Doors & windows
 
 Drop a **door** or **window** from the toolbar and it snaps onto the nearest wall. On its
 own a door is drawn open (the familiar swing arc) and a window closed — a static floor
@@ -403,7 +313,7 @@ openings:
 
 <img width="540" height="304" alt="door_window_demo" src="https://github.com/user-attachments/assets/091b3c89-5202-4025-8a0f-0fe867276be2" />
 
-### Areas
+#### Areas
 
 An **area** is a colored, named room polygon you trace on top of your walls — handy for
 telling rooms apart at a glance, and for scoping which entities show up when you drop a
@@ -462,7 +372,7 @@ areas:
       - { x: 100, y: 500 }
 ```
 
-### Live position trackers
+#### Live position trackers
 
 A **tracker** turns one or two distance sensors into a live marker that moves around
 the floor plan in real time. The classic use case is a pair of mmWave / radar /
@@ -483,70 +393,10 @@ you still get useful information: the position along that axis.
 You can leave one of the axes empty: the tracker still works, it just draws a line
 spanning the unknown axis instead of a point.
 
-#### How it animates
+#### Presence ripples
 
-- **Both sensors set** — a small pulsating triangle glides to the resolved
-  `(x, y)`, emitting concentric ripple rings. Readings outside `[min, max]` clamp
-  to the rectangle's edge so a glitch never sends the marker off the plan.
-- **Only one sensor set** — a faint pulsating line spans the unknown axis at the
-  known coordinate, with ripple bands expanding along it. This honestly conveys
-  "the target is *somewhere* on this line" without pretending you know more.
-- **Both sensors unavailable** — nothing renders in the live card (no ghost
-  markers when the sensors drop out). The editor still shows the zone outline so
-  you can find and reposition it.
+#### Fans
 
-#### Hiding the marker when nobody's there (presence gate)
-
-Most mmWave / radar devices expose a distance entity **and** an occupancy
-`binary_sensor` as siblings (e.g. `sensor.kitchen_radar_distance` +
-`binary_sensor.kitchen_radar_occupancy`). Bind the occupancy entity to the
-sensor's **Presence** field and the marker animation will hide whenever the
-sensor reports "clear" — no more triangle pulsing in an empty room because the
-distance value is stale.
-
-- Configure presence **per axis** alongside the distance sensor. If either
-  axis's presence reports clear, the marker hides — fail-safe semantics:
-  when in doubt, don't show a position.
-- Works for any binary entity: `binary_sensor.*`, `input_boolean`,
-  `device_tracker` reporting `home`, etc. `on` / `open` / `home` / `detected`
-  count as detected; anything else (including `unavailable` and `unknown`)
-  is treated as clear.
-- **Invert** flips the interpretation for inverted-logic sensors. It does
-  *not* invert `unavailable` / `unknown` — those always hide the marker so
-  a sensor outage can't accidentally pin the dot somewhere stale.
-- In the editor, a gated zone outline dims to ~35% opacity so it's clear at
-  a glance that the marker is intentionally hidden (not broken). The live
-  card just shows nothing.
-
-The marker color and dot size are configurable per tracker. Updates are smoothed
-with a short CSS transition, so the marker glides between readings instead of
-snapping (handy when sensors update at 1–4 Hz).
-
-#### Tips for calibrating the range
-
-Distance sensors are usually mounted on a wall and report the gap to the closest
-target, but it's rare for the rectangle you drew on the plan to match `[0, max]`
-of the sensor exactly. Two common adjustments:
-
-- **Offset** — if the sensor is mounted *outside* the tracked rectangle (e.g.
-  bolted to the wall a metre behind it), set `min` to that offset so a reading
-  of "1.0 m" lands at the near edge instead of off-plan.
-- **Direction** — if the sensor faces the far edge (so distance *grows* as the
-  target moves toward the near edge), tick **invert** instead of swapping `min`
-  and `max`. Same result, fewer footguns.
-
-#### Editor-only zone
-
-The zone rectangle (dashed outline, light fill) is drawn **only in the editor**
-so you can grab and resize it. The dashboard view renders just the animated
-marker — your finished plan stays clean.
-
-#### Sensor compatibility
-
-Anything that resolves to a finite number works: `sensor` entities reporting
-distance, `input_number` helpers (great for testing), `number` entities, etc.
-States of `unavailable`, `unknown`, or non-numeric values are treated as
-"no reading" — the corresponding axis falls back to its no-data behaviour.
 
 ## Configuration reference
 
