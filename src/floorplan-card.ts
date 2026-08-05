@@ -9,6 +9,8 @@ import {
   DEFAULT_ITEM_SIZE,
   DEFAULT_TEXT_SIZE,
   DEFAULT_RIPPLE_SIZE,
+  DEFAULT_SUN_MIN,
+  DEFAULT_SUN_MAX,
   getFloors,
   trackerPresenceDetected,
 } from "./types";
@@ -17,6 +19,7 @@ import {
   renderOpening,
   renderWallMask,
   imageFitRatio,
+  sunBrightness,
   resolveOpeningAmount,
   openingIsActive,
   openingClickAction,
@@ -33,6 +36,7 @@ import {
   glowPaint,
   renderGlow,
   renderGlowMask,
+  renderSunDimMask,
   polygonCentroid,
   trackerSensorReading,
   entityIsActive,
@@ -369,6 +373,29 @@ export class FloorplanCard extends LitElement {
     const rot = normalizePlanRotation(c.rotation);
     const dims = rotatedCanvasSize(cssNumber(c.width, DEFAULT_WIDTH), cssNumber(c.height, DEFAULT_HEIGHT), rot);
     const rotTransform = planRotationTransform(c.width, c.height, rot);
+    // Follow the real sun (issue #113). Elevation comes from the HA instance,
+    // so every viewer sees the same picture regardless of their own timezone.
+    const sunLevel = c.sunDimming
+      ? sunBrightness(
+          this.hass?.states["sun.sun"]?.attributes?.elevation,
+          cssNumber(c.sunBrightnessMin, DEFAULT_SUN_MIN),
+          cssNumber(c.sunBrightnessMax, DEFAULT_SUN_MAX)
+        )
+      : DEFAULT_SUN_MAX;
+    // Lit rooms hold back the night (issue #113): without this the flat dim
+    // multiplies the lit-vs-unlit contrast too, and a lamp ends up *less*
+    // visible after dark than at noon.
+    const sunDimMaskId = `${this._glowIdBase}-sundim`;
+    const sunDimMask = c.sunDimming
+      ? renderSunDimMask(
+          active.items,
+          this.hass?.states,
+          c.width,
+          c.height,
+          sunDimMaskId,
+          active.walls
+        )
+      : nothing;
     return html`
       <ha-card .header=${c.title ?? nothing}>
         <div
@@ -500,6 +527,23 @@ export class FloorplanCard extends LitElement {
                 yPresent: trackerPresenceDetected(this.hass?.states, tr.ySensor?.presence),
               })
             )}
+            <!-- Sun dimming (issue #113). Last inside the rotated group, so it
+                 covers the whole plan; the device overlay below is HTML and
+                 stays at full brightness, keeping icons and state readable at
+                 night. pointer-events:none is not optional — this rect spans
+                 the canvas, and without it every tappable opening underneath
+                 stops responding (the lesson from #108). -->
+            ${
+              c.sunDimming
+                ? svg`${sunDimMask}<rect class="fp-sun-dim"
+                            x=${-WALL_THICKNESS} y=${-WALL_THICKNESS}
+                            width=${c.width + WALL_THICKNESS * 2}
+                            height=${c.height + WALL_THICKNESS * 2}
+                            fill="#000"
+                            mask=${sunDimMask === nothing ? nothing : `url(#${sunDimMaskId})`}
+                            opacity=${1 - sunLevel} />`
+                : nothing
+            }
             </g>
           </svg>
           <div class="items">
@@ -605,6 +649,16 @@ export class FloorplanCard extends LitElement {
     }
     .wall {
       stroke: var(--primary-text-color);
+    }
+    /* Sun dimming (issue #113): decoration, never a pointer target. The
+       transition matters — HA steps the sun elevation every ~30s, and without
+       it dusk arrives as a series of visible jumps rather than a fade. */
+    .fp-sun-dim {
+      pointer-events: none;
+      transition: opacity 2s linear;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .fp-sun-dim { transition: none; }
     }
     /* Light pools (issue #6). "isolation" gives the layer its own compositing
        group, so the pools blend with each other but not with the plan beneath

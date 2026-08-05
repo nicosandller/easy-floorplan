@@ -552,6 +552,17 @@ export function areaFiltersEntities(
   return !!area?.haArea && (area.filterEntities ?? true);
 }
 
+/**
+ * Sun elevation (degrees) the dimming ramp spans (issue #113). Civil twilight
+ * is -6°, so this covers roughly the hour around sunrise/sunset when the light
+ * outside actually changes — below it is night, above it is day.
+ */
+export const SUN_ELEVATION_NIGHT = -6;
+export const SUN_ELEVATION_DAY = 6;
+/** Plan brightness at night / in daylight when `sunDimming` is on. */
+export const DEFAULT_SUN_MIN = 0.45;
+export const DEFAULT_SUN_MAX = 1;
+
 export const DEFAULT_AREA_OPACITY = 0.25;
 export const DEFAULT_AREA_BORDER_WIDTH = 3;
 
@@ -692,6 +703,26 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   rotation?: number;
   /** Canvas background color (CSS / hex). Falls back to the card background. */
   background?: string;
+  /**
+   * Follow the real sun (issue #113): dim the plan through dusk and brighten
+   * it through dawn, tracking the **Home Assistant instance's** own sunrise
+   * and sunset rather than the viewer's browser.
+   *
+   * Driven by `sun.sun`'s `elevation` attribute, which Home Assistant already
+   * computes continuously from the instance's latitude, longitude and clock.
+   * That is the whole reason not to read timestamps and interpolate: elevation
+   * is the smooth signal, it comes from the server, and a phone in another
+   * timezone showing the same dashboard sees the same picture.
+   */
+  sunDimming?: boolean;
+  /**
+   * Plan brightness once the sun is fully down, 0-1. Default
+   * {@link DEFAULT_SUN_MIN}. Not 0: a plan you cannot read at night is worse
+   * than one that is merely dim.
+   */
+  sunBrightnessMin?: number;
+  /** Plan brightness in full daylight, 0-1. Default {@link DEFAULT_SUN_MAX}. */
+  sunBrightnessMax?: number;
   /**
    * Multi-floor data. When present and non-empty this is the source of truth.
    * When absent, the legacy flat arrays below describe a single implicit floor
