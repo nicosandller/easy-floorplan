@@ -34,8 +34,9 @@ automatically to the card and screen size.
   piano, hot tub.
 - **Areas** — trace a room's outline point-by-point (points snap to wall corners and to
   neighboring areas' corners) to get a colored, named room polygon. Bind an entity to a
-  room and its fill goes live — green while a presence sensor is occupied, red when a CO2
-  sensor crosses a threshold. Naming a room after
+  room and it goes live — green while a presence sensor is occupied, red when a CO2
+  sensor crosses a threshold — as a fill, or as the room's own walls lighting up if you
+  would rather not tint everything inside it. Naming a room after
   one of your Home Assistant areas (the name field autocompletes against them) links the
   two, which scopes the entity picker — for any device dropped inside it — to that HA
   area's entities, and can bulk-add every device in the area.
@@ -65,7 +66,8 @@ automatically to the card and screen size.
 
 ## What you can end up with
 
-<img width="1103" height="592" alt="demo_screenshot" src="https://github.com/user-attachments/assets/c05d32e3-8a9e-4643-8c25-79c1128dbb59" />
+<img width="1550" height="761" alt="Screenshot 2026-08-05 at 2 54 49 PM" src="https://github.com/user-attachments/assets/7130f94f-f591-486b-bf9d-ecf137b653a9" />
+
 
 ## Installation
 
@@ -842,7 +844,8 @@ trackers:
 - `activeOpacity` — fill opacity while `entity` resolves a color. Lets a room lift out of
   the plan while it is live without permanently darkening it. Falls back to `opacity`.
 - `borderColor` / `borderWidth` — a static outline for the room. No outline is drawn by
-  default; `borderWidth` defaults to `3` canvas units once a color is set.
+  default; `borderWidth` defaults to `3` canvas units once a color is set. (A *live*
+  outline — see `highlight` — has its own default of `4`, for the reason given below.)
 - `highlight` — where a live color paints: `fill` (default), `border`, or `both`. Use
   `border` for a room that outlines itself while occupied without tinting everything
   inside it, which reads better on a busy plan.
@@ -855,9 +858,10 @@ trackers:
   between two rooms splits down the middle and each side reports its own room, and a
   corner where several rooms meet splits between them. An exterior wall colors on its
   inside face only, leaving the plan's silhouette intact. `borderWidth` is the width
-  you actually see on the room's own side, and defaults to `4` — the room's own half
-  of the wall, since the wall is centred on the line the polygon follows. Widen it and
-  the band runs past the wall onto the floor and over furniture standing against it.
+  you actually see on the room's own side, and defaults to `4` here rather than the `3`
+  a static `borderColor` uses — it is the room's own half of the wall, the wall being
+  centred on the line the polygon follows. Widen it and the band runs past the wall onto
+  the floor and over furniture standing against it.
 
 ```yaml
 areas:
@@ -1056,7 +1060,8 @@ editor.
 
 | Element | Class | Attributes |
 | --- | --- | --- |
-| Area | `fp-area` | `data-id`, `data-entity` |
+| Area (fill) | `fp-area` | `data-id`, `data-entity` |
+| Area (outline) | `fp-area-border` | `data-id`, `data-entity` |
 | Furniture | `fp-furniture`, `fp-furniture-<type>` | `data-id`, `data-entity` |
 | Door / window | `fp-opening`, `fp-opening-door` \| `fp-opening-window` | `data-id`, `data-entity` |
 | Wall | `wall`, `fp-wall` | `data-id` |
@@ -1066,6 +1071,19 @@ editor.
 
 Ids come from the editor (`area_a5r5nwl`, `furn_3j66s50`, …) and are stable across edits.
 An element with no id simply has no `data-id`, rather than `data-id="undefined"`.
+
+An area is **two** elements answering the same `data-id`: the fill, drawn under the walls,
+and the outline, drawn over them. Scope a `fill` rule to `.fp-area`, or it lands on the
+outline too — the outline is drawn `fill="none"`, so an unscoped rule floods it solid:
+
+```css
+[data-id="area_hall"]          { fill: #62f202; }  /* also floods the outline */
+.fp-area[data-id="area_hall"]  { fill: #62f202; }  /* the fill, as intended */
+.fp-area-border[data-id="area_hall"] { stroke-dasharray: 6 4; }
+```
+
+Properties that are not `fill` — `opacity`, `filter`, `stroke` — are usually fine on both,
+which is why the `data-entity` example below is left unscoped deliberately.
 
 ```yaml
 type: custom:easy-floorplan-card
