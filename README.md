@@ -161,7 +161,13 @@ link, so it's obvious *why* the list is short and it takes one click to widen it
 filters nothing, the entity already bound always stays pickable, and an element outside
 every area is never filtered.
 
-The **Labels** toolbar toggle hides the element name labels on the canvas — useful on a
+Devices on the canvas carry **the same label line the live card will draw** — the name
+and/or the state, per that device's **Show name** / **Show state** — so turning one of
+those on is something you can see straight away rather than only after leaving the editor.
+A device set to show neither still gets a label here, dimmed, to keep it tellable apart
+while you drag it around; that greyed-out one is editor-only and the card draws nothing.
+
+The **Labels** toolbar toggle hides either kind on the canvas — useful on a
 dense plan where labels overlap the things you are trying to click. It only affects the
 editor view; the live card is unchanged.
 
@@ -252,6 +258,15 @@ By default it shows an icon badge:
   **2nd entity** at its power sensor: the badge reads `1.2kW` and tapping still toggles
   the switch. A device with no number anywhere keeps its icon, so this can never leave
   an empty circle. *Nothing* is the third setting — no badge at all, label only.
+
+  **Which entity gets read** is worked out for you: the first of the device's entities
+  with a number to show wins, which is why the plug above needs no configuration — its
+  switch reads "on", not a number, so the badge falls through to the power sensor. When
+  the device has a **2nd entity**, a **Badge reads** dropdown appears naming both, so you
+  can overrule that — necessary when the main entity has a number of its own and you want
+  the other one. Once you pick, the card reads that entity and only that entity: if it has
+  nothing to show the badge falls back to its icon rather than quietly showing the other
+  one instead.
 - **Color and icon by state** — the **Color & icon by state** rules restyle the element
   by what the entity reads: both the **icon badge** and the label, whether or not the
   entity is "on" (a temperature sensor never is). Each rule can also swap the **icon**,
@@ -691,6 +706,7 @@ shape it occupies on screen.
 | `glowRadius`  | number                                 | `140`        | Radius of the cast pool at full brightness, in canvas units. A dimmer lamp casts a proportionally smaller pool, down to half this. |
 | `glowColor`   | string                                 | `#ffd9a0`    | Color for a bulb that can't report one. A color-capable light always uses its own. |
 | `badgeContent` | `icon` \| `value` \| `none`           | `icon`       | What the badge holds. `value` draws the device's reading inside it (see **Value in the badge**), falling back to the icon when there is no number; `none` hides the badge, leaving the label. |
+| `badgeEntity` | `primary` \| `secondary`               | automatic    | Which entity a `value` badge reads. Unset picks the first with a number to show. Set, only that entity is read — no falling back to the other. |
 | `showIcon`    | boolean                                | `true`       | **Deprecated** — superseded by `badgeContent`. Still honoured when `badgeContent` is unset: `false` means `none`. |
 | `hideWhenInactive` | boolean                           | `false`      | Hide the device on the card while its entity is inactive (issue #55). Always shown, dimmed, in the editor. |
 | `showState`   | boolean                                | sensors only | Show the entity state in the label line.               |

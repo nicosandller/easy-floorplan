@@ -45,6 +45,7 @@ import {
   entityStateText,
   itemStateText,
   itemBadgeLabel,
+  editorItemLabel,
   itemHiddenWhenInactive,
   resolveStateColor,
   itemLabelSize,
@@ -56,6 +57,7 @@ import {
   matchStateRule,
   badgeContentOf,
   badgeValue,
+  badgeReading,
   badgeValueSize,
   resolveIconAnimation,
   domainIconAnimation,
@@ -660,6 +662,67 @@ describe("itemBadgeLabel (issues #61, #59)", () => {
     expect(
       itemBadgeLabel(named(), { entity: "", kind: "sensor", showName: true, name: "Detector" }),
     ).toBe("Detector");
+  });
+});
+
+// Issue #135: the editing canvas showed an id where the card shows a state, so
+// turning "Show state" on changed nothing you could see without leaving it.
+describe("editorItemLabel (#135)", () => {
+  const named = () => {
+    const h = livingArea();
+    (h.states[TEMP]!.attributes as Record<string, unknown>).friendly_name = "Living Temp";
+    return h;
+  };
+
+  it("draws the card's own line whenever the card draws one", () => {
+    const sensor = { entity: TEMP, kind: "sensor" as const };
+    expect(editorItemLabel(named(), sensor)).toEqual({ text: "17.9 °C", live: true });
+    // …and matches the card exactly, rather than approximating it.
+    expect(editorItemLabel(named(), sensor).text).toBe(itemBadgeLabel(named(), sensor));
+
+    const withName = { entity: TEMP, kind: "light" as const, showName: true, showState: true };
+    expect(editorItemLabel(named(), withName)).toEqual({
+      text: itemBadgeLabel(named(), withName),
+      live: true,
+    });
+  });
+
+  it("falls back to an editor-only name when the card would draw nothing", () => {
+    // A light shows no label by default. Without this the canvas would be a
+    // field of identical circles with nothing to drag-and-tell-apart.
+    const light = { entity: "light.kitchen", kind: "light" as const };
+    expect(itemBadgeLabel(named(), light)).toBe("");
+    expect(editorItemLabel(named(), light)).toEqual({ text: "light.kitchen", live: false });
+    // A configured name wins over the entity id, as it always did.
+    expect(editorItemLabel(named(), { ...light, name: "Ceiling" })).toEqual({
+      text: "Ceiling",
+      live: false,
+    });
+    // Nothing bound at all: the kind is the last resort (issue #39).
+    expect(editorItemLabel(named(), { entity: "", kind: "generic" as const })).toEqual({
+      text: "generic",
+      live: false,
+    });
+  });
+
+  it("`live` is what separates a preview from editor chrome", () => {
+    // The flag drives the dim styling, so it must never be true for a label
+    // the card will not render — that is the whole signal.
+    const off = editorItemLabel(named(), { entity: TEMP, kind: "light" as const });
+    expect(off.live).toBe(false);
+    const on = editorItemLabel(named(), {
+      entity: TEMP,
+      kind: "light" as const,
+      showState: true,
+    });
+    expect(on.live).toBe(true);
+  });
+
+  it("survives having no hass at all, as the editor does outside HA", () => {
+    expect(editorItemLabel(undefined, { entity: "light.k", kind: "light" as const })).toEqual({
+      text: "light.k",
+      live: false,
+    });
   });
 });
 
@@ -1599,6 +1662,111 @@ describe("badgeValue (#106)", () => {
   it("a humidifier reads its current humidity", () => {
     const h = hass({ "humidifier.bed": { state: "on", attributes: { current_humidity: 44 } } });
     expect(badgeValue(h, { entity: "humidifier.bed" })).toBe("44%");
+  });
+
+  // Issue #136: the guess was usually right, but it was only a guess and
+  // nothing said which entity it landed on.
+  describe("choosing which entity the badge reads (#136)", () => {
+    const plug = () =>
+      hass({
+        "switch.plug": { state: "on" },
+        "sensor.plug_power": { state: "1240", attributes: { unit_of_measurement: "W" } },
+      });
+    const twoSensors = () =>
+      hass({
+        "sensor.a": { state: "21.4", attributes: { unit_of_measurement: "°C" } },
+        "sensor.b": { state: "63", attributes: { unit_of_measurement: "%" } },
+      });
+
+    it("reports which entity the reading came from", () => {
+      // The plug's switch says "on" — not a number — so the badge is showing
+      // the power sensor. The form has to be able to say so.
+      expect(badgeReading(plug(), { entity: "switch.plug", secondaryEntity: "sensor.plug_power" }))
+        .toEqual({ text: "1.2kW", source: "secondary" });
+      expect(badgeReading(twoSensors(), { entity: "sensor.a", secondaryEntity: "sensor.b" }))
+        .toEqual({ text: "21°", source: "primary" });
+    });
+
+    it("badgeValue is exactly badgeReading's text, across the whole chain", () => {
+      const cases = [
+        { entity: "switch.plug", secondaryEntity: "sensor.plug_power" },
+        { entity: "sensor.a", secondaryEntity: "sensor.b" },
+        { entity: "sensor.a", secondaryEntity: "sensor.b", badgeEntity: "secondary" as const },
+        { entity: "switch.plug", badgeEntity: "primary" as const },
+        { entity: "nope.missing" },
+      ];
+      for (const item of cases) {
+        const h = { ...plug().states, ...twoSensors().states };
+        const both = { states: h } as unknown as RenderHass;
+        expect(badgeValue(both, item)).toBe(badgeReading(both, item)?.text);
+      }
+    });
+
+    it("an explicit secondary wins even when the primary has a number of its own", () => {
+      // The case with no expression at all before this: the fallback never
+      // reached the second sensor, because the first one answered.
+      const h = twoSensors();
+      expect(badgeValue(h, { entity: "sensor.a", secondaryEntity: "sensor.b" })).toBe("21°");
+      expect(
+        badgeValue(h, { entity: "sensor.a", secondaryEntity: "sensor.b", badgeEntity: "secondary" }),
+      ).toBe("63%");
+    });
+
+    it("an explicit choice does not fall through to the other entity", () => {
+      // Asked for the switch, which has no number: the badge shows its icon
+      // rather than quietly showing a different device's reading.
+      const h = plug();
+      const item = { entity: "switch.plug", secondaryEntity: "sensor.plug_power" } as const;
+      expect(badgeValue(h, { ...item, badgeEntity: "primary" })).toBeUndefined();
+      // …and the reverse: an unreadable secondary does not borrow the primary.
+      expect(
+        badgeValue(hass({ "sensor.a": { state: "21" }, "switch.b": { state: "on" } }), {
+          entity: "sensor.a",
+          secondaryEntity: "switch.b",
+          badgeEntity: "secondary",
+        }),
+      ).toBeUndefined();
+    });
+
+    it("an absent badgeEntity reproduces the old chain exactly", () => {
+      // The back-compat guard: every config written before this key existed.
+      const h = { ...plug().states, ...twoSensors().states };
+      const both = { states: h } as unknown as RenderHass;
+      expect(badgeValue(both, { entity: "switch.plug", secondaryEntity: "sensor.plug_power" }))
+        .toBe("1.2kW");
+      expect(badgeValue(both, { entity: "sensor.a", secondaryEntity: "sensor.b" })).toBe("21°");
+      expect(badgeValue(both, { entity: "sensor.a" })).toBe("21°");
+    });
+
+    it("an explicit primary still gets its attribute and domain reading", () => {
+      const h = hass({
+        "climate.hall": {
+          state: "heat",
+          attributes: { hvac_action: "heating", current_temperature: 21.4 },
+        },
+        "sensor.hum": { state: "44", attributes: { unit_of_measurement: "%" } },
+      });
+      const item = { entity: "climate.hall", secondaryEntity: "sensor.hum" } as const;
+      // Domain reading, not the mode.
+      expect(badgeValue(h, { ...item, badgeEntity: "primary" })).toBe("21°");
+      // A non-numeric configured attribute still falls through to it.
+      expect(
+        badgeValue(h, { ...item, attribute: "hvac_action", badgeEntity: "primary" }),
+      ).toBe("21°");
+    });
+
+    it("secondaryAttribute still resolves against the primary when no second entity", () => {
+      const h = hass({
+        "climate.hall": { state: "heat", attributes: { current_humidity: 44 } },
+      });
+      expect(
+        badgeValue(h, {
+          entity: "climate.hall",
+          secondaryAttribute: "current_humidity",
+          badgeEntity: "secondary",
+        }),
+      ).toBe("44");
+    });
   });
 });
 

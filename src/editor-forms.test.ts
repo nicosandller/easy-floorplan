@@ -327,6 +327,69 @@ describe("itemForm", () => {
     expect(f.toPatch({ size: 40, badgeMode: "value" }).size).toBe(40);
   });
 
+  // Issue #136: which of a device's two entities the value badge reads.
+  describe("Badge reads (#136)", () => {
+    const plug = {
+      ...item,
+      entity: "switch.plug",
+      secondaryEntity: "sensor.plug_power",
+      badgeContent: "value",
+    } as FloorItem;
+    const names = (it: FloorItem, src?: Parameters<typeof itemForm>[3]) =>
+      itemForm(it, undefined, undefined, src).fields.map((x) => x.name);
+
+    it("appears only when the badge shows a value AND there is a second entity", () => {
+      expect(names(plug)).toContain("badgeEntity");
+      // Nothing to choose between with one entity.
+      expect(names({ ...plug, secondaryEntity: undefined } as FloorItem)).not.toContain(
+        "badgeEntity",
+      );
+      // Nothing to read at all when the badge holds an icon or nothing.
+      expect(names({ ...plug, badgeContent: "icon" } as FloorItem)).not.toContain("badgeEntity");
+      expect(names({ ...plug, badgeContent: "none" } as FloorItem)).not.toContain("badgeEntity");
+      // A ripple-only device draws no badge, so the question is moot there too.
+      expect(names({ ...plug, display: "ripple" } as FloorItem)).not.toContain("badgeEntity");
+    });
+
+    it("opens on the entity the badge is actually reading, not a bare default", () => {
+      // The trap: this plug's badge shows its power sensor through the
+      // fallback, with no badgeEntity stored. A form defaulting to "primary"
+      // would name the switch while the badge shows watts — and the next
+      // unrelated edit would save that and drop the reading to an icon.
+      const asRead = itemForm(plug, undefined, undefined, { source: "secondary" });
+      expect(asRead.data.badgeEntity).toBe("secondary");
+      // A stored choice always wins over the live reading.
+      expect(
+        itemForm({ ...plug, badgeEntity: "primary" } as FloorItem, undefined, undefined, {
+          source: "secondary",
+        }).data.badgeEntity,
+      ).toBe("primary");
+    });
+
+    it("names the entities, with no 'Automatic' among them (#127's precedent)", () => {
+      const field = itemForm(plug, undefined, undefined, {
+        source: "secondary",
+        primaryLabel: "Kitchen plug",
+        secondaryLabel: "Kitchen plug power",
+      }).fields.find((x) => x.name === "badgeEntity")!;
+      const opts = (field.selector as { select: { options: { value: string; label: string }[] } })
+        .select.options;
+      expect(opts.map((o) => o.value)).toEqual(["primary", "secondary"]);
+      expect(opts.map((o) => o.label)).toEqual(["Kitchen plug", "Kitchen plug power"]);
+      expect(opts.map((o) => o.value)).not.toContain("auto");
+    });
+
+    it("falls back to entity ids when hass has no friendly names", () => {
+      const field = itemForm(plug).fields.find((x) => x.name === "badgeEntity")!;
+      const opts = (field.selector as { select: { options: { label: string }[] } }).select.options;
+      expect(opts.map((o) => o.label)).toEqual(["switch.plug", "sensor.plug_power"]);
+    });
+
+    it("passes the choice straight through as a config key", () => {
+      expect(itemForm(plug).toPatch({ badgeEntity: "secondary" }).badgeEntity).toBe("secondary");
+    });
+  });
+
   it("moves the icon out of the form, next to the rules that override it (#127)", () => {
     expect(itemForm(item).fields.map((x) => x.name)).not.toContain("icon");
     expect(itemForm(item).data.icon).toBeUndefined();

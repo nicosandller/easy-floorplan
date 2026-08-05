@@ -8,6 +8,7 @@ import type {
   IconAnimation,
   StateColorRule,
   BadgeContent,
+  BadgeEntity,
   Furniture,
   Tracker,
   Area,
@@ -777,6 +778,33 @@ export function itemBadgeLabel(
 }
 
 /**
+ * The label the **editor canvas** puts under a device (issue #135), and whether
+ * it is the card's own (`live`) or an editor-only stand-in.
+ *
+ * The canvas used to draw `name || entity || kind` always, so a device read
+ * `light.kitchen` here and `21.5 °C` on the card, and turning "Show state" on
+ * changed nothing you could see without leaving the editor. So it draws the
+ * card's line whenever the card draws one.
+ *
+ * When the card draws nothing — both label toggles off — the canvas still needs
+ * something, or a plan of unnamed devices becomes a field of identical circles
+ * with nothing to tell them apart while dragging. That stand-in is rendered
+ * dimmed, the same way a `hideWhenInactive` device is faded: the signal is
+ * "this is a note to you, the card will not draw it".
+ *
+ * Lives here rather than in the editor so the rule is pinned by a test —
+ * `editor.ts` has no render-test harness.
+ */
+export function editorItemLabel(
+  hass: RenderHass | undefined,
+  item: Parameters<typeof itemBadgeLabel>[1] & { kind: ItemKind },
+): { text: string; live: boolean } {
+  const card = itemBadgeLabel(hass, item);
+  if (card) return { text: card, live: true };
+  return { text: item.name || item.entity || item.kind, live: false };
+}
+
+/**
  * Clamp a config `labelSize` to the editor's 8–40 px range at the render
  * sink. The editor already clamps, but a hand-edited / imported config
  * bypasses it — and this value lands in an inline `style` attribute.
@@ -1215,45 +1243,98 @@ function formatReading(n: number, rawUnit: unknown): string {
  */
 export function badgeValue(
   hass: RenderHass | undefined,
-  item: {
-    entity?: string;
-    attribute?: string;
-    secondaryEntity?: string;
-    secondaryAttribute?: string;
-  },
+  item: BadgeReadingItem,
 ): string | undefined {
+  return badgeReading(hass, item)?.text;
+}
+
+/** The shape {@link badgeReading} needs off a {@link FloorItem}. */
+export interface BadgeReadingItem {
+  entity?: string;
+  attribute?: string;
+  secondaryEntity?: string;
+  secondaryAttribute?: string;
+  badgeEntity?: BadgeEntity;
+}
+
+/** What a badge is showing, and which of the device's entities it came from. */
+export interface BadgeReading {
+  text: string;
+  source: BadgeEntity;
+}
+
+/**
+ * {@link badgeValue}, plus **which entity it read** (issue #136).
+ *
+ * The editor needs the source, not just the text: its "Badge reads" dropdown
+ * has to open on the entity the badge is actually showing. Defaulting that
+ * dropdown to "primary" would state the opposite of what is on screen for a
+ * plug whose reading arrives through the fallback below — and the first
+ * unrelated edit would save that as fact and drop the reading to an icon.
+ *
+ * So this is the one resolution and {@link badgeValue} is a wrapper over it,
+ * the same shape as {@link matchStateRule} / {@link resolveStateColor} in this
+ * file and for the same reason: two copies of a precedence chain are two
+ * chances for the badge and the form to disagree about it.
+ */
+export function badgeReading(
+  hass: RenderHass | undefined,
+  item: BadgeReadingItem,
+): BadgeReading | undefined {
   if (!hass || !item.entity) return undefined;
-  const st = hass.states[item.entity];
-  const attrs = st?.attributes as Record<string, unknown> | undefined;
-  const reading = DOMAIN_BADGE_READING[item.entity.split(".")[0]];
 
-  if (item.attribute) {
-    const n = numericReading(attrs?.[item.attribute]);
-    // A unit only when we know it belongs to *this* attribute:
-    // `unit_of_measurement` describes the state, not an arbitrary attribute, so
-    // borrowing it here would label a battery percentage "°C".
-    if (n !== undefined)
-      return compactNumber(n) + (item.attribute === reading?.attribute ? reading.unit : "");
-  }
-  if (reading) {
-    const n = numericReading(attrs?.[reading.attribute]);
-    if (n !== undefined) return compactNumber(n) + reading.unit;
-  }
-  const own = numericReading(st?.state);
-  if (own !== undefined) return formatReading(own, attrs?.unit_of_measurement);
-
-  // Same secondary resolution as the label line ({@link itemStateText}), so the
-  // two never disagree about which entity the second reading comes from.
+  // The secondary, resolved as the label line resolves it ({@link itemStateText}),
+  // so the two never disagree about which entity the second reading comes from.
   const secondaryEntity = item.secondaryEntity ?? (item.secondaryAttribute ? item.entity : undefined);
-  if (!secondaryEntity) return undefined;
-  const sec = hass.states[secondaryEntity];
-  const secAttrs = sec?.attributes as Record<string, unknown> | undefined;
-  if (item.secondaryAttribute) {
-    const n = numericReading(secAttrs?.[item.secondaryAttribute]);
-    return n === undefined ? undefined : compactNumber(n);
+
+  const primary = (): string | undefined => {
+    const st = hass.states[item.entity as string];
+    const attrs = st?.attributes as Record<string, unknown> | undefined;
+    const reading = DOMAIN_BADGE_READING[(item.entity as string).split(".")[0]];
+    if (item.attribute) {
+      const n = numericReading(attrs?.[item.attribute]);
+      // A unit only when we know it belongs to *this* attribute:
+      // `unit_of_measurement` describes the state, not an arbitrary attribute,
+      // so borrowing it here would label a battery percentage "°C".
+      if (n !== undefined)
+        return compactNumber(n) + (item.attribute === reading?.attribute ? reading.unit : "");
+    }
+    if (reading) {
+      const n = numericReading(attrs?.[reading.attribute]);
+      if (n !== undefined) return compactNumber(n) + reading.unit;
+    }
+    const own = numericReading(st?.state);
+    return own === undefined ? undefined : formatReading(own, attrs?.unit_of_measurement);
+  };
+
+  const secondary = (): string | undefined => {
+    if (!secondaryEntity) return undefined;
+    const sec = hass.states[secondaryEntity];
+    const secAttrs = sec?.attributes as Record<string, unknown> | undefined;
+    if (item.secondaryAttribute) {
+      const n = numericReading(secAttrs?.[item.secondaryAttribute]);
+      return n === undefined ? undefined : compactNumber(n);
+    }
+    const n = numericReading(sec?.state);
+    return n === undefined ? undefined : formatReading(n, secAttrs?.unit_of_measurement);
+  };
+
+  // An explicit choice reads that entity and stops. Falling through to the
+  // other one would quietly show a different device than the one asked for;
+  // no number at all is honest, and the badge draws its icon instead.
+  if (item.badgeEntity === "secondary") {
+    const text = secondary();
+    return text === undefined ? undefined : { text, source: "secondary" };
   }
-  const n = numericReading(sec?.state);
-  return n === undefined ? undefined : formatReading(n, secAttrs?.unit_of_measurement);
+  if (item.badgeEntity === "primary") {
+    const text = primary();
+    return text === undefined ? undefined : { text, source: "primary" };
+  }
+
+  const own = primary();
+  if (own !== undefined) return { text: own, source: "primary" };
+  const other = secondary();
+  return other === undefined ? undefined : { text: other, source: "secondary" };
 }
 
 /**

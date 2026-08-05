@@ -73,7 +73,9 @@ import {
   itemRawValue,
   isPresenceEntity,
   badgeContentOf,
+  editorItemLabel,
   badgeValue,
+  badgeReading,
   badgeValueSize,
   itemHiddenWhenInactive,
   resolveIconAnimation,
@@ -3451,7 +3453,10 @@ export class FloorplanCardEditor extends LitElement {
     const st = it.entity ? this.hass?.states[it.entity] : undefined;
     // Pass the registry icon here too, so the editor preview matches the card.
     const icon = resolveItemIcon(it, st, it.entity ? this.hass?.entities?.[it.entity]?.icon : undefined);
-    const label = it.name || it.entity || it.kind;
+    // The card's own label line when it has one, else a dim editor-only
+    // stand-in so devices stay tellable apart (issue #135). The rule lives in
+    // render.ts, where it can be unit-tested.
+    const { text: label, live: cardLabel } = editorItemLabel(this.hass, it);
     const size = cssNumber(it.size, DEFAULT_ITEM_SIZE);
     const showIcon = badgeContentOf(it) !== "none";
     const display = it.display ?? "badge";
@@ -3527,14 +3532,18 @@ export class FloorplanCardEditor extends LitElement {
         @pointercancel=${this._onPointerCancel}
       >
         ${visual}
-        <!-- Identification while editing; the Labels toolbar toggle hides it
-             on dense plans (issue #52), and its size previews the card's
-             labelSize (issue #59). -->
+        <!-- The card's own label line when there is one (issue #135), so
+             turning Show state on is visible here rather than only after
+             leaving the editor; otherwise the dim identification fallback.
+             The Labels toolbar toggle hides either on dense plans (issue
+             #52), and the size previews the card's labelSize (issue #59). -->
         ${this._hideLabels
           ? nothing
           : html`<span
-              class="ilabel"
-              style="font-size:${it.labelSize != null ? itemLabelSize(it.labelSize) : 11}px;"
+              class="ilabel ${cardLabel ? "live" : ""}"
+              style="font-size:${cardLabel || it.labelSize != null
+                ? itemLabelSize(it.labelSize)
+                : 11}px;${cardLabel && stateColor ? `color:${stateColor};` : ""}"
               >${label}</span
             >`}
       </div>
@@ -3670,8 +3679,19 @@ export class FloorplanCardEditor extends LitElement {
       const deviceClass = it.entity
         ? (this.hass?.states[it.entity]?.attributes?.device_class as string | undefined)
         : undefined;
+      // What the badge is reading right now, so the "Badge reads" row can open
+      // on it rather than on a guess (issue #136). Same "resolve off hass at
+      // the call site" arrangement as deviceClass above.
+      const friendly = (id?: string) =>
+        (id ? (this.hass?.states[id]?.attributes?.friendly_name as string | undefined) : undefined) ??
+        id;
+      const badgeSource = {
+        source: badgeReading(this.hass, it)?.source ?? "primary",
+        primaryLabel: friendly(it.entity),
+        secondaryLabel: friendly(it.secondaryEntity),
+      } as const;
       return html`
-        ${this._renderForm(itemForm(it, areaEntities, deviceClass), (patch, live) => {
+        ${this._renderForm(itemForm(it, areaEntities, deviceClass, badgeSource), (patch, live) => {
           // Any entity change re-derives the item kind (icon defaults etc.) —
           // including clearing it, which resets kind to "generic".
           if ("entity" in patch && typeof patch.entity === "string") {
@@ -4939,6 +4959,16 @@ export class FloorplanCardEditor extends LitElement {
       max-width: 120px;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    /* The card's own label line, drawn as the card draws it (issue #135):
+       full-strength ink, and no width clamp — the card has none, and clipping
+       is exactly what would make a long label look right here and wrong live.
+       The unclamped variant is the one you are checking; the dim fallback
+       above stays clamped, being editor chrome rather than a preview. */
+    .ilabel.live {
+      color: var(--primary-text-color);
+      max-width: none;
+      overflow: visible;
     }
     /* The panel ("Project" config) and the new element-edit area share the
        same boxed look so the two sections below the canvas read as siblings. */

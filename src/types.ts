@@ -230,6 +230,23 @@ export interface FloorItem {
    */
   badgeContent?: BadgeContent;
   /**
+   * Which of this device's own entities the badge reads while
+   * `badgeContent: "value"` (issue #136) — the main `entity`, or
+   * {@link secondaryEntity}.
+   *
+   * Absent means "work it out", which is what {@link badgeValue} has always
+   * done: the first candidate with a number wins, so a switch that reads "on"
+   * already falls through to its power sensor. That guess is usually right,
+   * but it is only a guess, and there was no way to overrule it when the main
+   * entity happens to be numeric too.
+   *
+   * Set, it is the *only* entity read. No falling back to the other one:
+   * having asked for the power sensor, being shown the switch instead would
+   * be worse than being shown the icon — which is what a device with no
+   * number to display falls back to anyway.
+   */
+  badgeEntity?: BadgeEntity;
+  /**
    * Hide this device on the live card while its entity is inactive (issue
    * #55), so a busy room only shows what is actually doing something. The
    * editor always draws it — dimmed — or it could never be selected again.
@@ -305,6 +322,13 @@ export type ItemDisplay = "badge" | "ripple" | "iconRipple";
 
 /** What a device badge holds — see {@link FloorItem.badgeContent} (issue #106). */
 export type BadgeContent = "icon" | "value" | "none";
+
+/**
+ * Which of a device's two entities feeds its value badge — see
+ * {@link FloorItem.badgeEntity} (issue #136). Named by role rather than by
+ * entity id so renaming an entity in Home Assistant cannot orphan the choice.
+ */
+export type BadgeEntity = "primary" | "secondary";
 
 /**
  * One colour rule for {@link FloorItem.stateColor} / {@link Furniture.stateColor}.

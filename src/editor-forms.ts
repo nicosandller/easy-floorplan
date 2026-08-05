@@ -7,6 +7,7 @@
  */
 import type {
   Area,
+  BadgeEntity,
   Floor,
   FloorItem,
   FloorText,
@@ -419,15 +420,35 @@ function badgeModePatch(mode: BadgeMode, ripple: boolean): Record<string, unknow
 }
 
 /**
+ * What the badge is reading *right now*, for the "Badge reads" row (issue
+ * #136). Resolved off `hass` at the call site, like {@link itemForm}'s
+ * `deviceClass`, because this file stays pure.
+ *
+ * `source` is load-bearing rather than cosmetic. A plug whose badge shows its
+ * power sensor through {@link badgeReading}'s fallback has no `badgeEntity`
+ * stored, so a dropdown defaulting to "primary" would name the switch while
+ * the badge shows watts — and the next unrelated edit would write that down
+ * and drop the reading to an icon.
+ */
+export interface BadgeSourceInfo {
+  source: BadgeEntity;
+  /** Friendly names, falling back to the entity ids when hass has none. */
+  primaryLabel?: string;
+  secondaryLabel?: string;
+}
+
+/**
  * `deviceClass` is the entity's HA device class, the one hass-derived fact the
  * device form needs: it is what separates a motion sensor from a door contact,
  * and so decides whether the ripple ring is offered at all (issue #127). The
  * editor reads it off `hass` at the call site, as it already does for openings.
+ * `badgeSource` is the second such fact — see {@link BadgeSourceInfo}.
  */
 export function itemForm(
   it: FloorItem,
   areaScope?: AreaEntityScope,
-  deviceClass?: string
+  deviceClass?: string,
+  badgeSource?: BadgeSourceInfo
 ): FormSpec {
   const ripple = itemHasRipple(it);
   const presence = isPresenceEntity(it.entity, deviceClass);
@@ -480,6 +501,24 @@ export function itemForm(
       ),
     },
   ];
+  // Which entity the value comes from (issue #136) — offered only where it is
+  // a real question: the badge has to be showing a value, and the device has
+  // to have a second entity to choose between. Most devices never see this.
+  //
+  // The options name the entities rather than offering an "Automatic", the
+  // precedent from #127's dropdown above: "auto" is a fact about the config
+  // format, not about what the user is looking at.
+  if (badgeModeOf(it) === "value" && it.secondaryEntity) {
+    fields.push({
+      name: "badgeEntity",
+      label: "Badge reads",
+      helper: "Which of this device's entities the badge shows",
+      selector: dropdown(
+        opt("primary", badgeSource?.primaryLabel || it.entity || "Main entity"),
+        opt("secondary", badgeSource?.secondaryLabel || it.secondaryEntity)
+      ),
+    });
+  }
   // A presence device can ring the spot it watches (issue #127) — the same
   // shape of option as "Cast light" below, offered only where it means
   // something. A ring on a thermostat says "someone is here", which is a lie.
@@ -574,6 +613,10 @@ export function itemForm(
       size: it.size ?? DEFAULT_ITEM_SIZE,
       angle: it.angle ?? 0,
       badgeMode: badgeModeOf(it),
+      // The stored choice, else the entity the badge is *actually* reading —
+      // never a bare "primary" default, which would contradict the canvas for
+      // every device relying on the fallback. See {@link BadgeSourceInfo}.
+      badgeEntity: it.badgeEntity ?? badgeSource?.source ?? "primary",
       ripple,
       rippleSize: it.rippleSize ?? DEFAULT_RIPPLE_SIZE,
       glow: it.glow ?? false,
