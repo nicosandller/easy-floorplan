@@ -42,6 +42,10 @@ import {
   entityIsActive,
   itemBadgeLabel,
   resolveStateColor,
+  itemRawValue,
+  badgeContentOf,
+  badgeValue,
+  badgeValueSize,
   itemHiddenWhenInactive,
   itemLabelSize,
   hassRenderInputsChanged,
@@ -234,16 +238,24 @@ export class FloorplanCard extends LitElement {
       item,
       item.entity ? this.hass?.states[item.entity]?.state : undefined,
     );
+    // "Show the reading, not a picture" (issue #106). Same badge — size, angle,
+    // state colour, ripple stacking all unchanged — with the glyph swapped for
+    // the number. A device with nothing numeric to show keeps its icon.
+    const value = badgeContentOf(item) === "value" ? badgeValue(this.hass, item) : undefined;
     return html`
       <div
         class="badge"
         style="width:${size}px;height:${size}px;transform:rotate(${cssNumber(item.angle, 0)}deg);"
       >
-        <ha-icon
-          class=${anim ? `anim-${anim}` : ""}
-          icon=${this._itemIcon(item)}
-          style="--mdc-icon-size:${itemIconSize(size)}px;"
-        ></ha-icon>
+        ${value
+          ? html`<span class="badge-value" style="font-size:${badgeValueSize(size, value)}px;"
+              >${value}</span
+            >`
+          : html`<ha-icon
+              class=${anim ? `anim-${anim}` : ""}
+              icon=${this._itemIcon(item)}
+              style="--mdc-icon-size:${itemIconSize(size)}px;"
+            ></ha-icon>`}
       </div>
     `;
   }
@@ -256,16 +268,15 @@ export class FloorplanCard extends LitElement {
     // Threshold color (issue #68), judged on the displayed value (attribute
     // when set, else the state). cssColor gates the config string (#64).
     const st = item.entity ? this.hass?.states[item.entity] : undefined;
-    const rawValue = item.attribute
-      ? (st?.attributes as Record<string, unknown> | undefined)?.[item.attribute]
-      : st?.state;
+    const rawValue = itemRawValue(item, st);
     // One resolved colour drives the whole element (issue #79 follow-up): the
     // label *and* the badge. A sensor is never "on", so tying the badge to the
     // active state alone left threshold colours invisible on exactly the
     // devices they were written for.
     const stateColor = cssColor(resolveStateColor(item.stateColor, rawValue));
     const labelColor = stateColor;
-    const showIcon = item.showIcon ?? true;
+    // "none" is the old `showIcon: false` — no badge, label only (issue #106).
+    const showIcon = badgeContentOf(item) !== "none";
     const display = item.display ?? "badge";
     // Per-device active color (issue #79). Ripples follow it too, so a device
     // given one color does not come out yellow-badged with a blue ring.
@@ -770,6 +781,16 @@ export class FloorplanCard extends LitElement {
       justify-content: center;
       color: var(--primary-text-color);
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    /* The reading standing in for the icon (issue #106). Inherits the badge's
+       text color, so every rule that recolours a badge — active, --fp-state —
+       carries the number with it and needs no counterpart here. The negative
+       tracking buys back the width a 4-glyph reading like 1.2kW needs. */
+    .badge-value {
+      font-weight: 600;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
     }
     /*
      * --fp-active is the item's own activeColor (issue #79) when it sets one;

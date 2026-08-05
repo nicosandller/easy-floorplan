@@ -50,6 +50,10 @@ import {
   isEntityOn,
   entityIsActive,
   resolveItemIcon,
+  matchStateRule,
+  badgeContentOf,
+  badgeValue,
+  badgeValueSize,
   resolveIconAnimation,
   itemIconSize,
   normalizePlanRotation,
@@ -699,6 +703,79 @@ describe("isEntityOn / resolveItemIcon", () => {
       resolveItemIcon(item, { state: "on", attributes: { icon: "mdi:from-entity" } }, undefined)
     ).toBe("mdi:from-entity");
   });
+
+  // Issue #106: "you can not only change the color, but also the icon
+  // depending on the state" — blinds open vs. blinds closed.
+  describe("icon from a state rule (#106)", () => {
+    const blind = {
+      entity: "cover.blind",
+      kind: "cover" as const,
+      stateColor: [
+        { state: "open", color: "#4caf50", icon: "mdi:blinds-open" },
+        { state: "closed", color: "#9e9e9e", icon: "mdi:blinds" },
+      ],
+    };
+    const st = (state: string) => ({ state, attributes: {} });
+
+    it("swaps the glyph with the state", () => {
+      expect(resolveItemIcon(blind, st("open"))).toBe("mdi:blinds-open");
+      expect(resolveItemIcon(blind, st("closed"))).toBe("mdi:blinds");
+    });
+
+    it("beats a config icon — which used to freeze the glyph outright", () => {
+      const pinned = { ...blind, icon: "mdi:pinned" };
+      expect(resolveItemIcon(pinned, st("open"))).toBe("mdi:blinds-open");
+      // No rule matches: the config icon is still in charge.
+      expect(resolveItemIcon(pinned, st("opening"))).toBe("mdi:pinned");
+    });
+
+    it("a rule with no icon changes nothing (colour-only rules are unaffected)", () => {
+      const colourOnly = { ...blind, stateColor: [{ state: "open", color: "#4caf50" }] };
+      expect(resolveItemIcon(colourOnly, st("open"))).toBe(
+        entityDefaultIcon("cover.blind", undefined, true) ?? defaultIcon("cover")
+      );
+      expect(resolveItemIcon({ ...colourOnly, icon: "mdi:pinned" }, st("open"))).toBe("mdi:pinned");
+    });
+
+    it("judges the rule on the same reading the colour uses (an attribute when set)", () => {
+      const climate = {
+        entity: "climate.hall",
+        kind: "climate" as const,
+        attribute: "hvac_action",
+        stateColor: [{ state: "heating", color: "red", icon: "mdi:fire" }],
+      };
+      expect(resolveItemIcon(climate, { state: "heat", attributes: { hvac_action: "heating" } })).toBe(
+        "mdi:fire"
+      );
+      expect(resolveItemIcon(climate, { state: "heat", attributes: { hvac_action: "idle" } })).toBe(
+        defaultIcon("climate")
+      );
+    });
+
+    it("drops an unusable icon rather than rendering an empty box", () => {
+      const hostile = {
+        ...blind,
+        icon: "mdi:fallback",
+        stateColor: [{ state: "open", color: "red", icon: '"><script>' }],
+      };
+      const icon = resolveItemIcon(hostile, st("open"));
+      expect(icon).toBe("mdi:fallback");
+      expect(icon).not.toContain("<");
+    });
+
+    it("a threshold rule can carry an icon too", () => {
+      const battery = {
+        entity: "sensor.battery",
+        kind: "sensor" as const,
+        stateColor: [
+          { above: 80, color: "green", icon: "mdi:battery" },
+          { color: "red", icon: "mdi:battery-alert" },
+        ],
+      };
+      expect(resolveItemIcon(battery, st("95"))).toBe("mdi:battery");
+      expect(resolveItemIcon(battery, st("12"))).toBe("mdi:battery-alert");
+    });
+  });
 });
 
 describe("collectWatchedEntities", () => {
@@ -1283,6 +1360,219 @@ describe("resolveStateColor (issue #68)", () => {
       expect(resolveStateColor(rules, "anything")).toBe("red");
       expect(resolveStateColor(rules, "")).toBe("red");
     });
+  });
+
+  // The colour and the icon (#106) must come off the *same* matched rule, so
+  // the matcher returns the rule and resolveStateColor is a wrapper over it.
+  describe("matchStateRule (#106)", () => {
+    it("returns the very rule object that supplied the colour", () => {
+      const hot = { above: 26, color: "red", icon: "mdi:fire" };
+      const rs = [hot, { above: 24, color: "orange" }, { color: "white" }];
+      expect(matchStateRule(rs, 30)).toBe(hot);
+      expect(matchStateRule(rs, 30)?.icon).toBe("mdi:fire");
+      // …and the wrapper still answers exactly as it did.
+      expect(resolveStateColor(rs, 30)).toBe(hot.color);
+    });
+
+    it("agrees with resolveStateColor across the whole precedence table", () => {
+      const rs = [
+        { above: 26, color: "red" },
+        { above: 24, color: "orange" },
+        { state: "heat", color: "blue" },
+        { color: "white" },
+      ];
+      for (const v of [30, 25, 20, "heat", "HEAT", "", null, undefined, true, "nonsense"]) {
+        expect(matchStateRule(rs, v)?.color).toBe(resolveStateColor(rs, v));
+      }
+    });
+
+    it("no rules, no match", () => {
+      expect(matchStateRule(undefined, 1)).toBeUndefined();
+      expect(matchStateRule([], 1)).toBeUndefined();
+    });
+  });
+});
+
+describe("badgeContentOf (#106)", () => {
+  it("defaults to the icon", () => {
+    expect(badgeContentOf({})).toBe("icon");
+    expect(badgeContentOf({ showIcon: true })).toBe("icon");
+  });
+
+  it("honours a legacy showIcon: false as 'no badge'", () => {
+    expect(badgeContentOf({ showIcon: false })).toBe("none");
+  });
+
+  it("an explicit badgeContent wins over the boolean it replaced", () => {
+    expect(badgeContentOf({ badgeContent: "value", showIcon: false })).toBe("value");
+    expect(badgeContentOf({ badgeContent: "icon", showIcon: false })).toBe("icon");
+    expect(badgeContentOf({ badgeContent: "none", showIcon: true })).toBe("none");
+  });
+
+  it("ignores a junk value rather than blanking the badge", () => {
+    expect(badgeContentOf({ badgeContent: "bogus" as never })).toBe("icon");
+    expect(badgeContentOf({ badgeContent: "bogus" as never, showIcon: false })).toBe("none");
+  });
+});
+
+describe("badgeValue (#106)", () => {
+  const hass = (states: Record<string, { state: string; attributes?: object }>) =>
+    ({
+      states: Object.fromEntries(
+        Object.entries(states).map(([id, s]) => [id, { entity_id: id, attributes: {}, ...s }]),
+      ),
+    }) as unknown as RenderHass;
+
+  it("shows a thermostat's temperature — its state is a mode, not a number", () => {
+    const h = hass({
+      "climate.hall": { state: "heat", attributes: { current_temperature: 21.4 } },
+    });
+    expect(badgeValue(h, { entity: "climate.hall" })).toBe("21°");
+  });
+
+  // The case from the issue: colour by hvac_action, still read the temperature.
+  it("falls through a non-numeric configured attribute to the domain reading", () => {
+    const h = hass({
+      "climate.hall": {
+        state: "heat",
+        attributes: { hvac_action: "heating", current_temperature: 21.4 },
+      },
+    });
+    expect(badgeValue(h, { entity: "climate.hall", attribute: "hvac_action" })).toBe("21°");
+  });
+
+  it("uses a numeric configured attribute when there is one", () => {
+    const h = hass({
+      "climate.hall": { state: "heat", attributes: { temperature: 19, current_temperature: 21.4 } },
+    });
+    expect(badgeValue(h, { entity: "climate.hall", attribute: "temperature" })).toBe("19");
+  });
+
+  it("reads a sensor's own state, with a compact unit", () => {
+    const h = hass({
+      "sensor.co2": { state: "780", attributes: { unit_of_measurement: "ppm" } },
+      "sensor.temp": { state: "17.94", attributes: { unit_of_measurement: "°C" } },
+      "sensor.hum": { state: "45.2", attributes: { unit_of_measurement: "%" } },
+      "sensor.lux": { state: "1200", attributes: { unit_of_measurement: "lx" } },
+      "sensor.aqi": { state: "12", attributes: { unit_of_measurement: "µg/m³" } },
+    });
+    expect(badgeValue(h, { entity: "sensor.co2" })).toBe("780"); // ppm dropped
+    expect(badgeValue(h, { entity: "sensor.temp" })).toBe("18°"); // °C collapses
+    expect(badgeValue(h, { entity: "sensor.hum" })).toBe("45%");
+    expect(badgeValue(h, { entity: "sensor.lux" })).toBe("1200lx");
+    expect(badgeValue(h, { entity: "sensor.aqi" })).toBe("12"); // too long to fit
+  });
+
+  it("keeps one decimal only for small non-integers", () => {
+    const h = hass({
+      "sensor.power": { state: "1.24", attributes: { unit_of_measurement: "kW" } },
+      "sensor.big": { state: "1234.6", attributes: { unit_of_measurement: "W" } },
+      "sensor.whole": { state: "9", attributes: {} },
+    });
+    expect(badgeValue(h, { entity: "sensor.power" })).toBe("1.2kW");
+    // Watts fold into kW rather than becoming a five-glyph reading.
+    expect(badgeValue(h, { entity: "sensor.big" })).toBe("1.2kW");
+    expect(badgeValue(h, { entity: "sensor.whole" })).toBe("9");
+  });
+
+  // A smart plug: the switch has no reading, its power sensor does.
+  it("falls back to the secondary entity, which is what makes a plug work", () => {
+    const h = hass({
+      "switch.plug": { state: "on" },
+      "sensor.plug_power": { state: "1240", attributes: { unit_of_measurement: "W" } },
+    });
+    expect(
+      badgeValue(h, { entity: "switch.plug", secondaryEntity: "sensor.plug_power" }),
+    ).toBe("1.2kW");
+  });
+
+  it("returns undefined when nothing numeric exists, so the badge keeps its icon", () => {
+    const h = hass({
+      "light.kitchen": { state: "on" },
+      "cover.blind": { state: "closed" },
+      "sensor.dead": { state: "unavailable", attributes: { unit_of_measurement: "°C" } },
+      "sensor.blank": { state: "" },
+    });
+    expect(badgeValue(h, { entity: "light.kitchen" })).toBeUndefined();
+    expect(badgeValue(h, { entity: "cover.blind" })).toBeUndefined();
+    expect(badgeValue(h, { entity: "sensor.dead" })).toBeUndefined();
+    expect(badgeValue(h, { entity: "sensor.blank" })).toBeUndefined();
+    expect(badgeValue(h, { entity: "" })).toBeUndefined();
+    expect(badgeValue(undefined, { entity: "sensor.temp" })).toBeUndefined();
+  });
+
+  it("does not borrow the state's unit for an unrelated attribute", () => {
+    const h = hass({
+      "sensor.temp": { state: "18", attributes: { unit_of_measurement: "°C", battery_level: 87 } },
+    });
+    expect(badgeValue(h, { entity: "sensor.temp", attribute: "battery_level" })).toBe("87");
+  });
+
+  it("a humidifier reads its current humidity", () => {
+    const h = hass({ "humidifier.bed": { state: "on", attributes: { current_humidity: 44 } } });
+    expect(badgeValue(h, { entity: "humidifier.bed" })).toBe("44%");
+  });
+});
+
+describe("badgeValueSize (#106)", () => {
+  // Measured advance widths for the badge's 600-weight face, in units of
+  // font-size. Sizing must keep the rendered text inside the circle for every
+  // one of these — the bug this replaced sized by string length, which put
+  // "1240W" 3.2px outside an 18px badge.
+  const MEASURED: Record<string, number> = {
+    "9°": 1.18,
+    "21°": 1.66,
+    "-12°": 2.17,
+    "45%": 2.38,
+    "100%": 2.91,
+    "782": 1.95,
+    "9999": 2.76,
+    "1240W": 3.54,
+    "1.2kW": 3.07,
+    "12.5A": 2.88,
+  };
+
+  it("keeps the rendered text inside the badge at every realistic size", () => {
+    for (const badge of [24, 30, 34, 48, 80]) {
+      for (const [text, perPx] of Object.entries(MEASURED)) {
+        const size = badgeValueSize(badge, text);
+        const width = size * perPx;
+        // Either it fits, or sizing hit the documented 6px legibility floor —
+        // below which shrinking further would trade an overhang for a smudge.
+        const ok = width <= badge - 3 || size === 6;
+        expect({ badge, text, size, width: +width.toFixed(1), ok }).toEqual({
+          badge, text, size, width: +width.toFixed(1), ok: true,
+        });
+      }
+    }
+  });
+
+  it("sizes by glyph width, not string length", () => {
+    // Same length, very different widths: all three must not get one size.
+    const sizes = ["21°", "782", "45%"].map((t) => badgeValueSize(34, t));
+    expect(new Set(sizes).size).toBeGreaterThan(1);
+    // The narrowest reading gets the largest type.
+    expect(badgeValueSize(34, "21°")).toBeGreaterThan(badgeValueSize(34, "45%"));
+    expect(badgeValueSize(34, "45%")).toBeGreaterThan(badgeValueSize(34, "1240W"));
+  });
+
+  it("gives the default badge a legible 21° and a fitting 1240W", () => {
+    expect(badgeValueSize(34, "21°")).toBe(14);
+    expect(badgeValueSize(34, "1240W")).toBe(8);
+  });
+
+  it("caps short readings so 9° does not balloon, and floors long ones at 6px", () => {
+    // 46% of 80 is 36.8 → 37, nudged down to 36 for the badge's even parity.
+    expect(badgeValueSize(80, "9°")).toBe(36);
+    // A 5-glyph reading in a tiny badge hits the legibility floor rather than
+    // shrinking into a smudge; it wants a bigger badge instead.
+    expect(badgeValueSize(18, "1240W")).toBe(6);
+  });
+
+  it("shares itemIconSize's parity nudge, and survives a junk size", () => {
+    expect(badgeValueSize(34, "21°") % 2).toBe(0);
+    expect(badgeValueSize(19, "9°") % 2).toBe(1);
+    expect(badgeValueSize("40px;color:red" as never, "21°")).toBe(badgeValueSize(34, "21°"));
   });
 });
 

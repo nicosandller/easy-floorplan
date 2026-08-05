@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cssColor, cssIdent, cssEntityId } from "./css-safe";
+import { cssColor, cssIdent, cssEntityId, cssIcon } from "./css-safe";
 import { furnitureColor } from "./render";
 import type { Furniture } from "./types";
 
@@ -211,5 +211,46 @@ describe("cssIdent / cssEntityId — styling hooks (issue #105)", () => {
   it("cssEntityId still drops what would break the attribute selector", () => {
     expect(cssEntityId('light.k"]{}')).toBe("light.k");
     expect(cssEntityId("")).toBeUndefined();
+  });
+});
+
+describe("cssIcon — icon names (issue #106)", () => {
+  it("accepts the icon names people actually type", () => {
+    expect(cssIcon("mdi:blinds-open")).toBe("mdi:blinds-open");
+    expect(cssIcon("mdi:thermostat")).toBe("mdi:thermostat");
+    expect(cssIcon("mdi:smoke-detector-variant-alert")).toBe("mdi:smoke-detector-variant-alert");
+    expect(cssIcon("  mdi:fire  ")).toBe("mdi:fire");
+    // Custom icon sets are a real HA feature, not just mdi.
+    expect(cssIcon("phu:cable-cat5")).toBe("phu:cable-cat5");
+    expect(cssIcon("mdi:battery-90")).toBe("mdi:battery-90");
+  });
+
+  it("validates rather than strips: a non-icon must not survive as something", () => {
+    // The trap this guards: stripping '"><script>' leaves "script", which is
+    // harmless in the DOM but has silently displaced the caller's fallback
+    // icon. Callers rely on undefined to move to the next candidate.
+    for (const junk of [
+      '"><script>',
+      "mdi:blinds; color:red",
+      "mdi:a b",
+      "mdi:",
+      ":blinds",
+      "blinds",
+      "mdi::blinds",
+      "mdi:blinds-",
+      "-mdi:blinds",
+      "url(https://evil/x)",
+      "",
+      "   ",
+    ]) {
+      expect(cssIcon(junk)).toBeUndefined();
+    }
+  });
+
+  it("returns undefined for non-strings", () => {
+    expect(cssIcon(undefined)).toBeUndefined();
+    expect(cssIcon(null)).toBeUndefined();
+    expect(cssIcon(42)).toBeUndefined();
+    expect(cssIcon({ icon: "mdi:fire" })).toBeUndefined();
   });
 });

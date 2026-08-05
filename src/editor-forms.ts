@@ -30,6 +30,7 @@ import {
 } from "./types";
 import {
   DEFAULT_LABEL_SIZE,
+  badgeContentOf,
   defaultIcon,
   normalizePlanRotation,
   openingMotion,
@@ -444,7 +445,12 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
     }
   }
   fields.push(
-    { name: "showIcon", label: "Show icon", selector: { boolean: {} } },
+    {
+      name: "badgeContent",
+      label: "Badge shows",
+      helper: "Value puts the reading in the badge; falls back to the icon when there is no number",
+      selector: dropdown(opt("icon", "Icon"), opt("value", "Value"), opt("none", "Nothing")),
+    },
     {
       name: "hideWhenInactive",
       label: "Only when active",
@@ -497,7 +503,7 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
       glow: it.glow ?? false,
       glowRadius: it.glowRadius ?? DEFAULT_GLOW_RADIUS,
       glowColor: it.glowColor ?? "",
-      showIcon: it.showIcon ?? true,
+      badgeContent: badgeContentOf(it),
       hideWhenInactive: it.hideWhenInactive ?? false,
       showState: it.showState ?? false,
       showName: it.showName ?? false,
@@ -506,7 +512,12 @@ export function itemForm(it: FloorItem, areaScope?: AreaEntityScope): FormSpec {
       hold_action: it.hold_action,
       double_tap_action: it.double_tap_action,
     },
-    toPatch: identity,
+    // Touching "Badge shows" retires the `showIcon` boolean it replaced (issue
+    // #106), so a migrated config carries one setting rather than two that
+    // could later be edited into disagreeing. Configs nobody touches keep
+    // working through badgeContentOf's fallback.
+    toPatch: (patch) =>
+      "badgeContent" in patch ? { ...patch, showIcon: undefined } : patch,
   };
 }
 

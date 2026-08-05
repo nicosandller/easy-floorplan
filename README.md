@@ -222,9 +222,42 @@ By default it shows an icon badge:
   makes a wall of lights, covers and switches hard to read. Set **Active color**
   per device to tell them apart at a glance — lights yellow, covers purple,
   thermostats orange. Ripples follow it unless you set a ripple color too.
-- **Color by state** — the **Color by state** rules color the element by what the
-  entity reads: both the **icon badge** and the label, whether or not the entity is
-  "on" (a temperature sensor never is). Add rules in the editor, or in YAML:
+- **Value in the badge** — set **Badge shows** to *Value* and the device draws its
+  reading inside the badge instead of an icon: a thermostat reads `21°` in the same
+  circle your state rules already paint red while it's heating, with no text line
+  hanging underneath. The card picks the reading per domain, so there is nothing to
+  configure — a climate shows its current temperature (its *state* is the mode,
+  "heat"), a humidifier its humidity, a sensor its own value. Long units are dropped
+  to keep the number legible: `°C` becomes `°`, CO₂ reads plainly as `780`.
+
+  An **Attribute** you set wins when it's a number, so you can colour by one reading
+  and display another — `attribute: hvac_action` colours the badge by whether the
+  boiler is firing while the badge still shows the temperature. For a smart plug, point
+  **2nd entity** at its power sensor: the badge reads `1.2kW` and tapping still toggles
+  the switch. A device with no number anywhere keeps its icon, so this can never leave
+  an empty circle. *Nothing* is the third setting — no badge at all, label only.
+- **Color and icon by state** — the **Color & icon by state** rules restyle the element
+  by what the entity reads: both the **icon badge** and the label, whether or not the
+  entity is "on" (a temperature sensor never is). Each rule can also swap the **icon**,
+  so blinds get an open glyph and a closed one:
+
+  ```yaml
+  stateColor:
+    - state: open
+      color: "#4caf50"
+      icon: mdi:blinds-open
+    - state: closed
+      color: "#9e9e9e"
+      icon: mdi:blinds
+  ```
+
+  `icon` is optional — a rule without one only changes the colour, exactly as before.
+  A matching rule's icon beats the device's fixed **icon** override, which is what makes
+  a custom icon and state-dependent icons usable together; previously setting one froze
+  the glyph for good. (Covers that carry a **device class** already get open/closed icons
+  with no rules at all — this is for everything else, and for a third state.)
+
+  Add rules in the editor, or in YAML:
 
   ```yaml
   stateColor:
@@ -615,9 +648,9 @@ shape it occupies on screen.
 | `secondaryEntity` | string                             | —            | Optional 2nd entity shown alongside (e.g. humidity).   |
 | `attribute`   | string                                 | —            | Show this attribute of `entity` instead of its state (e.g. `current_temperature`). |
 | `secondaryAttribute` | string                          | —            | Attribute for the 2nd reading — from `secondaryEntity`, or from `entity` when none. |
-| `stateColor`  | rule[]                                 | —            | Colors for the badge and label (regardless of on/off; beats `activeColor`): `[{above: 26, color: red}, {color: white}]`. A rule matches `above: <n>` or `state: <value>`; an exact state beats a threshold, the highest matching `above` beats a lower one, and a rule with neither is the default. |
+| `stateColor`  | rule[]                                 | —            | Colors for the badge and label (regardless of on/off; beats `activeColor`): `[{above: 26, color: red}, {color: white}]`. A rule matches `above: <n>` or `state: <value>`; an exact state beats a threshold, the highest matching `above` beats a lower one, and a rule with neither is the default. A rule may also carry an optional `icon`, which beats the device's own `icon` while that rule matches. |
 | `x`, `y`      | number                                 | —            | Position.                                              |
-| `kind`        | light/switch/sensor/binary_sensor/climate/cover/generic | inferred | Used for the default icon.            |
+| `kind`        | light/switch/sensor/binary_sensor/climate/cover/media_player/fan/camera/lock/humidifier/vacuum/generic | inferred | Used for the default icon. |
 | `icon`        | string                                 | entity icon  | Override mdi icon.                                     |
 | `name`        | string                                 | friendly name| Label / tooltip override.                             |
 | `size`        | number                                 | `34`         | Icon badge diameter (px).                              |
@@ -630,7 +663,8 @@ shape it occupies on screen.
 | `glow`        | boolean                                | `false`      | Cast a pool of light onto the plan from this device (lights only). See **Cast light**. |
 | `glowRadius`  | number                                 | `140`        | Radius of the cast pool, in canvas units.              |
 | `glowColor`   | string                                 | `#ffd9a0`    | Color for a bulb that can't report one. A color-capable light always uses its own. |
-| `showIcon`    | boolean                                | `true`       | Show the icon badge.                                   |
+| `badgeContent` | `icon` \| `value` \| `none`           | `icon`       | What the badge holds. `value` draws the device's reading inside it (see **Value in the badge**), falling back to the icon when there is no number; `none` hides the badge, leaving the label. |
+| `showIcon`    | boolean                                | `true`       | **Deprecated** — superseded by `badgeContent`. Still honoured when `badgeContent` is unset: `false` means `none`. |
 | `hideWhenInactive` | boolean                           | `false`      | Hide the device on the card while its entity is inactive (issue #55). Always shown, dimmed, in the editor. |
 | `showState`   | boolean                                | sensors only | Show the entity state in the label line.               |
 | `showName`    | boolean                                | `false`      | Show the device's name in the label line (`Name · state` when combined). |

@@ -121,6 +121,30 @@ export function cssIdent(value: unknown): string | undefined {
 }
 
 /**
+ * An icon name for `<ha-icon icon="…">` (issue #106), or `undefined` when the
+ * value is not one.
+ *
+ * Not a style sink — Lit escapes attribute values — so unlike {@link cssColor}
+ * this is not about breakout. It is about the fallback chain staying honest.
+ * `ha-icon` resolves `set:name` against a registered icon set, and anything
+ * else yields a console error and an empty circle.
+ *
+ * Deliberately **validates rather than strips**, which is the difference
+ * between this and {@link cssIdent}. Stripping `"><script>` leaves `script` —
+ * harmless, but still a non-icon that has now displaced the icon the caller
+ * would otherwise have fallen back to. Callers use the `undefined` to move on
+ * to the next candidate, so a value that cannot render must not survive as
+ * *something*.
+ */
+const ICON_NAME = /^[a-z0-9]+(?:-[a-z0-9]+)*:[a-z0-9]+(?:-[a-z0-9]+)*$/i;
+
+export function cssIcon(value: unknown): string | undefined {
+  if (typeof value !== "string") return undefined;
+  const v = value.trim();
+  return ICON_NAME.test(v) ? v : undefined;
+}
+
+/**
  * An entity id for a `data-entity` attribute (issue #105). Separate from
  * {@link cssIdent} because an entity id is `domain.object_id` and the dot is
  * load-bearing — `[data-entity="light.kitchen"]` is the selector people will

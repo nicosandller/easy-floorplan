@@ -68,6 +68,10 @@ import {
   kindFromEntity,
   resolveItemIcon,
   resolveStateColor,
+  itemRawValue,
+  badgeContentOf,
+  badgeValue,
+  badgeValueSize,
   itemHiddenWhenInactive,
   resolveIconAnimation,
   itemIconSize,
@@ -1860,7 +1864,8 @@ export class FloorplanCardEditor extends LitElement {
    */
   private _renderStateColorRules(
     rules: StateColorRule[] | undefined,
-    onChange: (next: StateColorRule[] | undefined) => void
+    onChange: (next: StateColorRule[] | undefined) => void,
+    opts?: { icons?: boolean }
   ): TemplateResult {
     const list = rules ?? [];
     const patch = (i: number, part: Partial<StateColorRule>): void => {
@@ -1869,7 +1874,12 @@ export class FloorplanCardEditor extends LitElement {
     };
     return html`
       <div class="row wide state-colors">
-        <label title="Color the element by what its entity reads">Color by state</label>
+        <label
+          title=${opts?.icons
+            ? "Color the badge — and optionally swap its icon — by what the entity reads"
+            : "Color the element by what its entity reads"}
+          >${opts?.icons ? "Color & icon by state" : "Color by state"}</label
+        >
       </div>
       ${list.map((rule, i) => {
         const mode = typeof rule.state === "string" ? "state" : typeof rule.above === "number" ? "above" : "else";
@@ -1921,6 +1931,9 @@ export class FloorplanCardEditor extends LitElement {
               .value=${rule.color ?? ""}
               @change=${(e: Event) => patch(i, { color: (e.target as HTMLInputElement).value })}
             />
+            ${opts?.icons
+              ? this._renderIconPicker(rule.icon ?? "", (icon) => patch(i, { icon: icon || undefined }))
+              : nothing}
             <button
               class="rule-remove"
               aria-label="Remove rule"
@@ -3045,6 +3058,32 @@ export class FloorplanCardEditor extends LitElement {
     />`;
   }
 
+  /**
+   * Icon field for the hand-rolled rows (issue #106), mirroring
+   * {@link _renderEntityPicker}: HA's searchable picker when the frontend has
+   * registered it, a plain text input otherwise. Used by the state-rule list,
+   * which cannot go through `ha-form` because it is repeatable.
+   */
+  private _renderIconPicker(value: string, onChange: (icon: string) => void): TemplateResult {
+    if (customElements.get("ha-icon-picker")) {
+      return html`<ha-icon-picker
+        class="rule-icon"
+        .hass=${this.hass}
+        .value=${value}
+        placeholder="Icon"
+        @value-changed=${(e: CustomEvent) => onChange((e.detail.value as string) ?? "")}
+      ></ha-icon-picker>`;
+    }
+    return html`<input
+      type="text"
+      class="rule-icon"
+      placeholder="mdi:blinds"
+      title="Icon while this rule matches (optional)"
+      .value=${value}
+      @change=${(e: Event) => onChange((e.target as HTMLInputElement).value)}
+    />`;
+  }
+
   /** Toggle the full-screen workspace. */
   private _toggleFullscreen(): void {
     this._fullscreen = !this._fullscreen;
@@ -3348,14 +3387,14 @@ export class FloorplanCardEditor extends LitElement {
     const icon = resolveItemIcon(it, st, it.entity ? this.hass?.entities?.[it.entity]?.icon : undefined);
     const label = it.name || it.entity || it.kind;
     const size = cssNumber(it.size, DEFAULT_ITEM_SIZE);
-    const showIcon = it.showIcon ?? true;
+    const showIcon = badgeContentOf(it) !== "none";
     const display = it.display ?? "badge";
     // Same resolution as the card, so the canvas shows the colour the plan
     // will actually render (state rules first, then the active colour).
-    const rawValue = it.attribute
-      ? (st?.attributes as Record<string, unknown> | undefined)?.[it.attribute]
-      : st?.state;
+    const rawValue = itemRawValue(it, st);
     const stateColor = cssColor(resolveStateColor(it.stateColor, rawValue));
+    // …and the same badge contents, so "Badge shows: Value" previews here too.
+    const value = badgeContentOf(it) === "value" ? badgeValue(this.hass, it) : undefined;
     const rippleColor = it.rippleColor ?? stateColor ?? "var(--primary-color, #03a9f4)";
     const rippleSize = it.rippleSize ?? DEFAULT_RIPPLE_SIZE;
 
@@ -3369,11 +3408,15 @@ export class FloorplanCardEditor extends LitElement {
         stateColor ? `--fp-state:${stateColor};` : ""
       }"
     >
-      <ha-icon
-        class=${anim ? `anim-${anim}` : ""}
-        icon=${icon}
-        style="--mdc-icon-size:${itemIconSize(size)}px;"
-      ></ha-icon>
+      ${value
+        ? html`<span class="badge-value" style="font-size:${badgeValueSize(size, value)}px;"
+            >${value}</span
+          >`
+        : html`<ha-icon
+            class=${anim ? `anim-${anim}` : ""}
+            icon=${icon}
+            style="--mdc-icon-size:${itemIconSize(size)}px;"
+          ></ha-icon>`}
     </div>`;
 
     // Editor always previews the ripple animated so its effect is visible.
@@ -3576,8 +3619,13 @@ export class FloorplanCardEditor extends LitElement {
               onCommit: (rippleColor) => this._updateItem(it.id, { rippleColor }),
             })
           : nothing}
-        ${this._renderStateColorRules(it.stateColor, (stateColor) =>
-          this._updateItem(it.id, { stateColor })
+        ${this._renderStateColorRules(
+          it.stateColor,
+          (stateColor) => this._updateItem(it.id, { stateColor }),
+          // Only a device draws a glyph, so only a device's rules offer an
+          // icon — furniture and areas share this rule shape but paint
+          // polygons (issue #106).
+          { icons: true }
         )}
       `;
     }
@@ -4442,6 +4490,14 @@ export class FloorplanCardEditor extends LitElement {
       color: var(--primary-text-color);
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
     }
+    /* Mirrors the card's .badge-value (issue #106) — the canvas must show the
+       reading exactly as the plan will draw it. */
+    .badge-value {
+      font-weight: 600;
+      line-height: 1;
+      letter-spacing: -0.02em;
+      white-space: nowrap;
+    }
     /* Hidden on the live card right now (issue #55): faded and dashed here so
        it reads as deliberately absent from the card, while staying selectable. */
     .edit-item.card-hidden {
@@ -4994,6 +5050,13 @@ export class FloorplanCardEditor extends LitElement {
     .row.state-color-rule input.rule-color-text {
       flex: 1 1 60px;
       min-width: 60px;
+    }
+    /* The optional icon (issue #106) takes the rule's second line rather than
+       competing for the first: the condition and the colour are what you scan,
+       and an icon picker needs room for its name to be readable. */
+    .row.state-color-rule .rule-icon {
+      flex: 1 1 100%;
+      min-width: 0;
     }
     .state-color-rule .rule-remove,
     .state-color-add button {

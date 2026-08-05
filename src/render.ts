@@ -7,6 +7,7 @@ import type {
   ItemKind,
   IconAnimation,
   StateColorRule,
+  BadgeContent,
   Furniture,
   Tracker,
   Area,
@@ -28,12 +29,13 @@ import {
   DEFAULT_SUN_MAX,
   DEFAULT_GLOW_RADIUS,
   DEFAULT_GLOW_COLOR,
+  DEFAULT_ITEM_SIZE,
   GLOW_MIN_OPACITY,
   GLOW_MAX_OPACITY,
   getFloors,
   trackerAxisFraction,
 } from "./types";
-import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId } from "./css-safe";
+import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, cssIcon } from "./css-safe";
 
 export const WALL_THICKNESS = 8;
 
@@ -182,30 +184,46 @@ export function resolveStateColor(
   rules: readonly StateColorRule[] | undefined,
   raw: unknown,
 ): string | undefined {
+  return matchStateRule(rules, raw)?.color;
+}
+
+/**
+ * The rule that applies to a value, by the precedence documented on
+ * {@link resolveStateColor} — which is now a one-line wrapper around this.
+ *
+ * Split out for issue #106: a rule can carry an `icon` as well as a `color`,
+ * and both must come from the *same* matched rule. Re-running the precedence
+ * once per property would be two chances to drift apart, and would quietly
+ * allow one rule's colour beside another rule's icon.
+ */
+export function matchStateRule(
+  rules: readonly StateColorRule[] | undefined,
+  raw: unknown,
+): StateColorRule | undefined {
   if (!rules?.length) return undefined;
   const n = typeof raw === "number" ? raw : Number(raw);
   const numeric = typeof raw !== "boolean" && raw !== "" && raw != null && Number.isFinite(n);
   const text = raw == null ? "" : String(raw).trim().toLowerCase();
-  let exact: string | undefined;
+  let exact: StateColorRule | undefined;
   let best: StateColorRule | undefined;
-  let fallback: string | undefined;
+  let fallback: StateColorRule | undefined;
   for (const rule of rules) {
     if (!rule || typeof rule !== "object" || typeof rule.color !== "string") continue;
     if (typeof rule.state === "string" && rule.state !== "") {
       // First matching state rule wins, so an earlier rule shadows a later
       // duplicate — the same "first one listed" reading as the default rule.
       if (exact === undefined && text !== "" && rule.state.trim().toLowerCase() === text) {
-        exact = rule.color;
+        exact = rule;
       }
     } else if (typeof rule.above === "number") {
       if (numeric && n > rule.above && (!best || rule.above > (best.above ?? -Infinity))) {
         best = rule;
       }
     } else if (fallback === undefined) {
-      fallback = rule.color;
+      fallback = rule;
     }
   }
-  return exact ?? best?.color ?? fallback;
+  return exact ?? best ?? fallback;
 }
 
 /**
@@ -831,10 +849,30 @@ export function entityDefaultIcon(
 }
 
 /**
- * Icon precedence shared by card and editor: config override → the user's
- * entity-registry icon → entity's explicit icon → device_class-implied icon
- * ("show as") → the kind default. The on-state comes from {@link entityIsActive},
- * so domains that never say "on" (lock/vacuum/camera) reach their active icons here.
+ * The value an item's rules are judged on: the chosen `attribute` when set
+ * (issue #70), else the plain state. Shared by card and editor so the colour
+ * and the icon can never be resolved from two different readings.
+ */
+export function itemRawValue(
+  item: { entity?: string; attribute?: string },
+  st: { state: string; attributes: Record<string, unknown> } | undefined,
+): unknown {
+  if (!st) return undefined;
+  return item.attribute ? st.attributes?.[item.attribute] : st.state;
+}
+
+/**
+ * Icon precedence shared by card and editor: matching state rule's icon →
+ * config override → the user's entity-registry icon → entity's explicit icon →
+ * device_class-implied icon ("show as") → the kind default. The on-state comes
+ * from {@link entityIsActive}, so domains that never say "on" (lock/vacuum/camera)
+ * reach their active icons here.
+ *
+ * A state rule's icon (issue #106) sits *above* the config `icon` for the same
+ * reason its colour already beats `activeColor`: it is the more specific
+ * statement about what this device looks like right now. It also undoes a trap
+ * — setting a config `icon` used to return early here, freezing the glyph and
+ * silently disabling every state-dependent icon below.
  *
  * The registry override lives at `hass.entities[id].icon` and never reaches
  * `attributes.icon`, so a user who set an icon in Settings → Entities sees it
@@ -843,11 +881,23 @@ export function entityDefaultIcon(
  * takes the state object, not `hass`.
  */
 export function resolveItemIcon(
-  item: { entity?: string; kind: ItemKind; icon?: string },
+  item: {
+    entity?: string;
+    kind: ItemKind;
+    icon?: string;
+    attribute?: string;
+    stateColor?: StateColorRule[];
+  },
   st: { state: string; attributes: Record<string, unknown> } | undefined,
   registryIcon?: string,
 ): string {
-  if (item.icon) return item.icon;
+  // Config strings, so the icon goes through the allowlist (#106): an
+  // unusable value falls through to the next candidate rather than rendering
+  // an empty box.
+  const ruleIcon = cssIcon(matchStateRule(item.stateColor, itemRawValue(item, st))?.icon);
+  if (ruleIcon) return ruleIcon;
+  const configIcon = cssIcon(item.icon);
+  if (configIcon) return configIcon;
   // No entity bound (issue #39: devices that exist physically but not in HA):
   // nothing to derive from, fall straight through to the kind default.
   if (!item.entity) return defaultIcon(item.kind);
@@ -875,6 +925,205 @@ export function itemIconSize(badgeSize: number): number {
   let s = Math.round(b * 0.62);
   if (s % 2 !== b % 2) s += 1;
   return Math.max(2, s);
+}
+
+/**
+ * What a device's badge holds, resolving {@link FloorItem.badgeContent} against
+ * the `showIcon` boolean it replaced (issue #106). One function so the card,
+ * the editor canvas and the form cannot drift on the migration rule: an
+ * explicit `badgeContent` wins, else a legacy `showIcon: false` means "no
+ * badge", else the icon as always.
+ */
+export function badgeContentOf(item: {
+  badgeContent?: BadgeContent;
+  showIcon?: boolean;
+}): BadgeContent {
+  if (item.badgeContent === "icon" || item.badgeContent === "value" || item.badgeContent === "none")
+    return item.badgeContent;
+  return item.showIcon === false ? "none" : "icon";
+}
+
+/**
+ * The reading a domain shows in its badge when the config does not name one,
+ * with the compact unit that goes with it (issue #106). A thermostat's *state*
+ * is its mode — "heat" — so without this the one device the issue was opened
+ * about would have no number to show.
+ *
+ * The unit is spelled out here rather than read from the entity: `climate` has
+ * no `unit_of_measurement` attribute at all (HA carries the temperature unit on
+ * the system config), so there is nothing to read.
+ */
+const DOMAIN_BADGE_READING: Record<string, { attribute: string; unit: string }> = {
+  climate: { attribute: "current_temperature", unit: "°" },
+  water_heater: { attribute: "current_temperature", unit: "°" },
+  humidifier: { attribute: "current_humidity", unit: "%" },
+};
+
+/** A finite number from a state/attribute value, or undefined. Booleans and blanks are not readings. */
+function numericReading(raw: unknown): number | undefined {
+  if (raw == null || typeof raw === "boolean") return undefined;
+  if (typeof raw === "string" && raw.trim() === "") return undefined;
+  const n = typeof raw === "number" ? raw : Number(raw);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
+ * A unit short enough to sit inside a 34px circle, or "" to drop it. Degrees
+ * collapse to `°` (the C/F is not in doubt on your own floorplan) and
+ * concentrations lose their unit entirely — CO₂ reads `780`, because `780ppm`
+ * does not fit and the number alone is what people recognise. Anything longer
+ * than three characters is dropped rather than shrinking the number to fit.
+ */
+function compactUnit(unit: unknown): string {
+  if (typeof unit !== "string") return "";
+  const u = unit.trim();
+  if (u === "°C" || u === "°F" || u === "K") return "°";
+  if (u === "ppm" || u === "ppb") return "";
+  return u.length <= 3 ? u : "";
+}
+
+/** Round for the badge: whole numbers, keeping one decimal only where it carries meaning. */
+function compactNumber(n: number): string {
+  return Math.abs(n) < 10 && !Number.isInteger(n) ? n.toFixed(1) : String(Math.round(n));
+}
+
+/**
+ * Fold a big reading into the next unit up, so a plug reads `1.2kW` instead of
+ * `1240W`. Four digits and a unit letter is the widest thing a badge ever has
+ * to hold, and power sensors report watts, so this is the common case rather
+ * than an exotic one. Only W→kW: it is the pair this card actually meets, and
+ * a general unit-prefix engine would be guessing at units it has never seen.
+ */
+function scaleUnit(n: number, unit: string): { n: number; unit: string } {
+  if (unit === "W" && Math.abs(n) >= 1000) return { n: n / 1000, unit: "kW" };
+  return { n, unit };
+}
+
+/** A reading and its own unit, compacted and scaled for the badge. */
+function formatReading(n: number, rawUnit: unknown): string {
+  const scaled = scaleUnit(n, compactUnit(rawUnit));
+  return compactNumber(scaled.n) + scaled.unit;
+}
+
+/**
+ * The number to draw inside a device's badge (issue #106), or undefined when
+ * the device has no numeric reading — in which case the badge keeps its icon,
+ * so turning this on can never leave an empty circle.
+ *
+ * Candidates are tried in order and the first *numeric* one wins:
+ *
+ * 1. the configured `attribute`;
+ * 2. the domain's default reading ({@link DOMAIN_BADGE_READING});
+ * 3. the entity's state;
+ * 4. the secondary entity's reading — which is what makes a smart plug work: a
+ *    `switch` item with `secondaryEntity: sensor.plug_power` shows `1.2kW` and
+ *    still toggles the switch on tap.
+ *
+ * The numeric gate at every step is what makes step 1 safe to put first. The
+ * thermostat in the issue is coloured by `attribute: hvac_action`, whose value
+ * is "heating" — text, so it falls through and the badge still shows the
+ * temperature. Colouring by one reading and displaying another needs no extra
+ * config because of this.
+ *
+ * Deliberately *not* routed through `hass.formatEntityState`: that applies the
+ * user's display precision and the full unit ("21.5 °C"), which is exactly what
+ * does not fit in a badge. This is the one place reading `state` raw is correct.
+ */
+export function badgeValue(
+  hass: RenderHass | undefined,
+  item: {
+    entity?: string;
+    attribute?: string;
+    secondaryEntity?: string;
+    secondaryAttribute?: string;
+  },
+): string | undefined {
+  if (!hass || !item.entity) return undefined;
+  const st = hass.states[item.entity];
+  const attrs = st?.attributes as Record<string, unknown> | undefined;
+  const reading = DOMAIN_BADGE_READING[item.entity.split(".")[0]];
+
+  if (item.attribute) {
+    const n = numericReading(attrs?.[item.attribute]);
+    // A unit only when we know it belongs to *this* attribute:
+    // `unit_of_measurement` describes the state, not an arbitrary attribute, so
+    // borrowing it here would label a battery percentage "°C".
+    if (n !== undefined)
+      return compactNumber(n) + (item.attribute === reading?.attribute ? reading.unit : "");
+  }
+  if (reading) {
+    const n = numericReading(attrs?.[reading.attribute]);
+    if (n !== undefined) return compactNumber(n) + reading.unit;
+  }
+  const own = numericReading(st?.state);
+  if (own !== undefined) return formatReading(own, attrs?.unit_of_measurement);
+
+  // Same secondary resolution as the label line ({@link itemStateText}), so the
+  // two never disagree about which entity the second reading comes from.
+  const secondaryEntity = item.secondaryEntity ?? (item.secondaryAttribute ? item.entity : undefined);
+  if (!secondaryEntity) return undefined;
+  const sec = hass.states[secondaryEntity];
+  const secAttrs = sec?.attributes as Record<string, unknown> | undefined;
+  if (item.secondaryAttribute) {
+    const n = numericReading(secAttrs?.[item.secondaryAttribute]);
+    return n === undefined ? undefined : compactNumber(n);
+  }
+  const n = numericReading(sec?.state);
+  return n === undefined ? undefined : formatReading(n, secAttrs?.unit_of_measurement);
+}
+
+/**
+ * Advance width per character, in units of font-size, for the badge's 600-weight
+ * face. Measured off the rendered card rather than guessed, and rounded *up* at
+ * every entry so the estimate errs wide and the text never overflows the circle.
+ *
+ * Character width is what matters here, not character count: `45%` is wider
+ * than `9999`, and `21°` is narrower than `782`. Sizing by string length — the
+ * obvious first approach — put `1240W` 3.2px outside an 18px badge.
+ */
+const GLYPH_WIDTH: Record<string, number> = { ".": 0.28, "-": 0.38, "°": 0.45, "%": 1.0, k: 0.58 };
+/**
+ * Taken at the *small* end: a font's advance width per font-pixel grows as the
+ * size shrinks (a digit measures 0.637 at 16px but 0.688 at 6px), so the large
+ * figure would under-budget exactly the badges with least room to spare.
+ */
+const DIGIT_WIDTH = 0.7;
+/** Unit letters (W, A, V, lx…) — uppercase is the wide case, so assume it. */
+const LETTER_WIDTH = 0.85;
+
+function estimatedWidth(text: string): number {
+  let w = 0;
+  for (const ch of text) {
+    w += GLYPH_WIDTH[ch] ?? (ch >= "0" && ch <= "9" ? DIGIT_WIDTH : LETTER_WIDTH);
+  }
+  return w;
+}
+
+/**
+ * Font size for a value badge, shared by card and editor: the largest size at
+ * which the reading still fits inside the circle, capped so a short value like
+ * `9°` does not balloon. Uses the same parity nudge as {@link itemIconSize} so
+ * the text box centres on a whole pixel.
+ *
+ * The default 34px badge reads `21°` at 16px, `45%` at 12px and `1240W` at 8px.
+ *
+ * The 6px floor is a legibility floor, not a fitting one: below it nothing is
+ * readable anyway, so a long reading in a very small badge is allowed to reach
+ * the rim rather than shrinking into a smudge. A 5-glyph value wants a badge of
+ * about 30px or more.
+ */
+export function badgeValueSize(badgeSize: number, text: string): number {
+  const b = Math.round(cssNumber(badgeSize, DEFAULT_ITEM_SIZE));
+  // The 1.5px border each side, plus breathing room off the curve.
+  const usable = Math.max(0, b - 6);
+  const fit = estimatedWidth(text) > 0 ? usable / estimatedWidth(text) : b;
+  let s = Math.round(Math.min(b * 0.46, fit));
+  // Nudge *down* to the badge's parity, where itemIconSize nudges up: this
+  // size was just clamped to a width budget, and rounding up would spend a
+  // pixel the reading does not have. (9999 in a 24px badge overflowed by 1.1px
+  // when this went the other way.)
+  if (s % 2 !== b % 2) s -= 1;
+  return Math.max(6, s);
 }
 
 /** Infer a sensible item kind from an entity id's domain. */

@@ -209,8 +209,26 @@ export interface FloorItem {
   showName?: boolean;
   /** Label line font size in pixels (issue #59). Default 12. */
   labelSize?: number;
-  /** Show the icon badge. When false only the state/label shows. Default true. */
+  /**
+   * @deprecated Superseded by {@link badgeContent} (issue #106), which is the
+   * same switch with a third position. Still honoured when `badgeContent` is
+   * absent, so every existing config keeps rendering identically —
+   * {@link badgeContentOf} owns that fallback.
+   */
   showIcon?: boolean;
+  /**
+   * What the badge holds (issue #106):
+   *
+   * - `"icon"` (default) — the glyph, as always;
+   * - `"value"` — the device's reading, rounded and compact, *inside* the
+   *   badge: a thermostat reads `21°` in the same circle `stateColor` already
+   *   paints red while it heats, instead of a text line hanging underneath.
+   *   Which reading is worked out per domain by {@link badgeValue}; when
+   *   nothing numeric is available the badge falls back to its icon, so this
+   *   can never leave an empty circle;
+   * - `"none"` — no badge at all, label only (the old `showIcon: false`).
+   */
+  badgeContent?: BadgeContent;
   /**
    * Hide this device on the live card while its entity is inactive (issue
    * #55), so a busy room only shows what is actually doing something. The
@@ -273,6 +291,9 @@ export interface FloorItem {
 
 export type ItemDisplay = "badge" | "ripple" | "iconRipple";
 
+/** What a device badge holds — see {@link FloorItem.badgeContent} (issue #106). */
+export type BadgeContent = "icon" | "value" | "none";
+
 /**
  * One colour rule for {@link FloorItem.stateColor} / {@link Furniture.stateColor}.
  *
@@ -287,6 +308,15 @@ export interface StateColorRule {
   /** Applies when the value equals this exactly (case-insensitive). */
   state?: string;
   color: string;
+  /**
+   * Icon to show while this rule matches (issue #106) — "blinds open" and
+   * "blinds closed" as two glyphs, not just two colours. Optional: a rule
+   * without one only changes the colour, exactly as before.
+   *
+   * Only {@link FloorItem} reads this; furniture and areas share this rule
+   * shape but draw polygons, so an `icon` on their rules is ignored.
+   */
+  icon?: string;
 }
 
 export type IconAnimation = "auto" | "none" | "spin" | "pulse";

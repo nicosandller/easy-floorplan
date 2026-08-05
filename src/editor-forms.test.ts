@@ -236,10 +236,33 @@ describe("itemForm", () => {
 
   it("data presents effective defaults", () => {
     const d = itemForm(item).data;
-    expect(d.showIcon).toBe(true);
+    expect(d.badgeContent).toBe("icon");
     expect(d.showState).toBe(false);
     expect(d.display).toBe("badge");
     expect(d.angle).toBe(0);
+  });
+
+  it("replaces the Show icon toggle with a three-way Badge shows dropdown (#106)", () => {
+    const names = itemForm(item).fields.map((x) => x.name);
+    expect(names).toContain("badgeContent");
+    expect(names).not.toContain("showIcon");
+    const f = itemForm(item).fields.find((x) => x.name === "badgeContent")!;
+    const opts = (f.selector as { select: { options: { value: string }[] } }).select.options.map(
+      (o) => o.value
+    );
+    expect(opts).toEqual(["icon", "value", "none"]);
+  });
+
+  it("migrates a legacy showIcon config, and retires the key once touched (#106)", () => {
+    // An untouched legacy config still reads as "no badge"…
+    const legacy = itemForm({ ...item, showIcon: false } as FloorItem);
+    expect(legacy.data.badgeContent).toBe("none");
+    // …and choosing anything in the new dropdown drops the old key, so the two
+    // can never be edited into disagreeing.
+    const patch = legacy.toPatch({ badgeContent: "value" });
+    expect(patch).toEqual({ badgeContent: "value", showIcon: undefined });
+    // Unrelated edits leave it alone.
+    expect(legacy.toPatch({ size: 40 })).toEqual({ size: 40 });
   });
 
   it("scopes the entity/secondaryEntity pickers to the area's entities when given", () => {
