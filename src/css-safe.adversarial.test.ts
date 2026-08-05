@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { cssColor, cssIdent, cssEntityId, cssIcon } from "./css-safe";
+import { cssColor, cssIdent, cssEntityId, cssIcon, contrastText } from "./css-safe";
 import { furnitureColor } from "./render";
 import type { Furniture } from "./types";
 
@@ -211,6 +211,91 @@ describe("cssIdent / cssEntityId — styling hooks (issue #105)", () => {
   it("cssEntityId still drops what would break the attribute selector", () => {
     expect(cssEntityId('light.k"]{}')).toBe("light.k");
     expect(cssEntityId("")).toBeUndefined();
+  });
+});
+
+// @MrMcFlyy on #106: "if i set it on white background, when it's open, the
+// icon is white on white". The badge background comes from config; the ink was
+// pinned to the theme. They are independent, so the ink has to follow.
+describe("contrastText — the glyph stays readable (issue #106)", () => {
+  const DARK = "#212121";
+  const LIGHT = "#ffffff";
+
+  it("puts dark ink on a pale badge and light ink on a dark one", () => {
+    expect(contrastText("#ffffff")).toBe(DARK);
+    expect(contrastText("white")).toBe(DARK);
+    expect(contrastText("#000000")).toBe(LIGHT);
+    expect(contrastText("black")).toBe(LIGHT);
+    // The exact report: a white cover rule no longer eats its own icon.
+    expect(contrastText("#fff")).toBe(DARK);
+  });
+
+  it("judges by luminance, not brightness — yellow is pale, blue is dark", () => {
+    expect(contrastText("yellow")).toBe(DARK);
+    expect(contrastText("#fdd835")).toBe(DARK); // the theme's own active yellow
+    expect(contrastText("blue")).toBe(LIGHT);
+    expect(contrastText("navy")).toBe(LIGHT);
+    // Pure red looks vivid but is dark by luminance — and dark ink genuinely
+    // wins on it (5.25:1 against white's 4.0:1), which is why this is decided
+    // by comparing ratios rather than by eye.
+    expect(contrastText("red")).toBe(DARK);
+    expect(contrastText("#4caf50")).toBe(DARK); // the README's blinds-open green
+    expect(contrastText("#9e9e9e")).toBe(DARK); // the furniture gray
+  });
+
+  it("reads every colour form the card actually emits", () => {
+    // lightBadgePaint and glowPaint both emit this exact shape.
+    expect(contrastText("rgb(0, 0, 0)")).toBe(LIGHT);
+    expect(contrastText("rgb(255, 255, 255)")).toBe(DARK);
+    expect(contrastText("rgba(0, 0, 0, 0.5)")).toBe(LIGHT);
+    expect(contrastText("rgb(255 255 255)")).toBe(DARK); // modern space form
+    expect(contrastText("rgb(100%, 100%, 100%)")).toBe(DARK);
+    expect(contrastText("#ffffffff")).toBe(DARK); // 8-digit hex
+  });
+
+  it("gives up on anything it cannot actually resolve, keeping today's behaviour", () => {
+    // This is the important half: picking an ink for a colour we cannot see
+    // would be worse than leaving the theme's. All of these are legal config.
+    for (const opaque of [
+      "var(--primary-color)",
+      "var(--a, var(--b, #fff))",
+      "rgb(var(--rgb-primary-color))",
+      "color-mix(in srgb, red 50%, blue)",
+      "linear-gradient(#fff, #000)",
+      "rebeccapurple", // a real colour, just not in the table
+      "#12345",
+      "not-a-color",
+      "",
+      "   ",
+    ]) {
+      expect(contrastText(opaque)).toBeUndefined();
+    }
+    expect(contrastText(undefined)).toBeUndefined();
+    expect(contrastText(42)).toBeUndefined();
+  });
+
+  it("actually improves contrast rather than just changing it", () => {
+    // Relative luminance and the WCAG ratio, computed independently of the
+    // implementation, over the full grey ramp: the chosen ink must never be
+    // the worse of the two options.
+    const lum = (hex: string) => {
+      const ch = [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16) / 255);
+      const lin = (c: number) => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4);
+      const [r, g, b] = ch.map(lin);
+      return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+    };
+    const ratio = (a: string, b: string) => {
+      const [hi, lo] = [lum(a), lum(b)].sort((x, y) => y - x);
+      return (hi + 0.05) / (lo + 0.05);
+    };
+    for (let v = 0; v <= 255; v++) {
+      const bg = `#${v.toString(16).padStart(2, "0").repeat(3)}`;
+      const ink = contrastText(bg)!;
+      expect(ink).toBeDefined();
+      const other = ink === DARK ? LIGHT : DARK;
+      expect({ bg, ink, chosen: +ratio(bg, ink).toFixed(3) }).toMatchObject({ bg, ink });
+      expect(ratio(bg, ink)).toBeGreaterThanOrEqual(ratio(bg, other));
+    }
   });
 });
 

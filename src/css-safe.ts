@@ -121,6 +121,113 @@ export function cssIdent(value: unknown): string | undefined {
 }
 
 /**
+ * The CSS colour names that turn up in real floorplan configs — the README's
+ * own examples use `red`, `green`, `white` and `gray`. Not the full 148-name
+ * list: this exists so {@link contrastText} can judge a hand-typed colour, and
+ * an unlisted name simply falls back to the theme's foreground rather than
+ * being guessed at.
+ */
+const NAMED_COLORS: Record<string, [number, number, number]> = {
+  white: [255, 255, 255], black: [0, 0, 0], red: [255, 0, 0], green: [0, 128, 0],
+  lime: [0, 255, 0], blue: [0, 0, 255], navy: [0, 0, 128], yellow: [255, 255, 0],
+  orange: [255, 165, 0], gold: [255, 215, 0], purple: [128, 0, 128], pink: [255, 192, 203],
+  brown: [165, 42, 42], maroon: [128, 0, 0], olive: [128, 128, 0], teal: [0, 128, 128],
+  cyan: [0, 255, 255], aqua: [0, 255, 255], magenta: [255, 0, 255], fuchsia: [255, 0, 255],
+  silver: [192, 192, 192], gray: [128, 128, 128], grey: [128, 128, 128],
+  lightgray: [211, 211, 211], lightgrey: [211, 211, 211],
+  darkgray: [169, 169, 169], darkgrey: [169, 169, 169],
+  transparent: [255, 255, 255],
+};
+
+/** RGB channels of a colour we can actually read, else undefined. */
+function parseRgb(value: string): [number, number, number] | undefined {
+  const v = value.trim().toLowerCase();
+  const named = NAMED_COLORS[v];
+  if (named) return named;
+
+  const hex = /^#([0-9a-f]{3,8})$/i.exec(v);
+  if (hex) {
+    const h = hex[1];
+    if (h.length === 3 || h.length === 4) {
+      return [0, 1, 2].map((i) => parseInt(h[i] + h[i], 16)) as [number, number, number];
+    }
+    if (h.length === 6 || h.length === 8) {
+      return [0, 2, 4].map((i) => parseInt(h.slice(i, i + 2), 16)) as [number, number, number];
+    }
+    return undefined;
+  }
+
+  // rgb()/rgba(), both the legacy comma form and the modern space form.
+  const fn = /^rgba?\(([^)]*)\)$/.exec(v);
+  if (fn) {
+    const parts = fn[1].split(/[\s,/]+/).filter((s) => s !== "");
+    if (parts.length < 3) return undefined;
+    const nums = parts.slice(0, 3).map((p) => {
+      // A percentage channel is still a channel.
+      if (p.endsWith("%")) {
+        const pct = Number(p.slice(0, -1));
+        return Number.isFinite(pct) ? (pct / 100) * 255 : NaN;
+      }
+      return Number(p);
+    });
+    if (nums.some((n) => !Number.isFinite(n))) return undefined;
+    return nums.map((n) => Math.max(0, Math.min(255, n))) as [number, number, number];
+  }
+  return undefined;
+}
+
+/** WCAG relative luminance (sRGB), 0 = black, 1 = white. */
+function relativeLuminance([r, g, b]: [number, number, number]): number {
+  const lin = (c: number) => {
+    const s = c / 255;
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4;
+  };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/**
+ * The dark ink and the light ink a badge chooses between — the same pair the
+ * theme already uses, so an unresolvable colour falling back to
+ * `--text-primary-color` looks no different.
+ */
+const INK_DARK = "#212121";
+const INK_LIGHT = "#ffffff";
+const LUM_DARK = relativeLuminance([0x21, 0x21, 0x21]);
+const LUM_LIGHT = relativeLuminance([0xff, 0xff, 0xff]);
+
+/**
+ * Black or white text for a known background colour (issue #106) — or
+ * `undefined` when the background is not something we can read.
+ *
+ * A device badge paints its background from config (a state rule, an active
+ * colour, a bulb's own colour) while its foreground was pinned to the theme's
+ * `--text-primary-color`. On a dark theme that ink is near-white, so a pale
+ * badge swallowed its own icon: *"if i set it on white background, when it's
+ * open, the icon is white on white"*. The two are independent, so the
+ * foreground has to follow the background rather than the theme.
+ *
+ * The `undefined` return is the important half. `var(--accent)`, `color-mix()`
+ * and gradients are all legal here and none can be resolved without the live
+ * computed style, so those badges keep the theme ink exactly as they do today.
+ * Picking an ink for a colour we cannot see would be worse than not trying.
+ *
+ * Decided by comparing the two actual WCAG contrast ratios rather than by a
+ * luminance threshold. A threshold has to be derived from the inks — the usual
+ * 0.179 crossover assumes pure black, and ours is `#212121`, which moves it to
+ * ~0.212 — so the constant and the inks could drift apart silently. Comparing
+ * the ratios cannot.
+ */
+export function contrastText(color: unknown): string | undefined {
+  if (typeof color !== "string") return undefined;
+  const rgb = parseRgb(color);
+  if (!rgb) return undefined;
+  const bg = relativeLuminance(rgb);
+  const ratio = (ink: number) =>
+    (Math.max(bg, ink) + 0.05) / (Math.min(bg, ink) + 0.05);
+  return ratio(LUM_DARK) >= ratio(LUM_LIGHT) ? INK_DARK : INK_LIGHT;
+}
+
+/**
  * An icon name for `<ha-icon icon="…">` (issue #106), or `undefined` when the
  * value is not one.
  *

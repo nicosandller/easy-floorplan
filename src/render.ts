@@ -32,6 +32,8 @@ import {
   DEFAULT_ITEM_SIZE,
   GLOW_MIN_OPACITY,
   GLOW_MAX_OPACITY,
+  BADGE_MIN_LIGHTNESS,
+  FURNITURE_GLOW_TRANSMISSION,
   getFloors,
   trackerAxisFraction,
 } from "./types";
@@ -316,6 +318,43 @@ export function glowPaint(
 }
 
 /**
+ * The colour a light's **badge** should wear (issue #106, @ombre33): its own
+ * `rgb_color`, darkened toward black in step with `brightness`, or `undefined`
+ * to leave the badge exactly as it is today.
+ *
+ * Deliberately *not* {@link glowPaint}, which looks almost identical. That one
+ * falls back to `glowColor` / {@link DEFAULT_GLOW_COLOR} so a pool always has a
+ * colour to cast; reusing it here would turn every plain on/off bulb's badge
+ * warm amber — a look change on installs that never asked for one. Only a
+ * light that genuinely reports a colour changes appearance.
+ *
+ * Brightness scales the channels rather than the alpha on purpose: a
+ * translucent badge composites against the *plan* behind it, so the same lamp
+ * would read differently over a dark room than over a light one.
+ */
+export function lightBadgePaint(light: HassEntity | undefined): string | undefined {
+  if (!light || light.state !== "on") return undefined;
+  const attrs = (light.attributes ?? {}) as Record<string, unknown>;
+  const rgb = attrs.rgb_color;
+  if (!Array.isArray(rgb) || rgb.length < 3) return undefined;
+  const [r, g, b] = rgb;
+  if (![r, g, b].every((c) => typeof c === "number" && Number.isFinite(c))) return undefined;
+
+  const raw = attrs.brightness;
+  const bright =
+    typeof raw === "number" && Number.isFinite(raw) ? Math.max(0, Math.min(255, raw)) : undefined;
+  const factor =
+    bright === undefined
+      ? 1
+      : BADGE_MIN_LIGHTNESS + (1 - BADGE_MIN_LIGHTNESS) * (bright / 255);
+
+  const chan = (c: number) => Math.max(0, Math.min(255, Math.round((c as number) * factor)));
+  // Built from clamped integers, so it cannot carry a payload — but it still
+  // goes through the allowlist, as every colour here does.
+  return cssColor(`rgb(${chan(r as number)}, ${chan(g as number)}, ${chan(b as number)})`);
+}
+
+/**
  * {@link glowPaint} as the **editor** should apply it (issue #108).
  *
  * The editor must trust the entity when there is one — an off light draws
@@ -545,12 +584,22 @@ export function renderSunDimMask(
 }
 
 /**
- * A `<mask>` for the whole glow layer that punches out every furniture
- * footprint (issue #108): furniture keeps its base gray instead of reading
- * as "active" whenever a lamp near it is on. The line-art fills at ~0.12
- * opacity, so a warm pool under a sofa tinted the entire sofa — the report
- * that opened the issue. Round-based types cut an ellipse, everything else
- * its rotated rect.
+ * A `<mask>` for the whole glow layer that **dims** the light over every
+ * furniture footprint. Round-based types cut an ellipse, everything else its
+ * rotated rect.
+ *
+ * This is a dial with a reported bug at each end, which is why it is a grey
+ * and not `black` ({@link FURNITURE_GLOW_TRANSMISSION}):
+ *
+ * - Full light (no mask at all) was **#108**. Furniture line art fills at ~0.12
+ *   opacity and draws *above* this layer, so a warm pool shone straight through
+ *   and every sofa in the room read as highlighted-active.
+ * - No light (a solid `black` hole, the first fix for that) turned furniture
+ *   into a *shadow* — a lit table came out darker than the floor around it,
+ *   which is what @MrMcFlyy reported on #106.
+ *
+ * Half-strength keeps both away: light visibly lands on a table, while the
+ * furniture's own gray still reads as gray rather than taking the pool's hue.
  *
  * The region is stated explicitly rather than inherited — the viewport
  * default clipped walls under rotation once already (issue #102).
@@ -571,11 +620,15 @@ export function renderGlowMask(
         ${furniture.map((f) => {
           const rot = f.angle ? `rotate(${f.angle} ${f.x} ${f.y})` : undefined;
           const roundBase = f.type === "roundTable" || f.type === "plant" || f.type === "waterHeater";
+          // A mask's luminance is its transmission, and the region is already
+          // white ("all the light"). So furniture paints *black* at the share
+          // it blocks, leaving the share it lets through.
+          const blocked = 1 - FURNITURE_GLOW_TRANSMISSION;
           return roundBase
             ? svg`<ellipse cx=${f.x} cy=${f.y} rx=${f.w / 2} ry=${f.h / 2}
-                           fill="black" transform=${rot ?? nothing} />`
+                           fill="#000" fill-opacity=${blocked} transform=${rot ?? nothing} />`
             : svg`<rect x=${f.x - f.w / 2} y=${f.y - f.h / 2} width=${f.w} height=${f.h}
-                        fill="black" transform=${rot ?? nothing} />`;
+                        fill="#000" fill-opacity=${blocked} transform=${rot ?? nothing} />`;
         })}
       </mask>
     </defs>`;

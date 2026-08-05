@@ -2,7 +2,7 @@ import { LitElement, html, css, svg, nothing, type TemplateResult, type Property
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor, Area } from "./types";
-import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId } from "./css-safe";
+import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, contrastText } from "./css-safe";
 import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
@@ -34,6 +34,7 @@ import {
   renderAreaBorder,
   areaColor,
   glowPaint,
+  lightBadgePaint,
   renderGlow,
   renderGlowMask,
   renderSunDimMask,
@@ -282,9 +283,18 @@ export class FloorplanCard extends LitElement {
     // given one color does not come out yellow-badged with a blue ring.
     // State rules win over the fixed active colour — they are the more
     // specific statement about what this element should look like right now.
-    const activeColor = cssColor(item.activeColor);
+    // A colour-capable bulb badges itself its own colour, dimmed with its
+    // brightness (issue #106, @ombre33) — but only below anything the user
+    // stated explicitly, and only when the bulb actually reports a colour.
+    const lightColor = lightBadgePaint(st);
+    const activeColor = cssColor(item.activeColor) ?? lightColor;
     const rippleColor =
-      item.rippleColor ?? stateColor ?? item.activeColor ?? "var(--primary-color, #03a9f4)";
+      item.rippleColor ?? stateColor ?? item.activeColor ?? lightColor ?? "var(--primary-color, #03a9f4)";
+    // Ink that can actually be read on whatever the badge ended up painted
+    // (issue #106, @MrMcFlyy): a white state colour used to take the theme's
+    // white icon with it. undefined for a colour we cannot resolve — a
+    // var()/color-mix()/gradient keeps the theme ink, exactly as before.
+    const badgeInk = contrastText(stateColor ?? activeColor);
     const rippleSize = item.rippleSize ?? DEFAULT_RIPPLE_SIZE;
 
     let visual: TemplateResult | typeof nothing = nothing;
@@ -313,7 +323,7 @@ export class FloorplanCard extends LitElement {
           ? `--fp-state:${stateColor};`
           : ""}${activeColor
           ? `--fp-active:${activeColor};`
-          : ""}"
+          : ""}${badgeInk ? `--fp-ink:${badgeInk};` : ""}"
         title=${this._label(item)}
         role="button"
         tabindex="0"
@@ -800,7 +810,7 @@ export class FloorplanCard extends LitElement {
     .item.on .badge {
       background: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
       border-color: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
-      color: var(--text-primary-color, #212121);
+      color: var(--fp-ink, var(--text-primary-color, #212121));
     }
     /* A resolved state colour paints the badge whatever the on/off state —
        thresholds exist for sensors, which are never "on". Declared *after* the
@@ -808,7 +818,7 @@ export class FloorplanCard extends LitElement {
     .item.state-colored .badge {
       background: var(--fp-state);
       border-color: var(--fp-state);
-      color: var(--text-primary-color, #212121);
+      color: var(--fp-ink, var(--text-primary-color, #212121));
     }
     ha-icon {
       --mdc-icon-size: 22px;

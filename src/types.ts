@@ -610,6 +610,30 @@ export const DEFAULT_GLOW_COLOR = "#ffd9a0";
 export const GLOW_MIN_OPACITY = 0.18;
 export const GLOW_MAX_OPACITY = 0.6;
 
+/**
+ * How far a light's `brightness` may darken its **badge** colour (issue #106,
+ * @ombre33): a lamp at full brightness badges its true `rgb_color`, one dimmed
+ * to nothing badges this fraction of it.
+ *
+ * A floor, not zero, for the same reason {@link GLOW_MIN_OPACITY} is: a badge
+ * that fades to black is a badge you can no longer identify, and a barely-lit
+ * lamp should still read as *that* lamp.
+ */
+export const BADGE_MIN_LIGHTNESS = 0.45;
+
+/**
+ * How much of a light pool passes **through** furniture (issue #106,
+ * @MrMcFlyy) — see {@link renderGlowMask}, which paints this as the mask's
+ * grey level.
+ *
+ * A dial, not a switch, and both ends have been reported as bugs. At 1 a warm
+ * pool floods every sofa in the room and furniture reads as highlighted, which
+ * is #108. At 0 furniture is a hole in the light — darker than the floor
+ * around it, so a lit table looks shadowed, which is what reopened this. In
+ * between, light lands on furniture while its own gray still reads as gray.
+ */
+export const FURNITURE_GLOW_TRANSMISSION = 0.5;
+
 export const DEFAULT_TRACKER_DOT_SIZE = 14;
 
 export const DEFAULT_ITEM_SIZE = 34;

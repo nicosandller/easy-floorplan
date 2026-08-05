@@ -7,6 +7,8 @@ import {
   DEFAULT_GLOW_COLOR,
   GLOW_MIN_OPACITY,
   GLOW_MAX_OPACITY,
+  BADGE_MIN_LIGHTNESS,
+  FURNITURE_GLOW_TRANSMISSION,
   SUN_ELEVATION_NIGHT,
   SUN_ELEVATION_DAY,
 } from "./types";
@@ -66,6 +68,7 @@ import {
   WALL_THICKNESS,
   areaColor,
   glowPaint,
+  lightBadgePaint,
   editorGlowPaint,
   glowReach,
   renderGlowMask,
@@ -2239,6 +2242,65 @@ describe("glowPaint (issue #6)", () => {
   });
 });
 
+// @ombre33 on #106: every badge is the theme yellow while the lamps are green,
+// blue and pink. The badge should look like the bulb.
+describe("lightBadgePaint (#106)", () => {
+  const light = (state: string, attributes: Record<string, unknown> = {}) =>
+    ({ entity_id: "light.x", state, attributes }) as never;
+
+  it("wears a colour-capable bulb's own rgb at full brightness", () => {
+    expect(lightBadgePaint(light("on", { rgb_color: [0, 200, 100], brightness: 255 }))).toBe(
+      "rgb(0, 200, 100)",
+    );
+  });
+
+  it("darkens with brightness, down to a floor that is still recognisably the bulb", () => {
+    const full = lightBadgePaint(light("on", { rgb_color: [200, 100, 50], brightness: 255 }));
+    const half = lightBadgePaint(light("on", { rgb_color: [200, 100, 50], brightness: 128 }));
+    const off = lightBadgePaint(light("on", { rgb_color: [200, 100, 50], brightness: 0 }));
+    expect(full).toBe("rgb(200, 100, 50)");
+    // Each channel scaled by the same factor — the hue is preserved, only the
+    // lightness moves.
+    expect(half).toBe(
+      `rgb(${[200, 100, 50]
+        .map((c) => Math.round(c * (BADGE_MIN_LIGHTNESS + (1 - BADGE_MIN_LIGHTNESS) * (128 / 255))))
+        .join(", ")})`,
+    );
+    expect(off).toBe(
+      `rgb(${[200, 100, 50].map((c) => Math.round(c * BADGE_MIN_LIGHTNESS)).join(", ")})`,
+    );
+    // The floor is the point: a barely-lit lamp is still identifiable.
+    expect(off).not.toBe("rgb(0, 0, 0)");
+  });
+
+  it("leaves a bulb that reports no colour completely alone", () => {
+    // The no-surprise guarantee, and the reason this is not glowPaint: that one
+    // falls back to a warm white, which would repaint every plain bulb amber.
+    expect(lightBadgePaint(light("on", { brightness: 255 }))).toBeUndefined();
+    expect(lightBadgePaint(light("on"))).toBeUndefined();
+    expect(glowPaint({}, light("on"))?.color).toBe(DEFAULT_GLOW_COLOR);
+  });
+
+  it("paints nothing when off, unavailable, unknown or missing (fails closed)", () => {
+    expect(lightBadgePaint(light("off", { rgb_color: [255, 0, 0] }))).toBeUndefined();
+    expect(lightBadgePaint(light("unavailable", { rgb_color: [255, 0, 0] }))).toBeUndefined();
+    expect(lightBadgePaint(light("unknown", { rgb_color: [255, 0, 0] }))).toBeUndefined();
+    expect(lightBadgePaint(undefined)).toBeUndefined();
+  });
+
+  it("ignores a malformed rgb_color rather than emitting a broken colour", () => {
+    expect(lightBadgePaint(light("on", { rgb_color: [255, 0] }))).toBeUndefined();
+    expect(lightBadgePaint(light("on", { rgb_color: "red;position:fixed" }))).toBeUndefined();
+    expect(lightBadgePaint(light("on", { rgb_color: [null, 1, 2] }))).toBeUndefined();
+  });
+
+  it("clamps out-of-range channels instead of trusting the integration", () => {
+    expect(lightBadgePaint(light("on", { rgb_color: [300, -20, 12.6], brightness: 255 }))).toBe(
+      "rgb(255, 0, 13)",
+    );
+  });
+});
+
 describe("glowReach — walls block light (issue #108)", () => {
   const wall = (x1: number, y1: number, x2: number, y2: number, id = "w") => ({ id, x1, y1, x2, y2 });
   // Even-odd point-in-polygon, for asserting what the light can reach.
@@ -2391,7 +2453,7 @@ describe("styling hooks reach the DOM (issue #105)", () => {
   });
 });
 
-describe("renderGlowMask — furniture stays base gray (issue #108)", () => {
+describe("renderGlowMask — furniture is dimmed, not blacked out (#108, #106)", () => {
   const flatten = (node: unknown): string => {
     if (node == null || typeof node === "boolean") return "";
     if (Array.isArray(node)) return node.map(flatten).join("");
@@ -2402,8 +2464,8 @@ describe("renderGlowMask — furniture stays base gray (issue #108)", () => {
     return String(node);
   };
 
-  it("punches a black rotated rect per furniture piece, ellipse for round types", () => {
-    const markup = flatten(
+  const twoPieces = () =>
+    flatten(
       renderGlowMask(
         [
           { id: "s", type: "sofa", x: 300, y: 200, w: 100, h: 50, angle: 90 },
@@ -2414,12 +2476,30 @@ describe("renderGlowMask — furniture stays base gray (issue #108)", () => {
         "gm"
       )
     );
-    expect(markup).toContain('id=gm');
-    expect(markup).toContain('fill="black"');
+
+  it("shades a rotated rect per furniture piece, ellipse for round types", () => {
+    const markup = twoPieces();
+    expect(markup).toContain("id=gm");
     expect(markup).toContain("rotate(90 300 200)");
     expect(markup).toContain("<ellipse");
     // Explicit region, not the viewport default (the issue #102 lesson).
     expect(markup).toContain("width=1016");
+  });
+
+  // This is the guard in *both* directions, and the reason the level is a
+  // named constant. Each end of this dial has shipped as a bug: fully lit was
+  // #108 (every sofa read as highlighted), fully dark was #106 (a lit table
+  // came out as a shadow). Only a value strictly between the two is correct.
+  it("blocks some of the light but not all of it", () => {
+    const markup = twoPieces();
+    expect(FURNITURE_GLOW_TRANSMISSION).toBeGreaterThan(0);
+    expect(FURNITURE_GLOW_TRANSMISSION).toBeLessThan(1);
+    // A solid black hole (a shadow) or no shape at all (a flood) would both
+    // fail here: furniture must paint, and paint partially.
+    const blocked = 1 - FURNITURE_GLOW_TRANSMISSION;
+    expect(markup).toContain(`fill-opacity=${blocked}`);
+    expect(markup).not.toContain('fill-opacity="1"');
+    expect(markup).not.toContain('fill="black"');
   });
 
   it("clips the pool with the reach polygon only when walls are in range", () => {

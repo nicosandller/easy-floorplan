@@ -222,6 +222,16 @@ By default it shows an icon badge:
   makes a wall of lights, covers and switches hard to read. Set **Active color**
   per device to tell them apart at a glance — lights yellow, covers purple,
   thermostats orange. Ripples follow it unless you set a ripple color too.
+- **Lights badge themselves** — a bulb that reports an `rgb_color` wears it: a lamp set to
+  green gets a green badge, and the badge darkens as the lamp dims, so you can read the
+  room's lighting from the badges alone. Nothing to configure, and nothing changes for a
+  bulb that has no color to report (a plain on/off or brightness-only light keeps the theme
+  color). The full order is **state rules → Active color → the bulb's own color → the
+  theme** — anything you set by hand still wins.
+- **The icon stays readable** — the glyph (or the value) picks black or white to suit
+  whatever the badge ended up painted, so a white state color no longer hides a white icon
+  on a dark theme. A color the card can't resolve on its own — `var(--accent)`,
+  `color-mix(...)`, a gradient — keeps the theme's text color as before.
 - **Value in the badge** — set **Badge shows** to *Value* and the device draws its
   reading inside the badge instead of an icon: a thermostat reads `21°` in the same
   circle your state rules already paint red while it's heating, with no text line
@@ -717,10 +727,13 @@ at the walls of its room instead of washing into the next one, and spills throug
 gap the way real light does. The result is an irregular shape rather than a clean circle —
 that's the point. A lamp with no wall inside its radius stays a plain circle.
 
-**Furniture keeps its own color.** Light falls on the floor, not on the furniture drawn over
-it: furniture footprints are cut out of the pools, so a sofa under a lit lamp stays its base
-gray rather than turning the color of the light. Only entity-bound furniture with
-`stateColor` / `activeColor` ever changes color.
+**Light lands on furniture, at half strength.** A table under a lit lamp is lit — but it
+picks up only about half the color cast the open floor beside it gets, so it still reads as
+furniture rather than turning into the color of the light. This is a deliberate middle:
+furniture line art is translucent, so at full strength a warm pool shone straight through
+and every sofa in the room looked highlighted, while cutting furniture out of the pool
+entirely made a lit table *darker* than the floor around it — a shadow. Only entity-bound
+furniture with `stateColor` / `activeColor` ever changes color outright.
 
 Pools never intercept clicks — a device under a lit lamp stays tappable, and in the editor
 rooms under one stay selectable.

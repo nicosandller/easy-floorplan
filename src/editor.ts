@@ -68,6 +68,8 @@ import {
   kindFromEntity,
   resolveItemIcon,
   resolveStateColor,
+  entityIsActive,
+  lightBadgePaint,
   itemRawValue,
   badgeContentOf,
   badgeValue,
@@ -80,7 +82,7 @@ import {
   collectWatchedEntities,
   hassRenderInputsChanged,
 } from "./render";
-import { cssColor, cssColorOr, cssNumber } from "./css-safe";
+import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
 import {
   ENDPOINT_SNAP,
   applyDelta,
@@ -3395,7 +3397,16 @@ export class FloorplanCardEditor extends LitElement {
     const stateColor = cssColor(resolveStateColor(it.stateColor, rawValue));
     // …and the same badge contents, so "Badge shows: Value" previews here too.
     const value = badgeContentOf(it) === "value" ? badgeValue(this.hass, it) : undefined;
-    const rippleColor = it.rippleColor ?? stateColor ?? "var(--primary-color, #03a9f4)";
+    // The active colour — the one the user set, else the bulb's own colour
+    // (issue #106). The canvas never previewed either, so setting "Active
+    // color" changed nothing here and a coloured lamp would have looked plain;
+    // both are the same one line, so both land together.
+    const active = entityIsActive(it.entity, st?.state);
+    const activeColor = active ? (cssColor(it.activeColor) ?? lightBadgePaint(st)) : undefined;
+    // Ink that reads on whatever the badge ends up painted, same rule as the card.
+    const badgeInk = contrastText(stateColor ?? activeColor);
+    const rippleColor =
+      it.rippleColor ?? stateColor ?? activeColor ?? "var(--primary-color, #03a9f4)";
     const rippleSize = it.rippleSize ?? DEFAULT_RIPPLE_SIZE;
 
     // Live preview: the icon animates exactly when the card would animate it
@@ -3403,9 +3414,15 @@ export class FloorplanCardEditor extends LitElement {
     // effect without leaving the editor.
     const anim = resolveIconAnimation(it, st?.state);
     const badge = html`<div
-      class="badge ${showIcon ? "" : "ghost"} ${stateColor ? "state-colored" : ""}"
+      class="badge ${showIcon ? "" : "ghost"} ${stateColor
+        ? "state-colored"
+        : active
+          ? "active-colored"
+          : ""}"
       style="width:${size}px;height:${size}px;transform:rotate(${cssNumber(it.angle, 0)}deg);${
         stateColor ? `--fp-state:${stateColor};` : ""
+      }${activeColor ? `--fp-active:${activeColor};` : ""}${
+        badgeInk ? `--fp-ink:${badgeInk};` : ""
       }"
     >
       ${value
@@ -5030,7 +5047,18 @@ export class FloorplanCardEditor extends LitElement {
     .edit-item .badge.state-colored {
       background: var(--fp-state);
       border-color: var(--fp-state);
-      color: var(--text-primary-color, #212121);
+      color: var(--fp-ink, var(--text-primary-color, #212121));
+    }
+    /* An active device, painted exactly as the card paints it (issue #106):
+       the device's active colour, else a colour-capable bulb's own, else the
+       theme's active yellow — the same fallback chain as .item.on .badge.
+       The canvas previewed none of this before, so setting "Active color"
+       changed nothing here and a coloured lamp looked plain. Below
+       .state-colored, which is the more specific statement. */
+    .edit-item .badge.active-colored {
+      background: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
+      border-color: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
+      color: var(--fp-ink, var(--text-primary-color, #212121));
     }
     .state-color-rule select {
       flex: 0 0 96px;
