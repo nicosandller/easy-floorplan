@@ -673,7 +673,7 @@ shape it occupies on screen.
 | `rippleColor` | string                                 | `activeColor`| Ripple ring color (ripple modes). Falls back to `activeColor`, then the primary color. |
 | `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
 | `glow`        | boolean                                | `false`      | Cast a pool of light onto the plan from this device (lights only). See **Cast light**. |
-| `glowRadius`  | number                                 | `140`        | Radius of the cast pool, in canvas units.              |
+| `glowRadius`  | number                                 | `140`        | Radius of the cast pool at full brightness, in canvas units. A dimmer lamp casts a proportionally smaller pool, down to half this. |
 | `glowColor`   | string                                 | `#ffd9a0`    | Color for a bulb that can't report one. A color-capable light always uses its own. |
 | `badgeContent` | `icon` \| `value` \| `none`           | `icon`       | What the badge holds. `value` draws the device's reading inside it (see **Value in the badge**), falling back to the icon when there is no number; `none` hides the badge, leaving the label. |
 | `showIcon`    | boolean                                | `true`       | **Deprecated** — superseded by `badgeContent`. Still honoured when `badgeContent` is unset: `false` means `none`. |
@@ -718,6 +718,14 @@ something sensible:
 Home Assistant derives an `rgb_color` even for `color_temp`-only bulbs, so a warm-white
 bulb still reads as amber. Brightness maps into a **0.18–0.6** opacity band rather than
 0–1: a lamp dimmed to 10% would otherwise be invisible.
+
+**Brightness also sets how far the light reaches**, not just how strong it is — dimming a
+lamp draws its pool in, the way dimming one does in a room. `glowRadius` is the size at
+**full brightness**, and the pool shrinks to no less than half that as the lamp dims, so a
+lamp at 5% still reads as a dim lamp rather than vanishing under its own icon. A bulb that
+reports no brightness (plain on/off) always casts the full radius. The dashed radius guide
+in the editor shows the configured, full-brightness size — it is the handle for the value
+you are setting.
 
 The pools are drawn above the room fills but below furniture and walls, so light reads as
 cast onto the floor rather than painted over the plan. `glow` is independent of the icon —

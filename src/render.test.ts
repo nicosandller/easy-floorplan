@@ -7,6 +7,7 @@ import {
   DEFAULT_GLOW_COLOR,
   GLOW_MIN_OPACITY,
   GLOW_MAX_OPACITY,
+  GLOW_MIN_RADIUS,
   BADGE_MIN_LIGHTNESS,
   FURNITURE_GLOW_TRANSMISSION,
   SUN_ELEVATION_NIGHT,
@@ -2181,6 +2182,18 @@ describe("shutterStyleOf (issue #74)", () => {
 describe("glowPaint (issue #6)", () => {
   const light = (state: string, attributes: Record<string, unknown> = {}) =>
     ({ entity_id: "light.x", state, attributes }) as never;
+  const flattenSunDim = (node: unknown): string => {
+    if (node == null || typeof node === "boolean") return "";
+    if (Array.isArray(node)) return node.map(flattenSunDim).join("");
+    if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+      const { strings, values } = node as { strings: string[]; values: unknown[] };
+      return strings.reduce(
+        (acc, s, i) => acc + s + (i < values.length ? flattenSunDim(values[i]) : ""),
+        "",
+      );
+    }
+    return String(node);
+  };
 
   it("paints a color-capable light's own rgb", () => {
     const paint = glowPaint({}, light("on", { rgb_color: [255, 170, 80], brightness: 255 }));
@@ -2239,6 +2252,55 @@ describe("glowPaint (issue #6)", () => {
 
   it("clamps out-of-range channels instead of trusting the integration", () => {
     expect(glowPaint({}, light("on", { rgb_color: [300, -20, 12.6] }))?.color).toBe("rgb(255, 0, 13)");
+  });
+
+  // Issue #123: dimming should draw the light in, not only thin it.
+  describe("brightness scales the pool's reach (#123)", () => {
+    it("full brightness casts the configured radius, unchanged", () => {
+      expect(glowPaint({ glowRadius: 200 }, light("on", { brightness: 255 }))?.radius).toBe(200);
+    });
+
+    it("a dimmer lamp reaches less far, down to a floor that stays visible", () => {
+      const at = (b: number) => glowPaint({ glowRadius: 200 }, light("on", { brightness: b }))!.radius;
+      expect(at(255)).toBe(200);
+      expect(at(128)).toBeCloseTo(200 * (GLOW_MIN_RADIUS + (1 - GLOW_MIN_RADIUS) * (128 / 255)), 5);
+      expect(at(0)).toBeCloseTo(200 * GLOW_MIN_RADIUS, 5);
+      // Monotonic, and never collapses to a dot under the lamp's own icon.
+      expect(at(0)).toBeLessThan(at(128));
+      expect(at(128)).toBeLessThan(at(255));
+      expect(at(0)).toBeGreaterThan(0);
+    });
+
+    it("a bulb with no brightness to report keeps the full radius", () => {
+      // An on/off-only light: "on" means fully on, so nothing shrinks.
+      expect(glowPaint({ glowRadius: 200 }, light("on"))?.radius).toBe(200);
+    });
+
+    it("defaults and gates the configured radius through css-safe", () => {
+      expect(glowPaint({}, light("on", { brightness: 255 }))?.radius).toBe(DEFAULT_GLOW_RADIUS);
+      // A hostile value falls back rather than reaching the SVG (#64/#65).
+      expect(glowPaint({ glowRadius: "6; evil" as never }, light("on", { brightness: 255 }))?.radius)
+        .toBe(DEFAULT_GLOW_RADIUS);
+    });
+
+    it("the sun-dimming clearing shrinks with the pool, staying the same shape", () => {
+      // These are documented as the same shape by construction; the clearing
+      // reading glowRadius directly would silently break that once the pool
+      // started scaling.
+      const items = [
+        { id: "i1", entity: "light.a", kind: "light", x: 300, y: 200, glow: true, glowRadius: 200 },
+      ] as never;
+      const at = (brightness: number) => {
+        const states = {
+          "light.a": { entity_id: "light.a", state: "on", attributes: { brightness } },
+        } as never;
+        const markup = flattenSunDim(renderSunDimMask(items, states, 1000, 600, "sd"));
+        return Number(/r=(\d+(?:\.\d+)?)/.exec(markup)![1]);
+      };
+      expect(at(255)).toBe(200);
+      expect(at(0)).toBeCloseTo(200 * GLOW_MIN_RADIUS, 5);
+      expect(at(0)).toBeLessThan(at(255));
+    });
   });
 });
 
@@ -2352,6 +2414,56 @@ describe("glowReach — walls block light (issue #108)", () => {
   it("the wall the lamp is mounted on does not black out its own pool", () => {
     // Wall within one wall thickness of the light: non-blocking.
     expect(glowReach(500, 300, 140, [wall(200, 302, 800, 302)])).toBeUndefined();
+  });
+
+  // Issue #123: a wedge of the pool went missing beside long walls. The sweep
+  // only has vertices where it casts rays, and it cast them at the wall's
+  // *declared* endpoints — far outside the swept region for an ordinary room
+  // wall — so nothing sampled the angle where the boundary hands over from the
+  // region's edge to the wall, and the chord across that gap cut the pool.
+  describe("a long wall does not slice the pool (#123)", () => {
+    const r = 140;
+    // An ordinary room wall: 60 below the lamp and running well past the pool.
+    const longWall = [wall(0, 360, 1000, 360)];
+
+    it("lights the whole strip beside the wall, out to the radius", () => {
+      const poly = glowReach(500, 300, r, longWall)!;
+      // 5px above the wall — nothing between these and the lamp — stepping out
+      // to the edge of the radius. Every one must be lit; before the fix the
+      // last three were not.
+      for (const dx of [0, 20, 40, 60, 80, 100, 120]) {
+        const dist = Math.hypot(dx, 55);
+        expect({ dx, dist: Math.round(dist), lit: inside(poly, 500 + dx, 355) }).toEqual({
+          dx,
+          dist: Math.round(dist),
+          lit: true,
+        });
+      }
+    });
+
+    it("still blocks the far side, so the fix did not just delete the clipping", () => {
+      const poly = glowReach(500, 300, r, longWall)!;
+      expect(inside(poly, 500, 380)).toBe(false);
+      expect(inside(poly, 560, 400)).toBe(false);
+    });
+
+    it("samples the angle where the wall enters the swept region", () => {
+      const poly = glowReach(500, 300, r, longWall)!;
+      const angles = poly.map((p) => (Math.atan2(p.y - 300, p.x - 500) * 180) / Math.PI);
+      // The hand-over sits at atan2(60, 141.4) ≈ 23°, not at the declared
+      // endpoint's atan2(60, 500) ≈ 6.8°.
+      expect(angles.some((a) => Math.abs(a - 23.0) < 1)).toBe(true);
+      expect(angles.some((a) => Math.abs(a - 6.8) < 1)).toBe(false);
+    });
+
+    it("leaves a wall that already fits inside the region alone", () => {
+      // Short wall, both endpoints within the sweep: clipping is a no-op, so
+      // the shadow it casts is unchanged.
+      const short = [wall(480, 360, 520, 360)];
+      const poly = glowReach(500, 300, r, short)!;
+      expect(inside(poly, 500, 380)).toBe(false); // directly behind it
+      expect(inside(poly, 600, 380)).toBe(true); // past its end
+    });
   });
 });
 
@@ -2504,7 +2616,7 @@ describe("renderGlowMask — furniture is dimmed, not blacked out (#108, #106)",
 
   it("clips the pool with the reach polygon only when walls are in range", () => {
     const item = { id: "i", entity: "light.x", kind: "light", x: 300, y: 200 } as never;
-    const paint = { color: "#fff", opacity: 0.4 };
+    const paint = { color: "#fff", opacity: 0.4, radius: DEFAULT_GLOW_RADIUS };
     const withWall = flatten(renderGlow(item, paint, "g1", [{ id: "w", x1: 0, y1: 260, x2: 1000, y2: 260 }]));
     expect(withWall).toContain("<clipPath");
     expect(withWall).toContain("clip-path=url(#g1-clip)");
@@ -2534,7 +2646,10 @@ describe("editorGlowPaint (issue #108)", () => {
     expect(editorGlowPaint({}, undefined)).toEqual({
       color: DEFAULT_GLOW_COLOR,
       opacity: GLOW_MAX_OPACITY,
+      // No state to read a brightness from: the configured size, unscaled.
+      radius: DEFAULT_GLOW_RADIUS,
     });
+    expect(editorGlowPaint({ glowRadius: 200 }, undefined)?.radius).toBe(200);
     expect(editorGlowPaint({ glowColor: "#00ff00" }, undefined)?.color).toBe("#00ff00");
   });
 });
@@ -2553,7 +2668,9 @@ describe("renderGlow (issue #6)", () => {
     ({ id: "i", entity: "light.x", kind: "light", x: 300, y: 200, ...extra }) as never;
 
   it("centers the pool on the device and fades to nothing at the rim", () => {
-    const markup = flatten(renderGlow(item(), { color: "rgb(1, 2, 3)", opacity: 0.5 }, "g1"));
+    const markup = flatten(
+      renderGlow(item(), { color: "rgb(1, 2, 3)", opacity: 0.5, radius: DEFAULT_GLOW_RADIUS }, "g1"),
+    );
     expect(markup).toContain("cx=300");
     expect(markup).toContain("cy=200");
     expect(markup).toContain(`r=${DEFAULT_GLOW_RADIUS}`);
@@ -2563,14 +2680,20 @@ describe("renderGlow (issue #6)", () => {
     expect(markup).toContain('fill=url(#g1)');
   });
 
-  it("honors glowRadius, and gates a garbage one through css-safe", () => {
-    expect(flatten(renderGlow(item({ glowRadius: 250 }), { color: "#fff", opacity: 0.4 }, "g"))).toContain("r=250");
-    expect(flatten(renderGlow(item({ glowRadius: "6; evil" }), { color: "#fff", opacity: 0.4 }, "g")))
-      .toContain(`r=${DEFAULT_GLOW_RADIUS}`);
+  it("draws at the radius the paint carries, not the configured one (#123)", () => {
+    // The size is brightness-scaled in glowPaint, so renderGlow must use what
+    // it is handed — reading item.glowRadius here again would silently undo it.
+    const markup = flatten(
+      renderGlow(item({ glowRadius: 250 }), { color: "#fff", opacity: 0.4, radius: 137 }, "g"),
+    );
+    expect(markup).toContain("r=137");
+    expect(markup).not.toContain("r=250");
   });
 
   it("carries the class the blend mode hangs off, or lights would not mix", () => {
-    expect(flatten(renderGlow(item(), { color: "#fff", opacity: 0.4 }, "g"))).toContain('class="fp-glow"');
+    expect(
+      flatten(renderGlow(item(), { color: "#fff", opacity: 0.4, radius: DEFAULT_GLOW_RADIUS }, "g")),
+    ).toContain('class="fp-glow"');
   });
 });
 

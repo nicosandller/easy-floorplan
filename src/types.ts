@@ -611,6 +611,18 @@ export const GLOW_MIN_OPACITY = 0.18;
 export const GLOW_MAX_OPACITY = 0.6;
 
 /**
+ * Smallest share of its configured `glowRadius` a lamp's pool shrinks to as it
+ * dims (issue #123). Dimming a lamp draws the light *in* as well as thinning
+ * it, which is what dimming looks like in a room.
+ *
+ * Floored for the same reason {@link GLOW_MIN_OPACITY} is: a lamp at 5% would
+ * otherwise collapse to a dot under its own icon and read as switched off.
+ * `glowRadius` stays the full-brightness size, so a lamp at 100% — and any
+ * bulb that reports no brightness at all — is unaffected.
+ */
+export const GLOW_MIN_RADIUS = 0.5;
+
+/**
  * How far a light's `brightness` may darken its **badge** colour (issue #106,
  * @ombre33): a lamp at full brightness badges its true `rgb_color`, one dimmed
  * to nothing badges this fraction of it.

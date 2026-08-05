@@ -2749,6 +2749,12 @@ export class FloorplanCardEditor extends LitElement {
                 // unlit light would otherwise be blind, now that an off light
                 // correctly draws nothing. Editor-only chrome, like the
                 // tracker zone outline.
+                //
+                // Deliberately the *configured* radius, not the brightness-
+                // scaled one (issue #123): this is the handle for the value you
+                // are setting, which is the pool's size at full brightness. A
+                // guide that shrank as the bulb dimmed would move while you
+                // dragged it, and would never show the size you actually typed.
                 floor.items.map((it) =>
                   it.glow && this._isSel("item", it.id)
                     ? svg`<circle class="glow-guide" cx=${it.x} cy=${it.y}
