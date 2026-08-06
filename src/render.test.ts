@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { html, nothing } from "lit";
 import type { Area, Furniture, FurnitureType, ItemKind } from "./types";
+import { SKIN_ACCENT } from "./skins";
 import {
   FURNITURE_DEFAULT_SIZE,
   DEFAULT_GLOW_RADIUS,
@@ -1904,7 +1905,7 @@ describe("renderArea", () => {
   it("emits the vertex points and the default fill/opacity", () => {
     const markup = flattenMarkup(renderArea({ id: "a", points: square }));
     expect(markup).toContain("points=0,0 10,0 10,10 0,10");
-    expect(markup).toContain("fill=var(--primary-color, #03a9f4)");
+    expect(markup).toContain(`fill=${SKIN_ACCENT}`);
     expect(markup).toContain("fill-opacity=0.25");
   });
 
@@ -1918,7 +1919,7 @@ describe("renderArea", () => {
     const markup = flattenMarkup(
       renderArea({ id: "a", points: square, color: "red;position:fixed;inset:0" })
     );
-    expect(markup).toContain("fill=var(--primary-color, #03a9f4)");
+    expect(markup).toContain(`fill=${SKIN_ACCENT}`);
     expect(markup).not.toContain("position:fixed");
   });
 

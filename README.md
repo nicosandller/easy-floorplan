@@ -52,6 +52,10 @@ automatically to the card and screen size.
   dawn, tracking your Home Assistant's own sunrise and sunset rather than the viewer's
   browser. Device icons stay at full brightness, so a night plan reads as a dark house
   with its lit rooms glowing.
+- **Skins** — restyle the whole plan from one line of config: `default` follows your Home
+  Assistant theme, `odnetnin` is playful and chunky, `pastel` is soft and low-contrast,
+  `tron` is neon on near-black. Colours you set on an element yourself always win. See
+  **Skins**.
 - **Text labels** and a configurable **canvas background color**.
 - **Background image** — drop in a floor-plan image (per floor) and trace walls, doors and
   devices over it, with adjustable opacity.
@@ -596,7 +600,8 @@ The editor writes this config for you; manual editing is optional.
 | `sunDimming` | boolean | `false` | Dim the plan through dusk and brighten it through dawn, following the **Home Assistant instance's** sunrise and sunset (not the browser's). See **Follow the sun**. |
 | `sunBrightnessMin` | number | `0.45` | Plan brightness once the sun is fully down, 0–1. Only used when `sunDimming` is on. |
 | `sunBrightnessMax` | number | `1` | Plan brightness in full daylight, 0–1. Only used when `sunDimming` is on. |
-| `background` | string   | card background    | Canvas background color (CSS / hex).         |
+| `skin`       | string   | `default`          | Built-in look for the whole plan: `default`, `odnetnin`, `pastel` or `tron`. See **Skins**. |
+| `background` | string   | skin / card bg     | Canvas background color (CSS / hex). Overrides the skin's paper. |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see **Floors**).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
 | `walls`      | Wall[]   | `[]`               | Wall segments (single-floor / floor 1).      |
@@ -1090,6 +1095,72 @@ whole length: light does not reach through a doorway, for the clearing or for th
 Toggle it in the editor under **Project → Follow the sun**; the two brightness sliders
 appear once it is on.
 
+## Skins
+
+A skin restyles the whole plan at once — paper, walls, badges, accents — from one line of
+config. Pick one in the editor under **Project → Skin**, or set it by hand:
+
+```yaml
+type: custom:easy-floorplan-card
+skin: tron
+```
+
+| Skin | What it looks like |
+| --- | --- |
+| `default` | Follows your Home Assistant theme, exactly as the card always has. This is what you get with no `skin` set. |
+| `odnetnin` | Playful and chunky: thick charcoal outlines on warm cream paper, rounded-square badges with a hard printed-sticker shadow, a red accent and a bright yellow for anything that's on. |
+| `pastel` | Soft and low-contrast: muted mauve walls on blush paper, peach for active devices. Easy to look at on a dashboard you keep on screen all day. |
+| `tron` | Neon on near-black: thin cyan walls that glow, amber for active devices, light text. Light pools read best here — a lit room genuinely lights up. |
+
+A skin only ever supplies **fallbacks**, so anything you set on an element yourself still wins:
+a room with its own `color`, a device with its own `activeColor`, a `background` on the plan.
+That also means you can switch skins freely without losing the colours you chose by hand.
+
+Two things a skin deliberately does not touch. The **editor's own chrome** — toolbar, panels,
+forms — stays in your Home Assistant theme, so the canvas reads as the plan rather than as more
+editor. And a **background image** covers the skin's paper, as it always has; only the area
+around it changes.
+
+### Rolling your own
+
+Under the hood a skin is a set of CSS custom properties, so [card-mod](#styling-hooks-card-mod)
+can set the same ones and get the same result:
+
+```yaml
+type: custom:easy-floorplan-card
+card_mod:
+  style: |
+    ha-card {
+      --fp-skin-bg: #101820;
+      --fp-skin-wall: #f2aa4c;
+      --fp-skin-text: #f2f2f2;
+      --fp-skin-accent: #f2aa4c;
+    }
+```
+
+| Token | Default | Paints |
+| --- | --- | --- |
+| `--fp-skin-bg` | card background | The canvas paper. |
+| `--fp-skin-card-bg` | card background | The card around the canvas. |
+| `--fp-skin-wall` | theme text color | Walls, and the jambs and leaves of doors and windows. |
+| `--fp-skin-wall-width` | `8` | Wall stroke width. **Keep this at 10 or below** — a doorway is a 12-unit gap cut through the wall layer, and a wider wall would not be fully cleared by its own door. |
+| `--fp-skin-wall-filter` | `none` | A CSS `filter` on the walls, e.g. `drop-shadow(0 0 4px #22d3ee)` for a neon look. |
+| `--fp-skin-accent` | theme primary color | Ripples, trackers, room fills, active doors, the floor switcher. |
+| `--fp-skin-active` | theme active color | Badge colour for a device that is on. |
+| `--fp-skin-active-ink` | theme text color | Icon/reading colour on that badge. Set it whenever `--fp-skin-active` is pale. |
+| `--fp-skin-text` | theme text color | Labels, free text, room names, the card title, the editor grid. |
+| `--fp-skin-badge-bg` | card background | Badge and label-chip background. |
+| `--fp-skin-badge-border` | divider color | Badge border colour. |
+| `--fp-skin-badge-border-width` | `1.5px` | Badge border weight. |
+| `--fp-skin-badge-radius` | `50%` | Badge roundness — `50%` is a circle, `30%` a rounded square. |
+| `--fp-skin-badge-shadow` | `0 1px 3px rgba(0,0,0,0.2)` | Badge shadow. |
+| `--fp-skin-furniture` | `#9e9e9e` | Furniture with no colour of its own. |
+| `--fp-skin-glow` | `#ffd9a0` | Light-pool colour for a bulb that reports no colour. |
+
+Set them on `ha-card` and the whole plan follows, editor included. They are the same layer the
+built-in skins use, so a `skin:` and a card-mod override compose — the skin supplies the values
+you don't state.
+
 ## Styling hooks (card-mod)
 
 Every rendered element carries its config `id` as `data-id`, plus a type class — so
@@ -1140,7 +1211,9 @@ CSS wins over SVG presentation attributes, so `fill` and `fill-opacity` set this
 override what the card draws.
 
 Two notes. **Colouring a room from a sensor no longer needs CSS** — areas take `entity`,
-`stateColor`, `activeColor` and `activeOpacity` natively; see **Area**. And these hooks are
+`stateColor`, `activeColor` and `activeOpacity` natively; see **Area**; and **restyling the
+whole plan no longer needs CSS either** — see **Skins**, whose `--fp-skin-*` tokens are the
+supported way to build a look of your own. And these hooks are
 a *styling* surface, not an API: the class names are stable, but the SVG structure inside
 an element may change between releases, so prefer selecting the element itself over its
 internals.

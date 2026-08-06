@@ -634,8 +634,12 @@ export const DEFAULT_AREA_BORDER_WIDTH = 3;
 
 /** Radius of a light's cast pool, in canvas units (issue #6). */
 export const DEFAULT_GLOW_RADIUS = 140;
-/** Warm white, for a light that cannot report a color of its own. */
-export const DEFAULT_GLOW_COLOR = "#ffd9a0";
+/**
+ * Warm white, for a light that cannot report a color of its own — as the skin's
+ * token (issue #122) so Tron's pools read cyan rather than tungsten, with the
+ * original hex as the fallback so an unskinned plan is unchanged.
+ */
+export const DEFAULT_GLOW_COLOR = "var(--fp-skin-glow, #ffd9a0)";
 /**
  * Opacity band a light's `brightness` maps into at the center of its pool.
  *
@@ -687,7 +691,8 @@ export const DEFAULT_TRACKER_DOT_SIZE = 14;
 export const DEFAULT_ITEM_SIZE = 34;
 export const DEFAULT_TEXT_SIZE = 16;
 export const DEFAULT_RIPPLE_SIZE = 80;
-export const FURNITURE_COLOR = "#9e9e9e";
+/** Neutral gray, so furniture reads differently from the walls. Skinnable (#122). */
+export const FURNITURE_COLOR = "var(--fp-skin-furniture, #9e9e9e)";
 
 /** Default width/height per furniture type, in virtual units. */
 export const FURNITURE_DEFAULT_SIZE: Record<FurnitureType, { w: number; h: number }> = {
@@ -803,7 +808,18 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * 0/90/180/270 are normalized (see normalizePlanRotation).
    */
   rotation?: number;
-  /** Canvas background color (CSS / hex). Falls back to the card background. */
+  /**
+   * Built-in skin id (issue #122), e.g. `odnetnin`, `pastel`, `tron`. Restyles
+   * the whole plan at once — paper, walls, badges, accents — by supplying the
+   * fallbacks every element already reads.
+   *
+   * Unset (or an id we don't ship) means the default look, which follows the
+   * Home Assistant theme exactly as it always has. A skin only ever supplies
+   * fallbacks, so any colour set on an element itself still wins. See
+   * `src/skins.ts`.
+   */
+  skin?: string;
+  /** Canvas background color (CSS / hex). Falls back to the skin's paper, then the card background. */
   background?: string;
   /**
    * Follow the real sun (issue #113): dim the plan through dusk and brighten

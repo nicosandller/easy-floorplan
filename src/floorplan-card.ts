@@ -1,6 +1,7 @@
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
+import { keyed } from "lit/directives/keyed.js";
 import type { HomeAssistant, FloorplanCardConfig, FloorItem, FloorText, Floor, Area } from "./types";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, contrastText } from "./css-safe";
 import {
@@ -61,6 +62,7 @@ import {
   type PlanRotation,
 } from "./render";
 import type { Opening } from "./types";
+import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
 import { actionForGesture, executeAction, hasAction } from "./actions";
 import { actionHandler } from "./action-handler";
 
@@ -289,7 +291,7 @@ export class FloorplanCard extends LitElement {
     const lightColor = lightBadgePaint(st);
     const activeColor = cssColor(item.activeColor) ?? lightColor;
     const rippleColor =
-      item.rippleColor ?? stateColor ?? item.activeColor ?? lightColor ?? "var(--primary-color, #03a9f4)";
+      item.rippleColor ?? stateColor ?? item.activeColor ?? lightColor ?? SKIN_ACCENT;
     // Ink that can actually be read on whatever the badge ended up painted
     // (issue #106, @MrMcFlyy): a white state colour used to take the theme's
     // white icon with it. undefined for a colour we cannot resolve — a
@@ -372,7 +374,7 @@ export class FloorplanCard extends LitElement {
         data-id=${cssIdent(t.id) ?? nothing}
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
                font-size:${cssNumber(t.size, DEFAULT_TEXT_SIZE)}px;
-               color:${cssColorOr(t.color, "var(--primary-text-color)")};
+               color:${cssColorOr(t.color, SKIN_TEXT)};
                transform:translate(-50%,-50%) rotate(${cssNumber(t.angle, 0)}deg);"
       >
         ${t.text}
@@ -418,7 +420,11 @@ export class FloorplanCard extends LitElement {
         )
       : nothing;
     return html`
-      <ha-card .header=${c.title ?? nothing}>
+      <!-- The skin (issue #122) rides on the card rather than on .plan, so the
+           floor switcher and the card's own background follow it too — a Tron
+           plan floating on a white card would read as a bug. Every token the
+           card draws with is declared on :host, so this only ever overrides. -->
+      <ha-card .header=${c.title ?? nothing} style=${skinStyle(c.skin) || nothing}>
         <div
           class="stage"
           style="aspect-ratio: ${dims.w} / ${dims.h};"
@@ -437,8 +443,7 @@ export class FloorplanCard extends LitElement {
             class="plan"
             style="aspect-ratio: ${dims.w} / ${dims.h};
                    width: min(100%, calc(100cqh * ${dims.w} / ${dims.h}));
-                   background:${cssColorOr(
-                     c.background, "var(--card-background-color, #fff)")};"
+                   background:${cssColorOr(c.background, SKIN_PAPER)};"
           >
           <!-- preserveAspectRatio="none" is correct here, and it took a wrong
                fix to see why. Fitting the plan into a card that is the wrong
@@ -453,7 +458,18 @@ export class FloorplanCard extends LitElement {
                count), "meet" letterboxes the SVG away from the overlay and
                every icon drifts off the wall it was placed on, while "none"
                stretches both layers identically: distorted, but aligned. -->
-          <svg viewBox="0 0 ${dims.w} ${dims.h}" preserveAspectRatio="none">
+          <!-- Keyed on the skin (issue #122). A skin changes custom properties on
+               an ancestor, and Chromium does not repaint an SVG element whose
+               colour comes from a var() inside a presentation attribute or an
+               inline style unless something else about it changes — Lit writes
+               the same attribute string either way, so switching skins left
+               every door, window and room fill painted in the previous skin's
+               colours while the computed values were already correct. Keying
+               rebuilds the subtree instead, which repaints by construction.
+               Only on a skin change; ordinary state updates are untouched. -->
+          ${keyed(
+            c.skin ?? "",
+            svg`<svg viewBox="0 0 ${dims.w} ${dims.h}" preserveAspectRatio="none">
             <g transform=${rotTransform || nothing}>
             ${active.image
               ? svg`<image href=${active.image} x="0" y="0" width=${c.width} height=${c.height}
@@ -523,11 +539,11 @@ export class FloorplanCard extends LitElement {
                 ? this.hass?.states[o.shutterEntity]
                 : undefined;
               const symbol = renderOpening(o, {
-                color: "var(--primary-text-color)",
+                color: SKIN_WALL,
                 open: amount > 0,
                 amount,
                 active: this._openingActive(o),
-                accent: o.activeColor ?? "var(--primary-color, #03a9f4)",
+                accent: o.activeColor ?? SKIN_ACCENT,
                 // External roller shutter layer (issue #74). No entity bound
                 // yet → previewed shut, like a static plan.
                 shutter: o.shutterEntity
@@ -581,7 +597,8 @@ export class FloorplanCard extends LitElement {
                 : nothing
             }
             </g>
-          </svg>
+          </svg>`
+          )}
           <div class="items">
             ${active.areas?.map((a) => this._renderAreaLabel(a, c, rot))}
             ${active.texts.map((t) => this._renderText(t, c, rot))}
@@ -636,11 +653,26 @@ export class FloorplanCard extends LitElement {
     `;
   }
 
-  static styles = css`
+  // skinTokens declares every --fp-skin-* default on :host (issue #122). It
+  // comes first so a skin's inline overrides on <ha-card> — a descendant — win
+  // by the cascade's ordinary inheritance rules rather than by !important.
+  static styles = [
+    skinTokens,
+    css`
     ha-card {
       height: 100%;
       box-sizing: border-box;
       overflow: hidden;
+      /* The skin paints the card, not just the plan: .plan is only the canvas
+         box, and on a card that isn't the canvas's shape the rest would stay
+         the Home Assistant theme's colour. Unskinned this is ha-card's own
+         default chain, so nothing changes. */
+      background: var(--fp-skin-card-bg, var(--ha-card-background, var(--card-background-color, #fff)));
+      /* The title sits on that background, and ha-card colours it from this
+         variable rather than inheriting — so a dark skin under a light Home
+         Assistant theme would print a dark title on near-black. The default is
+         ha-card's own. */
+      --ha-card-header-color: var(--fp-skin-text, var(--primary-text-color));
       /* A column, so the stage takes the height left over after the card's
          own header rather than the card's whole height. With a title set, a
          full-height stage measures past the bottom of the card by exactly the
@@ -680,9 +712,9 @@ export class FloorplanCard extends LitElement {
     }
     .floor-switcher button {
       cursor: pointer;
-      border: 1px solid var(--divider-color, #ccc);
-      background: var(--card-background-color, #fff);
-      color: var(--primary-text-color);
+      border: 1px solid var(--fp-skin-badge-border, var(--divider-color, #ccc));
+      background: var(--fp-skin-badge-bg, var(--card-background-color, #fff));
+      color: var(--fp-skin-text, var(--primary-text-color));
       border-radius: 6px;
       padding: 4px 8px;
       font-size: 12px;
@@ -694,9 +726,9 @@ export class FloorplanCard extends LitElement {
       white-space: nowrap;
     }
     .floor-switcher button.active {
-      background: var(--primary-color, #03a9f4);
+      background: var(--fp-skin-accent, var(--primary-color, #03a9f4));
       color: var(--text-primary-color, #fff);
-      border-color: var(--primary-color, #03a9f4);
+      border-color: var(--fp-skin-accent, var(--primary-color, #03a9f4));
     }
     svg {
       position: absolute;
@@ -706,7 +738,15 @@ export class FloorplanCard extends LitElement {
       display: block;
     }
     .wall {
-      stroke: var(--primary-text-color);
+      stroke: var(--fp-skin-wall, var(--primary-text-color));
+      /* CSS beats the presentation attribute, so the skin sets the wall's
+         weight while WALL_THICKNESS keeps owning the geometry the doorway
+         mask and the opening symbols are cut from. Capped at 10 for that
+         reason — see MAX_SKIN_WALL_WIDTH. */
+      stroke-width: var(--fp-skin-wall-width, 8);
+      /* Neon, for the skins that want it. Everyone else gets none, which
+         costs nothing. */
+      filter: var(--fp-skin-wall-filter, none);
     }
     /* Sun dimming (issue #113): decoration, never a pointer target. The
        transition matters — HA steps the sun elevation every ~30s, and without
@@ -820,14 +860,15 @@ export class FloorplanCard extends LitElement {
     .badge {
       width: 34px;
       height: 34px;
-      border-radius: 50%;
-      background: var(--card-background-color, #fff);
-      border: 1.5px solid var(--divider-color, #ccc);
+      border-radius: var(--fp-skin-badge-radius, 50%);
+      background: var(--fp-skin-badge-bg, var(--card-background-color, #fff));
+      border: var(--fp-skin-badge-border-width, 1.5px) solid
+        var(--fp-skin-badge-border, var(--divider-color, #ccc));
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--primary-text-color);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      color: var(--fp-skin-text, var(--primary-text-color));
+      box-shadow: var(--fp-skin-badge-shadow, 0 1px 3px rgba(0, 0, 0, 0.2));
     }
     /* The reading standing in for the icon (issue #106). Inherits the badge's
        text color, so every rule that recolours a badge — active, --fp-state —
@@ -845,9 +886,13 @@ export class FloorplanCard extends LitElement {
      * exactly what every badge used before the option existed.
      */
     .item.on .badge {
-      background: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
-      border-color: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
-      color: var(--fp-ink, var(--text-primary-color, #212121));
+      background: var(--fp-active, var(--fp-skin-active, var(--state-light-active-color, var(--state-active-color, #fdd835))));
+      border-color: var(--fp-active, var(--fp-skin-active, var(--state-light-active-color, var(--state-active-color, #fdd835))));
+      /* --fp-ink is contrastText's answer for a colour we could read; when the
+         active colour came from the skin there is no per-item colour to read,
+         so the skin states its own ink. A pastel badge under a dark Home
+         Assistant theme would otherwise take that theme's near-white text. */
+      color: var(--fp-ink, var(--fp-skin-active-ink, var(--text-primary-color, #212121)));
     }
     /* A resolved state colour paints the badge whatever the on/off state —
        thresholds exist for sensors, which are never "on". Declared *after* the
@@ -897,8 +942,8 @@ export class FloorplanCard extends LitElement {
       line-height: 1;
       padding: 1px 4px;
       border-radius: 4px;
-      background: var(--card-background-color, #fff);
-      color: var(--primary-text-color);
+      background: var(--fp-skin-badge-bg, var(--card-background-color, #fff));
+      color: var(--fp-skin-text, var(--primary-text-color));
       white-space: nowrap;
     }
     .text {
@@ -918,11 +963,11 @@ export class FloorplanCard extends LitElement {
       letter-spacing: 0.02em;
       text-transform: uppercase;
       line-height: 1;
-      color: var(--primary-text-color);
+      color: var(--fp-skin-text, var(--primary-text-color));
       opacity: 0.7;
       text-shadow:
-        0 1px 2px var(--card-background-color, #fff),
-        0 -1px 2px var(--card-background-color, #fff);
+        0 1px 2px var(--fp-skin-bg, var(--card-background-color, #fff)),
+        0 -1px 2px var(--fp-skin-bg, var(--card-background-color, #fff));
     }
     .stack {
       position: relative;
@@ -1031,7 +1076,8 @@ export class FloorplanCard extends LitElement {
         stroke-width: 14;
       }
     }
-  `;
+  `,
+  ];
 }
 
 declare global {

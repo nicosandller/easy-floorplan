@@ -11,6 +11,7 @@ import {
   wallForm,
   projectForm,
   projectRotationForm,
+  projectSkinForm,
   projectSunForm,
   floorImageForm,
   areaForm,
@@ -19,6 +20,7 @@ import {
 import type { FormField } from "./editor-forms";
 import type { Area, Opening, FloorItem, Floor, FloorplanCardConfig } from "./types";
 import { DEFAULT_GLOW_RADIUS } from "./types";
+import { DEFAULT_SKIN, SKINS } from "./skins";
 
 const fields: FormField[] = [
   { name: "name", label: "Name", selector: { text: {} } },
@@ -617,6 +619,38 @@ describe("wallForm / projectForm / floorImageForm", () => {
       rotation: 270,
     } as FloorplanCardConfig);
     expect(rotated.data.rotation).toBe("270");
+  });
+
+  it("skin offers every built-in and keeps the default out of the YAML", () => {
+    const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+    const form = projectSkinForm(base);
+    expect(form.fields.map((x) => x.name)).toEqual(["skin"]);
+    const options = (form.fields[0].selector.select as { options: { value: string }[] }).options;
+    expect(options.map((o) => o.value)).toEqual(SKINS.map((s) => s.id));
+    expect(form.data.skin).toBe(DEFAULT_SKIN);
+    expect(form.toPatch({ skin: DEFAULT_SKIN })).toEqual({ skin: undefined });
+    expect(form.toPatch({ skin: "tron" })).toEqual({ skin: "tron" });
+  });
+
+  it("skin reads back a skin we don't ship as the default, matching what it renders as", () => {
+    const form = projectSkinForm({
+      type: "t",
+      width: 1000,
+      height: 600,
+      skin: "nintendo",
+    } as FloorplanCardConfig);
+    expect(form.data.skin).toBe(DEFAULT_SKIN);
+  });
+
+  it("skin's helper describes the skin currently selected", () => {
+    const tron = SKINS.find((s) => s.id === "tron")!;
+    const form = projectSkinForm({
+      type: "t",
+      width: 1000,
+      height: 600,
+      skin: "tron",
+    } as FloorplanCardConfig);
+    expect(form.fields[0].helper).toBe(tron.description);
   });
 
   it("image opacity appears only when an image is set", () => {

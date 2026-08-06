@@ -41,6 +41,7 @@ import {
   windowSash,
 } from "./render";
 import { defaultItemAction } from "./actions";
+import { DEFAULT_SKIN, SKINS, findSkin } from "./skins";
 
 /** One ha-form schema item, extended with our label/helper (read by computeLabel). */
 export interface FormField {
@@ -864,6 +865,30 @@ export function projectForm(c: FloorplanCardConfig): FormSpec {
     ],
     data: { title: c.title ?? "", width: c.width, height: c.height, grid: c.grid ?? DEFAULT_GRID },
     toPatch: identity,
+  };
+}
+
+/**
+ * Built-in skins (issue #122). Its own one-field form so the editor can put it
+ * at the top of the Project section, directly above the Background colour it
+ * interacts with — the skin supplies the paper, `background` overrides it.
+ */
+export function projectSkinForm(c: FloorplanCardConfig): FormSpec {
+  const current = findSkin(c.skin) ?? SKINS[0];
+  return {
+    fields: [
+      {
+        name: "skin",
+        label: "Skin",
+        helper: current.description,
+        selector: dropdown(...SKINS.map((s) => opt(s.id, s.label))),
+      },
+    ],
+    // An id we don't ship reads back as Default, matching what it renders as.
+    data: { skin: current.id },
+    toPatch: (p) =>
+      // Default is the absence of a skin, so it stays out of the YAML.
+      "skin" in p && p.skin === DEFAULT_SKIN ? { ...p, skin: undefined } : p,
   };
 }
 

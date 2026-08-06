@@ -40,6 +40,7 @@ import {
   trackerAxisFraction,
 } from "./types";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, cssIcon } from "./css-safe";
+import { SKIN_ACCENT, SKIN_PAPER } from "./skins";
 
 export const WALL_THICKNESS = 8;
 
@@ -1644,7 +1645,7 @@ function rollCurtain(length: number, tone: string, amt: number): SVGTemplateResu
     const x = -half + (length * i) / slats;
     ticks.push(
       svg`<line x1=${x} y1=${-bandT / 2} x2=${x} y2=${bandT / 2}
-            stroke="var(--card-background-color, #fff)" stroke-width="0.75" />`
+            stroke=${SKIN_PAPER} stroke-width="0.75" />`
     );
   }
   return svg`<g class="fp-roll-curtain" style="transform:scaleY(${1 - amt});">
@@ -1679,7 +1680,7 @@ function swingShutter(
       const x = x0 + (w * i) / n;
       out.push(
         svg`<line x1=${x} y1=${-t / 2} x2=${x} y2=${t / 2}
-              stroke="var(--card-background-color, #fff)" stroke-width="0.75" />`
+              stroke=${SKIN_PAPER} stroke-width="0.75" />`
       );
     }
     return out;
@@ -1733,12 +1734,12 @@ export interface OpeningStyle {
  * can transition them smoothly between open and closed.
  */
 export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResult {
-  const { color, open = true, active = false, accent = "var(--primary-color, #03a9f4)" } = style;
+  const { color, open = true, active = false, accent = SKIN_ACCENT } = style;
   const half = o.length / 2;
   const cutH = WALL_THICKNESS + 4;
   // The moving parts take the accent color when actively open (sensor-driven).
   // Sanitised: color/accent are config-supplied and land in `style="stroke/fill:…"`.
-  const tone = cssColorOr(active ? accent : color, "var(--primary-color, #03a9f4)");
+  const tone = cssColorOr(active ? accent : color, SKIN_ACCENT);
   // Fraction open (0..1) drives partial swing/slide. Defaults to the binary
   // `open` so callers that don't pass `amount` render exactly as before.
   const amt = Math.max(0, Math.min(1, style.amount ?? (open ? 1 : 0)));
@@ -1902,7 +1903,7 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   if (style.shutter) {
     const shutterTone = cssColorOr(
       style.shutter.active ? accent : color,
-      "var(--primary-color, #03a9f4)"
+      SKIN_ACCENT
     );
     const amt2 = Math.max(0, Math.min(1, style.shutter.amount));
     body = svg`${body}${
@@ -2121,7 +2122,7 @@ export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
   return svg`<polygon class="fp-area" data-id=${cssIdent(a.id) ?? nothing}
                        data-entity=${cssEntityId(a.entity) ?? nothing}
                        points=${pts}
-                       fill=${liveFill ? liveColor : cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
+                       fill=${liveFill ? liveColor : cssColorOr(a.color, SKIN_ACCENT)}
                        fill-opacity=${cssNumber(opacity, DEFAULT_AREA_OPACITY)}
                        stroke="none"
                        stroke-width="0" />`;
@@ -2512,7 +2513,7 @@ export function renderRipple(
   return html`
     <div
       class="ripple ${active ? "active" : ""}"
-      style="width:${cssNumber(sizePx, DEFAULT_RIPPLE_SIZE)}px;height:${cssNumber(sizePx, DEFAULT_RIPPLE_SIZE)}px;--fp-ripple-color:${cssColorOr(color, "var(--primary-color, #03a9f4)")};"
+      style="width:${cssNumber(sizePx, DEFAULT_RIPPLE_SIZE)}px;height:${cssNumber(sizePx, DEFAULT_RIPPLE_SIZE)}px;--fp-ripple-color:${cssColorOr(color, SKIN_ACCENT)};"
     >
       <span class="dot"></span>
       ${Array.from(
@@ -2572,7 +2573,7 @@ export interface TrackerRenderOptions {
  * `fp-tracker-band` are provided by the host component's styles.
  */
 export function renderTracker(t: Tracker, opts: TrackerRenderOptions): SVGTemplateResult {
-  const color = t.color ?? "var(--primary-color, #03a9f4)";
+  const color = t.color ?? SKIN_ACCENT;
   const dotR = (t.dotSize ?? DEFAULT_TRACKER_DOT_SIZE) / 2;
   const cx = t.x + t.w / 2;
   const cy = t.y + t.h / 2;

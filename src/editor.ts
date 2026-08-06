@@ -1,6 +1,7 @@
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
+import { keyed } from "lit/directives/keyed.js";
 import type {
   HomeAssistant,
   FloorplanCardConfig,
@@ -86,6 +87,7 @@ import {
   hassRenderInputsChanged,
 } from "./render";
 import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
+import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
 import {
   ENDPOINT_SNAP,
   applyDelta,
@@ -120,6 +122,7 @@ import {
   openingForm,
   projectForm,
   projectRotationForm,
+  projectSkinForm,
   projectSunForm,
   textForm,
   trackerForm,
@@ -2753,8 +2756,15 @@ export class FloorplanCardEditor extends LitElement {
           @wheel=${this._onCanvasWheel}
         >
           <div class="stage" style="aspect-ratio: ${cssNumber(c.width, DEFAULT_WIDTH)} / ${cssNumber(
-            c.height, DEFAULT_HEIGHT)}; width:${this._zoom * 100}%;">
-            <svg
+            c.height, DEFAULT_HEIGHT)}; width:${this._zoom * 100}%;${skinStyle(c.skin)}">
+            <!-- Keyed on the skin, for the repaint reason documented on the
+                 card's SVG (issue #122): a var() inside a presentation
+                 attribute does not repaint when the custom property changes,
+                 so without this the canvas kept the previous skin's doors and
+                 room fills. -->
+            ${keyed(
+              c.skin ?? "",
+              svg`<svg
               viewBox="0 0 ${c.width} ${c.height}"
               preserveAspectRatio="none"
               class=${this._tool}
@@ -2768,7 +2778,7 @@ export class FloorplanCardEditor extends LitElement {
                 y="0"
                 width=${c.width}
                 height=${c.height}
-                fill=${c.background ?? "var(--card-background-color, #fff)"}
+                fill=${c.background ?? SKIN_PAPER}
               />
               ${floor.image
                 ? svg`<image href=${floor.image} x="0" y="0" width=${c.width} height=${c.height}
@@ -2870,7 +2880,8 @@ export class FloorplanCardEditor extends LitElement {
                               class="marquee" />`
                   : nothing
               }
-            </svg>
+            </svg>`
+            )}
             <div class="items">
               ${floor.texts.map((t) => this._renderTextOverlay(t, c))}
               ${floor.items.map((it) => this._renderItemOverlay(it, c))}
@@ -3294,7 +3305,7 @@ export class FloorplanCardEditor extends LitElement {
       <g class="opening-hit"
          @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "opening", id: o.id })}>
         ${renderOpening(o, {
-          color: selected ? "var(--primary-color, #03a9f4)" : "var(--primary-text-color)",
+          color: selected ? "var(--primary-color, #03a9f4)" : SKIN_WALL,
           open: openingDefaultOpen(o),
           // Draw sliding / rolling openings partly open in the editor so the
           // motion is visible — closed, both look like a plain band, which
@@ -3475,7 +3486,7 @@ export class FloorplanCardEditor extends LitElement {
     // Ink that reads on whatever the badge ends up painted, same rule as the card.
     const badgeInk = contrastText(stateColor ?? activeColor);
     const rippleColor =
-      it.rippleColor ?? stateColor ?? activeColor ?? "var(--primary-color, #03a9f4)";
+      it.rippleColor ?? stateColor ?? activeColor ?? SKIN_ACCENT;
     const rippleSize = it.rippleSize ?? DEFAULT_RIPPLE_SIZE;
 
     // Live preview: the icon animates exactly when the card would animate it
@@ -3557,7 +3568,7 @@ export class FloorplanCardEditor extends LitElement {
         class="edit-text ${selected ? "selected" : ""}"
         style="left:${(t.x / c.width) * 100}%; top:${(t.y / c.height) * 100}%;
                font-size:${cssNumber(t.size, DEFAULT_TEXT_SIZE)}px;
-               color:${cssColorOr(t.color, "var(--primary-text-color)")};
+               color:${cssColorOr(t.color, SKIN_TEXT)};
                transform:translate(-50%,-50%) rotate(${cssNumber(t.angle, 0)}deg);"
         @pointerdown=${(e: PointerEvent) => this._onOverlayDown(e, { kind: "text", id: t.id })}
         @pointermove=${this._onOverlayMove}
@@ -3607,6 +3618,9 @@ export class FloorplanCardEditor extends LitElement {
           if (live) this._patchConfigLive(patch as Partial<FloorplanCardConfig>);
           else this._patchConfig(patch as Partial<FloorplanCardConfig>);
         })}
+        ${this._renderForm(projectSkinForm(this._config), (patch) =>
+          this._patchConfig(patch as Partial<FloorplanCardConfig>)
+        )}
         ${this._renderColorRow({
           label: "Background",
           value: this._config.background,
@@ -4041,7 +4055,13 @@ export class FloorplanCardEditor extends LitElement {
     `;
   }
 
-  static styles = css`
+  // The canvas mirrors the card, so it takes the same --fp-skin-* defaults
+  // (issue #122). A skin overrides them on .stage only — the toolbar, panels
+  // and forms stay in the Home Assistant theme, which is what makes the canvas
+  // read as the plan rather than as more editor chrome.
+  static styles = [
+    skinTokens,
+    css`
     .editor {
       display: flex;
       flex-direction: column;
@@ -4310,7 +4330,7 @@ export class FloorplanCardEditor extends LitElement {
          background image (and on both light and dark themes); non-scaling-stroke
          keeps the lines a crisp ~1px at any canvas size / zoom. Editor-only —
          the live card never draws a grid. */
-      stroke: var(--primary-text-color, #212121);
+      stroke: var(--fp-skin-text, var(--primary-text-color, #212121));
       stroke-opacity: 0.25;
       stroke-width: 1;
       vector-effect: non-scaling-stroke;
@@ -4324,7 +4344,11 @@ export class FloorplanCardEditor extends LitElement {
        is inherited in SVG, setting it to none disabled the entire canvas
        — so no pointerdown reached the wall-draw handler. */
     line.wall {
-      stroke: var(--primary-text-color);
+      stroke: var(--fp-skin-wall, var(--primary-text-color));
+      /* Same skin hooks as the card's .wall, so the canvas draws the weight
+         and glow the plan will actually have. */
+      stroke-width: var(--fp-skin-wall-width, 8);
+      filter: var(--fp-skin-wall-filter, none);
       /* The wide transparent .wall-hit line beneath handles selection/drag.
          Without this, the visible line (painted on top) swallows clicks on the
          wall body, so you could only grab it just *outside* the body. */
@@ -4588,14 +4612,15 @@ export class FloorplanCardEditor extends LitElement {
     .badge {
       width: 34px;
       height: 34px;
-      border-radius: 50%;
-      background: var(--card-background-color, #fff);
-      border: 1.5px solid var(--divider-color, #ccc);
+      border-radius: var(--fp-skin-badge-radius, 50%);
+      background: var(--fp-skin-badge-bg, var(--card-background-color, #fff));
+      border: var(--fp-skin-badge-border-width, 1.5px) solid
+        var(--fp-skin-badge-border, var(--divider-color, #ccc));
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--primary-text-color);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+      color: var(--fp-skin-text, var(--primary-text-color));
+      box-shadow: var(--fp-skin-badge-shadow, 0 1px 3px rgba(0, 0, 0, 0.25));
     }
     /* Mirrors the card's .badge-value (issue #106) — the canvas must show the
        reading exactly as the plan will draw it. */
@@ -4953,7 +4978,7 @@ export class FloorplanCardEditor extends LitElement {
       line-height: 1;
       padding: 1px 4px;
       border-radius: 4px;
-      background: var(--card-background-color, #fff);
+      background: var(--fp-skin-badge-bg, var(--card-background-color, #fff));
       color: var(--secondary-text-color);
       white-space: nowrap;
       max-width: 120px;
@@ -4966,7 +4991,7 @@ export class FloorplanCardEditor extends LitElement {
        The unclamped variant is the one you are checking; the dim fallback
        above stays clamped, being editor chrome rather than a preview. */
     .ilabel.live {
-      color: var(--primary-text-color);
+      color: var(--fp-skin-text, var(--primary-text-color));
       max-width: none;
       overflow: visible;
     }
@@ -5156,9 +5181,9 @@ export class FloorplanCardEditor extends LitElement {
        changed nothing here and a coloured lamp looked plain. Below
        .state-colored, which is the more specific statement. */
     .edit-item .badge.active-colored {
-      background: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
-      border-color: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
-      color: var(--fp-ink, var(--text-primary-color, #212121));
+      background: var(--fp-active, var(--fp-skin-active, var(--state-light-active-color, var(--state-active-color, #fdd835))));
+      border-color: var(--fp-active, var(--fp-skin-active, var(--state-light-active-color, var(--state-active-color, #fdd835))));
+      color: var(--fp-ink, var(--fp-skin-active-ink, var(--text-primary-color, #212121)));
     }
     .state-color-rule select {
       flex: 0 0 96px;
@@ -5239,7 +5264,8 @@ export class FloorplanCardEditor extends LitElement {
     .ha-link-chip .unlink:hover {
       opacity: 1;
     }
-  `;
+  `,
+  ];
 }
 
 declare global {
