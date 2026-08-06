@@ -137,6 +137,32 @@ describe("traceFaces", () => {
     expect(bounded.map((f) => signedArea(f))).toEqual([10000, 10000]);
   });
 
+  it("closes every face it emits, even with stubs and separate components", () => {
+    // Only a walk that returns to the edge it started from is a face. The
+    // awkward shapes are the ones that would expose a walk falling out of its
+    // bound instead: a dead-end stub inside a room (walked out and back), and
+    // a second component with no vertex in common with the first.
+    const walls = [
+      ...box(0, 0, 100, 100),
+      wall(50, 0, 50, 40), // stub hanging into the room
+      ...box(300, 0, 100, 100), // separate component
+      wall(300, 200, 400, 200), // free-floating edge, part of no cycle
+    ];
+    const segs = splitSegments(
+      walls.map((w) => ({ a: { x: w.x1, y: w.y1 }, b: { x: w.x2, y: w.y2 } })),
+      0.75
+    );
+    for (const face of traceFaces(segs, 0.75)) {
+      // A closed ring's first and last vertices are adjacent, not equal — the
+      // walk records each vertex once. What must hold is that it is a ring at
+      // all: at least a triangle's worth of vertices, and a real signed area
+      // for the two bounded faces.
+      expect(face.length).toBeGreaterThanOrEqual(3);
+      expect(Number.isFinite(signedArea(face))).toBe(true);
+    }
+    expect(traceFaces(segs, 0.75).filter((f) => signedArea(f) > 0)).toHaveLength(2);
+  });
+
   it("does not close a room whose wall has a gap", () => {
     const walls = [
       wall(0, 0, 100, 0),
@@ -255,6 +281,35 @@ describe("deadSpaces", () => {
 
   it("handles a plan with no walls at all", () => {
     expect(deadSpaces([], [])).toEqual([]);
+  });
+});
+
+describe("deadSpaces tolerances", () => {
+  it("honours a tolerance that is actually usable", () => {
+    // A 4-unit gap at one corner: sealed under a tolerance wide enough to weld
+    // it, open under the default. Proves the options are read at all, so the
+    // fallback tests below are not vacuous.
+    const walls = [
+      wall(0, 0, 100, 0),
+      wall(104, 0, 100, 100),
+      wall(100, 100, 0, 100),
+      wall(0, 100, 0, 0),
+    ];
+    expect(deadSpaces(walls, [])).toEqual([]);
+    expect(deadSpaces(walls, [], { weldEps: 5 })).toHaveLength(1);
+  });
+
+  it("falls back to the defaults for a tolerance that is not a usable number", () => {
+    // Left alone, each of these makes every comparison in the file false and
+    // the whole plan comes back with no dead spaces — silent, total, and
+    // indistinguishable from a plan that has none.
+    for (const bad of [0, -1, NaN, Infinity, undefined]) {
+      expect(deadSpaces(box(0, 0, 100, 100), [], { weldEps: bad })).toHaveLength(1);
+      expect(deadSpaces(box(0, 0, 100, 100), [], { minArea: bad })).toHaveLength(1);
+      expect(
+        deadSpaces(box(0, 0, 100, 100), [door(50, 0)], { openingEps: bad })
+      ).toEqual([]);
+    }
   });
 });
 

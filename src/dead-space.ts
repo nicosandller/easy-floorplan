@@ -90,6 +90,21 @@ export interface DeadSpaceOptions {
 }
 
 /**
+ * A supplied tolerance, or the default when it is not a usable number.
+ *
+ * `weldEps` is a divisor (the spatial hash's cell size), and the other two are
+ * compared against distances and areas — so a negative or `NaN` value does not
+ * throw, it quietly matches nothing and the whole plan comes back with no dead
+ * spaces at all. That is the worst way for this to fail: silent, total, and
+ * indistinguishable from a plan that genuinely has none. Normalizing rather
+ * than throwing follows `cssNumber` and `resolveSnap`, which treat unusable
+ * config the same way.
+ */
+function tolerance(v: number | undefined, fallback: number): number {
+  return typeof v === "number" && Number.isFinite(v) && v > 0 ? v : fallback;
+}
+
+/**
  * Shoelace area, signed: positive for one winding of the ring and negative for
  * the other. Which winding is which does not matter — only that the two differ,
  * which is how {@link traceFaces}' output separates inside from outside.
@@ -269,8 +284,13 @@ export function traceFaces(segments: readonly Seg[], eps: number): AreaPoint[][]
       const ring: number[] = [];
       let u = start;
       let v = first;
-      // Bound the walk by the number of directed edges: a malformed graph must
-      // not be able to spin here forever.
+      let closed = false;
+      // The walk provably returns to the edge it started from: "next" is a
+      // bijection on directed edges (every edge has exactly one successor and
+      // one predecessor), so following it can only ever traverse a cycle, and
+      // buildGraph makes the adjacency symmetric so every step has a successor
+      // to take. The bound is therefore unreachable, and is here so that a
+      // future change which broke that property would hang nothing.
       for (let guard = 0; guard <= points.length * points.length + 4; guard++) {
         seen.add(`${u}>${v}`);
         ring.push(u);
@@ -279,9 +299,20 @@ export function traceFaces(segments: readonly Seg[], eps: number): AreaPoint[][]
         const next = around[(back - 1 + around.length) % around.length]!;
         u = v;
         v = next;
-        if (u === start && v === first) break;
+        if (u === start && v === first) {
+          closed = true;
+          break;
+        }
       }
-      if (ring.length >= 3) faces.push(ring.map((i) => ({ x: points[i]!.x, y: points[i]!.y })));
+      // Only a walk that actually closed describes a face. Falling out of the
+      // loop instead means the invariant above no longer holds, and the ring is
+      // then an arbitrary path — which, given a big enough signed area, would
+      // sail through every filter downstream and hatch a region that is not
+      // one. Dropping it degrades to "misses a dead space", which is the same
+      // direction every other judgement call in this file fails in.
+      if (closed && ring.length >= 3) {
+        faces.push(ring.map((i) => ({ x: points[i]!.x, y: points[i]!.y })));
+      }
     }
   }
   return faces;
@@ -320,9 +351,9 @@ export function deadSpaces(
   openings: readonly Opening[],
   opts: DeadSpaceOptions = {}
 ): AreaPoint[][] {
-  const weldEps = opts.weldEps ?? WELD_EPS;
-  const openingEps = opts.openingEps ?? OPENING_ON_WALL_EPS;
-  const minArea = opts.minArea ?? MIN_DEAD_AREA;
+  const weldEps = tolerance(opts.weldEps, WELD_EPS);
+  const openingEps = tolerance(opts.openingEps, OPENING_ON_WALL_EPS);
+  const minArea = tolerance(opts.minArea, MIN_DEAD_AREA);
   if (walls.length < 3) return [];
 
   const segments = splitSegments(
