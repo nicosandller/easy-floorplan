@@ -32,6 +32,8 @@ screen size.
 - (${\color{red}NEW!}$) **Follow the sun** — dim the plan through dusk and brighten it through dawn, from your HA instance's sun elevation. Any light casting light holds the dark back around itself, out to its radius, so a night plan reads as a dark house with lit rooms glowing.
  
 <img width="441" height="301" alt="day" src="https://github.com/user-attachments/assets/f3dbfc88-9d06-4f44-81dc-bf499cbd9bd3" />
+<img width="444" height="313" alt="night" src="https://github.com/user-attachments/assets/1590b710-d88f-4a34-986b-b08640a45f4c" />
+
 
 - **Multiple floors** — per-floor elements with a switcher in both the editor and the card.
 - **Background image** — trace over a floor-plan scan, per floor, with adjustable opacity.
