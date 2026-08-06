@@ -32,6 +32,59 @@ export function actionForGesture(
   return gesture === "hold" ? item.hold_action : item.double_tap_action;
 }
 
+/**
+ * Whether a gesture would actually do anything — the same guards
+ * {@link executeAction} applies before it acts, asked ahead of time.
+ *
+ * `hasAction` only says a config exists and isn't "none". That is not the same
+ * question: a `toggle` with no entity, a `navigate` with no path and a
+ * `call-service` with no service all pass it and then do nothing.
+ */
+function gestureDoesSomething(
+  item: { entity?: string },
+  config: ActionConfig | undefined
+): boolean {
+  if (!config || config.action === "none") return false;
+  switch (config.action) {
+    case "toggle":
+      return !!item.entity;
+    case "more-info":
+      return !!(config.entity ?? item.entity);
+    case "navigate":
+      return !!config.navigation_path;
+    case "url":
+      return !!config.url_path;
+    case "perform-action":
+    case "call-service":
+      return serviceFromAction(config) !== null;
+    case "fire-dom-event":
+      // Always dispatches; whether anything listens is not ours to know.
+      return true;
+    default:
+      return false;
+  }
+}
+
+/**
+ * Whether pressing this device does anything at all (issue #134) — any of its
+ * three gestures.
+ *
+ * Drives both the press effect and the pointer cursor. A device with no entity
+ * bound (issue #39: hardware that exists physically but not in HA) and one set
+ * to `tap_action: none` both look pressable today and answer to nothing;
+ * animating them would turn a small lie into a louder one.
+ */
+export function itemIsInteractive(item: {
+  entity?: string;
+  tap_action?: ActionConfig;
+  hold_action?: ActionConfig;
+  double_tap_action?: ActionConfig;
+}): boolean {
+  return (["tap", "hold", "double_tap"] as const).some((g) =>
+    gestureDoesSomething(item, actionForGesture(item, g))
+  );
+}
+
 export interface ServiceCall {
   domain: string;
   service: string;

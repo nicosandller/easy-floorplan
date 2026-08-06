@@ -28,6 +28,7 @@ import {
   DEFAULT_TRACKER_DOT_SIZE,
   DEFAULT_SUN_MIN,
   DEFAULT_SUN_MAX,
+  DEFAULT_PRESS_EFFECT,
 } from "./types";
 import {
   DEFAULT_LABEL_SIZE,
@@ -36,6 +37,7 @@ import {
   isPresenceEntity,
   normalizePlanRotation,
   openingMotion,
+  pressEffectOf,
   sliderStyleOf,
   shutterStyleOf,
   windowSash,
@@ -865,6 +867,39 @@ export function projectForm(c: FloorplanCardConfig): FormSpec {
     ],
     data: { title: c.title ?? "", width: c.width, height: c.height, grid: c.grid ?? DEFAULT_GRID },
     toPatch: identity,
+  };
+}
+
+/**
+ * How a device answers a press (issue #134). Its own one-field form for the
+ * same reason the skin has one — the editor places it in the Project section,
+ * and it belongs to the plan rather than to any element.
+ *
+ * "Ink ripple" rather than plain "Ripple": a device already has a **Ripple**
+ * toggle of its own, the presence ring, and two controls in one editor sharing
+ * a name would be a genuinely confusing pair.
+ */
+export function projectPressForm(c: FloorplanCardConfig): FormSpec {
+  return {
+    fields: [
+      {
+        name: "pressEffect",
+        label: "Press effect",
+        helper: "Feedback when a device is pressed. Only devices that do something respond",
+        selector: dropdown(
+          opt("scale", "Press in"),
+          opt("ripple", "Ink ripple"),
+          opt("flash", "Flash"),
+          opt("none", "None")
+        ),
+      },
+    ],
+    data: { pressEffect: pressEffectOf(c) },
+    // The default stays out of the YAML, as the skin's does.
+    toPatch: (p) =>
+      "pressEffect" in p && p.pressEffect === DEFAULT_PRESS_EFFECT
+        ? { ...p, pressEffect: undefined }
+        : p,
   };
 }
 

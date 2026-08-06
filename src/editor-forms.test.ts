@@ -11,6 +11,7 @@ import {
   wallForm,
   projectForm,
   projectRotationForm,
+  projectPressForm,
   projectSkinForm,
   projectSunForm,
   floorImageForm,
@@ -19,7 +20,7 @@ import {
 } from "./editor-forms";
 import type { FormField } from "./editor-forms";
 import type { Area, Opening, FloorItem, Floor, FloorplanCardConfig } from "./types";
-import { DEFAULT_GLOW_RADIUS } from "./types";
+import { DEFAULT_GLOW_RADIUS, DEFAULT_PRESS_EFFECT } from "./types";
 import { DEFAULT_SKIN, SKINS } from "./skins";
 
 const fields: FormField[] = [
@@ -630,6 +631,33 @@ describe("wallForm / projectForm / floorImageForm", () => {
     expect(form.data.skin).toBe(DEFAULT_SKIN);
     expect(form.toPatch({ skin: DEFAULT_SKIN })).toEqual({ skin: undefined });
     expect(form.toPatch({ skin: "tron" })).toEqual({ skin: "tron" });
+  });
+
+  it("press effect offers all four and keeps the default out of the YAML (#134)", () => {
+    const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+    const form = projectPressForm(base);
+    expect(form.fields.map((x) => x.name)).toEqual(["pressEffect"]);
+    const options = (form.fields[0].selector.select as { options: { value: string; label: string }[] })
+      .options;
+    expect(options.map((o) => o.value)).toEqual(["scale", "ripple", "flash", "none"]);
+    // A device already has its own "Ripple" toggle (the presence ring), so
+    // this one is named apart from it.
+    expect(options.find((o) => o.value === "ripple")!.label).toBe("Ink ripple");
+    expect(form.data.pressEffect).toBe(DEFAULT_PRESS_EFFECT);
+    expect(form.toPatch({ pressEffect: DEFAULT_PRESS_EFFECT })).toEqual({ pressEffect: undefined });
+    expect(form.toPatch({ pressEffect: "ripple" })).toEqual({ pressEffect: "ripple" });
+    // "None" is a choice, not an absence — it has to be written down.
+    expect(form.toPatch({ pressEffect: "none" })).toEqual({ pressEffect: "none" });
+  });
+
+  it("press effect reads a junk value back as the default it renders as (#134)", () => {
+    const form = projectPressForm({
+      type: "t",
+      width: 1000,
+      height: 600,
+      pressEffect: "sparkle",
+    } as never);
+    expect(form.data.pressEffect).toBe(DEFAULT_PRESS_EFFECT);
   });
 
   it("skin reads back a skin we don't ship as the default, matching what it renders as", () => {

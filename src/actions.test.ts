@@ -3,6 +3,7 @@ import {
   defaultItemAction,
   hasAction,
   actionForGesture,
+  itemIsInteractive,
   serviceFromAction,
   executeAction,
 } from "./actions";
@@ -138,5 +139,61 @@ describe("executeAction", () => {
     executeAction(n, hass, { entity: "light.a" }, { action: "none" });
     expect(hass.calls.length).toBe(0);
     expect(n.events.length).toBe(0);
+  });
+});
+
+// Issue #134: press feedback and the pointer cursor are gated on this, so a
+// device that answers to nothing neither animates nor looks pressable.
+describe("itemIsInteractive", () => {
+  it("a bound device in a toggling domain is interactive", () => {
+    expect(itemIsInteractive({ entity: "light.a" })).toBe(true);
+    expect(itemIsInteractive({ entity: "switch.a" })).toBe(true);
+  });
+
+  it("a bound device in any other domain still opens more-info", () => {
+    expect(itemIsInteractive({ entity: "sensor.a" })).toBe(true);
+    expect(itemIsInteractive({ entity: "cover.a" })).toBe(true);
+  });
+
+  it("no entity bound: nothing to toggle and nothing to show (issue #39)", () => {
+    // The default action resolves to more-info, which executeAction drops for
+    // want of an entity id — hasAction alone would call this interactive.
+    expect(hasAction(defaultItemAction(undefined))).toBe(true);
+    expect(itemIsInteractive({})).toBe(false);
+    expect(itemIsInteractive({ entity: "" })).toBe(false);
+  });
+
+  it("tap_action: none is only inert when the other gestures are too", () => {
+    const off = { entity: "light.a", tap_action: { action: "none" } } as const;
+    expect(itemIsInteractive(off)).toBe(false);
+    // A hold that does something still makes the device worth pressing.
+    expect(itemIsInteractive({ ...off, hold_action: { action: "toggle" } })).toBe(true);
+    expect(itemIsInteractive({ ...off, double_tap_action: { action: "more-info" } })).toBe(true);
+  });
+
+  it("checks each action's own requirement, not just that it is configured", () => {
+    const base = { entity: "" };
+    // Configured but unusable — every one of these passes hasAction.
+    expect(itemIsInteractive({ ...base, tap_action: { action: "navigate" } })).toBe(false);
+    expect(itemIsInteractive({ ...base, tap_action: { action: "url" } })).toBe(false);
+    expect(itemIsInteractive({ ...base, tap_action: { action: "call-service" } })).toBe(false);
+    expect(itemIsInteractive({ ...base, tap_action: { action: "perform-action" } })).toBe(false);
+    expect(itemIsInteractive({ ...base, tap_action: { action: "toggle" } })).toBe(false);
+    // …and the usable forms of the same.
+    expect(
+      itemIsInteractive({ ...base, tap_action: { action: "navigate", navigation_path: "/x" } })
+    ).toBe(true);
+    expect(itemIsInteractive({ ...base, tap_action: { action: "url", url_path: "https://x" } })).toBe(
+      true
+    );
+    expect(
+      itemIsInteractive({ ...base, tap_action: { action: "call-service", service: "light.turn_on" } })
+    ).toBe(true);
+    // more-info can name its own entity, so it does not need the device's.
+    expect(
+      itemIsInteractive({ ...base, tap_action: { action: "more-info", entity: "sensor.b" } })
+    ).toBe(true);
+    // fire-dom-event always dispatches; whether anyone listens is not ours.
+    expect(itemIsInteractive({ ...base, tap_action: { action: "fire-dom-event" } })).toBe(true);
   });
 });

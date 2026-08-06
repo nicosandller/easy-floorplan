@@ -141,6 +141,29 @@ then pick the entity in the **Element** section below the canvas.
 Bind an entity and the element stops being a drawing: openings move with their real
 state, rooms and furniture recolor, markers glide, icons spin.
 
+#### Press feedback
+
+A tap used to change nothing on screen until the entity itself came back — which on a
+cover, or a bulb on a slow bridge, is long enough to wonder whether it registered at all.
+Devices now answer the press immediately. Set **Press effect** under **Project**:
+
+| Effect | What it does |
+| ------ | ------------ |
+| **Press in** (default) | The device dips to 92% and springs back — fast in, slow out, so even a quick tap is visible. |
+| **Ink ripple** | A circle spreads and fades from the point you touched. |
+| **Flash** | A halo of the skin's accent color, with no movement at all. |
+| **None** | Nothing, as before. |
+
+It is one setting for the whole plan rather than per device: it is how the dashboard
+feels, and a plan where half the devices answered differently would read as broken.
+
+**Only devices that do something respond.** A device with no entity bound, or with
+`tap_action: none` and nothing on hold or double-tap, gets neither the effect nor the hand
+cursor — feedback promising an action that never arrives is worse than none.
+
+With the OS *reduce motion* preference set, all three fall back to the flash halo with no
+transition: the affordance stays, the movement goes.
+
 #### Doors & windows
 
 Drop a **door** or **window** from the toolbar and it snaps onto the nearest wall. Left
@@ -284,6 +307,7 @@ The editor writes this config for you; manual editing is optional.
 | `sunBrightnessMin` | number | `0.45` | Brightness once the sun is fully down, 0–1. |
 | `sunBrightnessMax` | number | `1` | Brightness in full daylight, 0–1. |
 | `skin`       | string   | `default`          | Built-in look for the whole plan: `default`, `odnetnin`, `pastel` or `tron`. See [Skins](#skins). |
+| `pressEffect`| string   | `scale`            | Feedback when a device is pressed: `scale`, `ripple`, `flash` or `none`. Only devices that actually do something respond. See [Press feedback](#press-feedback). |
 | `background` | string   | skin / card bg     | Canvas background color (CSS / hex). Overrides the skin's paper. |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see [Floor](#floor)).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |

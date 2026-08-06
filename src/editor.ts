@@ -122,6 +122,7 @@ import {
   openingForm,
   projectForm,
   projectRotationForm,
+  projectPressForm,
   projectSkinForm,
   projectSunForm,
   textForm,
@@ -3637,6 +3638,9 @@ export class FloorplanCardEditor extends LitElement {
           this._patchConfig(patch as Partial<FloorplanCardConfig>)
         )}
         ${this._renderForm(projectSunForm(this._config), (patch) =>
+          this._patchConfig(patch as Partial<FloorplanCardConfig>)
+        )}
+        ${this._renderForm(projectPressForm(this._config), (patch) =>
           this._patchConfig(patch as Partial<FloorplanCardConfig>)
         )}
       </div>

@@ -12,6 +12,9 @@ import {
   DEFAULT_RIPPLE_SIZE,
   DEFAULT_SUN_MIN,
   DEFAULT_SUN_MAX,
+  PRESS_SCALE,
+  PRESS_IN_MS,
+  PRESS_OUT_MS,
   getFloors,
   trackerPresenceDetected,
 } from "./types";
@@ -48,6 +51,7 @@ import {
   badgeContentOf,
   badgeValue,
   badgeValueSize,
+  pressEffectOf,
   itemHiddenWhenInactive,
   itemLabelSize,
   hassRenderInputsChanged,
@@ -63,7 +67,7 @@ import {
 } from "./render";
 import type { Opening } from "./types";
 import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
-import { actionForGesture, executeAction, hasAction } from "./actions";
+import { actionForGesture, executeAction, hasAction, itemIsInteractive } from "./actions";
 import { actionHandler } from "./action-handler";
 
 /**
@@ -263,6 +267,30 @@ export class FloorplanCard extends LitElement {
     `;
   }
 
+  /**
+   * Start the ink ripple at the point that was actually touched (issue #134).
+   *
+   * The position cannot come from CSS — only the event knows where the finger
+   * landed — so it is handed over as two custom properties and the animation
+   * itself stays in the stylesheet.
+   *
+   * Restarting needs the reflow: re-adding a class whose animation is still
+   * running is a no-op, so a quick second tap would draw nothing at all.
+   * Listeners are passive and only write style, so the gesture detection in
+   * `actionHandler` is untouched.
+   */
+  private _startInk(ev: PointerEvent): void {
+    const item = ev.currentTarget as HTMLElement | null;
+    const ink = item?.querySelector<HTMLElement>(".press-ink");
+    if (!ink) return;
+    const box = item!.getBoundingClientRect();
+    ink.style.setProperty("--fp-ink-x", `${ev.clientX - box.left}px`);
+    ink.style.setProperty("--fp-ink-y", `${ev.clientY - box.top}px`);
+    ink.classList.remove("inking");
+    void ink.offsetWidth;
+    ink.classList.add("inking");
+  }
+
   private _renderItem(item: FloorItem, c: FloorplanCardConfig, rot: PlanRotation): TemplateResult {
     const on = this._isOn(item);
     // Name/state composition lives in itemBadgeLabel, including #39's
@@ -315,9 +343,15 @@ export class FloorplanCard extends LitElement {
     // of transformed — badges and labels stay upright at any rotation.
     const p = rotatePlanPoint(item.x, item.y, c.width, c.height, rot);
     const d = rotatedCanvasSize(c.width, c.height, rot);
+    // Only a device that answers gets press feedback or a pointer cursor
+    // (issue #134). An unbound device and `tap_action: none` both look
+    // pressable today and do nothing.
+    const interactive = itemIsInteractive(item);
     return html`
       <div
-        class="item fp-item ${on ? "on" : "off"} ${stateColor ? "state-colored" : ""}"
+        class="item fp-item ${on ? "on" : "off"} ${stateColor ? "state-colored" : ""} ${interactive
+          ? "interactive"
+          : ""}"
         data-id=${cssIdent(item.id) ?? nothing}
         data-entity=${cssEntityId(item.entity) ?? nothing}
         data-kind=${cssIdent(item.kind) ?? nothing}
@@ -335,8 +369,14 @@ export class FloorplanCard extends LitElement {
           hasHold: hasAction(item.hold_action),
           hasDoubleClick: hasAction(item.double_tap_action),
         })}
+        @pointerdown=${interactive && pressEffectOf(c) === "ripple"
+          ? (ev: PointerEvent) => this._startInk(ev)
+          : nothing}
       >
         ${visual}
+        ${interactive && pressEffectOf(c) === "ripple"
+          ? html`<span class="press-ink" aria-hidden="true"></span>`
+          : nothing}
         ${labelText
           ? html`<span
               class="label ${visual === nothing ? "inflow" : ""}"
@@ -426,7 +466,7 @@ export class FloorplanCard extends LitElement {
            card draws with is declared on :host, so this only ever overrides. -->
       <ha-card .header=${c.title ?? nothing} style=${skinStyle(c.skin) || nothing}>
         <div
-          class="stage"
+          class="stage press-${pressEffectOf(c)}"
           style="aspect-ratio: ${dims.w} / ${dims.h};"
         >
           <!-- The plan box: exactly the canvas ratio, fitted inside whatever
@@ -835,10 +875,102 @@ export class FloorplanCard extends LitElement {
       position: absolute;
       transform: translate(-50%, -50%);
       pointer-events: auto;
-      cursor: pointer;
+      /* Not a hand: a device with nothing bound, or tap_action set to none,
+         is not a button (issue #134). Only .interactive gets the pointer. */
+      cursor: default;
       display: flex;
       flex-direction: column;
       align-items: center;
+    }
+    .item.interactive {
+      cursor: pointer;
+      /* Stops the long-press magnifier / text selection on touch from firing
+         over a device you are only trying to press. */
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
+    }
+
+    /* ---- Press feedback (issue #134) -------------------------------------
+       Chosen plan-wide; the stage carries press-scale / press-ripple /
+       press-flash / press-none and each rule below is scoped to its own.
+       Only .interactive devices respond, so nothing animates that would not
+       then do something. */
+
+    /* Scale: the transform has to repeat the translate, since .item is
+       centred on its own anchor and a bare scale() would drop that and jump
+       the device down-right by half its size. */
+    .press-scale .item.interactive {
+      transition: transform ${PRESS_OUT_MS}ms cubic-bezier(0.2, 0.8, 0.3, 1);
+    }
+    .press-scale .item.interactive:active {
+      transform: translate(-50%, -50%) scale(${PRESS_SCALE});
+      transition-duration: ${PRESS_IN_MS}ms;
+    }
+
+    /* Flash: drop-shadow rather than a box-shadow or a background, so the halo
+       follows whatever the device actually draws — the badge's circle, a bare
+       ripple ring, the label — instead of a rectangle around it. */
+    .press-flash .item.interactive {
+      transition: filter ${PRESS_OUT_MS}ms ease-out;
+    }
+    .press-flash .item.interactive:active {
+      filter: drop-shadow(0 0 5px var(--fp-skin-accent, var(--primary-color, #03a9f4)));
+      transition-duration: ${PRESS_IN_MS}ms;
+    }
+
+    /* Ink: a circle spreading from the touch point. Positioned by
+       _startInk, which is the only thing that knows where the finger landed. */
+    .press-ink {
+      position: absolute;
+      left: var(--fp-ink-x, 50%);
+      top: var(--fp-ink-y, 50%);
+      width: 0;
+      height: 0;
+      border-radius: 50%;
+      /* Decoration: it must never swallow the tap it is reporting. */
+      pointer-events: none;
+      opacity: 0;
+      background: currentColor;
+    }
+    .press-ink.inking {
+      animation: fp-press-ink 520ms ease-out;
+    }
+    @keyframes fp-press-ink {
+      from {
+        width: 0;
+        height: 0;
+        margin: 0;
+        opacity: 0.32;
+      }
+      to {
+        width: 120px;
+        height: 120px;
+        margin: -60px 0 0 -60px;
+        opacity: 0;
+      }
+    }
+
+    /* Reduced motion keeps the feedback and drops the movement: the halo, with
+       no transition. Removing the effect outright would answer an
+       accessibility preference by taking the affordance away. */
+    @media (prefers-reduced-motion: reduce) {
+      .press-scale .item.interactive,
+      .press-flash .item.interactive,
+      .press-ripple .item.interactive {
+        transition: none;
+      }
+      .press-scale .item.interactive:active {
+        transform: translate(-50%, -50%);
+      }
+      .press-scale .item.interactive:active,
+      .press-ripple .item.interactive:active,
+      .press-flash .item.interactive:active {
+        filter: drop-shadow(0 0 5px var(--fp-skin-accent, var(--primary-color, #03a9f4)));
+      }
+      .press-ink.inking {
+        animation: none;
+      }
     }
     /*
      * The item's x/y anchors its icon, not its icon-plus-label. Were the label

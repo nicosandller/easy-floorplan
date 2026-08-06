@@ -9,6 +9,7 @@ import type {
   StateColorRule,
   BadgeContent,
   BadgeEntity,
+  PressEffect,
   Furniture,
   Tracker,
   Area,
@@ -34,6 +35,7 @@ import {
   GLOW_MIN_OPACITY,
   GLOW_MAX_OPACITY,
   GLOW_MIN_RADIUS,
+  DEFAULT_PRESS_EFFECT,
   BADGE_MIN_LIGHTNESS,
   FURNITURE_GLOW_TRANSMISSION,
   getFloors,
@@ -1154,6 +1156,21 @@ export function badgeContentOf(item: {
   if (item.badgeContent === "icon" || item.badgeContent === "value" || item.badgeContent === "none")
     return item.badgeContent;
   return item.showIcon === false ? "none" : "icon";
+}
+
+/**
+ * Which press effect a plan uses (issue #134), resolving anything unrecognised
+ * to the default rather than to nothing.
+ *
+ * The value becomes a class name, so an unchecked string would land as
+ * `press-whatever`, match no rule, and silently mean "no feedback" — a
+ * hand-edited typo would look like the feature was never implemented.
+ */
+export function pressEffectOf(c: { pressEffect?: PressEffect }): PressEffect {
+  const v = c.pressEffect;
+  return v === "scale" || v === "ripple" || v === "flash" || v === "none"
+    ? v
+    : DEFAULT_PRESS_EFFECT;
 }
 
 /**

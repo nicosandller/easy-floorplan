@@ -9,6 +9,7 @@ import {
   GLOW_MIN_OPACITY,
   GLOW_MAX_OPACITY,
   GLOW_MIN_RADIUS,
+  DEFAULT_PRESS_EFFECT,
   BADGE_MIN_LIGHTNESS,
   FURNITURE_GLOW_TRANSMISSION,
   SUN_ELEVATION_NIGHT,
@@ -57,6 +58,7 @@ import {
   resolveItemIcon,
   matchStateRule,
   badgeContentOf,
+  pressEffectOf,
   badgeValue,
   badgeReading,
   badgeValueSize,
@@ -1542,6 +1544,29 @@ describe("resolveStateColor (issue #68)", () => {
       expect(matchStateRule(undefined, 1)).toBeUndefined();
       expect(matchStateRule([], 1)).toBeUndefined();
     });
+  });
+});
+
+describe("pressEffectOf (#134)", () => {
+  it("defaults to the scale dip when nothing is configured", () => {
+    expect(pressEffectOf({})).toBe(DEFAULT_PRESS_EFFECT);
+    expect(pressEffectOf({})).toBe("scale");
+  });
+
+  it("passes every effect the card has a rule for", () => {
+    for (const e of ["scale", "ripple", "flash", "none"] as const) {
+      expect(pressEffectOf({ pressEffect: e })).toBe(e);
+    }
+  });
+
+  it("falls back to the default rather than to nothing on a junk value", () => {
+    // The value becomes a class name. Left unchecked, a typo would emit
+    // `press-typo`, match no rule, and look exactly like "feature missing".
+    expect(pressEffectOf({ pressEffect: "dip" as never })).toBe("scale");
+    expect(pressEffectOf({ pressEffect: "" as never })).toBe("scale");
+    expect(pressEffectOf({ pressEffect: 42 as never })).toBe("scale");
+    // …but an explicit "none" is a real choice and must survive.
+    expect(pressEffectOf({ pressEffect: "none" })).toBe("none");
   });
 });
 

@@ -629,6 +629,35 @@ export const SUN_ELEVATION_DAY = 6;
 export const DEFAULT_SUN_MIN = 0.45;
 export const DEFAULT_SUN_MAX = 1;
 
+/**
+ * How a device answers a press (issue #134):
+ *
+ * - `scale` — dips to {@link PRESS_SCALE} and springs back, the feedback HA's
+ *   own Tile card and every touch OS uses.
+ * - `ripple` — an ink circle spreads from the point you touched.
+ * - `flash` — a halo of the skin's accent, with no movement at all.
+ * - `none` — the pre-#134 behaviour, nothing.
+ */
+export type PressEffect = "scale" | "ripple" | "flash" | "none";
+
+/** On by default: the issue asked for feedback, so "no feedback" is the opt-out. */
+export const DEFAULT_PRESS_EFFECT: PressEffect = "scale";
+
+/**
+ * How far a pressed device shrinks. Deep enough to read at a 34px badge,
+ * shallow enough not to look like the icon is falling over.
+ */
+export const PRESS_SCALE = 0.92;
+
+/**
+ * Press feedback timing. The release is deliberately far slower than the
+ * press: a tap can be over in 30ms, and with a symmetric transition it would
+ * finish before a screen ever painted it. Dipping instantly and easing back
+ * out makes even the quickest tap visible.
+ */
+export const PRESS_IN_MS = 80;
+export const PRESS_OUT_MS = 260;
+
 export const DEFAULT_AREA_OPACITY = 0.25;
 export const DEFAULT_AREA_BORDER_WIDTH = 3;
 
@@ -841,6 +870,20 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   sunBrightnessMin?: number;
   /** Plan brightness in full daylight, 0-1. Default {@link DEFAULT_SUN_MAX}. */
   sunBrightnessMax?: number;
+  /**
+   * What a device does when you press it (issue #134). Tapping used to change
+   * nothing on screen until the entity itself came back — which on a cover or
+   * a slow bulb is long enough to wonder whether the tap registered at all.
+   *
+   * Plan-wide rather than per-device: it is a property of how the dashboard
+   * feels, not of any one lamp, and a plan where half the devices answer
+   * differently would read as broken. Default {@link DEFAULT_PRESS_EFFECT}.
+   *
+   * Applies only to devices that actually *do* something — see
+   * {@link itemIsInteractive}. Feedback promising an action that never comes is
+   * worse than none.
+   */
+  pressEffect?: PressEffect;
   /**
    * Multi-floor data. When present and non-empty this is the source of truth.
    * When absent, the legacy flat arrays below describe a single implicit floor
