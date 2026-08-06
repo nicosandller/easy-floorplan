@@ -11,34 +11,37 @@ screen size.
 
 <img width="1080" height="608" alt="demo" src="https://github.com/user-attachments/assets/98abaddc-b713-492f-be85-ca5f778f3779" />
 
-## Features
-
-- **Visual editor** — draw walls, drop doors and windows that snap onto them, drag, nudge
-  with arrow keys, multi-select, copy/paste, undo/redo, zoom.
-- **Devices** — bind any entity to an icon: tap to toggle, live state or attribute label,
-  custom icon, size, rotation.
-- **Presence ripples** — presence sensors drawn as animated rings instead of a static icon.
-- **Cast light** — a light pools its own color and brightness onto the plan; overlapping
-  pools mix, so a warm lamp and a cool one blend between them.
-- **Animated doors & windows** — bind a contact `binary_sensor` or `cover` and openings
-  swing, slide or roll with their real state, partial positions included.
-- **Furniture** — 25+ gray line-art diagrams (table, sofa, bed, stove, stairs, tv…), each
-  bindable to an entity.
-- **Areas** — trace room polygons that color live from an entity, and link them to Home
-  Assistant areas to scope entity pickers and bulk-add devices.
-- **Live position trackers** — map one or two distance sensors (mmWave / radar) onto a
-  marker that moves across the plan in real time.
-- **Follow the sun** — dim the plan through dusk and brighten it through dawn, from your
-  HA instance's sun elevation. Lit rooms stay bright.
-- **Multiple floors** — per-floor elements with a switcher in both the editor and the card.
-- **Background image** — trace over a floor-plan scan, per floor, with adjustable opacity.
-- **Text labels**, canvas background color, and grid / custom / off snapping.
-- **Auto-scaling** — SVG over a virtual coordinate space, so the plan fits any card size.
-
 ## What you can end up with
 
 <img width="1161" height="596" alt="Screenshot 2026-08-06 at 4 26 22 PM" src="https://github.com/user-attachments/assets/69c6c865-4eeb-4878-914b-182b2c31b63b" />
 
+## Features
+- **Visual editor** — draw walls, drop doors and windows that snap onto them, drag, nudge with arrow keys, multi-select, copy/paste, undo/redo, zoom.
+- **Devices** — bind any entity to an icon: tap to toggle or open more-info, live state or attribute label, custom icon, size, rotation.
+  - **Presence ripples** — presence sensors drawn as animated rings instead of a static icon.
+  - (${\color{red}NEW!}$) **Cast light** — a light pools its own color and brightness onto the plan; overlapping pools mix, so a warm lamp and a cool one blend between them.
+  - (${\color{red}NEW!}$) **Conditional text / icon / coloring** — threshold and state rules restyle an element from what its entity reads: the badge color, the label, and the glyph itself, so blinds swap between open and closed icons and a thermostat reddens as it heats. The same rules drive furniture and rooms.
+ 
+<img width="195" height="278" alt="light blend" src="https://github.com/user-attachments/assets/23104587-687b-4c9a-83e8-e83c3d5eb6eb" />
+<img width="240" height="358" alt="conditionals" src="https://github.com/user-attachments/assets/11d359b6-de8c-483c-8763-105ddf7d915b" />
+
+- **Animated doors & windows** — bind a contact `binary_sensor` or `cover` and openings swing, slide or roll with their real state, partial positions included.
+- **Furniture** — 26 gray line-art diagrams (table, sofa, bed, stove, stairs, tv…), each bindable to an entity.
+- **Areas** — trace room polygons that color live from an entity, and link them to Home Assistant areas to scope entity pickers and bulk-add devices.
+- **Live position trackers** — map one or two distance sensors (mmWave / radar) onto a marker that moves across the plan in real time.
+- (${\color{red}NEW!}$) **Follow the sun** — dim the plan through dusk and brighten it through dawn, from your HA instance's sun elevation. Any light casting light holds the dark back around itself, out to its radius, so a night plan reads as a dark house with lit rooms glowing.
+ 
+<img width="441" height="301" alt="day" src="https://github.com/user-attachments/assets/f3dbfc88-9d06-4f44-81dc-bf499cbd9bd3" />
+
+- **Multiple floors** — per-floor elements with a switcher in both the editor and the card.
+- **Background image** — trace over a floor-plan scan, per floor, with adjustable opacity.
+- (${\color{red}NEW!}$) **Skins** — restyle the whole plan from one line of config: `default` follows your Home Assistant theme, `odnetnin` is chunky charcoal on cream, `pastel` is soft and low-contrast, `tron` is neon on near-black. Colors you set on an element yourself always win.
+  
+<img width="300" height="300" alt="default" src="https://github.com/user-attachments/assets/ce2d6545-10f4-4aa2-bbd7-0dcae08c27f5" />
+<img width="300" height="300" alt="odnetnin" src="https://github.com/user-attachments/assets/1d46f7a3-b894-4fcb-bdb9-a55270b8e4e4" />
+<img width="300" height="300" alt="tron" src="https://github.com/user-attachments/assets/de5b0825-3bff-4817-8a26-8f887bab8c48" />
+
+- **Auto-scaling** — SVG over a virtual coordinate space, so the plan fits any card size.
 
 ## Installation
 
