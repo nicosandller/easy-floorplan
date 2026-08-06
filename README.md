@@ -1146,6 +1146,7 @@ card_mod:
 | `--fp-skin-wall-width` | `8` | Wall stroke width. **Keep this at 10 or below** — a doorway is a 12-unit gap cut through the wall layer, and a wider wall would not be fully cleared by its own door. |
 | `--fp-skin-wall-filter` | `none` | A CSS `filter` on the walls, e.g. `drop-shadow(0 0 4px #22d3ee)` for a neon look. |
 | `--fp-skin-accent` | theme primary color | Ripples, trackers, room fills, active doors, the floor switcher. |
+| `--fp-skin-accent-ink` | theme text-on-primary color | Reading colour on top of `--fp-skin-accent` — today the active floor-switcher button. Set it whenever your accent is pale. |
 | `--fp-skin-active` | theme active color | Badge colour for a device that is on. |
 | `--fp-skin-active-ink` | theme text color | Icon/reading colour on that badge. Set it whenever `--fp-skin-active` is pale. |
 | `--fp-skin-text` | theme text color | Labels, free text, room names, the card title, the editor grid. |
@@ -1157,9 +1158,22 @@ card_mod:
 | `--fp-skin-furniture` | `#9e9e9e` | Furniture with no colour of its own. |
 | `--fp-skin-glow` | `#ffd9a0` | Light-pool colour for a bulb that reports no colour. |
 
-Set them on `ha-card` and the whole plan follows, editor included. They are the same layer the
-built-in skins use, so a `skin:` and a card-mod override compose — the skin supplies the values
-you don't state.
+Set them on `ha-card` and the whole plan follows, editor included. Any token you leave alone keeps
+its default from the table, so you can restyle one thing without restating the rest.
+
+**On top of a built-in skin, add `!important`.** A `skin:` is applied as an inline `style` on the
+card, and an inline declaration outranks a card-mod rule — so without it your override is silently
+ignored, and only while a skin is set:
+
+```yaml
+type: custom:easy-floorplan-card
+skin: tron
+card_mod:
+  style: |
+    ha-card {
+      --fp-skin-accent: #f2aa4c !important;
+    }
+```
 
 ## Styling hooks (card-mod)
 

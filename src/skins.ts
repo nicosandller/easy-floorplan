@@ -36,6 +36,7 @@ export const SKIN_TOKENS = [
   "--fp-skin-wall-width",
   "--fp-skin-wall-filter",
   "--fp-skin-accent",
+  "--fp-skin-accent-ink",
   "--fp-skin-active",
   "--fp-skin-active-ink",
   "--fp-skin-text",
@@ -92,6 +93,10 @@ export const SKINS: readonly Skin[] = [
       "--fp-skin-wall-width": "10",
       "--fp-skin-wall-filter": "none",
       "--fp-skin-accent": "#e4444c",
+      // White, not the charcoal ink: on this red it reads at 4.0 where the
+      // charcoal manages 2.8. The skin whose accent is dark enough to want
+      // dark ink is the one that would get this wrong by reusing active-ink.
+      "--fp-skin-accent-ink": "#ffffff",
       "--fp-skin-active": "#ffcb05",
       "--fp-skin-active-ink": "#3b3b3b",
       "--fp-skin-text": "#3b3b3b",
@@ -117,6 +122,7 @@ export const SKINS: readonly Skin[] = [
       "--fp-skin-wall-width": "7",
       "--fp-skin-wall-filter": "none",
       "--fp-skin-accent": "#a8c8ec",
+      "--fp-skin-accent-ink": "#4a4453",
       "--fp-skin-active": "#ffd6a5",
       "--fp-skin-active-ink": "#4a4453",
       "--fp-skin-text": "#4a4453",
@@ -142,6 +148,7 @@ export const SKINS: readonly Skin[] = [
       "--fp-skin-wall-width": "5",
       "--fp-skin-wall-filter": "drop-shadow(0 0 4px #22d3ee)",
       "--fp-skin-accent": "#22d3ee",
+      "--fp-skin-accent-ink": "#05080c",
       "--fp-skin-active": "#ff9f1c",
       "--fp-skin-active-ink": "#05080c",
       "--fp-skin-text": "#cdf6ff",
@@ -211,6 +218,7 @@ export const skinTokens = css`
     --fp-skin-wall-width: 8;
     --fp-skin-wall-filter: none;
     --fp-skin-accent: var(--primary-color, #03a9f4);
+    --fp-skin-accent-ink: var(--text-primary-color, #fff);
     --fp-skin-active: var(--state-light-active-color, var(--state-active-color, #fdd835));
     --fp-skin-active-ink: var(--text-primary-color, #212121);
     --fp-skin-text: var(--primary-text-color);

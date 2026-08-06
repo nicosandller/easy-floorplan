@@ -1716,7 +1716,10 @@ export interface OpeningStyle {
   amount?: number;
   /** Entity-driven "actively open" state: tints the moving parts with `accent`. */
   active?: boolean;
-  /** Accent color used while `active` (default the HA primary color). */
+  /**
+   * Accent color used while `active`. Defaults to {@link SKIN_ACCENT} — the
+   * skin's accent, falling back to the HA primary color when unskinned.
+   */
   accent?: string;
   /**
    * External roller shutter layered over the opening (issue #74): how far

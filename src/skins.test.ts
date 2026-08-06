@@ -4,6 +4,7 @@ import {
   MAX_SKIN_WALL_WIDTH,
   SKINS,
   SKIN_TOKENS,
+  type SkinToken,
   findSkin,
   skinStyle,
   SKIN_ACCENT,
@@ -50,6 +51,53 @@ describe("the skin registry", () => {
       expect(width).toBeLessThanOrEqual(MAX_SKIN_WALL_WIDTH);
     }
   });
+});
+
+/**
+ * The bug this guards against is quiet: a skin sets its accent and forgets the
+ * ink that sits on it, everything still renders, and the label is simply
+ * unreadable — Pastel's near-white on a pale blue measured 1.7:1. Completeness
+ * cannot catch it, because the token *is* set; only the pairing is wrong.
+ *
+ * Thresholds are WCAG AA: 3.0 for the ink pairs, which are UI labels on a
+ * coloured chip, and 4.5 for body text on the paper. Walls are deliberately
+ * exempt — Pastel's whole point is a soft 3.5:1 line, and that is a drawing,
+ * not something anyone reads.
+ */
+describe("every built-in skin is legible", () => {
+  const luminance = (hex: string): number => {
+    const channels = [1, 3, 5]
+      .map((i) => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map((v) => (v <= 0.03928 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * channels[0] + 0.7152 * channels[1] + 0.0722 * channels[2];
+  };
+  /** WCAG 2.x contrast ratio, 1 (identical) to 21 (black on white). */
+  const contrast = (a: string, b: string): number => {
+    const [hi, lo] = [luminance(a), luminance(b)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  it("computes a ratio we can trust", () => {
+    expect(contrast("#000000", "#ffffff")).toBeCloseTo(21, 1);
+    expect(contrast("#ffffff", "#ffffff")).toBeCloseTo(1, 5);
+  });
+
+  for (const skin of SKINS.slice(1)) {
+    it(`${skin.id} reads its ink against what it sits on`, () => {
+      const v = (token: SkinToken): string => {
+        const value = skin.vars[token];
+        // These four are the pairs the ratio is computed from, so a palette
+        // that states one as a gradient or a var() chain needs this test
+        // rethought rather than silently skipped.
+        expect(value).toMatch(/^#[0-9a-f]{6}$/);
+        return value as string;
+      };
+      expect(contrast(v("--fp-skin-accent-ink"), v("--fp-skin-accent"))).toBeGreaterThanOrEqual(3);
+      expect(contrast(v("--fp-skin-active-ink"), v("--fp-skin-active"))).toBeGreaterThanOrEqual(3);
+      expect(contrast(v("--fp-skin-text"), v("--fp-skin-bg"))).toBeGreaterThanOrEqual(4.5);
+      expect(contrast(v("--fp-skin-text"), v("--fp-skin-badge-bg"))).toBeGreaterThanOrEqual(4.5);
+    });
+  }
 });
 
 describe("skinStyle", () => {

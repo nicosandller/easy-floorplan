@@ -727,7 +727,11 @@ export class FloorplanCard extends LitElement {
     }
     .floor-switcher button.active {
       background: var(--fp-skin-accent, var(--primary-color, #03a9f4));
-      color: var(--text-primary-color, #fff);
+      /* Its own ink, not the badge's: this sits on --fp-skin-accent, and the
+         skin whose accent wants dark ink is not necessarily the one whose
+         active badge does. Left at the theme's text-on-primary, Pastel and
+         Tron print near-white on a pale blue and a bright cyan. */
+      color: var(--fp-skin-accent-ink, var(--text-primary-color, #fff));
       border-color: var(--fp-skin-accent, var(--primary-color, #03a9f4));
     }
     svg {
