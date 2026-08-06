@@ -343,9 +343,16 @@ export class FloorplanCard extends LitElement {
     // of transformed — badges and labels stay upright at any rotation.
     const p = rotatePlanPoint(item.x, item.y, c.width, c.height, rot);
     const d = rotatedCanvasSize(c.width, c.height, rot);
-    // Only a device that answers gets press feedback or a pointer cursor
-    // (issue #134). An unbound device and `tap_action: none` both look
-    // pressable today and do nothing.
+    // Only a device that answers is a button (issue #134) — the press effect,
+    // the pointer cursor, the `button` role, the tab stop and the gesture
+    // listeners all hang off this one fact.
+    //
+    // The semantics matter more than the cursor did. An inert device was
+    // announced as "button" to a screen reader, sat in the tab order, and
+    // replied to Enter with nothing: the same lie, told louder, to the people
+    // least able to check it against what the plan looks like. Its label text
+    // stays in the DOM either way, so nothing becomes unreadable — only the
+    // false affordance goes.
     const interactive = itemIsInteractive(item);
     return html`
       <div
@@ -361,13 +368,16 @@ export class FloorplanCard extends LitElement {
           ? `--fp-active:${activeColor};`
           : ""}${badgeInk ? `--fp-ink:${badgeInk};` : ""}"
         title=${this._label(item)}
-        role="button"
-        tabindex="0"
+        role=${interactive ? "button" : nothing}
+        tabindex=${interactive ? "0" : nothing}
         @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
           this._handleItemAction(ev, item)}
         .actionHandler=${actionHandler({
           hasHold: hasAction(item.hold_action),
           hasDoubleClick: hasAction(item.double_tap_action),
+          // Unbinds the gesture listeners outright, so keyboard activation
+          // cannot reach an action that would do nothing.
+          disabled: !interactive,
         })}
         @pointerdown=${interactive && pressEffectOf(c) === "ripple"
           ? (ev: PointerEvent) => this._startInk(ev)

@@ -158,8 +158,11 @@ It is one setting for the whole plan rather than per device: it is how the dashb
 feels, and a plan where half the devices answered differently would read as broken.
 
 **Only devices that do something respond.** A device with no entity bound, or with
-`tap_action: none` and nothing on hold or double-tap, gets neither the effect nor the hand
-cursor — feedback promising an action that never arrives is worse than none.
+`tap_action: none` and nothing on hold or double-tap, isn't treated as a button at all: no
+press effect, no hand cursor, no tab stop, and no `button` role for a screen reader to
+announce. Feedback promising an action that never arrives is worse than none — and an
+inert device that answers the keyboard with silence is the same promise, made where it is
+hardest to check.
 
 With the OS *reduce motion* preference set, all three fall back to the flash halo with no
 transition: the affordance stays, the movement goes.
