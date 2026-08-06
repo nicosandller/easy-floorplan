@@ -44,7 +44,7 @@ import {
   trackerAxisFraction,
 } from "./types";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, cssIcon } from "./css-safe";
-import { SKIN_ACCENT, SKIN_PAPER, SKIN_WALL } from "./skins";
+import { SKIN_ACCENT, SKIN_PAPER, SKIN_WALL, MAX_SKIN_WALL_WIDTH } from "./skins";
 // The same tolerance #141 uses to decide an opening sits on a wall, so "this
 // door is in this wall" means one thing across the card.
 import { OPENING_ON_WALL_EPS } from "./dead-space";
@@ -924,6 +924,34 @@ export function itemLabelSize(v: unknown): number {
 /** Clamp a config area `labelSize` to the same 8–40 range item labels use. */
 export function areaLabelSize(v: unknown): number {
   return Math.min(40, Math.max(8, cssNumber(v, DEFAULT_AREA_LABEL_SIZE)));
+}
+
+/**
+ * Clamp a config wall `thickness` to the skin-safe range at the render sink:
+ * at least 2 units, and never past {@link MAX_SKIN_WALL_WIDTH} — the same
+ * ceiling a skin's `--fp-skin-wall-width` observes, and for the same reason
+ * (see that constant's comment): a wall wider than the doorway mask's cut
+ * would not be fully cleared by its own door or window. The editor's slider
+ * already stays inside this range; this guards a hand-edited or imported
+ * config that doesn't. Falls back to {@link WALL_THICKNESS} for anything
+ * unset or unreadable, via `cssNumber`'s shared style-sink guard.
+ */
+export function wallThickness(v: unknown): number {
+  return Math.min(MAX_SKIN_WALL_WIDTH, Math.max(2, cssNumber(v, WALL_THICKNESS)));
+}
+
+/**
+ * The `stroke-width` declaration for a wall, or `""` to leave it to the
+ * skin. A skin sets `--fp-skin-wall-width` on `.wall` (issue #122), and a
+ * CSS declaration always beats an SVG presentation attribute — so writing
+ * `stroke-width=` directly on the element, the pre-skins approach, has no
+ * effect any more. Same fix {@link areaLabelFontSize} used for `.area-label`:
+ * write the value inline only when it says something the skin doesn't, so an
+ * untouched wall keeps following the skin and an explicit thickness
+ * overrides it.
+ */
+export function wallStrokeStyle(thickness: unknown): string {
+  return thickness === undefined ? "" : `stroke-width:${wallThickness(thickness)};`;
 }
 
 // ---- overlay scaling --------------------------------------------------------

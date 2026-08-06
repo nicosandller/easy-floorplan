@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { html, nothing } from "lit";
 import type { Area, Furniture, FurnitureType, ItemKind } from "./types";
-import { SKIN_ACCENT, SKIN_WALL } from "./skins";
+import { SKIN_ACCENT, SKIN_WALL, MAX_SKIN_WALL_WIDTH } from "./skins";
 import {
   FURNITURE_DEFAULT_SIZE,
   DEFAULT_GLOW_RADIUS,
@@ -57,6 +57,8 @@ import {
   itemLabelSize,
   areaLabelSize,
   areaLabelFontSize,
+  wallThickness,
+  wallStrokeStyle,
   normalizeOverlayScale,
   overlayLength,
   hassRenderInputsChanged,
@@ -808,6 +810,41 @@ describe("overlay scaling", () => {
     expect(overlayLength(areaLabelSize("14;}body{display:none"), "plan")).toBe(
       "calc(14 * var(--fp-u, 1px))"
     );
+  });
+});
+
+describe("wallThickness — clamped to the skin-safe range at the sink", () => {
+  it("defaults to WALL_THICKNESS when unset", () => {
+    expect(wallThickness(undefined)).toBe(8);
+  });
+
+  it("passes a value inside the range through unchanged", () => {
+    expect(wallThickness(5)).toBe(5);
+  });
+
+  it("floors at 2", () => {
+    expect(wallThickness(0)).toBe(2);
+    expect(wallThickness(-5)).toBe(2);
+  });
+
+  it("caps at MAX_SKIN_WALL_WIDTH — past this the doorway mask stops fully clearing the wall", () => {
+    expect(wallThickness(30)).toBe(MAX_SKIN_WALL_WIDTH);
+    expect(wallThickness(24)).toBe(MAX_SKIN_WALL_WIDTH);
+  });
+
+  it("neutralizes a style-injection payload before it reaches the style sink", () => {
+    expect(wallThickness("5px;color:red")).toBe(8);
+  });
+});
+
+describe("wallStrokeStyle — leaves the skin's stroke-width alone when it can", () => {
+  it("emits nothing for an untouched wall, so the skin's --fp-skin-wall-width wins", () => {
+    expect(wallStrokeStyle(undefined)).toBe("");
+  });
+
+  it("emits a clamped stroke-width once the wall asks for one", () => {
+    expect(wallStrokeStyle(5)).toBe("stroke-width:5;");
+    expect(wallStrokeStyle(30)).toBe(`stroke-width:${MAX_SKIN_WALL_WIDTH};`);
   });
 });
 

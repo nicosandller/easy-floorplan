@@ -67,6 +67,7 @@ import {
   itemHiddenWhenInactive,
   itemLabelSize,
   areaLabelFontSize,
+  wallStrokeStyle,
   normalizeOverlayScale,
   overlayLength,
   hassRenderInputsChanged,
@@ -628,7 +629,7 @@ export class FloorplanCard extends LitElement {
                 (w) => svg`
                 <line x1=${w.x1} y1=${w.y1} x2=${w.x2} y2=${w.y2}
                       class="wall fp-wall" data-id=${cssIdent(w.id) ?? nothing}
-                      stroke-width=${WALL_THICKNESS} stroke-linecap="round" />`
+                      style=${wallStrokeStyle(w.thickness)} stroke-linecap="round" />`
               )}
             </g>
             <!-- Room outlines, above the walls they trace. An area polygon runs

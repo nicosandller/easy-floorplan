@@ -43,6 +43,15 @@ export interface Wall {
   y1: number;
   x2: number;
   y2: number;
+  /**
+   * Stroke width in virtual units. Defaults to {@link WALL_THICKNESS}
+   * (render.ts) when unset, and clamped there (`wallThickness`) to at most
+   * `MAX_SKIN_WALL_WIDTH` (skins.ts): the doorway mask that cuts this wall's
+   * own doors and windows is sized off the shared `WALL_THICKNESS` constant,
+   * not per-wall, so a wall drawn wider than that ceiling would not be fully
+   * cleared by its own opening. Raise the ceiling only alongside that mask.
+   */
+  thickness?: number;
 }
 
 export type OpeningType = "door" | "window";

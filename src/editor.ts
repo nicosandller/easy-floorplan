@@ -89,6 +89,7 @@ import {
   snapToWall,
   collectWatchedEntities,
   hassRenderInputsChanged,
+  wallStrokeStyle,
 } from "./render";
 import { deadSpacesCached } from "./dead-space";
 import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
@@ -3316,7 +3317,7 @@ export class FloorplanCardEditor extends LitElement {
         <line x1=${w.x1} y1=${w.y1} x2=${w.x2} y2=${w.y2}
               class="wall ${selected ? "selected" : ""}"
               mask=${`url(#${this._wallMaskId})`}
-              stroke-width=${WALL_THICKNESS} stroke-linecap="round" />
+              style=${wallStrokeStyle(w.thickness)} stroke-linecap="round" />
         ${
           selected
             ? svg`

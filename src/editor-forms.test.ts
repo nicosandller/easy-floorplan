@@ -22,7 +22,7 @@ import {
 import type { FormField } from "./editor-forms";
 import type { Area, Opening, FloorItem, Floor, FloorplanCardConfig } from "./types";
 import { DEFAULT_GLOW_RADIUS, DEFAULT_PRESS_EFFECT } from "./types";
-import { DEFAULT_SKIN, SKINS } from "./skins";
+import { DEFAULT_SKIN, SKINS, MAX_SKIN_WALL_WIDTH } from "./skins";
 
 const fields: FormField[] = [
   { name: "name", label: "Name", selector: { text: {} } },
@@ -604,6 +604,25 @@ describe("wallForm / projectForm / floorImageForm", () => {
   it("wall exposes rounded coordinates", () => {
     const d = wallForm({ id: "w", x1: 1.4, y1: 2.6, x2: 3, y2: 4 }).data;
     expect(d).toMatchObject({ x1: 1, y1: 3, x2: 3, y2: 4 });
+  });
+
+  it("wall defaults thickness to WALL_THICKNESS and strips it back out at the default", () => {
+    const form = wallForm({ id: "w", x1: 0, y1: 0, x2: 1, y2: 1 });
+    expect(form.data.thickness).toBe(8);
+    expect(form.toPatch({ thickness: 8 })).toEqual({ thickness: undefined });
+    expect(form.toPatch({ thickness: 5 })).toEqual({ thickness: 5 });
+  });
+
+  it("wall reflects a custom thickness in its data", () => {
+    const d = wallForm({ id: "w", x1: 0, y1: 0, x2: 1, y2: 1, thickness: 10 }).data;
+    expect(d.thickness).toBe(10);
+  });
+
+  it("wall's thickness slider is capped at MAX_SKIN_WALL_WIDTH", () => {
+    const field = wallForm({ id: "w", x1: 0, y1: 0, x2: 1, y2: 1 }).fields.find(
+      (f) => f.name === "thickness"
+    )!;
+    expect((field.selector.number as { max: number }).max).toBe(MAX_SKIN_WALL_WIDTH);
   });
 
   it("project fields are required numbers with min 1", () => {
