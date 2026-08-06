@@ -30,6 +30,7 @@ import {
 } from "./types";
 import {
   DEFAULT_LABEL_SIZE,
+  WALL_THICKNESS,
   badgeContentOf,
   domainIconAnimation,
   isPresenceEntity,
@@ -799,9 +800,27 @@ export function wallForm(w: Wall): FormSpec {
     selector: { number: { mode: "box" } },
   });
   return {
-    fields: [coord("x1", "Start X"), coord("y1", "Start Y"), coord("x2", "End X"), coord("y2", "End Y")],
-    data: { x1: Math.round(w.x1), y1: Math.round(w.y1), x2: Math.round(w.x2), y2: Math.round(w.y2) },
-    toPatch: identity,
+    fields: [
+      coord("x1", "Start X"),
+      coord("y1", "Start Y"),
+      coord("x2", "End X"),
+      coord("y2", "End Y"),
+      {
+        name: "thickness",
+        label: "Thickness",
+        selector: { number: { min: 2, max: 30, step: 1, mode: "slider", unit_of_measurement: "px" } },
+      },
+    ],
+    data: {
+      x1: Math.round(w.x1),
+      y1: Math.round(w.y1),
+      x2: Math.round(w.x2),
+      y2: Math.round(w.y2),
+      thickness: w.thickness ?? WALL_THICKNESS,
+    },
+    // Keep the default out of the YAML so untouched walls stay terse.
+    toPatch: (p) =>
+      "thickness" in p && p.thickness === WALL_THICKNESS ? { ...p, thickness: undefined } : p,
   };
 }
 

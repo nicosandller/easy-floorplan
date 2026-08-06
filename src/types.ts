@@ -43,6 +43,8 @@ export interface Wall {
   y1: number;
   x2: number;
   y2: number;
+  /** Stroke width in virtual units. Defaults to {@link WALL_THICKNESS} (render.ts) when unset. */
+  thickness?: number;
 }
 
 export type OpeningType = "door" | "window";

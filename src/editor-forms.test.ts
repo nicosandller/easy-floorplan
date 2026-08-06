@@ -533,6 +533,18 @@ describe("wallForm / projectForm / floorImageForm", () => {
     expect(d).toMatchObject({ x1: 1, y1: 3, x2: 3, y2: 4 });
   });
 
+  it("wall defaults thickness to WALL_THICKNESS and strips it back out at the default", () => {
+    const form = wallForm({ id: "w", x1: 0, y1: 0, x2: 1, y2: 1 });
+    expect(form.data.thickness).toBe(8);
+    expect(form.toPatch({ thickness: 8 })).toEqual({ thickness: undefined });
+    expect(form.toPatch({ thickness: 16 })).toEqual({ thickness: 16 });
+  });
+
+  it("wall reflects a custom thickness in its data", () => {
+    const d = wallForm({ id: "w", x1: 0, y1: 0, x2: 1, y2: 1, thickness: 20 }).data;
+    expect(d.thickness).toBe(20);
+  });
+
   it("project fields are required numbers with min 1", () => {
     const form = projectForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
     const width = form.fields.find((x) => x.name === "width")!;
