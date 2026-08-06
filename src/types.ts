@@ -230,6 +230,23 @@ export interface FloorItem {
    */
   badgeContent?: BadgeContent;
   /**
+   * Which of this device's own entities the badge reads while
+   * `badgeContent: "value"` (issue #136) — the main `entity`, or
+   * {@link secondaryEntity}.
+   *
+   * Absent means "work it out", which is what {@link badgeValue} has always
+   * done: the first candidate with a number wins, so a switch that reads "on"
+   * already falls through to its power sensor. That guess is usually right,
+   * but it is only a guess, and there was no way to overrule it when the main
+   * entity happens to be numeric too.
+   *
+   * Set, it is the *only* entity read. No falling back to the other one:
+   * having asked for the power sensor, being shown the switch instead would
+   * be worse than being shown the icon — which is what a device with no
+   * number to display falls back to anyway.
+   */
+  badgeEntity?: BadgeEntity;
+  /**
    * Hide this device on the live card while its entity is inactive (issue
    * #55), so a busy room only shows what is actually doing something. The
    * editor always draws it — dimmed — or it could never be selected again.
@@ -241,7 +258,13 @@ export interface FloorItem {
   size?: number;
   /** Icon rotation in degrees. Default 0. */
   angle?: number;
-  /** How the device is drawn. Default "badge". */
+  /**
+   * How the device is drawn. Default "badge".
+   *
+   * The ripple modes render on any entity. The editor only *offers* them on a
+   * presence device (issue #127) — a ring says "someone is there" — so a ring
+   * on anything else is a YAML-only choice.
+   */
   display?: ItemDisplay;
   /**
    * Animate the icon while the entity is active (issue #48). "auto" (the
@@ -250,6 +273,12 @@ export interface FloorItem {
    * means `playing` or plain `on`, matching the badge highlight);
    * "spin"/"pulse" force that animation (still only while active); "none"
    * disables it.
+   *
+   * "auto" has no counterpart in the editor's menu (issue #127): it shows the
+   * animation auto resolves to for this entity instead of the word, and writes
+   * that value out the moment the badge dropdown is touched. Editing anything
+   * else leaves the key alone, so a config keeps its "auto" — and its meaning —
+   * until someone actually decides about the animation.
    */
   iconAnimation?: IconAnimation;
   /**
@@ -293,6 +322,13 @@ export type ItemDisplay = "badge" | "ripple" | "iconRipple";
 
 /** What a device badge holds — see {@link FloorItem.badgeContent} (issue #106). */
 export type BadgeContent = "icon" | "value" | "none";
+
+/**
+ * Which of a device's two entities feeds its value badge — see
+ * {@link FloorItem.badgeEntity} (issue #136). Named by role rather than by
+ * entity id so renaming an entity in Home Assistant cannot orphan the choice.
+ */
+export type BadgeEntity = "primary" | "secondary";
 
 /**
  * One colour rule for {@link FloorItem.stateColor} / {@link Furniture.stateColor}.
@@ -598,8 +634,12 @@ export const DEFAULT_AREA_BORDER_WIDTH = 3;
 
 /** Radius of a light's cast pool, in canvas units (issue #6). */
 export const DEFAULT_GLOW_RADIUS = 140;
-/** Warm white, for a light that cannot report a color of its own. */
-export const DEFAULT_GLOW_COLOR = "#ffd9a0";
+/**
+ * Warm white, for a light that cannot report a color of its own — as the skin's
+ * token (issue #122) so Tron's pools read cyan rather than tungsten, with the
+ * original hex as the fallback so an unskinned plan is unchanged.
+ */
+export const DEFAULT_GLOW_COLOR = "var(--fp-skin-glow, #ffd9a0)";
 /**
  * Opacity band a light's `brightness` maps into at the center of its pool.
  *
@@ -609,6 +649,18 @@ export const DEFAULT_GLOW_COLOR = "#ffd9a0";
  */
 export const GLOW_MIN_OPACITY = 0.18;
 export const GLOW_MAX_OPACITY = 0.6;
+
+/**
+ * Smallest share of its configured `glowRadius` a lamp's pool shrinks to as it
+ * dims (issue #123). Dimming a lamp draws the light *in* as well as thinning
+ * it, which is what dimming looks like in a room.
+ *
+ * Floored for the same reason {@link GLOW_MIN_OPACITY} is: a lamp at 5% would
+ * otherwise collapse to a dot under its own icon and read as switched off.
+ * `glowRadius` stays the full-brightness size, so a lamp at 100% — and any
+ * bulb that reports no brightness at all — is unaffected.
+ */
+export const GLOW_MIN_RADIUS = 0.5;
 
 /**
  * How far a light's `brightness` may darken its **badge** colour (issue #106,
@@ -639,7 +691,8 @@ export const DEFAULT_TRACKER_DOT_SIZE = 14;
 export const DEFAULT_ITEM_SIZE = 34;
 export const DEFAULT_TEXT_SIZE = 16;
 export const DEFAULT_RIPPLE_SIZE = 80;
-export const FURNITURE_COLOR = "#9e9e9e";
+/** Neutral gray, so furniture reads differently from the walls. Skinnable (#122). */
+export const FURNITURE_COLOR = "var(--fp-skin-furniture, #9e9e9e)";
 
 /** Default width/height per furniture type, in virtual units. */
 export const FURNITURE_DEFAULT_SIZE: Record<FurnitureType, { w: number; h: number }> = {
@@ -755,7 +808,18 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * 0/90/180/270 are normalized (see normalizePlanRotation).
    */
   rotation?: number;
-  /** Canvas background color (CSS / hex). Falls back to the card background. */
+  /**
+   * Built-in skin id (issue #122), e.g. `odnetnin`, `pastel`, `tron`. Restyles
+   * the whole plan at once — paper, walls, badges, accents — by supplying the
+   * fallbacks every element already reads.
+   *
+   * Unset (or an id we don't ship) means the default look, which follows the
+   * Home Assistant theme exactly as it always has. A skin only ever supplies
+   * fallbacks, so any colour set on an element itself still wins. See
+   * `src/skins.ts`.
+   */
+  skin?: string;
+  /** Canvas background color (CSS / hex). Falls back to the skin's paper, then the card background. */
   background?: string;
   /**
    * Follow the real sun (issue #113): dim the plan through dusk and brighten

@@ -8,6 +8,7 @@ import type {
   IconAnimation,
   StateColorRule,
   BadgeContent,
+  BadgeEntity,
   Furniture,
   Tracker,
   Area,
@@ -32,12 +33,14 @@ import {
   DEFAULT_ITEM_SIZE,
   GLOW_MIN_OPACITY,
   GLOW_MAX_OPACITY,
+  GLOW_MIN_RADIUS,
   BADGE_MIN_LIGHTNESS,
   FURNITURE_GLOW_TRANSMISSION,
   getFloors,
   trackerAxisFraction,
 } from "./types";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, cssIcon } from "./css-safe";
+import { SKIN_ACCENT, SKIN_PAPER } from "./skins";
 
 export const WALL_THICKNESS = 8;
 
@@ -267,6 +270,16 @@ export interface GlowPaint {
   color: string;
   /** Opacity at the center of the pool, fading to 0 at the rim. */
   opacity: number;
+  /**
+   * How far the pool actually reaches, in canvas units (issue #123): the
+   * configured `glowRadius` scaled by the lamp's brightness.
+   *
+   * Carried on the paint rather than recomputed by each caller so the pool and
+   * the sun-dimming clearing cannot disagree about the same lamp's size — they
+   * are documented as the same shape by construction, and two copies of this
+   * arithmetic is exactly how that stops being true.
+   */
+  radius: number;
 }
 
 /**
@@ -286,9 +299,15 @@ export interface GlowPaint {
  * A light that is off, `unavailable` or `unknown` casts nothing — failing
  * closed like every other state reader here, so a dead bulb never leaves a
  * pool of light lying on the floor.
+ *
+ * Brightness drives the pool's **reach** as well as its strength (issue #123):
+ * dimming a lamp draws the light in rather than only thinning it, which is what
+ * dimming actually looks like. The configured `glowRadius` is the full-brightness
+ * size, so nothing changes for a lamp at 100% or for a bulb that reports no
+ * brightness at all.
  */
 export function glowPaint(
-  item: Pick<FloorItem, "glowColor">,
+  item: Pick<FloorItem, "glowColor" | "glowRadius">,
   light: HassEntity | undefined,
 ): GlowPaint | undefined {
   if (!light || light.state !== "on") return undefined;
@@ -302,6 +321,11 @@ export function glowPaint(
     bright === undefined
       ? GLOW_MAX_OPACITY
       : GLOW_MIN_OPACITY + (GLOW_MAX_OPACITY - GLOW_MIN_OPACITY) * (bright / 255);
+  // Same shape as the opacity band above, and a floor for the same reason: a
+  // lamp dimmed to 10% should read as dim, not as switched off.
+  const radius =
+    cssNumber(item.glowRadius, DEFAULT_GLOW_RADIUS) *
+    (bright === undefined ? 1 : GLOW_MIN_RADIUS + (1 - GLOW_MIN_RADIUS) * (bright / 255));
 
   const rgb = attrs.rgb_color;
   if (Array.isArray(rgb) && rgb.length >= 3) {
@@ -311,10 +335,10 @@ export function glowPaint(
       // Built from clamped integers, so it cannot carry a payload — but it
       // still goes through the allowlist, as every color here does.
       const color = cssColor(`rgb(${chan(r as number)}, ${chan(g as number)}, ${chan(b as number)})`);
-      if (color) return { color, opacity };
+      if (color) return { color, opacity, radius };
     }
   }
-  return { color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR), opacity };
+  return { color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR), opacity, radius };
 }
 
 /**
@@ -364,11 +388,15 @@ export function lightBadgePaint(light: HassEntity | undefined): string | undefin
  * unconditionally, and every off light washed the canvas at full strength.
  */
 export function editorGlowPaint(
-  item: Pick<FloorItem, "glowColor">,
+  item: Pick<FloorItem, "glowColor" | "glowRadius">,
   state: HassEntity | undefined,
 ): GlowPaint | undefined {
   if (state) return glowPaint(item, state);
-  return { color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR), opacity: GLOW_MAX_OPACITY };
+  return {
+    color: cssColorOr(item.glowColor, DEFAULT_GLOW_COLOR),
+    opacity: GLOW_MAX_OPACITY,
+    radius: cssNumber(item.glowRadius, DEFAULT_GLOW_RADIUS),
+  };
 }
 
 /**
@@ -407,12 +435,65 @@ function rayWallHit(cx: number, cy: number, dx: number, dy: number, w: Wall): nu
 }
 
 /**
+ * Clip a segment to an axis-aligned box (Liang–Barsky), or undefined when it
+ * falls entirely outside. Used by {@link glowReach} — see the note there on
+ * why the sweep needs the clipped wall rather than the configured one.
+ */
+function clipWallToBox(
+  w: Wall,
+  minX: number,
+  minY: number,
+  maxX: number,
+  maxY: number,
+): Wall | undefined {
+  const dx = w.x2 - w.x1;
+  const dy = w.y2 - w.y1;
+  const p = [-dx, dx, -dy, dy];
+  const q = [w.x1 - minX, maxX - w.x1, w.y1 - minY, maxY - w.y1];
+  let t0 = 0;
+  let t1 = 1;
+  for (let i = 0; i < 4; i++) {
+    if (p[i] === 0) {
+      if (q[i] < 0) return undefined; // parallel to this edge and outside it
+      continue;
+    }
+    const t = q[i] / p[i];
+    if (p[i] < 0) {
+      if (t > t1) return undefined;
+      if (t > t0) t0 = t;
+    } else {
+      if (t < t0) return undefined;
+      if (t < t1) t1 = t;
+    }
+  }
+  return {
+    ...w,
+    x1: w.x1 + t0 * dx,
+    y1: w.y1 + t0 * dy,
+    x2: w.x1 + t1 * dx,
+    y2: w.y1 + t1 * dy,
+  };
+}
+
+/**
  * How far a light at (cx,cy) actually reaches (issue #108): the visibility
  * polygon of the walls that fall inside its radius, so a pool stops at a wall
  * instead of washing into the next room. Classic angular sweep — a ray toward
  * each wall endpoint (and just past it, so light grazes corners), cut at the
  * nearest wall it hits; a bounding box just beyond the radius keeps every ray
  * finite, and the circle itself still bounds the final shape.
+ *
+ * **Blocking walls are clipped to that box first (issue #123).** The sweep's
+ * only vertices are the angles of the segment endpoints it is given, and the
+ * boundary between two of them is drawn as a straight chord. An ordinary room
+ * wall runs well past the pool, so its *declared* endpoints sit outside the
+ * box at the wrong angle entirely, and no ray is ever cast where the wall
+ * actually enters the lit region — the point where the boundary hands over
+ * from the box to the wall. The chord spanning that gap sliced a wedge out of
+ * the pool beside every long wall: the reported artifact. Clipping makes the
+ * wall's endpoints *be* those hand-over points, so the sweep samples them.
+ * A wall already inside the box is unchanged, which is why short walls never
+ * showed this.
  *
  * The wall the lamp is mounted on must not black out its own pool, so walls
  * closer than one wall thickness are treated as non-blocking. Returns
@@ -437,7 +518,13 @@ export function glowReach(
     { id: "b3", x1: cx + m, y1: cy + m, x2: cx - m, y2: cy + m },
     { id: "b4", x1: cx - m, y1: cy + m, x2: cx - m, y2: cy - m },
   ];
-  const all = [...blocking, ...bounds];
+  // Trim each wall to the swept region so its endpoints land where it enters
+  // that region — those are the silhouette vertices the sweep has to sample.
+  const clipped = blocking
+    .map((w) => clipWallToBox(w, cx - m, cy - m, cx + m, cy + m))
+    .filter((w): w is Wall => w !== undefined);
+  if (!clipped.length) return undefined;
+  const all = [...clipped, ...bounds];
   const pts: Array<{ x: number; y: number; a: number }> = [];
   for (const s of all) {
     for (const [ex, ey] of [
@@ -470,7 +557,9 @@ export function renderGlow(
   gradientId: string,
   walls?: readonly Wall[],
 ): SVGTemplateResult {
-  const r = cssNumber(item.glowRadius, DEFAULT_GLOW_RADIUS);
+  // Brightness-scaled (issue #123), computed once on the paint so the pool and
+  // the sun-dimming clearing are the same size for the same lamp.
+  const r = paint.radius;
   // Walls block light (issue #108): clip the pool to what the lamp can see.
   const reach = walls?.length ? glowReach(item.x, item.y, r, walls) : undefined;
   const clipId = `${gradientId}-clip`;
@@ -525,15 +614,20 @@ export function renderSunDimMask(
 ): SVGTemplateResult | typeof nothing {
   // Strength per item, by INDEX — undefined where the lamp contributes nothing.
   // Deliberately not compacted: see the map below.
-  const strengths = items.map((it) => {
+  const clearings = items.map((it) => {
     if (!it.glow) return undefined;
     const paint = glowPaint(it, states?.[it.entity]);
     if (!paint) return undefined;
-    // Normalized against the glow's own ceiling, so a full-brightness lamp
-    // clears the dim entirely and a dim one clears proportionally.
-    return Math.max(0, Math.min(1, paint.opacity / GLOW_MAX_OPACITY));
+    return {
+      // Normalized against the glow's own ceiling, so a full-brightness lamp
+      // clears the dim entirely and a dim one clears proportionally.
+      strength: Math.max(0, Math.min(1, paint.opacity / GLOW_MAX_OPACITY)),
+      // Straight off the paint, so the clearing tracks the pool as it shrinks
+      // with brightness (issue #123) instead of staying at the configured size.
+      radius: paint.radius,
+    };
   });
-  if (!strengths.some((v) => v !== undefined)) return nothing;
+  if (!clearings.some((v) => v !== undefined)) return nothing;
 
   const pad = WALL_THICKNESS;
   return svg`
@@ -552,9 +646,9 @@ export function renderSunDimMask(
           // hard-edged disc at full strength rather than a soft falloff, and
           // it only bites lamps positioned *after* the one that toggled —
           // which is what made it look intermittent.
-          const strength = strengths[i];
-          if (strength === undefined) return nothing;
-          const r = cssNumber(it.glowRadius, DEFAULT_GLOW_RADIUS);
+          const clearing = clearings[i];
+          if (clearing === undefined) return nothing;
+          const { strength, radius: r } = clearing;
           const gid = `${id}-${i}`;
           // Walls stop the clearing exactly as they stop the pool (issue #108),
           // reusing the same visibility polygon — otherwise a lit room lifts
@@ -682,6 +776,33 @@ export function itemBadgeLabel(
   if (!!item.entity && (item.showState ?? item.kind === "sensor"))
     parts.push(itemStateText(hass, item));
   return parts.join(" · ");
+}
+
+/**
+ * The label the **editor canvas** puts under a device (issue #135), and whether
+ * it is the card's own (`live`) or an editor-only stand-in.
+ *
+ * The canvas used to draw `name || entity || kind` always, so a device read
+ * `light.kitchen` here and `21.5 °C` on the card, and turning "Show state" on
+ * changed nothing you could see without leaving the editor. So it draws the
+ * card's line whenever the card draws one.
+ *
+ * When the card draws nothing — both label toggles off — the canvas still needs
+ * something, or a plan of unnamed devices becomes a field of identical circles
+ * with nothing to tell them apart while dragging. That stand-in is rendered
+ * dimmed, the same way a `hideWhenInactive` device is faded: the signal is
+ * "this is a note to you, the card will not draw it".
+ *
+ * Lives here rather than in the editor so the rule is pinned by a test —
+ * `editor.ts` has no render-test harness.
+ */
+export function editorItemLabel(
+  hass: RenderHass | undefined,
+  item: Parameters<typeof itemBadgeLabel>[1] & { kind: ItemKind },
+): { text: string; live: boolean } {
+  const card = itemBadgeLabel(hass, item);
+  if (card) return { text: card, live: true };
+  return { text: item.name || item.entity || item.kind, live: false };
 }
 
 /**
@@ -852,6 +973,19 @@ const AUTO_ICON_ANIMATION: Record<string, "spin" | "pulse"> = {
 };
 
 /**
+ * What `iconAnimation: "auto"` means for an entity — the animation its domain
+ * plays by default, or undefined for the domains that stay still.
+ *
+ * Exported so the editor can *name* it (issue #127): its dropdown offers no
+ * "auto" option, and instead shows a fan as "spinning" and a media player as
+ * "pulsing" — the animation the card is already playing. Both sides therefore
+ * read the domain defaults from this one table.
+ */
+export function domainIconAnimation(entity: string | undefined): "spin" | "pulse" | undefined {
+  return AUTO_ICON_ANIMATION[entity?.split(".")[0] ?? ""];
+}
+
+/**
  * Which animation an item's icon should play right now, or undefined for
  * none. Shared by card and editor. Never animates an inactive (or
  * unavailable) entity — including when the config forces "spin"/"pulse": a
@@ -866,7 +1000,33 @@ export function resolveIconAnimation(
   if (mode === "none") return undefined;
   if (!entityIsActive(item.entity, state)) return undefined;
   if (mode === "spin" || mode === "pulse") return mode;
-  return AUTO_ICON_ANIMATION[item.entity?.split(".")[0] ?? ""];
+  return domainIconAnimation(item.entity);
+}
+
+/**
+ * Device classes that mean "something is here" — the sensors a ripple ring was
+ * drawn for (issue #127). `motion` and `occupancy` are HA's own binary-sensor
+ * classes; `presence` is the home/away one.
+ */
+const PRESENCE_DEVICE_CLASSES = new Set(["motion", "occupancy", "presence"]);
+
+/**
+ * Whether a device detects presence, and so should be offered the ripple ring
+ * (issue #127) — the same shape of gate as "Cast light" on a `light`.
+ *
+ * A `device_tracker` or `person` qualifies on its domain alone; a
+ * `binary_sensor` needs the device class to say so, which is what separates a
+ * motion sensor from a door contact or a leak detector. A binary sensor with
+ * no device class set is therefore *not* presence: it could be anything, and
+ * guessing from the entity id would ring doorbells and smoke alarms.
+ */
+export function isPresenceEntity(
+  entity: string | undefined,
+  deviceClass: string | undefined,
+): boolean {
+  const domain = entity?.split(".")[0];
+  if (domain === "device_tracker" || domain === "person") return true;
+  return domain === "binary_sensor" && !!deviceClass && PRESENCE_DEVICE_CLASSES.has(deviceClass);
 }
 
 /**
@@ -1084,45 +1244,98 @@ function formatReading(n: number, rawUnit: unknown): string {
  */
 export function badgeValue(
   hass: RenderHass | undefined,
-  item: {
-    entity?: string;
-    attribute?: string;
-    secondaryEntity?: string;
-    secondaryAttribute?: string;
-  },
+  item: BadgeReadingItem,
 ): string | undefined {
+  return badgeReading(hass, item)?.text;
+}
+
+/** The shape {@link badgeReading} needs off a {@link FloorItem}. */
+export interface BadgeReadingItem {
+  entity?: string;
+  attribute?: string;
+  secondaryEntity?: string;
+  secondaryAttribute?: string;
+  badgeEntity?: BadgeEntity;
+}
+
+/** What a badge is showing, and which of the device's entities it came from. */
+export interface BadgeReading {
+  text: string;
+  source: BadgeEntity;
+}
+
+/**
+ * {@link badgeValue}, plus **which entity it read** (issue #136).
+ *
+ * The editor needs the source, not just the text: its "Badge reads" dropdown
+ * has to open on the entity the badge is actually showing. Defaulting that
+ * dropdown to "primary" would state the opposite of what is on screen for a
+ * plug whose reading arrives through the fallback below — and the first
+ * unrelated edit would save that as fact and drop the reading to an icon.
+ *
+ * So this is the one resolution and {@link badgeValue} is a wrapper over it,
+ * the same shape as {@link matchStateRule} / {@link resolveStateColor} in this
+ * file and for the same reason: two copies of a precedence chain are two
+ * chances for the badge and the form to disagree about it.
+ */
+export function badgeReading(
+  hass: RenderHass | undefined,
+  item: BadgeReadingItem,
+): BadgeReading | undefined {
   if (!hass || !item.entity) return undefined;
-  const st = hass.states[item.entity];
-  const attrs = st?.attributes as Record<string, unknown> | undefined;
-  const reading = DOMAIN_BADGE_READING[item.entity.split(".")[0]];
 
-  if (item.attribute) {
-    const n = numericReading(attrs?.[item.attribute]);
-    // A unit only when we know it belongs to *this* attribute:
-    // `unit_of_measurement` describes the state, not an arbitrary attribute, so
-    // borrowing it here would label a battery percentage "°C".
-    if (n !== undefined)
-      return compactNumber(n) + (item.attribute === reading?.attribute ? reading.unit : "");
-  }
-  if (reading) {
-    const n = numericReading(attrs?.[reading.attribute]);
-    if (n !== undefined) return compactNumber(n) + reading.unit;
-  }
-  const own = numericReading(st?.state);
-  if (own !== undefined) return formatReading(own, attrs?.unit_of_measurement);
-
-  // Same secondary resolution as the label line ({@link itemStateText}), so the
-  // two never disagree about which entity the second reading comes from.
+  // The secondary, resolved as the label line resolves it ({@link itemStateText}),
+  // so the two never disagree about which entity the second reading comes from.
   const secondaryEntity = item.secondaryEntity ?? (item.secondaryAttribute ? item.entity : undefined);
-  if (!secondaryEntity) return undefined;
-  const sec = hass.states[secondaryEntity];
-  const secAttrs = sec?.attributes as Record<string, unknown> | undefined;
-  if (item.secondaryAttribute) {
-    const n = numericReading(secAttrs?.[item.secondaryAttribute]);
-    return n === undefined ? undefined : compactNumber(n);
+
+  const primary = (): string | undefined => {
+    const st = hass.states[item.entity as string];
+    const attrs = st?.attributes as Record<string, unknown> | undefined;
+    const reading = DOMAIN_BADGE_READING[(item.entity as string).split(".")[0]];
+    if (item.attribute) {
+      const n = numericReading(attrs?.[item.attribute]);
+      // A unit only when we know it belongs to *this* attribute:
+      // `unit_of_measurement` describes the state, not an arbitrary attribute,
+      // so borrowing it here would label a battery percentage "°C".
+      if (n !== undefined)
+        return compactNumber(n) + (item.attribute === reading?.attribute ? reading.unit : "");
+    }
+    if (reading) {
+      const n = numericReading(attrs?.[reading.attribute]);
+      if (n !== undefined) return compactNumber(n) + reading.unit;
+    }
+    const own = numericReading(st?.state);
+    return own === undefined ? undefined : formatReading(own, attrs?.unit_of_measurement);
+  };
+
+  const secondary = (): string | undefined => {
+    if (!secondaryEntity) return undefined;
+    const sec = hass.states[secondaryEntity];
+    const secAttrs = sec?.attributes as Record<string, unknown> | undefined;
+    if (item.secondaryAttribute) {
+      const n = numericReading(secAttrs?.[item.secondaryAttribute]);
+      return n === undefined ? undefined : compactNumber(n);
+    }
+    const n = numericReading(sec?.state);
+    return n === undefined ? undefined : formatReading(n, secAttrs?.unit_of_measurement);
+  };
+
+  // An explicit choice reads that entity and stops. Falling through to the
+  // other one would quietly show a different device than the one asked for;
+  // no number at all is honest, and the badge draws its icon instead.
+  if (item.badgeEntity === "secondary") {
+    const text = secondary();
+    return text === undefined ? undefined : { text, source: "secondary" };
   }
-  const n = numericReading(sec?.state);
-  return n === undefined ? undefined : formatReading(n, secAttrs?.unit_of_measurement);
+  if (item.badgeEntity === "primary") {
+    const text = primary();
+    return text === undefined ? undefined : { text, source: "primary" };
+  }
+
+  const own = primary();
+  if (own !== undefined) return { text: own, source: "primary" };
+  const other = secondary();
+  return other === undefined ? undefined : { text: other, source: "secondary" };
 }
 
 /**
@@ -1432,7 +1645,7 @@ function rollCurtain(length: number, tone: string, amt: number): SVGTemplateResu
     const x = -half + (length * i) / slats;
     ticks.push(
       svg`<line x1=${x} y1=${-bandT / 2} x2=${x} y2=${bandT / 2}
-            stroke="var(--card-background-color, #fff)" stroke-width="0.75" />`
+            stroke=${SKIN_PAPER} stroke-width="0.75" />`
     );
   }
   return svg`<g class="fp-roll-curtain" style="transform:scaleY(${1 - amt});">
@@ -1467,7 +1680,7 @@ function swingShutter(
       const x = x0 + (w * i) / n;
       out.push(
         svg`<line x1=${x} y1=${-t / 2} x2=${x} y2=${t / 2}
-              stroke="var(--card-background-color, #fff)" stroke-width="0.75" />`
+              stroke=${SKIN_PAPER} stroke-width="0.75" />`
       );
     }
     return out;
@@ -1503,7 +1716,10 @@ export interface OpeningStyle {
   amount?: number;
   /** Entity-driven "actively open" state: tints the moving parts with `accent`. */
   active?: boolean;
-  /** Accent color used while `active` (default the HA primary color). */
+  /**
+   * Accent color used while `active`. Defaults to {@link SKIN_ACCENT} — the
+   * skin's accent, falling back to the HA primary color when unskinned.
+   */
   accent?: string;
   /**
    * External roller shutter layered over the opening (issue #74): how far
@@ -1521,12 +1737,12 @@ export interface OpeningStyle {
  * can transition them smoothly between open and closed.
  */
 export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResult {
-  const { color, open = true, active = false, accent = "var(--primary-color, #03a9f4)" } = style;
+  const { color, open = true, active = false, accent = SKIN_ACCENT } = style;
   const half = o.length / 2;
   const cutH = WALL_THICKNESS + 4;
   // The moving parts take the accent color when actively open (sensor-driven).
   // Sanitised: color/accent are config-supplied and land in `style="stroke/fill:…"`.
-  const tone = cssColorOr(active ? accent : color, "var(--primary-color, #03a9f4)");
+  const tone = cssColorOr(active ? accent : color, SKIN_ACCENT);
   // Fraction open (0..1) drives partial swing/slide. Defaults to the binary
   // `open` so callers that don't pass `amount` render exactly as before.
   const amt = Math.max(0, Math.min(1, style.amount ?? (open ? 1 : 0)));
@@ -1690,7 +1906,7 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   if (style.shutter) {
     const shutterTone = cssColorOr(
       style.shutter.active ? accent : color,
-      "var(--primary-color, #03a9f4)"
+      SKIN_ACCENT
     );
     const amt2 = Math.max(0, Math.min(1, style.shutter.amount));
     body = svg`${body}${
@@ -1909,7 +2125,7 @@ export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
   return svg`<polygon class="fp-area" data-id=${cssIdent(a.id) ?? nothing}
                        data-entity=${cssEntityId(a.entity) ?? nothing}
                        points=${pts}
-                       fill=${liveFill ? liveColor : cssColorOr(a.color, "var(--primary-color, #03a9f4)")}
+                       fill=${liveFill ? liveColor : cssColorOr(a.color, SKIN_ACCENT)}
                        fill-opacity=${cssNumber(opacity, DEFAULT_AREA_OPACITY)}
                        stroke="none"
                        stroke-width="0" />`;
@@ -2300,7 +2516,7 @@ export function renderRipple(
   return html`
     <div
       class="ripple ${active ? "active" : ""}"
-      style="width:${cssNumber(sizePx, DEFAULT_RIPPLE_SIZE)}px;height:${cssNumber(sizePx, DEFAULT_RIPPLE_SIZE)}px;--fp-ripple-color:${cssColorOr(color, "var(--primary-color, #03a9f4)")};"
+      style="width:${cssNumber(sizePx, DEFAULT_RIPPLE_SIZE)}px;height:${cssNumber(sizePx, DEFAULT_RIPPLE_SIZE)}px;--fp-ripple-color:${cssColorOr(color, SKIN_ACCENT)};"
     >
       <span class="dot"></span>
       ${Array.from(
@@ -2360,7 +2576,7 @@ export interface TrackerRenderOptions {
  * `fp-tracker-band` are provided by the host component's styles.
  */
 export function renderTracker(t: Tracker, opts: TrackerRenderOptions): SVGTemplateResult {
-  const color = t.color ?? "var(--primary-color, #03a9f4)";
+  const color = t.color ?? SKIN_ACCENT;
   const dotR = (t.dotSize ?? DEFAULT_TRACKER_DOT_SIZE) / 2;
   const cx = t.x + t.w / 2;
   const cy = t.y + t.h / 2;

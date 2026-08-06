@@ -89,14 +89,23 @@ then pick the entity in the **Element** section below the canvas.
   shutter — set **Tap action** to *Toggle* to opt back in.
 - **Label line** — **Show state** displays the live value (sensors do by default),
   formatted as HA would, display precision included; **Show name** adds the name, and
-  both read `Name · state`. **Label size** sets the font size.
+  both read `Name · state`. **Label size** sets the font size. The editor canvas draws
+  the same line the card will, so turning one on is visible straight away; a device
+  showing neither still gets a dimmed editor-only label so you can tell it apart.
 - **Two readings in one** — add a **Second entity** to render e.g. `21.5 °C · 45%`. Or set
   **Attribute** / **2nd attribute** to read attributes instead of states, so a single
   climate entity shows its temperature and humidity.
-- **Badge shows** — *Icon* (default), *Value*, or *Nothing* (label only). **Value** draws
+- **Badge shows** — one dropdown for what the device draws: *Icon* — **still**,
+  **spinning** or **pulsing** — its *Value*, or *Nothing* (label only). **Value** draws
   the reading inside the badge — a thermostat reads `21°` in the circle your state rules
   already paint red — picking it per domain, dropping long units, and falling back to the
-  icon when there is no number.
+  icon when there is no number. See [Fans](#fans) for the animations.
+- **Badge reads** — with a **Second entity** bound and the badge showing a value, this
+  names which entity it reads. Left alone the card takes the first with a number to show,
+  so a smart plug pointed at its power sensor reads `1.2kW` without configuring anything —
+  the switch says "on", not a number, so the badge falls through. Once you pick, only that
+  entity is read; if it has nothing to show the badge falls back to its icon rather than
+  quietly showing the other.
 - **Make it yours** — override the **icon** (autocomplete + live preview), the **name**,
   **size** and rotation. Without an override the icon follows the entity's **device
   class** (HA's *show as*), so a lock renders `mdi:lock` / `mdi:lock-open`.
@@ -116,8 +125,10 @@ then pick the entity in the **Element** section below the canvas.
   ```
 
   An exact `state` beats a threshold, the highest matching `above` wins, and a rule with
-  neither is the default. `icon` is optional and beats the device's own icon override
-  while it matches. Rules beat **Active color**, which the editor hides once they exist.
+  neither is the default. `icon` is optional and beats the device's own icon while it
+  matches — a rule without one keeps that icon, so colouring by state costs nothing when
+  the glyph never changes. Rules beat **Active color**, which the editor hides once they
+  exist; the **Icon** field stays, since it is still what they fall back to.
 - **Only when active** — hide the device on the card while its entity is off, idle or
   unavailable, so a busy room only shows what's doing something. The editor still draws
   it, faded with a dashed badge.
@@ -227,23 +238,30 @@ size** are per tracker.
 
 #### Presence ripples
 
-Switch a device's **Display** from *Icon badge* to **Ripple** or **Icon + ripple** and it
-draws animated concentric rings: they pulse outward and fade while the entity is on, and
-collapse to a faint dot when it's off — the spot stays marked without pulling the eye.
+Turn on a device's **Ripple** toggle and it draws animated concentric rings behind the
+badge — set **Badge shows** to *Nothing* for the rings alone. They pulse outward and fade
+while presence is detected, and collapse to a faint dot when it's clear, so the spot stays
+marked without pulling the eye.
 
 **Ripple color** and **ripple size** are per device (the color follows **Active color**
-and state rules unless you set one). Works with any on/off-like entity, not just presence
-sensors.
+and state rules unless you set one).
+
+The toggle appears only on devices that detect presence — a `binary_sensor` whose device
+class is `motion`, `occupancy` or `presence`, or a `device_tracker` / `person` — the same
+way **Cast light** appears only on lights: a ring claims someone is there, so it's offered
+where that claim can be true. The underlying `display` key still works on any entity in
+YAML.
 
 <img width="540" height="304" alt="ripple_demo_gif" src="https://github.com/user-attachments/assets/e43949cf-13a2-48f8-804d-73738299475f" />
 
 #### Fans
 
 A running fan's icon spins, and an active media player or vacuum pulses — the same
-defaults Home Assistant's own Tile card uses. **Animate icon** per device forces `spin` or
-`pulse` on any entity, or `none` to stop it.
+defaults Home Assistant's own Tile card uses, with no setup: those devices simply open on
+*Icon, spinning* / *Icon, pulsing*. Change **Badge shows** to turn it off, or to force an
+animation on any other entity.
 
-An icon only animates while its entity is genuinely active, so a forced `spin` on an
+An icon only animates while its entity is genuinely active, so a forced spin on an
 unavailable fan stays still — a spinning icon is a claim that the thing is running.
 Respects the OS *reduced motion* preference.
 
@@ -265,7 +283,8 @@ The editor writes this config for you; manual editing is optional.
 | `sunDimming` | boolean | `false` | Dim through dusk, brighten through dawn, from the HA instance's sun. See [Follow the sun](#follow-the-sun). |
 | `sunBrightnessMin` | number | `0.45` | Brightness once the sun is fully down, 0–1. |
 | `sunBrightnessMax` | number | `1` | Brightness in full daylight, 0–1. |
-| `background` | string   | card background    | Canvas background color (CSS / hex).         |
+| `skin`       | string   | `default`          | Built-in look for the whole plan: `default`, `odnetnin`, `pastel` or `tron`. See [Skins](#skins). |
+| `background` | string   | skin / card bg     | Canvas background color (CSS / hex). Overrides the skin's paper. |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see [Floor](#floor)).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
 | `walls`      | Wall[]   | `[]`               | Wall segments (single-floor / floor 1).      |
@@ -347,15 +366,16 @@ distorted anyway.
 | `name`        | string                                 | friendly name| Label / tooltip override.                             |
 | `size`        | number                                 | `34`         | Icon badge diameter (px).                              |
 | `angle`       | number                                 | `0`          | Icon rotation (deg).                                   |
-| `display`     | `badge` \| `ripple` \| `iconRipple`    | `badge`      | How the device is drawn.                               |
-| `iconAnimation` | `auto` \| `none` \| `spin` \| `pulse` | `auto`       | Animate the icon while active. `auto`: fan spins; media player / vacuum pulse. |
+| `display`     | `badge` \| `ripple` \| `iconRipple`    | `badge`      | How the device is drawn. The editor spells this as the **Ripple** toggle (plus **Badge shows: Nothing** for `ripple`) and offers it on presence devices only; in YAML it works on any entity. |
+| `iconAnimation` | `auto` \| `none` \| `spin` \| `pulse` | `auto`       | Animate the icon while active. `auto`: fan spins; media player / vacuum pulse. The editor spells this as the icon options of **Badge shows**, showing `auto` as whatever it resolves to. |
 | `activeColor` | string                                 | theme color  | Badge color while on. Ignored while `stateColor` rules match. |
 | `rippleColor` | string                                 | `activeColor`| Ripple ring color, falling back to `activeColor` then the primary color. |
 | `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
 | `glow`        | boolean                                | `false`      | Cast a pool of light onto the plan (lights only). See [Cast light](#cast-light). |
-| `glowRadius`  | number                                 | `140`        | Radius of the cast pool, in canvas units.              |
+| `glowRadius`  | number                                 | `140`        | Radius of the cast pool at full brightness, in canvas units. A dimmer lamp casts a proportionally smaller pool, down to half this. |
 | `glowColor`   | string                                 | `#ffd9a0`    | Pool color for a bulb that can't report one; color-capable lights use their own. |
 | `badgeContent` | `icon` \| `value` \| `none`           | `icon`       | What the badge holds. `value` draws the reading inside it, falling back to the icon when there is no number; `none` leaves the label alone. |
+| `badgeEntity` | `primary` \| `secondary`               | automatic    | Which entity a `value` badge reads. Unset picks the first with a number to show; set, only that entity is read. |
 | `showIcon`    | boolean                                | `true`       | **Deprecated** — use `badgeContent`. Honoured only when it is unset (`false` = `none`). |
 | `hideWhenInactive` | boolean                           | `false`      | Hide on the card while the entity is inactive. Always shown, dimmed, in the editor. |
 | `showState`   | boolean                                | sensors only | Show the entity state in the label line.               |
@@ -392,8 +412,13 @@ It degrades in rungs, so every light does something sensible:
 | Off, `unavailable` or `unknown` | Casts nothing |
 
 Brightness maps into a **0.18–0.6** opacity band, not 0–1, so a lamp dimmed to 10% stays
-visible. `glow` is independent of the icon — pair it with `badgeContent: none` for light
-without a badge, or `hideWhenInactive` to drop both when the light is off.
+visible. It also sets how *far* the light reaches: `glowRadius` is the size at full
+brightness, and the pool draws in to no less than half that as the lamp dims, the way it
+does in a room. A bulb reporting no brightness always casts the full radius, and the
+editor's dashed guide shows the configured size rather than the current one.
+
+`glow` is independent of the icon — pair it with `badgeContent: none` for light without a
+badge, or `hideWhenInactive` to drop both when the light is off.
 
 **Walls block the light.** A pool is clipped to what the lamp can actually see, so it stops
 at its room's walls and spills through a doorway gap the way real light does — an irregular
@@ -603,6 +628,84 @@ follows brightness; a light that's off, unavailable, or has no Cast light clears
 lit room brightens itself and not the one next door. Walls are treated as solid along
 their whole length — light reaches through no doorway, for the clearing or the pool.
 
+## Skins
+
+A skin restyles the whole plan at once — paper, walls, badges, accents — from one line.
+Pick one under **Project → Skin**, or set it by hand:
+
+```yaml
+type: custom:easy-floorplan-card
+skin: tron
+```
+
+| Skin | What it looks like |
+| --- | --- |
+| `default` | Follows your Home Assistant theme, as the card always has. What you get with no `skin` set. |
+| `odnetnin` | Playful and chunky: thick charcoal outlines on warm cream, rounded-square badges with a printed-sticker shadow, red accent, bright yellow for anything on. |
+| `pastel` | Soft and low-contrast: muted mauve walls on blush paper, peach for active devices. Easy on a dashboard that stays on screen. |
+| `tron` | Neon on near-black: thin glowing cyan walls, amber for active devices, light text. Light pools read best here. |
+
+A skin only supplies **fallbacks**, so anything you set on an element yourself still wins —
+a room's own `color`, a device's `activeColor`, a `background` on the plan. Switch skins
+freely without losing colors you chose by hand.
+
+It deliberately leaves two things alone: the **editor's own chrome** stays in your HA theme
+so the canvas reads as the plan, and a **background image** still covers the skin's paper.
+
+### Rolling your own
+
+A skin is a set of CSS custom properties, so [card-mod](#styling-hooks-card-mod) can set
+the same ones for the same result:
+
+```yaml
+type: custom:easy-floorplan-card
+card_mod:
+  style: |
+    ha-card {
+      --fp-skin-bg: #101820;
+      --fp-skin-wall: #f2aa4c;
+      --fp-skin-text: #f2f2f2;
+      --fp-skin-accent: #f2aa4c;
+    }
+```
+
+| Token | Default | Paints |
+| --- | --- | --- |
+| `--fp-skin-bg` | card background | The canvas paper. |
+| `--fp-skin-card-bg` | card background | The card around the canvas. |
+| `--fp-skin-wall` | theme text color | Walls, and the jambs and leaves of openings. |
+| `--fp-skin-wall-width` | `8` | Wall stroke width. **Keep at 10 or below** — a doorway is a 12-unit gap cut through the wall layer, and a wider wall wouldn't be fully cleared by its own door. |
+| `--fp-skin-wall-filter` | `none` | A CSS `filter` on the walls, e.g. `drop-shadow(0 0 4px #22d3ee)`. |
+| `--fp-skin-accent` | theme primary | Ripples, trackers, room fills, active doors, the floor switcher. |
+| `--fp-skin-accent-ink` | theme text-on-primary | Reading color on the accent. Set it whenever your accent is pale. |
+| `--fp-skin-active` | theme active color | Badge color for a device that is on. |
+| `--fp-skin-active-ink` | theme text color | Icon/reading color on that badge. Set it whenever the active color is pale. |
+| `--fp-skin-text` | theme text color | Labels, free text, room names, card title, editor grid. |
+| `--fp-skin-badge-bg` | card background | Badge and label-chip background. |
+| `--fp-skin-badge-border` | divider color | Badge border color. |
+| `--fp-skin-badge-border-width` | `1.5px` | Badge border weight. |
+| `--fp-skin-badge-radius` | `50%` | Badge roundness — `50%` a circle, `30%` a rounded square. |
+| `--fp-skin-badge-shadow` | `0 1px 3px rgba(0,0,0,0.2)` | Badge shadow. |
+| `--fp-skin-furniture` | `#9e9e9e` | Furniture with no color of its own. |
+| `--fp-skin-glow` | `#ffd9a0` | Light-pool color for a bulb that reports none. |
+
+Set them on `ha-card` and the whole plan follows, editor included. Any token you leave
+alone keeps its default, so you can restyle one thing without restating the rest.
+
+**On top of a built-in skin, add `!important`.** A `skin:` is applied as an inline `style`
+on the card, which outranks a card-mod rule — so without it your override is silently
+ignored, and only while a skin is set:
+
+```yaml
+type: custom:easy-floorplan-card
+skin: tron
+card_mod:
+  style: |
+    ha-card {
+      --fp-skin-accent: #f2aa4c !important;
+    }
+```
+
 ## Styling hooks (card-mod)
 
 Every rendered element carries its config `id` as `data-id`, plus a type class, so
@@ -651,9 +754,11 @@ CSS wins over SVG presentation attributes, so `fill` and `fill-opacity` set this
 override what the card draws.
 
 Note that colouring a room from a sensor needs no CSS — areas take `entity`, `stateColor`,
-`activeColor` and `activeOpacity` natively; see [Area](#area). And these hooks are a
-*styling* surface, not an API: class names are stable, but the SVG inside an element may
-change between releases, so target the element rather than its internals.
+`activeColor` and `activeOpacity` natively (see [Area](#area)) — and restyling the whole
+plan doesn't either: the `--fp-skin-*` tokens in [Skins](#skins) are the supported way to
+build a look of your own. These hooks are a *styling* surface, not an API: class names are
+stable, but the SVG inside an element may change between releases, so target the element
+rather than its internals.
 
 ## Development
 

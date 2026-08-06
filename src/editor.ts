@@ -1,6 +1,7 @@
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state, query } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
+import { keyed } from "lit/directives/keyed.js";
 import type {
   HomeAssistant,
   FloorplanCardConfig,
@@ -71,8 +72,11 @@ import {
   entityIsActive,
   lightBadgePaint,
   itemRawValue,
+  isPresenceEntity,
   badgeContentOf,
+  editorItemLabel,
   badgeValue,
+  badgeReading,
   badgeValueSize,
   itemHiddenWhenInactive,
   resolveIconAnimation,
@@ -83,6 +87,7 @@ import {
   hassRenderInputsChanged,
 } from "./render";
 import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
+import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
 import {
   ENDPOINT_SNAP,
   applyDelta,
@@ -112,10 +117,12 @@ import {
   furnitureForm,
   isLiveField,
   itemForm,
+  itemHasRipple,
   normalizeFormPatch,
   openingForm,
   projectForm,
   projectRotationForm,
+  projectSkinForm,
   projectSunForm,
   textForm,
   trackerForm,
@@ -1852,6 +1859,50 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
+   * The glyph a device shows when no state rule names one — what a rule's
+   * empty icon box falls back to. Resolved exactly as the card resolves it,
+   * with the rules removed so a currently-matching rule cannot report itself
+   * as the default.
+   */
+  private _itemDefaultIcon(it: FloorItem): string {
+    const st = it.entity ? this.hass?.states[it.entity] : undefined;
+    return resolveItemIcon(
+      { ...it, stateColor: undefined },
+      st,
+      it.entity ? this.hass?.entities?.[it.entity]?.icon : undefined
+    );
+  }
+
+  /**
+   * The device's icon, rendered here rather than up in the form (issue #127):
+   * it is the same setting the state rules below override, so it belongs
+   * beside them — like "Active color" beside the colours those rules replace.
+   *
+   * Unlike the colour it stays on screen once rules exist, because rules do
+   * *not* replace it: a rule with no icon of its own falls through to this
+   * one, which is what lets someone colour by state without naming the same
+   * glyph in every row. Hiding it would strand a setting that is still
+   * drawing.
+   */
+  private _renderItemIconRow(it: FloorItem): TemplateResult {
+    const title = "Icon for this device; a state rule below can swap it";
+    return html`
+      <div class="row wide">
+        <label title=${title}>Icon</label>
+        ${this._renderIconPicker(it.icon ?? "", (icon) => this._updateItem(it.id, { icon: icon || undefined }), {
+          // The entity's own glyph, so leaving the box empty is visibly a
+          // choice rather than a blank.
+          placeholder: this._itemDefaultIcon(it),
+          title,
+        })}
+      </div>
+      ${it.stateColor?.length
+        ? html`<p class="hint rule-note">Shown while no rule below names an icon of its own.</p>`
+        : nothing}
+    `;
+  }
+
+  /**
    * The "Color by state" block (issues #68, #79, #82): a list of rules, each
    * one a condition and a colour, plus an "Add rule" button.
    *
@@ -1867,7 +1918,7 @@ export class FloorplanCardEditor extends LitElement {
   private _renderStateColorRules(
     rules: StateColorRule[] | undefined,
     onChange: (next: StateColorRule[] | undefined) => void,
-    opts?: { icons?: boolean }
+    opts?: { icons?: boolean; iconPlaceholder?: string }
   ): TemplateResult {
     const list = rules ?? [];
     const patch = (i: number, part: Partial<StateColorRule>): void => {
@@ -1934,7 +1985,13 @@ export class FloorplanCardEditor extends LitElement {
               @change=${(e: Event) => patch(i, { color: (e.target as HTMLInputElement).value })}
             />
             ${opts?.icons
-              ? this._renderIconPicker(rule.icon ?? "", (icon) => patch(i, { icon: icon || undefined }))
+              ? // Empty means "keep the device's icon", so the device's icon is
+                // the placeholder — the rule shows what leaving it blank gives
+                // you, and colour-only rules need no icon at all (issue #127).
+                this._renderIconPicker(rule.icon ?? "", (icon) => patch(i, { icon: icon || undefined }), {
+                  placeholder: opts.iconPlaceholder,
+                  title: "Icon while this rule matches — empty keeps the device's own",
+                })
               : nothing}
             <button
               class="rule-remove"
@@ -2699,8 +2756,15 @@ export class FloorplanCardEditor extends LitElement {
           @wheel=${this._onCanvasWheel}
         >
           <div class="stage" style="aspect-ratio: ${cssNumber(c.width, DEFAULT_WIDTH)} / ${cssNumber(
-            c.height, DEFAULT_HEIGHT)}; width:${this._zoom * 100}%;">
-            <svg
+            c.height, DEFAULT_HEIGHT)}; width:${this._zoom * 100}%;${skinStyle(c.skin)}">
+            <!-- Keyed on the skin, for the repaint reason documented on the
+                 card's SVG (issue #122): a var() inside a presentation
+                 attribute does not repaint when the custom property changes,
+                 so without this the canvas kept the previous skin's doors and
+                 room fills. -->
+            ${keyed(
+              c.skin ?? "",
+              svg`<svg
               viewBox="0 0 ${c.width} ${c.height}"
               preserveAspectRatio="none"
               class=${this._tool}
@@ -2714,7 +2778,7 @@ export class FloorplanCardEditor extends LitElement {
                 y="0"
                 width=${c.width}
                 height=${c.height}
-                fill=${c.background ?? "var(--card-background-color, #fff)"}
+                fill=${c.background ?? SKIN_PAPER}
               />
               ${floor.image
                 ? svg`<image href=${floor.image} x="0" y="0" width=${c.width} height=${c.height}
@@ -2749,6 +2813,12 @@ export class FloorplanCardEditor extends LitElement {
                 // unlit light would otherwise be blind, now that an off light
                 // correctly draws nothing. Editor-only chrome, like the
                 // tracker zone outline.
+                //
+                // Deliberately the *configured* radius, not the brightness-
+                // scaled one (issue #123): this is the handle for the value you
+                // are setting, which is the pool's size at full brightness. A
+                // guide that shrank as the bulb dimmed would move while you
+                // dragged it, and would never show the size you actually typed.
                 floor.items.map((it) =>
                   it.glow && this._isSel("item", it.id)
                     ? svg`<circle class="glow-guide" cx=${it.x} cy=${it.y}
@@ -2810,7 +2880,8 @@ export class FloorplanCardEditor extends LitElement {
                               class="marquee" />`
                   : nothing
               }
-            </svg>
+            </svg>`
+            )}
             <div class="items">
               ${floor.texts.map((t) => this._renderTextOverlay(t, c))}
               ${floor.items.map((it) => this._renderItemOverlay(it, c))}
@@ -3064,23 +3135,29 @@ export class FloorplanCardEditor extends LitElement {
    * Icon field for the hand-rolled rows (issue #106), mirroring
    * {@link _renderEntityPicker}: HA's searchable picker when the frontend has
    * registered it, a plain text input otherwise. Used by the state-rule list,
-   * which cannot go through `ha-form` because it is repeatable.
+   * which cannot go through `ha-form` because it is repeatable, and by the
+   * device's own icon row that sits beside it (issue #127).
    */
-  private _renderIconPicker(value: string, onChange: (icon: string) => void): TemplateResult {
+  private _renderIconPicker(
+    value: string,
+    onChange: (icon: string) => void,
+    opts?: { placeholder?: string; title?: string }
+  ): TemplateResult {
     if (customElements.get("ha-icon-picker")) {
       return html`<ha-icon-picker
         class="rule-icon"
         .hass=${this.hass}
         .value=${value}
-        placeholder="Icon"
+        placeholder=${opts?.placeholder ?? "Icon"}
+        title=${opts?.title ?? nothing}
         @value-changed=${(e: CustomEvent) => onChange((e.detail.value as string) ?? "")}
       ></ha-icon-picker>`;
     }
     return html`<input
       type="text"
       class="rule-icon"
-      placeholder="mdi:blinds"
-      title="Icon while this rule matches (optional)"
+      placeholder=${opts?.placeholder ?? "mdi:blinds"}
+      title=${opts?.title ?? nothing}
       .value=${value}
       @change=${(e: Event) => onChange((e.target as HTMLInputElement).value)}
     />`;
@@ -3228,7 +3305,7 @@ export class FloorplanCardEditor extends LitElement {
       <g class="opening-hit"
          @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "opening", id: o.id })}>
         ${renderOpening(o, {
-          color: selected ? "var(--primary-color, #03a9f4)" : "var(--primary-text-color)",
+          color: selected ? "var(--primary-color, #03a9f4)" : SKIN_WALL,
           open: openingDefaultOpen(o),
           // Draw sliding / rolling openings partly open in the editor so the
           // motion is visible — closed, both look like a plain band, which
@@ -3387,7 +3464,10 @@ export class FloorplanCardEditor extends LitElement {
     const st = it.entity ? this.hass?.states[it.entity] : undefined;
     // Pass the registry icon here too, so the editor preview matches the card.
     const icon = resolveItemIcon(it, st, it.entity ? this.hass?.entities?.[it.entity]?.icon : undefined);
-    const label = it.name || it.entity || it.kind;
+    // The card's own label line when it has one, else a dim editor-only
+    // stand-in so devices stay tellable apart (issue #135). The rule lives in
+    // render.ts, where it can be unit-tested.
+    const { text: label, live: cardLabel } = editorItemLabel(this.hass, it);
     const size = cssNumber(it.size, DEFAULT_ITEM_SIZE);
     const showIcon = badgeContentOf(it) !== "none";
     const display = it.display ?? "badge";
@@ -3406,11 +3486,11 @@ export class FloorplanCardEditor extends LitElement {
     // Ink that reads on whatever the badge ends up painted, same rule as the card.
     const badgeInk = contrastText(stateColor ?? activeColor);
     const rippleColor =
-      it.rippleColor ?? stateColor ?? activeColor ?? "var(--primary-color, #03a9f4)";
+      it.rippleColor ?? stateColor ?? activeColor ?? SKIN_ACCENT;
     const rippleSize = it.rippleSize ?? DEFAULT_RIPPLE_SIZE;
 
     // Live preview: the icon animates exactly when the card would animate it
-    // (entity currently active), so the "Animate icon" dropdown shows its
+    // (entity currently active), so the "Badge shows" dropdown shows its
     // effect without leaving the editor.
     const anim = resolveIconAnimation(it, st?.state);
     const badge = html`<div
@@ -3463,14 +3543,18 @@ export class FloorplanCardEditor extends LitElement {
         @pointercancel=${this._onPointerCancel}
       >
         ${visual}
-        <!-- Identification while editing; the Labels toolbar toggle hides it
-             on dense plans (issue #52), and its size previews the card's
-             labelSize (issue #59). -->
+        <!-- The card's own label line when there is one (issue #135), so
+             turning Show state on is visible here rather than only after
+             leaving the editor; otherwise the dim identification fallback.
+             The Labels toolbar toggle hides either on dense plans (issue
+             #52), and the size previews the card's labelSize (issue #59). -->
         ${this._hideLabels
           ? nothing
           : html`<span
-              class="ilabel"
-              style="font-size:${it.labelSize != null ? itemLabelSize(it.labelSize) : 11}px;"
+              class="ilabel ${cardLabel ? "live" : ""}"
+              style="font-size:${cardLabel || it.labelSize != null
+                ? itemLabelSize(it.labelSize)
+                : 11}px;${cardLabel && stateColor ? `color:${stateColor};` : ""}"
               >${label}</span
             >`}
       </div>
@@ -3484,7 +3568,7 @@ export class FloorplanCardEditor extends LitElement {
         class="edit-text ${selected ? "selected" : ""}"
         style="left:${(t.x / c.width) * 100}%; top:${(t.y / c.height) * 100}%;
                font-size:${cssNumber(t.size, DEFAULT_TEXT_SIZE)}px;
-               color:${cssColorOr(t.color, "var(--primary-text-color)")};
+               color:${cssColorOr(t.color, SKIN_TEXT)};
                transform:translate(-50%,-50%) rotate(${cssNumber(t.angle, 0)}deg);"
         @pointerdown=${(e: PointerEvent) => this._onOverlayDown(e, { kind: "text", id: t.id })}
         @pointermove=${this._onOverlayMove}
@@ -3534,6 +3618,9 @@ export class FloorplanCardEditor extends LitElement {
           if (live) this._patchConfigLive(patch as Partial<FloorplanCardConfig>);
           else this._patchConfig(patch as Partial<FloorplanCardConfig>);
         })}
+        ${this._renderForm(projectSkinForm(this._config), (patch) =>
+          this._patchConfig(patch as Partial<FloorplanCardConfig>)
+        )}
         ${this._renderColorRow({
           label: "Background",
           value: this._config.background,
@@ -3601,8 +3688,24 @@ export class FloorplanCardEditor extends LitElement {
       const it = this._floor().items.find((x) => x.id === sel.id);
       if (!it) return html`${nothing}`;
       const areaEntities = this._areaEntitiesAt(it.x, it.y);
+      // The entity's device class decides whether this is a presence device,
+      // and so whether the ripple is on offer at all (issue #127).
+      const deviceClass = it.entity
+        ? (this.hass?.states[it.entity]?.attributes?.device_class as string | undefined)
+        : undefined;
+      // What the badge is reading right now, so the "Badge reads" row can open
+      // on it rather than on a guess (issue #136). Same "resolve off hass at
+      // the call site" arrangement as deviceClass above.
+      const friendly = (id?: string) =>
+        (id ? (this.hass?.states[id]?.attributes?.friendly_name as string | undefined) : undefined) ??
+        id;
+      const badgeSource = {
+        source: badgeReading(this.hass, it)?.source ?? "primary",
+        primaryLabel: friendly(it.entity),
+        secondaryLabel: friendly(it.secondaryEntity),
+      } as const;
       return html`
-        ${this._renderForm(itemForm(it, areaEntities), (patch, live) => {
+        ${this._renderForm(itemForm(it, areaEntities, deviceClass, badgeSource), (patch, live) => {
           // Any entity change re-derives the item kind (icon defaults etc.) —
           // including clearing it, which resets kind to "generic".
           if ("entity" in patch && typeof patch.entity === "string") {
@@ -3626,7 +3729,7 @@ export class FloorplanCardEditor extends LitElement {
               onLive: (activeColor) => this._updateItemLive(it.id, { activeColor }),
               onCommit: (activeColor) => this._updateItem(it.id, { activeColor }),
             })}
-        ${(it.display ?? "badge") !== "badge"
+        ${isPresenceEntity(it.entity, deviceClass) && itemHasRipple(it)
           ? this._renderColorRow({
               label: "Ripple color",
               value: it.rippleColor,
@@ -3636,13 +3739,14 @@ export class FloorplanCardEditor extends LitElement {
               onCommit: (rippleColor) => this._updateItem(it.id, { rippleColor }),
             })
           : nothing}
+        ${this._renderItemIconRow(it)}
         ${this._renderStateColorRules(
           it.stateColor,
           (stateColor) => this._updateItem(it.id, { stateColor }),
           // Only a device draws a glyph, so only a device's rules offer an
           // icon — furniture and areas share this rule shape but paint
           // polygons (issue #106).
-          { icons: true }
+          { icons: true, iconPlaceholder: this._itemDefaultIcon(it) }
         )}
       `;
     }
@@ -3951,7 +4055,13 @@ export class FloorplanCardEditor extends LitElement {
     `;
   }
 
-  static styles = css`
+  // The canvas mirrors the card, so it takes the same --fp-skin-* defaults
+  // (issue #122). A skin overrides them on .stage only — the toolbar, panels
+  // and forms stay in the Home Assistant theme, which is what makes the canvas
+  // read as the plan rather than as more editor chrome.
+  static styles = [
+    skinTokens,
+    css`
     .editor {
       display: flex;
       flex-direction: column;
@@ -4220,7 +4330,7 @@ export class FloorplanCardEditor extends LitElement {
          background image (and on both light and dark themes); non-scaling-stroke
          keeps the lines a crisp ~1px at any canvas size / zoom. Editor-only —
          the live card never draws a grid. */
-      stroke: var(--primary-text-color, #212121);
+      stroke: var(--fp-skin-text, var(--primary-text-color, #212121));
       stroke-opacity: 0.25;
       stroke-width: 1;
       vector-effect: non-scaling-stroke;
@@ -4234,7 +4344,11 @@ export class FloorplanCardEditor extends LitElement {
        is inherited in SVG, setting it to none disabled the entire canvas
        — so no pointerdown reached the wall-draw handler. */
     line.wall {
-      stroke: var(--primary-text-color);
+      stroke: var(--fp-skin-wall, var(--primary-text-color));
+      /* Same skin hooks as the card's .wall, so the canvas draws the weight
+         and glow the plan will actually have. */
+      stroke-width: var(--fp-skin-wall-width, 8);
+      filter: var(--fp-skin-wall-filter, none);
       /* The wide transparent .wall-hit line beneath handles selection/drag.
          Without this, the visible line (painted on top) swallows clicks on the
          wall body, so you could only grab it just *outside* the body. */
@@ -4498,14 +4612,15 @@ export class FloorplanCardEditor extends LitElement {
     .badge {
       width: 34px;
       height: 34px;
-      border-radius: 50%;
-      background: var(--card-background-color, #fff);
-      border: 1.5px solid var(--divider-color, #ccc);
+      border-radius: var(--fp-skin-badge-radius, 50%);
+      background: var(--fp-skin-badge-bg, var(--card-background-color, #fff));
+      border: var(--fp-skin-badge-border-width, 1.5px) solid
+        var(--fp-skin-badge-border, var(--divider-color, #ccc));
       display: flex;
       align-items: center;
       justify-content: center;
-      color: var(--primary-text-color);
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+      color: var(--fp-skin-text, var(--primary-text-color));
+      box-shadow: var(--fp-skin-badge-shadow, 0 1px 3px rgba(0, 0, 0, 0.25));
     }
     /* Mirrors the card's .badge-value (issue #106) — the canvas must show the
        reading exactly as the plan will draw it. */
@@ -4863,12 +4978,22 @@ export class FloorplanCardEditor extends LitElement {
       line-height: 1;
       padding: 1px 4px;
       border-radius: 4px;
-      background: var(--card-background-color, #fff);
+      background: var(--fp-skin-badge-bg, var(--card-background-color, #fff));
       color: var(--secondary-text-color);
       white-space: nowrap;
       max-width: 120px;
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+    /* The card's own label line, drawn as the card draws it (issue #135):
+       full-strength ink, and no width clamp — the card has none, and clipping
+       is exactly what would make a long label look right here and wrong live.
+       The unclamped variant is the one you are checking; the dim fallback
+       above stays clamped, being editor chrome rather than a preview. */
+    .ilabel.live {
+      color: var(--fp-skin-text, var(--primary-text-color));
+      max-width: none;
+      overflow: visible;
     }
     /* The panel ("Project" config) and the new element-edit area share the
        same boxed look so the two sections below the canvas read as siblings. */
@@ -5056,9 +5181,9 @@ export class FloorplanCardEditor extends LitElement {
        changed nothing here and a coloured lamp looked plain. Below
        .state-colored, which is the more specific statement. */
     .edit-item .badge.active-colored {
-      background: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
-      border-color: var(--fp-active, var(--state-light-active-color, var(--state-active-color, #fdd835)));
-      color: var(--fp-ink, var(--text-primary-color, #212121));
+      background: var(--fp-active, var(--fp-skin-active, var(--state-light-active-color, var(--state-active-color, #fdd835))));
+      border-color: var(--fp-active, var(--fp-skin-active, var(--state-light-active-color, var(--state-active-color, #fdd835))));
+      color: var(--fp-ink, var(--fp-skin-active-ink, var(--text-primary-color, #212121)));
     }
     .state-color-rule select {
       flex: 0 0 96px;
@@ -5139,7 +5264,8 @@ export class FloorplanCardEditor extends LitElement {
     .ha-link-chip .unlink:hover {
       opacity: 1;
     }
-  `;
+  `,
+  ];
 }
 
 declare global {

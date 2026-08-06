@@ -11,6 +11,7 @@ import {
   wallForm,
   projectForm,
   projectRotationForm,
+  projectSkinForm,
   projectSunForm,
   floorImageForm,
   areaForm,
@@ -19,6 +20,7 @@ import {
 import type { FormField } from "./editor-forms";
 import type { Area, Opening, FloorItem, Floor, FloorplanCardConfig } from "./types";
 import { DEFAULT_GLOW_RADIUS } from "./types";
+import { DEFAULT_SKIN, SKINS } from "./skins";
 
 const fields: FormField[] = [
   { name: "name", label: "Name", selector: { text: {} } },
@@ -183,24 +185,25 @@ describe("itemForm", () => {
     expect(names({ ...item, kind: "sensor", entity: "sensor.temp" } as FloorItem)).not.toContain("glow");
   });
 
-  it("hides ripple size for badge display, shows it otherwise", () => {
-    expect(itemForm(item).fields.map((x) => x.name)).not.toContain("rippleSize");
-    expect(
-      itemForm({ ...item, display: "ripple" } as FloorItem).fields.map((x) => x.name)
-    ).toContain("rippleSize");
-  });
-
-  it("offers the icon-animation dropdown defaulting to auto", () => {
-    const f = itemForm(item).fields.find((x) => x.name === "iconAnimation");
-    expect(f).toBeDefined();
-    const opts = (f!.selector as { select: { options: { value: string }[] } }).select.options.map(
-      (o) => o.value
-    );
-    expect(opts).toEqual(["auto", "none", "spin", "pulse"]);
-    expect(itemForm(item).data.iconAnimation).toBe("auto");
-    expect(itemForm({ ...item, iconAnimation: "spin" } as FloorItem).data.iconAnimation).toBe(
-      "spin"
-    );
+  it("offers Ripple on presence devices only, sized behind the toggle (#127)", () => {
+    const motion = { ...item, entity: "binary_sensor.hall", kind: "binary_sensor" } as FloorItem;
+    const names = (it: FloorItem, dc?: string) => itemForm(it, undefined, dc).fields.map((x) => x.name);
+    // A light is not something that detects presence, whatever it can do.
+    expect(names(item)).not.toContain("ripple");
+    expect(names(item, "motion")).not.toContain("ripple");
+    // Nor is a binary sensor whose class says door / leak / nothing at all.
+    expect(names(motion)).not.toContain("ripple");
+    expect(names(motion, "door")).not.toContain("ripple");
+    for (const dc of ["motion", "occupancy", "presence"]) {
+      expect(names(motion, dc)).toContain("ripple");
+    }
+    expect(names({ ...item, entity: "device_tracker.phone" } as FloorItem)).toContain("ripple");
+    // Size only once the ring is actually on, exactly like Cast light's radius.
+    expect(names(motion, "motion")).not.toContain("rippleSize");
+    const ringed = { ...motion, display: "iconRipple" } as FloorItem;
+    expect(names(ringed, "motion")).toContain("rippleSize");
+    // A ring set on something else still reads back, so toPatch keeps it.
+    expect(itemForm({ ...item, display: "iconRipple" } as FloorItem).data.ripple).toBe(true);
   });
 
   it("offers Show name, and Label size only while a label line renders (#61, #59)", () => {
@@ -236,33 +239,162 @@ describe("itemForm", () => {
 
   it("data presents effective defaults", () => {
     const d = itemForm(item).data;
-    expect(d.badgeContent).toBe("icon");
+    expect(d.badgeMode).toBe("icon");
+    expect(d.ripple).toBe(false);
     expect(d.showState).toBe(false);
-    expect(d.display).toBe("badge");
     expect(d.angle).toBe(0);
   });
 
-  it("replaces the Show icon toggle with a three-way Badge shows dropdown (#106)", () => {
+  it("merges Display, Animate icon and Badge shows into one dropdown (#127)", () => {
     const names = itemForm(item).fields.map((x) => x.name);
-    expect(names).toContain("badgeContent");
+    // The three switches it stands in for are gone from the form…
+    expect(names).not.toContain("display");
+    expect(names).not.toContain("iconAnimation");
+    expect(names).not.toContain("badgeContent");
     expect(names).not.toContain("showIcon");
-    const f = itemForm(item).fields.find((x) => x.name === "badgeContent")!;
+    expect(names).toContain("badgeMode");
+    const f = itemForm(item).fields.find((x) => x.name === "badgeMode")!;
     const opts = (f.selector as { select: { options: { value: string }[] } }).select.options.map(
       (o) => o.value
     );
-    expect(opts).toEqual(["icon", "value", "none"]);
+    // No "auto": the menu names the animation, never the config's word for
+    // "whatever this domain does" (#127).
+    expect(opts).toEqual(["icon", "spin", "pulse", "value", "none"]);
   });
 
-  it("migrates a legacy showIcon config, and retires the key once touched (#106)", () => {
-    // An untouched legacy config still reads as "no badge"…
-    const legacy = itemForm({ ...item, showIcon: false } as FloorItem);
-    expect(legacy.data.badgeContent).toBe("none");
-    // …and choosing anything in the new dropdown drops the old key, so the two
-    // can never be edited into disagreeing.
-    const patch = legacy.toPatch({ badgeContent: "value" });
-    expect(patch).toEqual({ badgeContent: "value", showIcon: undefined });
-    // Unrelated edits leave it alone.
-    expect(legacy.toPatch({ size: 40 })).toEqual({ size: 40 });
+  it("shows the animation auto resolves to, not the word auto (#127)", () => {
+    const mode = (entity: string, it: Partial<FloorItem> = {}) =>
+      itemForm({ ...item, entity, ...it } as FloorItem).data.badgeMode;
+    // Untouched configs: the dropdown reads what the card is already playing.
+    expect(mode("fan.ceiling")).toBe("spin");
+    expect(mode("media_player.tv")).toBe("pulse");
+    expect(mode("vacuum.robo")).toBe("pulse");
+    expect(mode("light.a")).toBe("icon");
+    // An explicit "auto" reads the same as no key at all…
+    expect(mode("fan.ceiling", { iconAnimation: "auto" })).toBe("spin");
+    // …while "none" is the user saying "still", even on a fan.
+    expect(mode("fan.ceiling", { iconAnimation: "none" })).toBe("icon");
+    // Picking "still" writes the key that turns the domain default off.
+    expect(itemForm({ ...item, entity: "fan.ceiling" } as FloorItem).toPatch({ badgeMode: "icon" })
+      .iconAnimation).toBe("none");
+  });
+
+  it("reads the badge mode off the three keys it replaced (#127)", () => {
+    const mode = (it: Partial<FloorItem>) => itemForm({ ...item, ...it } as FloorItem).data.badgeMode;
+    expect(mode({})).toBe("icon");
+    expect(mode({ iconAnimation: "none" })).toBe("icon");
+    expect(mode({ iconAnimation: "spin" })).toBe("spin");
+    expect(mode({ iconAnimation: "pulse" })).toBe("pulse");
+    expect(mode({ badgeContent: "value" })).toBe("value");
+    expect(mode({ badgeContent: "none" })).toBe("none");
+    // A legacy showIcon: false still reads as "no badge" (issue #106).
+    expect(mode({ showIcon: false })).toBe("none");
+    // Ripple-only draws no badge at all, whatever badgeContent says.
+    expect(mode({ display: "ripple", badgeContent: "icon" })).toBe("none");
+    expect(mode({ display: "iconRipple", iconAnimation: "spin" })).toBe("spin");
+    // The ring is read off `display` alone.
+    expect(itemForm({ ...item, display: "iconRipple" } as FloorItem).data.ripple).toBe(true);
+    expect(itemForm({ ...item, display: "ripple" } as FloorItem).data.ripple).toBe(true);
+  });
+
+  it("expands the merged dropdown back into display/animation/content (#127)", () => {
+    const f = itemForm(item);
+    expect(f.toPatch({ badgeMode: "spin" })).toEqual({
+      badgeContent: "icon",
+      iconAnimation: "spin",
+      display: "badge",
+      showIcon: undefined,
+    });
+    // "Still" is an animation choice, not a missing one.
+    expect(f.toPatch({ badgeMode: "icon" }).iconAnimation).toBe("none");
+    // Value/Nothing say nothing about animation, so the stored one survives a
+    // trip through them.
+    expect(f.toPatch({ badgeMode: "value" })).toEqual({
+      badgeContent: "value",
+      display: "badge",
+      showIcon: undefined,
+    });
+    // The ring toggle alone is still a complete statement about `display`:
+    // the mode comes off the item.
+    expect(f.toPatch({ ripple: true }).display).toBe("iconRipple");
+    expect(
+      itemForm({ ...item, badgeContent: "none" } as FloorItem).toPatch({ ripple: true }).display
+    ).toBe("ripple");
+    expect(
+      itemForm({ ...item, display: "iconRipple" } as FloorItem).toPatch({ ripple: false }).display
+    ).toBe("badge");
+    // Both at once, and unrelated edits, pass through untouched.
+    expect(f.toPatch({ badgeMode: "none", ripple: true }).display).toBe("ripple");
+    expect(f.toPatch({ size: 40 })).toEqual({ size: 40 });
+    expect(f.toPatch({ size: 40, badgeMode: "value" }).size).toBe(40);
+  });
+
+  // Issue #136: which of a device's two entities the value badge reads.
+  describe("Badge reads (#136)", () => {
+    const plug = {
+      ...item,
+      entity: "switch.plug",
+      secondaryEntity: "sensor.plug_power",
+      badgeContent: "value",
+    } as FloorItem;
+    const names = (it: FloorItem, src?: Parameters<typeof itemForm>[3]) =>
+      itemForm(it, undefined, undefined, src).fields.map((x) => x.name);
+
+    it("appears only when the badge shows a value AND there is a second entity", () => {
+      expect(names(plug)).toContain("badgeEntity");
+      // Nothing to choose between with one entity.
+      expect(names({ ...plug, secondaryEntity: undefined } as FloorItem)).not.toContain(
+        "badgeEntity",
+      );
+      // Nothing to read at all when the badge holds an icon or nothing.
+      expect(names({ ...plug, badgeContent: "icon" } as FloorItem)).not.toContain("badgeEntity");
+      expect(names({ ...plug, badgeContent: "none" } as FloorItem)).not.toContain("badgeEntity");
+      // A ripple-only device draws no badge, so the question is moot there too.
+      expect(names({ ...plug, display: "ripple" } as FloorItem)).not.toContain("badgeEntity");
+    });
+
+    it("opens on the entity the badge is actually reading, not a bare default", () => {
+      // The trap: this plug's badge shows its power sensor through the
+      // fallback, with no badgeEntity stored. A form defaulting to "primary"
+      // would name the switch while the badge shows watts — and the next
+      // unrelated edit would save that and drop the reading to an icon.
+      const asRead = itemForm(plug, undefined, undefined, { source: "secondary" });
+      expect(asRead.data.badgeEntity).toBe("secondary");
+      // A stored choice always wins over the live reading.
+      expect(
+        itemForm({ ...plug, badgeEntity: "primary" } as FloorItem, undefined, undefined, {
+          source: "secondary",
+        }).data.badgeEntity,
+      ).toBe("primary");
+    });
+
+    it("names the entities, with no 'Automatic' among them (#127's precedent)", () => {
+      const field = itemForm(plug, undefined, undefined, {
+        source: "secondary",
+        primaryLabel: "Kitchen plug",
+        secondaryLabel: "Kitchen plug power",
+      }).fields.find((x) => x.name === "badgeEntity")!;
+      const opts = (field.selector as { select: { options: { value: string; label: string }[] } })
+        .select.options;
+      expect(opts.map((o) => o.value)).toEqual(["primary", "secondary"]);
+      expect(opts.map((o) => o.label)).toEqual(["Kitchen plug", "Kitchen plug power"]);
+      expect(opts.map((o) => o.value)).not.toContain("auto");
+    });
+
+    it("falls back to entity ids when hass has no friendly names", () => {
+      const field = itemForm(plug).fields.find((x) => x.name === "badgeEntity")!;
+      const opts = (field.selector as { select: { options: { label: string }[] } }).select.options;
+      expect(opts.map((o) => o.label)).toEqual(["switch.plug", "sensor.plug_power"]);
+    });
+
+    it("passes the choice straight through as a config key", () => {
+      expect(itemForm(plug).toPatch({ badgeEntity: "secondary" }).badgeEntity).toBe("secondary");
+    });
+  });
+
+  it("moves the icon out of the form, next to the rules that override it (#127)", () => {
+    expect(itemForm(item).fields.map((x) => x.name)).not.toContain("icon");
+    expect(itemForm(item).data.icon).toBeUndefined();
   });
 
   it("scopes the entity/secondaryEntity pickers to the area's entities when given", () => {
@@ -487,6 +619,38 @@ describe("wallForm / projectForm / floorImageForm", () => {
       rotation: 270,
     } as FloorplanCardConfig);
     expect(rotated.data.rotation).toBe("270");
+  });
+
+  it("skin offers every built-in and keeps the default out of the YAML", () => {
+    const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+    const form = projectSkinForm(base);
+    expect(form.fields.map((x) => x.name)).toEqual(["skin"]);
+    const options = (form.fields[0].selector.select as { options: { value: string }[] }).options;
+    expect(options.map((o) => o.value)).toEqual(SKINS.map((s) => s.id));
+    expect(form.data.skin).toBe(DEFAULT_SKIN);
+    expect(form.toPatch({ skin: DEFAULT_SKIN })).toEqual({ skin: undefined });
+    expect(form.toPatch({ skin: "tron" })).toEqual({ skin: "tron" });
+  });
+
+  it("skin reads back a skin we don't ship as the default, matching what it renders as", () => {
+    const form = projectSkinForm({
+      type: "t",
+      width: 1000,
+      height: 600,
+      skin: "nintendo",
+    } as FloorplanCardConfig);
+    expect(form.data.skin).toBe(DEFAULT_SKIN);
+  });
+
+  it("skin's helper describes the skin currently selected", () => {
+    const tron = SKINS.find((s) => s.id === "tron")!;
+    const form = projectSkinForm({
+      type: "t",
+      width: 1000,
+      height: 600,
+      skin: "tron",
+    } as FloorplanCardConfig);
+    expect(form.fields[0].helper).toBe(tron.description);
   });
 
   it("image opacity appears only when an image is set", () => {
