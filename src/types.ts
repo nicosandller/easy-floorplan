@@ -851,6 +851,24 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   /** Canvas background color (CSS / hex). Falls back to the skin's paper, then the card background. */
   background?: string;
   /**
+   * Hatch the plan's dead spaces (issue #88): every region the walls close off
+   * completely that no door or window opens onto — the void behind a boxed-in
+   * stairwell, a service shaft, the pocket left between two rooms.
+   *
+   * There is nothing to place and nothing stored: the regions are derived from
+   * the walls and openings on every render (see `src/dead-space.ts`), so
+   * cutting a doorway into a shaft stops it being dead the moment the door is
+   * placed, and moving a wall moves the hatching with it.
+   *
+   * Off by default, and not because the detection is in doubt. A plan that
+   * marks its doorways as plain gaps in the wall rather than with door symbols
+   * is a perfectly ordinary plan, and it is *also*, read literally, a house
+   * with no way in — turning this on by default would hatch such a plan end to
+   * end on upgrade. Whether the walls tell the whole story is the author's call
+   * to make, so it is theirs to switch on.
+   */
+  showDeadSpaces?: boolean;
+  /**
    * Follow the real sun (issue #113): dim the plan through dusk and brighten
    * it through dawn, tracking the **Home Assistant instance's** own sunrise
    * and sunset rather than the viewer's browser.

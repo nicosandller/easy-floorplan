@@ -449,6 +449,12 @@ const demoFloor = {
     { id: "w2", x1: 900, y1: 100, x2: 900, y2: 500 },
     { id: "w3", x1: 900, y1: 500, x2: 100, y2: 500 },
     { id: "w4", x1: 100, y1: 500, x2: 100, y2: 100 },
+    // A service shaft boxed into the north-west corner (issue #88): two
+    // partitions closing a pocket off against the room's own outer walls, with
+    // no door or window into it. With `showDeadSpaces` on it hatches itself —
+    // drop a door onto either partition and the hatching goes away.
+    { id: "w5", x1: 100, y1: 220, x2: 240, y2: 220 },
+    { id: "w6", x1: 240, y1: 220, x2: 240, y2: 100 },
   ],
   openings: [
     { id: "o1", type: "window" as const, x: 500, y: 100, length: 140, angle: 0 },
@@ -606,6 +612,10 @@ const config: FloorplanCardConfig = {
   grid: 20,
   snap: 0,
   background: "#ffffff",
+  // On in the harness (issue #88) whichever floor is loaded: with the demo it
+  // hatches the boxed-in shaft, and on the blank floor any room you draw and
+  // then close without a door hatches as you close it.
+  showDeadSpaces: true,
   walls: [],
   openings: [],
   items: [],

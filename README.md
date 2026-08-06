@@ -29,6 +29,7 @@ screen size.
 - **Furniture** — 26 gray line-art diagrams (table, sofa, bed, stove, stairs, tv…), each bindable to an entity.
 - **Areas** — trace room polygons that color live from an entity, and link them to Home Assistant areas to scope entity pickers and bulk-add devices.
 - **Live position trackers** — map one or two distance sensors (mmWave / radar) onto a marker that moves across the plan in real time.
+- (${\color{red}NEW!}$) **Dead spaces** — hatch the spaces your walls seal off that no door or window reaches: a service shaft, the void behind a boxed-in stairwell. Nothing to draw — the regions come from the walls and openings themselves, so cutting a doorway into one stops it being dead the moment you place the door.
 - (${\color{red}NEW!}$) **Follow the sun** — dim the plan through dusk and brighten it through dawn, from your HA instance's sun elevation. Any light casting light holds the dark back around itself, out to its radius, so a night plan reads as a dark house with lit rooms glowing.
  
 <img width="441" height="301" alt="day" src="https://github.com/user-attachments/assets/f3dbfc88-9d06-4f44-81dc-bf499cbd9bd3" />
@@ -306,6 +307,7 @@ The editor writes this config for you; manual editing is optional.
 | `grid`       | number   | `20`               | Gap between grid lines, in canvas units — smaller means finer. |
 | `snap`       | number   | follows `grid`     | Snap step in canvas units, always absolute. Omit to follow the grid, `0` for free placement. The editor shows a custom step as a percentage of the grid. |
 | `rotation`   | number   | `0`                | Rotate the card `90`, `180` or `270`° — a landscape plan on a portrait wall tablet. Icons and labels stay upright; the editor always shows the plan as drawn. |
+| `showDeadSpaces` | boolean | `false` | Hatch every space the walls seal off that no door or window reaches, worked out from the walls and openings themselves. See [Dead spaces](#dead-spaces). |
 | `sunDimming` | boolean | `false` | Dim through dusk, brighten through dawn, from the HA instance's sun. See [Follow the sun](#follow-the-sun). |
 | `sunBrightnessMin` | number | `0.45` | Brightness once the sun is fully down, 0–1. |
 | `sunBrightnessMax` | number | `1` | Brightness in full daylight, 0–1. |
@@ -655,6 +657,47 @@ follows brightness; a light that's off, unavailable, or has no Cast light clears
 lit room brightens itself and not the one next door. Walls are treated as solid along
 their whole length — light reaches through no doorway, for the clearing or the pool.
 
+## Dead spaces
+
+A **dead space** is a space the walls close off completely that no door and no window opens
+onto: the void behind a boxed-in stairwell, a service shaft, the pocket left over between
+two rooms. You cannot get into it, and a plan that draws it like a room is telling you
+something untrue about the house. Floor plans conventionally hatch these, and that is what
+**`showDeadSpaces: true`** does.
+
+```yaml
+type: custom:easy-floorplan-card
+showDeadSpaces: true
+```
+
+There is nothing to draw and nothing stored. The regions are worked out from the walls and
+openings themselves on every render, so they are never out of date:
+
+- close the last wall of a shaft and it hatches itself;
+- drop a door or a window anywhere on its boundary and the hatching goes away;
+- move a wall and the hatching moves with it.
+
+Toggle it in the editor under **Project → Mark dead spaces**. The editor draws it on the
+canvas too, live as you draw — which is the quickest way to check the card agrees with you
+about what is actually sealed.
+
+**Why it is off by default.** Marking a doorway by simply leaving a gap in the wall, rather
+than placing a door symbol in it, makes a perfectly good plan — and read literally, it is
+also a house with no way in. Turning this on for everyone would hatch such a plan end to
+end. Whether your walls tell the whole story is your call, so it is yours to switch on.
+
+Two things worth knowing about how the regions are found:
+
+- **A gap in the walls is not a dead space.** Only genuinely closed rings of wall are
+  candidates at all, so a room you left open on purpose is never hatched — the feature can
+  only ever be wrong in the quiet direction.
+- **Walls have to actually meet.** Corners that merely come close do not close a ring. The
+  editor's endpoint snapping already makes room corners exact; if a region you expected to
+  hatch does not, a corner that missed by a unit or two is the first thing to check.
+
+Anything below a single grid cell in area is ignored, so a sliver where two walls cross
+does not leave a smudge on the plan.
+
 ## Skins
 
 A skin restyles the whole plan at once — paper, walls, badges, accents — from one line.
@@ -742,6 +785,7 @@ it by something stable.
 | Element | Class | Attributes |
 | --- | --- | --- |
 | Area (fill) | `fp-area` | `data-id`, `data-entity` |
+| Dead space | `fp-dead-space` (hatch lines: `fp-dead-space-line`) | — |
 | Area (outline) | `fp-area-border` | `data-id`, `data-entity` |
 | Furniture | `fp-furniture`, `fp-furniture-<type>` | `data-id`, `data-entity` |
 | Door / window | `fp-opening`, `fp-opening-door` \| `fp-opening-window` | `data-id`, `data-entity` |
@@ -751,6 +795,11 @@ it by something stable.
 | Tracker | `tracker`, `fp-tracker` | `data-id` |
 
 Ids come from the editor (`area_a5r5nwl`, `furn_3j66s50`, …) and are stable across edits.
+
+A dead space has no `data-id`, and cannot: it's derived from the walls rather than placed,
+so there's nothing for an id to be stable against. Style them as a group —
+`.fp-dead-space { fill-opacity: 0.7; }` for a heavier hatch, `.fp-dead-space-line
+{ stroke: #c62828; }` to color the lines.
 
 An area is **two** elements answering the same `data-id`: the fill, under the walls, and
 the outline, over them. Scope `fill` rules to `.fp-area` — the outline is drawn

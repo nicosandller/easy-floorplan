@@ -65,6 +65,8 @@ import {
   renderTracker,
   renderArea,
   renderAreaBorder,
+  renderDeadSpace,
+  renderDeadSpaceHatch,
   trackerSensorReading,
   kindFromEntity,
   resolveItemIcon,
@@ -86,6 +88,7 @@ import {
   collectWatchedEntities,
   hassRenderInputsChanged,
 } from "./render";
+import { deadSpacesCached } from "./dead-space";
 import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
 import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
 import {
@@ -121,6 +124,7 @@ import {
   normalizeFormPatch,
   openingForm,
   projectForm,
+  projectDeadSpaceForm,
   projectRotationForm,
   projectPressForm,
   projectSkinForm,
@@ -2494,6 +2498,11 @@ export class FloorplanCardEditor extends LitElement {
     // entity picker — animated on the canvas so the scoping is never a
     // mystery (see _scopingAreaId).
     const scopingAreaId = this._scopingAreaId();
+    // Dead spaces (issue #88) — derived from the walls and openings, so they
+    // follow every edit without anything being stored.
+    const deadSpaceRings = c.showDeadSpaces
+      ? deadSpacesCached(floor.walls, floor.openings)
+      : [];
     const floorEmpty =
       !floor.walls.length &&
       !floor.openings.length &&
@@ -2792,6 +2801,17 @@ export class FloorplanCardEditor extends LitElement {
                 (a, i) => a.id || i,
                 (a) => this._renderAreaSel(a, scopingAreaId)
               )}
+              <!-- Dead spaces (issue #88), same layer position as the card so
+                   what you draw is what you get. Live while you draw: closing
+                   the last wall of a shaft hatches it, and dropping a door into
+                   it clears the hatching again — which is the fastest way to
+                   see that the card agrees with you about what is sealed. -->
+              ${deadSpaceRings.length
+                ? svg`${renderDeadSpaceHatch(`${this._wallMaskId}-dead`)}
+                      ${deadSpaceRings.map((ring) =>
+                        renderDeadSpace(ring, `${this._wallMaskId}-dead`)
+                      )}`
+                : nothing}
               <!-- Light pools (issue #6), same layer position as the card so
                    what you place is what you get. Previewed at full strength
                    with no hass in the editor, so the radius is adjustable
@@ -3641,6 +3661,9 @@ export class FloorplanCardEditor extends LitElement {
           this._patchConfig(patch as Partial<FloorplanCardConfig>)
         )}
         ${this._renderForm(projectPressForm(this._config), (patch) =>
+          this._patchConfig(patch as Partial<FloorplanCardConfig>)
+        )}
+        ${this._renderForm(projectDeadSpaceForm(this._config), (patch) =>
           this._patchConfig(patch as Partial<FloorplanCardConfig>)
         )}
       </div>
@@ -4740,6 +4763,12 @@ export class FloorplanCardEditor extends LitElement {
     }
     .area-hit {
       cursor: move;
+    }
+    /* Dead-space hatching (issue #88): a whole region of the canvas, so it must
+       never take a pointer event — it sits over the very walls and doors you
+       would click next, and over empty floor you need to be able to drag on. */
+    .fp-dead-space {
+      pointer-events: none;
     }
     .area-hit-shape {
       /* Transparent fill turns the whole polygon into a pointer target for

@@ -42,7 +42,7 @@ import {
   trackerAxisFraction,
 } from "./types";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, cssIcon } from "./css-safe";
-import { SKIN_ACCENT, SKIN_PAPER } from "./skins";
+import { SKIN_ACCENT, SKIN_PAPER, SKIN_WALL } from "./skins";
 
 export const WALL_THICKNESS = 8;
 
@@ -2118,6 +2118,64 @@ export function polygonCentroid(points: readonly AreaPoint[]): { x: number; y: n
   if (!points.length) return { x: 0, y: 0 };
   const sum = points.reduce((s, p) => ({ x: s.x + p.x, y: s.y + p.y }), { x: 0, y: 0 });
   return { x: sum.x / points.length, y: sum.y / points.length };
+}
+
+/**
+ * Diagonal hatching, at 45°, spaced in canvas units so it keeps the same weight
+ * on the plan whatever size the card is drawn at.
+ */
+export const DEAD_SPACE_HATCH_GAP = 12;
+export const DEAD_SPACE_HATCH_WIDTH = 1.5;
+/**
+ * Deliberately faint. A dead space is an absence — the plan should read "there
+ * is nothing here", not draw the eye to it the way a lit room or an active
+ * device does.
+ */
+export const DEAD_SPACE_HATCH_OPACITY = 0.4;
+
+/**
+ * The `<pattern>` the dead-space polygons fill with (issue #88): one vertical
+ * line per tile, with the whole tile turned 45°, which is what makes the
+ * hatching continuous across tile edges — a diagonal line drawn corner to
+ * corner inside an upright tile shows a seam wherever the tiles meet.
+ *
+ * `patternUnits="userSpaceOnUse"` ties the spacing to canvas units rather than
+ * to each polygon's bounding box, so a broom cupboard and a sealed courtyard
+ * hatch at the same pitch instead of the small one looking finely cross-hatched.
+ *
+ * Rendered once per plan; `id` must be unique per card instance, since several
+ * cards can share a document.
+ */
+export function renderDeadSpaceHatch(id: string): SVGTemplateResult {
+  return svg`
+    <defs>
+      <pattern id=${id} width=${DEAD_SPACE_HATCH_GAP} height=${DEAD_SPACE_HATCH_GAP}
+               patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+        <line class="fp-dead-space-line" x1="0" y1="0" x2="0" y2=${DEAD_SPACE_HATCH_GAP}
+              stroke=${SKIN_WALL} stroke-width=${DEAD_SPACE_HATCH_WIDTH} />
+      </pattern>
+    </defs>`;
+}
+
+/**
+ * One dead space, hatched (issue #88). The ring comes from `deadSpaces()` and
+ * runs down the centrelines of the walls that seal the region, so the hatching
+ * reaches under the walls and is trimmed by them being drawn on top — which is
+ * exactly how it should meet them.
+ *
+ * `fill-rule="nonzero"` (the default, stated for the reason) matters here: a
+ * region with a stub wall poking into it comes back as a ring that walks out
+ * along the stub and back, and evenodd would read that zero-width spike as a
+ * hole and leave a scratch across the hatching.
+ */
+export function renderDeadSpace(
+  points: readonly AreaPoint[],
+  patternId: string
+): SVGTemplateResult {
+  const pts = points.map((p) => `${p.x},${p.y}`).join(" ");
+  return svg`<polygon class="fp-dead-space" points=${pts}
+                      fill=${`url(#${patternId})`} fill-rule="nonzero"
+                      fill-opacity=${DEAD_SPACE_HATCH_OPACITY} stroke="none" />`;
 }
 
 /**

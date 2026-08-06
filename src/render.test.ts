@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { html, nothing } from "lit";
 import type { Area, Furniture, FurnitureType, ItemKind } from "./types";
-import { SKIN_ACCENT } from "./skins";
+import { SKIN_ACCENT, SKIN_WALL } from "./skins";
 import {
   FURNITURE_DEFAULT_SIZE,
   DEFAULT_GLOW_RADIUS,
@@ -29,6 +29,10 @@ import {
   sunBrightness,
   renderSunDimMask,
   renderWallMask,
+  renderDeadSpace,
+  renderDeadSpaceHatch,
+  DEAD_SPACE_HATCH_GAP,
+  DEAD_SPACE_HATCH_OPACITY,
   shutterActive,
   openingClickAction,
   resolveOpeningOpen,
@@ -2169,6 +2173,61 @@ describe("areaColor", () => {
   it("gates an unsafe activeColor through css-safe (#64)", () => {
     const a = { ...base, entity: "binary_sensor.occupancy", activeColor: "red;position:fixed;inset:0" };
     expect(areaColor(a, "on")).toBeUndefined();
+  });
+});
+
+describe("dead-space hatching (issue #88)", () => {
+  const ring = [
+    { x: 0, y: 0 },
+    { x: 100, y: 0 },
+    { x: 100, y: 100 },
+    { x: 0, y: 100 },
+  ];
+
+  it("fills the region with the hatch pattern rather than a flat colour", () => {
+    const markup = flattenMarkup(renderDeadSpace(ring, "hatch-1"));
+    expect(markup).toContain("fill=url(#hatch-1)");
+    expect(markup).toContain("points=0,0 100,0 100,100 0,100");
+    expect(markup).toContain('stroke="none"');
+  });
+
+  it("carries the class card-mod targets, and no other", () => {
+    expect(flattenMarkup(renderDeadSpace(ring, "h"))).toContain('class="fp-dead-space"');
+  });
+
+  it("keeps a stub wall's spike solid instead of punching a hole through it", () => {
+    // A ring that walks out along a dead-end wall and back reverses direction
+    // over the same line; under evenodd that zero-width spike reads as a hole
+    // and scratches a line across the hatching.
+    expect(flattenMarkup(renderDeadSpace(ring, "h"))).toContain('fill-rule="nonzero"');
+  });
+
+  it("spaces the hatch in canvas units, so every region hatches at one pitch", () => {
+    // patternUnits="objectBoundingBox" (the SVG default) would scale the tile
+    // to each polygon, so a cupboard would come out finely cross-hatched and a
+    // courtyard coarsely — the same plan drawn at two densities.
+    const markup = flattenMarkup(renderDeadSpaceHatch("hatch-1"));
+    expect(markup).toContain('patternUnits="userSpaceOnUse"');
+    expect(markup).toContain(`width=${DEAD_SPACE_HATCH_GAP}`);
+  });
+
+  it("draws the tile upright and turns the tile, so the lines meet across it", () => {
+    // A line drawn corner-to-corner inside an upright tile leaves a visible
+    // seam at every tile edge; rotating the whole pattern does not.
+    const markup = flattenMarkup(renderDeadSpaceHatch("hatch-1"));
+    expect(markup).toContain('patternTransform="rotate(45)"');
+    expect(markup).toContain(`x1="0" y1="0" x2="0" y2=${DEAD_SPACE_HATCH_GAP}`);
+  });
+
+  it("takes the wall colour from the skin, so a skinned plan hatches in its ink", () => {
+    expect(flattenMarkup(renderDeadSpaceHatch("h"))).toContain(SKIN_WALL);
+  });
+
+  it("stays faint — an absence, not something to draw the eye", () => {
+    expect(DEAD_SPACE_HATCH_OPACITY).toBeLessThan(0.5);
+    expect(flattenMarkup(renderDeadSpace(ring, "h"))).toContain(
+      `fill-opacity=${DEAD_SPACE_HATCH_OPACITY}`
+    );
   });
 });
 

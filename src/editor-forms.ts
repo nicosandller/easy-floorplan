@@ -952,6 +952,29 @@ export function projectRotationForm(c: FloorplanCardConfig): FormSpec {
 }
 
 /**
+ * Dead spaces (issue #88). Its own one-field form for the same reason the skin
+ * and rotation have theirs: it is a plan-wide drawing convention, set once,
+ * rather than a property of anything on the canvas.
+ */
+export function projectDeadSpaceForm(c: FloorplanCardConfig): FormSpec {
+  return {
+    fields: [
+      {
+        name: "showDeadSpaces",
+        label: "Mark dead spaces",
+        helper:
+          "Hatches any space the walls close off that no door or window opens onto",
+        selector: { boolean: {} },
+      },
+    ],
+    data: { showDeadSpaces: c.showDeadSpaces ?? false },
+    // Off is the default, so it stays out of the YAML until switched on.
+    toPatch: (p) =>
+      "showDeadSpaces" in p && !p.showDeadSpaces ? { ...p, showDeadSpaces: undefined } : p,
+  };
+}
+
+/**
  * Follow the real sun (issue #113). Its own form so the editor can put it
  * beside the other project settings, and so the two brightness sliders appear
  * only once the toggle is on — they mean nothing otherwise.

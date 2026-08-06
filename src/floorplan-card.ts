@@ -36,6 +36,8 @@ import {
   renderTracker,
   renderArea,
   renderAreaBorder,
+  renderDeadSpace,
+  renderDeadSpaceHatch,
   areaColor,
   glowPaint,
   lightBadgePaint,
@@ -65,6 +67,7 @@ import {
   planRotationTransform,
   type PlanRotation,
 } from "./render";
+import { deadSpacesCached } from "./dead-space";
 import type { Opening } from "./types";
 import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
 import { actionForGesture, executeAction, hasAction, itemIsInteractive } from "./actions";
@@ -455,6 +458,12 @@ export class FloorplanCard extends LitElement {
           cssNumber(c.sunBrightnessMax, DEFAULT_SUN_MAX)
         )
       : DEFAULT_SUN_MAX;
+    // Dead spaces (issue #88). Derived from the walls and openings, never
+    // stored — and memoized on those two arrays, because this runs on every
+    // hass update the card takes and the walls have moved on none of them.
+    const deadSpaceRings = c.showDeadSpaces
+      ? deadSpacesCached(active.walls, active.openings)
+      : [];
     // Lit rooms hold back the night (issue #113): without this the flat dim
     // multiplies the lit-vs-unlit contrast too, and a lamp ends up *less*
     // visible after dark than at noon.
@@ -529,6 +538,17 @@ export class FloorplanCard extends LitElement {
             ${active.areas?.map((a) =>
               renderArea(a, areaColor(a, a.entity ? this.hass?.states[a.entity]?.state : undefined))
             )}
+            <!-- Dead spaces (issue #88): the regions the walls seal off that no
+                 door or window reaches, hatched. Above the room fills, so a
+                 region someone has also drawn an area over still reads as
+                 unreachable; below everything else, because it describes the
+                 floor rather than anything standing on it. -->
+            ${deadSpaceRings.length
+              ? svg`${renderDeadSpaceHatch(`${this._wallMaskId}-dead`)}
+                    ${deadSpaceRings.map((ring) =>
+                      renderDeadSpace(ring, `${this._wallMaskId}-dead`)
+                    )}`
+              : nothing}
             <!-- Light pools (issue #6). Above the room fills but below the
                  furniture and walls, so light reads as cast onto the floor
                  rather than painted over the plan. Isolated as one layer: the
@@ -801,6 +821,13 @@ export class FloorplanCard extends LitElement {
       /* Neon, for the skins that want it. Everyone else gets none, which
          costs nothing. */
       filter: var(--fp-skin-wall-filter, none);
+    }
+    /* Dead-space hatching (issue #88). It spans whole regions of the plan, so
+       without this it swallows every tap inside one — and a sealed region is
+       exactly where a tappable door might sit on the boundary. Same lesson as
+       the light pools below (#108). */
+    .fp-dead-space {
+      pointer-events: none;
     }
     /* Sun dimming (issue #113): decoration, never a pointer target. The
        transition matters — HA steps the sun elevation every ~30s, and without

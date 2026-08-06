@@ -14,6 +14,7 @@ import {
   projectPressForm,
   projectSkinForm,
   projectSunForm,
+  projectDeadSpaceForm,
   floorImageForm,
   areaForm,
   areaNameForm,
@@ -771,6 +772,24 @@ describe("area scoping never traps you (issue reported on #83)", () => {
       itemForm(item, { entities: [], name: "Spare" }).fields.find((x) => x.name === "entity")!
         .selector
     ).toEqual({ entity: {} });
+  });
+});
+
+describe("projectDeadSpaceForm (issue #88)", () => {
+  const cfg = (extra = {}) =>
+    ({ type: "custom:easy-floorplan-card", width: 100, height: 100, ...extra }) as FloorplanCardConfig;
+
+  it("reads back off by default", () => {
+    expect(projectDeadSpaceForm(cfg()).data).toEqual({ showDeadSpaces: false });
+    expect(projectDeadSpaceForm(cfg({ showDeadSpaces: true })).data).toEqual({
+      showDeadSpaces: true,
+    });
+  });
+
+  it("keeps the option out of the YAML while it is off", () => {
+    const { toPatch } = projectDeadSpaceForm(cfg({ showDeadSpaces: true }));
+    expect(toPatch({ showDeadSpaces: false })).toEqual({ showDeadSpaces: undefined });
+    expect(toPatch({ showDeadSpaces: true })).toEqual({ showDeadSpaces: true });
   });
 });
 
