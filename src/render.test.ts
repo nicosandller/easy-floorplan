@@ -83,6 +83,7 @@ import {
   lightBadgePaint,
   editorGlowPaint,
   glowReach,
+  wallsLightPassesThrough,
   renderGlowMask,
   renderOpening,
   renderGlow,
@@ -2648,6 +2649,107 @@ describe("lightBadgePaint (#106)", () => {
     expect(lightBadgePaint(light("on", { rgb_color: [300, -20, 12.6], brightness: 255 }))).toBe(
       "rgb(255, 0, 13)",
     );
+  });
+});
+
+// Issue #143: "doors act as walls and stop the light pool, regardless of
+// open/close status". Walls and openings are stored independently, so the glow
+// sweep saw uncut walls where the plan draws a hole.
+describe("wallsLightPassesThrough (#143)", () => {
+  const wall = (x1: number, y1: number, x2: number, y2: number, id = "w") => ({ id, x1, y1, x2, y2 });
+  // A door centred on a horizontal wall at y=100, spanning x 480..520.
+  const door = (extra: Partial<Opening> = {}): Opening =>
+    ({ id: "d", type: "door", x: 500, y: 100, length: 40, angle: 0, ...extra }) as Opening;
+  const spans = (out: { x1: number; x2: number }[]) =>
+    out.map((w) => [Math.round(w.x1), Math.round(w.x2)]);
+
+  it("cuts the doorway out of the wall when the door is open", () => {
+    const out = wallsLightPassesThrough([wall(0, 100, 1000, 100)], [door()], () => 1);
+    expect(spans(out)).toEqual([
+      [0, 480],
+      [520, 1000],
+    ]);
+  });
+
+  it("leaves the wall whole when the door is shut — today's behaviour, kept", () => {
+    const walls = [wall(0, 100, 1000, 100)];
+    const out = wallsLightPassesThrough(walls, [door()], () => 0);
+    expect(out).toEqual(walls);
+    // Same object, so nothing downstream re-derives for a plan of shut doors.
+    expect(wallsLightPassesThrough(walls, [], () => 1)).toBe(walls);
+  });
+
+  it("opens the gap in proportion, so a half-open cover half-blocks", () => {
+    const out = wallsLightPassesThrough([wall(0, 100, 1000, 100)], [door()], () => 0.5);
+    // 40 * 0.5 = 20 wide, centred on x=500.
+    expect(spans(out)).toEqual([
+      [0, 490],
+      [510, 1000],
+    ]);
+  });
+
+  it("only cuts the wall the opening actually sits on", () => {
+    const walls = [wall(0, 100, 1000, 100, "on"), wall(0, 400, 1000, 400, "far")];
+    const out = wallsLightPassesThrough(walls, [door()], () => 1);
+    // The far wall survives untouched; the near one is in two pieces.
+    expect(out.filter((w) => w.id === "far")).toEqual([walls[1]]);
+    expect(out.filter((w) => w.id.startsWith("on"))).toHaveLength(2);
+  });
+
+  it("handles a door at a wall's end without emitting a zero-length stub", () => {
+    // Door hard against x=0: there is no wall to the left of it.
+    const out = wallsLightPassesThrough(
+      [wall(0, 100, 1000, 100)],
+      [door({ x: 10 } as Partial<Opening>)],
+      () => 1
+    );
+    expect(spans(out)).toEqual([[30, 1000]]);
+  });
+
+  it("merges two openings that overlap instead of double-cutting", () => {
+    const out = wallsLightPassesThrough(
+      [wall(0, 100, 1000, 100)],
+      [door(), door({ id: "d2", x: 530 } as Partial<Opening>)],
+      () => 1
+    );
+    expect(spans(out)).toEqual([
+      [0, 480],
+      [550, 1000],
+    ]);
+  });
+
+  it("cuts a vertical wall the same way — the maths is not axis-aligned", () => {
+    const out = wallsLightPassesThrough(
+      [wall(200, 0, 200, 1000)],
+      [door({ x: 200, y: 500, angle: 90 } as Partial<Opening>)],
+      () => 1
+    );
+    expect(out.map((w) => [Math.round(w.y1), Math.round(w.y2)])).toEqual([
+      [0, 480],
+      [520, 1000],
+    ]);
+  });
+
+  it("lets the pool through an open door, and not through a shut one", () => {
+    // The end-to-end claim, through glowReach itself: a lamp beside a doorway.
+    const walls = [wall(0, 360, 1000, 360)];
+    const doorway = [door({ x: 500, y: 360, length: 80 } as Partial<Opening>)];
+    const beyond = (amount: number) => {
+      const lit = wallsLightPassesThrough(walls, doorway, () => amount);
+      const poly = glowReach(500, 300, 200, lit);
+      // No blocking wall left in range at all means an unclipped circle.
+      if (!poly) return true;
+      let hit = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[i]!;
+        const b = poly[j]!;
+        if (a.y > 420 !== b.y > 420 && 500 < ((b.x - a.x) * (420 - a.y)) / (b.y - a.y) + a.x)
+          hit = !hit;
+      }
+      return hit;
+    };
+    expect(beyond(0)).toBe(false); // shut: the room beyond stays dark
+    expect(beyond(1)).toBe(true); // open: light reaches through
   });
 });
 

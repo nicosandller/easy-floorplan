@@ -449,9 +449,17 @@ editor's dashed guide shows the configured size rather than the current one.
 `glow` is independent of the icon — pair it with `badgeContent: none` for light without a
 badge, or `hideWhenInactive` to drop both when the light is off.
 
-**Walls block the light.** A pool is clipped to what the lamp can actually see, so it stops
-at its room's walls and spills through a doorway gap the way real light does — an irregular
-shape rather than a clean circle. A lamp with no wall inside its radius stays circular.
+**Walls block the light, and open doors don't.** A pool is clipped to what the lamp can
+actually see, so it stops at its room's walls and fans out through anything open the way
+real light does — an irregular shape rather than a clean circle. A lamp with no wall inside
+its radius stays circular.
+
+Light agrees with the picture: it passes exactly where the plan draws a hole. A shut door
+blocks it, a door on a contact sensor lets it through the moment it opens, and a door you
+never bound — which this card draws open, with its swing arc — lights the room beyond it
+with nothing to configure. Windows behave the same way, so an open one spills light
+outside. A cover reporting a partial position opens a proportional gap, and at night the
+clearing a lit room holds against the dark reaches through the same doorways its pool does.
 
 Pools are drawn above room fills but below furniture and walls, so light reads as cast onto
 the floor. Furniture under a lit lamp picks up about half the cast, enough to read as lit

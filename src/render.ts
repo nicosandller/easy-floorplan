@@ -43,6 +43,9 @@ import {
 } from "./types";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, cssIcon } from "./css-safe";
 import { SKIN_ACCENT, SKIN_PAPER, SKIN_WALL } from "./skins";
+// The same tolerance #141 uses to decide an opening sits on a wall, so "this
+// door is in this wall" means one thing across the card.
+import { OPENING_ON_WALL_EPS } from "./dead-space";
 
 export const WALL_THICKNESS = 8;
 
@@ -502,6 +505,92 @@ function clipWallToBox(
  * undefined when no wall is in reach — the common case, drawn as the plain
  * circle with no clip at all.
  */
+/**
+ * The walls as **light** meets them (issue #143): the plan's walls with a gap
+ * cut wherever an opening is currently open.
+ *
+ * Walls and openings are stored independently — an opening is a rect that sits
+ * *on* a wall, and the wall layer only appears cut because {@link renderWallMask}
+ * punches the pixels out. {@link glowReach} was handed the uncut segments, so a
+ * pool stopped dead at a doorway that the plan draws as a hole. As the reporter
+ * put it: doors acted as walls regardless of open/closed status.
+ *
+ * The rule is that **light agrees with the picture** — it passes exactly where
+ * the plan shows a gap. That falls out of using the same `amount` the leaf is
+ * drawn from, so a closed door still blocks, a door opening on its sensor lets
+ * light through as it swings, and an unbound door — which this card draws open,
+ * with its swing arc — lights the room beyond it without anything to configure.
+ * A window behaves the same way: shut it blocks, open it spills light outside,
+ * which is what an open window does.
+ *
+ * The gap is `length * amount`, centred. A half-open slider really clears one
+ * side rather than the middle, but the pool is a soft radial wash and centring
+ * keeps this to one interval per opening instead of a handed special case.
+ */
+export function wallsLightPassesThrough(
+  walls: readonly Wall[],
+  openings: readonly Opening[],
+  openAmount: (o: Opening) => number,
+): Wall[] {
+  if (!openings.length) return walls as Wall[];
+  const out: Wall[] = [];
+  for (const w of walls) {
+    const dx = w.x2 - w.x1;
+    const dy = w.y2 - w.y1;
+    const len2 = dx * dx + dy * dy;
+    if (len2 === 0) {
+      out.push(w);
+      continue;
+    }
+    const len = Math.sqrt(len2);
+
+    // Where each open opening sits along this wall, as a [0,1] interval.
+    const gaps: Array<[number, number]> = [];
+    for (const o of openings) {
+      const amount = Math.max(0, Math.min(1, openAmount(o)));
+      if (amount <= 0) continue;
+      // Openings snap onto walls, but they are stored free of them, so an
+      // opening belongs to this wall only if it actually lies on it.
+      if (pointWallDist(o.x, o.y, w) > OPENING_ON_WALL_EPS) continue;
+      const tc = ((o.x - w.x1) * dx + (o.y - w.y1) * dy) / len2;
+      const half = (o.length * amount) / 2 / len;
+      const a = Math.max(0, tc - half);
+      const b = Math.min(1, tc + half);
+      if (b > a) gaps.push([a, b]);
+    }
+    if (!gaps.length) {
+      out.push(w);
+      continue;
+    }
+
+    // Merge overlapping gaps, then keep what is left of the wall between them.
+    gaps.sort((p, q) => p[0] - q[0]);
+    const merged: Array<[number, number]> = [gaps[0]!];
+    for (const g of gaps.slice(1)) {
+      const last = merged[merged.length - 1]!;
+      if (g[0] <= last[1]) last[1] = Math.max(last[1], g[1]);
+      else merged.push(g);
+    }
+    const at = (t: number) => ({ x: w.x1 + dx * t, y: w.y1 + dy * t });
+    let cursor = 0;
+    let piece = 0;
+    const emit = (t0: number, t1: number) => {
+      // Sub-wall-thickness slivers block nothing you could see and only cost
+      // the sweep rays.
+      if ((t1 - t0) * len < WALL_THICKNESS / 2) return;
+      const p0 = at(t0);
+      const p1 = at(t1);
+      out.push({ id: `${w.id}#${piece++}`, x1: p0.x, y1: p0.y, x2: p1.x, y2: p1.y });
+    };
+    for (const [a, b] of merged) {
+      emit(cursor, a);
+      cursor = b;
+    }
+    emit(cursor, 1);
+  }
+  return out;
+}
+
 export function glowReach(
   cx: number,
   cy: number,
