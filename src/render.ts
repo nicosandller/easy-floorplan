@@ -532,7 +532,20 @@ export function wallsLightPassesThrough(
   openings: readonly Opening[],
   openAmount: (o: Opening) => number,
 ): Wall[] {
-  if (!openings.length) return walls as Wall[];
+  // Resolve each opening once, not once per wall. `openAmount` reads hass on
+  // every call, and asking it inside the wall loop made that walls × openings
+  // state lookups per render — hundreds, on a plan of any size, to answer the
+  // same handful of questions.
+  const open: Array<{ o: Opening; amount: number }> = [];
+  for (const o of openings) {
+    const amount = Math.max(0, Math.min(1, openAmount(o)));
+    if (amount > 0) open.push({ o, amount });
+  }
+  // Nothing open is the common case — a plan of shut doors, or one with no
+  // openings at all. Hand back the same array, so a caller can compare
+  // identity to know the light sees exactly the walls it always did.
+  if (!open.length) return walls as Wall[];
+
   const out: Wall[] = [];
   for (const w of walls) {
     const dx = w.x2 - w.x1;
@@ -546,9 +559,7 @@ export function wallsLightPassesThrough(
 
     // Where each open opening sits along this wall, as a [0,1] interval.
     const gaps: Array<[number, number]> = [];
-    for (const o of openings) {
-      const amount = Math.max(0, Math.min(1, openAmount(o)));
-      if (amount <= 0) continue;
+    for (const { o, amount } of open) {
       // Openings snap onto walls, but they are stored free of them, so an
       // opening belongs to this wall only if it actually lies on it.
       if (pointWallDist(o.x, o.y, w) > OPENING_ON_WALL_EPS) continue;

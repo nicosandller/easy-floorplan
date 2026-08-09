@@ -2679,6 +2679,29 @@ describe("wallsLightPassesThrough (#143)", () => {
     expect(wallsLightPassesThrough(walls, [], () => 1)).toBe(walls);
   });
 
+  it("asks each opening how open it is exactly once, whatever the wall count", () => {
+    // openAmount reads hass. Asked inside the wall loop it became walls x
+    // openings state lookups per render — hundreds, to answer three questions.
+    const walls = Array.from({ length: 40 }, (_, i) =>
+      wall(0, 100 + i * 10, 1000, 100 + i * 10, `w${i}`)
+    );
+    const openings = [door(), door({ id: "d2", x: 300 } as Partial<Opening>), door({ id: "d3", x: 700 } as Partial<Opening>)];
+    let asked = 0;
+    wallsLightPassesThrough(walls, openings, () => {
+      asked++;
+      return 1;
+    });
+    expect(asked).toBe(openings.length);
+  });
+
+  it("hands back the very same array when nothing is open", () => {
+    // Lets a caller compare identity to know the light sees the walls it
+    // always did — and skips the whole scan on the common case.
+    const walls = [wall(0, 100, 1000, 100)];
+    expect(wallsLightPassesThrough(walls, [door(), door({ id: "d2" } as Partial<Opening>)], () => 0)).toBe(walls);
+    expect(wallsLightPassesThrough(walls, [], () => 1)).toBe(walls);
+  });
+
   it("opens the gap in proportion, so a half-open cover half-blocks", () => {
     const out = wallsLightPassesThrough([wall(0, 100, 1000, 100)], [door()], () => 0.5);
     // 40 * 0.5 = 20 wide, centred on x=500.
@@ -2728,6 +2751,65 @@ describe("wallsLightPassesThrough (#143)", () => {
       [0, 480],
       [520, 1000],
     ]);
+  });
+
+  it("a shut room stays shut — light escapes by no wall at all", () => {
+    // The other half of the feature. Cutting gaps must not leak light past the
+    // walls that have no opening in them, or through one that is closed.
+    const room = [
+      wall(300, 200, 700, 200, "n"),
+      wall(700, 200, 700, 500, "e"),
+      wall(700, 500, 300, 500, "s"),
+      wall(300, 500, 300, 200, "w"),
+    ];
+    const shutDoor = door({ x: 500, y: 500, length: 90 } as Partial<Opening>);
+    const lit = wallsLightPassesThrough(room, [shutDoor], () => 0);
+    const poly = glowReach(500, 350, 340, lit)!;
+    expect(poly).toBeDefined();
+    const inside = (x: number, y: number) => {
+      let hit = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[i]!;
+        const b = poly[j]!;
+        if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
+      }
+      return hit;
+    };
+    expect(inside(500, 350)).toBe(true); // the room itself is lit
+    for (const [x, y] of [
+      [500, 560], // past the shut door
+      [500, 140], // past the north wall
+      [770, 350], // past the east wall
+      [230, 350], // past the west wall
+      [740, 540], // diagonally out of the corner
+    ]) {
+      expect({ x, y, lit: inside(x, y) }).toEqual({ x, y, lit: false });
+    }
+  });
+
+  it("an open window lets light out just as a door does", () => {
+    // Windows are not special-cased: the rule is the opening's own state.
+    const room = [
+      wall(300, 200, 700, 200, "n"),
+      wall(700, 200, 700, 500, "e"),
+      wall(700, 500, 300, 500, "s"),
+      wall(300, 500, 300, 200, "w"),
+    ];
+    const win = { id: "win", type: "window", x: 700, y: 350, length: 90, angle: 90 } as Opening;
+    const beyondEast = (amount: number) => {
+      const poly = glowReach(500, 350, 340, wallsLightPassesThrough(room, [win], () => amount));
+      if (!poly) return true;
+      let hit = false;
+      for (let i = 0, j = poly.length - 1; i < poly.length; j = i++) {
+        const a = poly[i]!;
+        const b = poly[j]!;
+        if (a.y > 350 !== b.y > 350 && 770 < ((b.x - a.x) * (350 - a.y)) / (b.y - a.y) + a.x)
+          hit = !hit;
+      }
+      return hit;
+    };
+    expect(beyondEast(0)).toBe(false);
+    expect(beyondEast(1)).toBe(true);
   });
 
   it("lets the pool through an open door, and not through a shut one", () => {

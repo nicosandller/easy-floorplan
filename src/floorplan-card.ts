@@ -469,9 +469,14 @@ export class FloorplanCard extends LitElement {
     // exactly as the plan draws them. Computed once here rather than inside
     // each pool — every lamp sweeps the same walls, and the sun-dimming
     // clearing has to agree with the pool it is cut from.
-    const lightWalls = wallsLightPassesThrough(active.walls, active.openings, (o) =>
-      this._openingAmount(o)
-    );
+    //
+    // Only when something actually casts light. A plan with no lit pools and
+    // no sun dimming never reads these walls, and this is on the path of every
+    // state change the card takes.
+    const castsLight = c.sunDimming || active.items.some((it) => it.glow);
+    const lightWalls = castsLight
+      ? wallsLightPassesThrough(active.walls, active.openings, (o) => this._openingAmount(o))
+      : active.walls;
     // Lit rooms hold back the night (issue #113): without this the flat dim
     // multiplies the lit-vs-unlit contrast too, and a lamp ends up *less*
     // visible after dark than at noon.

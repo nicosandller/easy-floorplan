@@ -2507,9 +2507,13 @@ export class FloorplanCardEditor extends LitElement {
       : [];
     // Walls as light meets them (issue #143), same as the card — so dropping a
     // door into a wall spills the pool through it while you are still drawing.
-    const lightWalls = wallsLightPassesThrough(floor.walls, floor.openings, (o) =>
-      resolveOpeningAmount(o, o.entity ? this.hass?.states[o.entity] : undefined)
-    );
+    // Skipped entirely on a floor with no cast light, which is most of them:
+    // this sits on the path of every keystroke and drag in the editor.
+    const lightWalls = floor.items.some((it) => it.glow)
+      ? wallsLightPassesThrough(floor.walls, floor.openings, (o) =>
+          resolveOpeningAmount(o, o.entity ? this.hass?.states[o.entity] : undefined)
+        )
+      : floor.walls;
     const floorEmpty =
       !floor.walls.length &&
       !floor.openings.length &&
