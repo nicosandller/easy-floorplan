@@ -553,6 +553,13 @@ export interface Area {
   name?: string;
   /** Show the name label on the plan, centered on the polygon. Default true. */
   showName?: boolean;
+  /**
+   * Name label font size. Px under `overlayScale: fixed`, canvas units under
+   * `plan`. Default {@link DEFAULT_AREA_LABEL_SIZE}. A room name had no size
+   * control at all before this, which left "hide it" as the only answer to a
+   * label wider than its room.
+   */
+  labelSize?: number;
   /** Fill color. Falls back to the theme primary color. */
   color?: string;
   /** Fill opacity, 0-1. Default {@link DEFAULT_AREA_OPACITY}. */
@@ -659,6 +666,8 @@ export const PRESS_IN_MS = 80;
 export const PRESS_OUT_MS = 260;
 
 export const DEFAULT_AREA_OPACITY = 0.25;
+/** Area name label size, matching the hard-coded value it replaces. */
+export const DEFAULT_AREA_LABEL_SIZE = 14;
 export const DEFAULT_AREA_BORDER_WIDTH = 3;
 
 /** Radius of a light's cast pool, in canvas units (issue #6). */
@@ -811,6 +820,9 @@ export interface Floor {
   areas: Area[];
 }
 
+/** Sizing mode for the HTML overlay layer. See {@link FloorplanCardConfig.overlayScale}. */
+export type OverlayScale = "fixed" | "plan";
+
 export interface FloorplanCardConfig extends LovelaceCardConfig {
   type: string;
   title?: string;
@@ -848,6 +860,21 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * `src/skins.ts`.
    */
   skin?: string;
+  /**
+   * How the HTML overlay (badges, labels, room names, text) is sized.
+   *
+   * - **`fixed`** (default) — screen pixels, whatever size the card renders at.
+   * - **`plan`** — canvas units, so the overlay scales with the drawing exactly
+   *   as the SVG does.
+   *
+   * `fixed` is the historic behaviour and is right when the card renders at
+   * roughly its canvas size. It falls apart below that: a plan drawn at 980
+   * wide and rendered 510 wide draws every wall at half size while a 14px room
+   * name stays 14px, so labels collide with the badges and each other. `plan`
+   * makes the two layers shrink together. Default stays `fixed` so no existing
+   * card changes appearance on upgrade.
+   */
+  overlayScale?: OverlayScale;
   /** Canvas background color (CSS / hex). Falls back to the skin's paper, then the card background. */
   background?: string;
   /**

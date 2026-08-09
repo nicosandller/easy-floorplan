@@ -20,6 +20,7 @@ import type {
 } from "./types";
 import {
   DEFAULT_AREA_OPACITY,
+  DEFAULT_AREA_LABEL_SIZE,
   DEFAULT_GRID,
   DEFAULT_ITEM_SIZE,
   DEFAULT_RIPPLE_SIZE,
@@ -35,6 +36,7 @@ import {
   badgeContentOf,
   domainIconAnimation,
   isPresenceEntity,
+  normalizeOverlayScale,
   normalizePlanRotation,
   openingMotion,
   pressEffectOf,
@@ -787,6 +789,19 @@ export function areaForm(a: Area): FormSpec {
   return {
     fields: [
       { name: "showName", label: "Show name", selector: { boolean: {} } },
+      // Only while the name renders — same rule the item form uses for its
+      // label size.
+      ...((a.showName ?? true)
+        ? [
+            {
+              name: "labelSize",
+              label: "Name size",
+              selector: {
+                number: { min: 8, max: 40, step: 1, mode: "slider" as const, unit_of_measurement: "px" },
+              },
+            },
+          ]
+        : []),
       {
         name: "opacity",
         label: "Fill opacity",
@@ -827,6 +842,7 @@ export function areaForm(a: Area): FormSpec {
     ],
     data: {
       showName: a.showName ?? true,
+      labelSize: a.labelSize ?? DEFAULT_AREA_LABEL_SIZE,
       opacity: a.opacity ?? DEFAULT_AREA_OPACITY,
       entity: a.entity ?? "",
       activeOpacity: a.activeOpacity ?? a.opacity ?? DEFAULT_AREA_OPACITY,
@@ -928,9 +944,10 @@ export function projectSkinForm(c: FloorplanCardConfig): FormSpec {
 }
 
 /**
- * Display rotation (issue #33), a separate one-field form so the editor can
- * render it as the very last Project row — it's a set-once option for wall
- * tablets, not day-to-day editing, so it stays out of the way.
+ * Display-only options, a separate form so the editor can render them as the
+ * very last Project rows — set-once choices for how the card is shown (a wall
+ * tablet's orientation, a dashboard tile's size), not day-to-day editing, so
+ * they stay out of the way.
  */
 export function projectRotationForm(c: FloorplanCardConfig): FormSpec {
   return {
@@ -941,13 +958,27 @@ export function projectRotationForm(c: FloorplanCardConfig): FormSpec {
         helper: "Rotates the live card only — editing stays as drawn",
         selector: dropdown(opt("0", "0°"), opt("90", "90°"), opt("180", "180°"), opt("270", "270°")),
       },
+      {
+        name: "overlayScale",
+        label: "Badge & label size",
+        helper: `Canvas units scale badges and labels with the drawing — use it when the card renders smaller than its ${c.width}-wide canvas`,
+        selector: dropdown(opt("fixed", "Fixed pixels"), opt("plan", "Canvas units")),
+      },
     ],
-    data: { rotation: String(normalizePlanRotation(c.rotation)) },
-    toPatch: (p) =>
-      "rotation" in p
-        ? // Stored as a number; 0 means "not rotated", so keep it out of the YAML.
-          { ...p, rotation: p.rotation === "0" ? undefined : Number(p.rotation) }
-        : p,
+    data: {
+      rotation: String(normalizePlanRotation(c.rotation)),
+      overlayScale: normalizeOverlayScale(c.overlayScale),
+    },
+    toPatch: (p) => {
+      let out = p;
+      if ("rotation" in out)
+        // Stored as a number; 0 means "not rotated", so keep it out of the YAML.
+        out = { ...out, rotation: out.rotation === "0" ? undefined : Number(out.rotation) };
+      // "fixed" is the default, so keep it out of the YAML too.
+      if ("overlayScale" in out && out.overlayScale === "fixed")
+        out = { ...out, overlayScale: undefined };
+      return out;
+    },
   };
 }
 

@@ -486,7 +486,13 @@ describe("areaForm", () => {
 
   it("data presents effective defaults (showName true, DEFAULT_AREA_OPACITY)", () => {
     const d = areaForm(area()).data;
-    expect(d).toMatchObject({ showName: true, opacity: 0.25 });
+    expect(d).toMatchObject({ showName: true, opacity: 0.25, labelSize: 14 });
+  });
+
+  it("name size appears only while the name renders", () => {
+    const names = (a: Area) => areaForm(a).fields.map((f) => f.name);
+    expect(names(area())).toContain("labelSize");
+    expect(names(area({ showName: false }))).not.toContain("labelSize");
   });
 
   it("the conditional-color controls appear once an entity is bound (issue #6)", () => {
@@ -607,9 +613,9 @@ describe("wallForm / projectForm / floorImageForm", () => {
     expect((width.selector.number as { min: number }).min).toBe(1);
   });
 
-  it("rotation lives in its own bottom-row form, defaults to 0°, and patches as a number", () => {
+  it("rotation lives in the bottom-row display form, defaults to 0°, and patches as a number", () => {
     const form = projectRotationForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
-    expect(form.fields.map((x) => x.name)).toEqual(["rotation"]);
+    expect(form.fields.map((x) => x.name)).toEqual(["rotation", "overlayScale"]);
     expect(form.data.rotation).toBe("0");
     // 0 comes back as undefined so an unrotated plan stays out of the YAML.
     expect(form.toPatch({ rotation: "0" })).toEqual({ rotation: undefined });
@@ -680,6 +686,22 @@ describe("wallForm / projectForm / floorImageForm", () => {
       skin: "tron",
     } as FloorplanCardConfig);
     expect(form.fields[0].helper).toBe(tron.description);
+  });
+
+  it("overlay scale shares that form, defaults to fixed, and stays out of the YAML when default", () => {
+    const form = projectRotationForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
+    expect(form.data.overlayScale).toBe("fixed");
+    expect(form.toPatch({ overlayScale: "fixed" })).toEqual({ overlayScale: undefined });
+    expect(form.toPatch({ overlayScale: "plan" })).toEqual({ overlayScale: "plan" });
+    // Patching one field must not invent a value for the other.
+    expect(form.toPatch({ rotation: "90" })).toEqual({ rotation: 90 });
+    const scaled = projectRotationForm({
+      type: "t",
+      width: 1000,
+      height: 600,
+      overlayScale: "plan",
+    } as FloorplanCardConfig);
+    expect(scaled.data.overlayScale).toBe("plan");
   });
 
   it("image opacity appears only when an image is set", () => {

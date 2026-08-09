@@ -55,6 +55,9 @@ import {
   itemHiddenWhenInactive,
   resolveStateColor,
   itemLabelSize,
+  areaLabelSize,
+  normalizeOverlayScale,
+  overlayLength,
   hassRenderInputsChanged,
   collectWatchedEntities,
   isEntityOn,
@@ -731,6 +734,37 @@ describe("editorItemLabel (#135)", () => {
       text: "light.k",
       live: false,
     });
+  });
+});
+
+describe("overlay scaling", () => {
+  it("normalizes the mode, defaulting anything unrecognized to fixed", () => {
+    expect(normalizeOverlayScale("plan")).toBe("plan");
+    expect(normalizeOverlayScale(undefined)).toBe("fixed");
+    expect(normalizeOverlayScale("fixed")).toBe("fixed");
+    expect(normalizeOverlayScale("PLAN")).toBe("fixed");
+    expect(normalizeOverlayScale(1)).toBe("fixed");
+  });
+
+  it("emits screen pixels under fixed and canvas units under plan", () => {
+    expect(overlayLength(14, "fixed")).toBe("14px");
+    expect(overlayLength(14, "plan")).toBe("calc(14 * var(--fp-u))");
+  });
+
+  it("clamps the area name size to the same range item labels use", () => {
+    expect(areaLabelSize(undefined)).toBe(14);
+    expect(areaLabelSize(20)).toBe(20);
+    expect(areaLabelSize(2)).toBe(8);
+    expect(areaLabelSize(999)).toBe(40);
+  });
+
+  // Same style-sink guard as itemLabelSize: these land in an inline style, so a
+  // hand-edited config must not be able to close the declaration.
+  it("neutralizes style-injection payloads before they reach the style sink", () => {
+    expect(areaLabelSize("20px;color:red")).toBe(14);
+    expect(overlayLength(areaLabelSize("14;}body{display:none"), "plan")).toBe(
+      "calc(14 * var(--fp-u))"
+    );
   });
 });
 
