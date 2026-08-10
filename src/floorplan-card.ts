@@ -232,24 +232,43 @@ export class FloorplanCard extends LitElement {
     executeAction(this, this.hass, item, actionForGesture(item, ev.detail.action));
   }
 
+  /** Open Home Assistant's more-info dialog for an entity. */
+  private _openMoreInfo(entityId: string): void {
+    this.dispatchEvent(
+      new CustomEvent("hass-more-info", {
+        detail: { entityId },
+        bubbles: true,
+        composed: true,
+      })
+    );
+  }
+
   /**
-   * Tapping an entity-bound opening: toggle a controllable `cover`, otherwise
-   * open the entity's more-info dialog (read-only `binary_sensor`s and
-   * position-only covers). See {@link openingClickAction}.
+   * Tapping an entity-bound opening. A bound `shutterEntity` wins the tap and
+   * opens its more-info dialog, where a position-aware `cover` exposes its
+   * slider. Otherwise a controllable `cover` toggles and everything else opens
+   * its own dialog. See {@link openingClickAction}.
    */
   private _onOpeningClick(o: Opening): void {
-    if (!this.hass || !o.entity) return;
+    if (!this.hass) return;
+    // An opening can carry two entities: "entity" is the sash's own
+    // contact or cover, "shutterEntity" the external roller shutter drawn
+    // over it (#74). The shutter is the layer a user can actually move, so
+    // it wins the tap and opens its more-info dialog - that is where a
+    // position-aware cover offers its slider. The sash keeps reporting
+    // itself through the swinging leaf on the plan, so nothing is lost.
+    // Openings carrying only a shutter used to be inert: the old
+    // "!o.entity" guard returned before anything could happen.
+    if (o.shutterEntity) {
+      this._openMoreInfo(o.shutterEntity);
+      return;
+    }
+    if (!o.entity) return;
     const features = (this.hass.states[o.entity]?.attributes?.supported_features as number) ?? 0;
     if (openingClickAction(o.entity, features) === "cover-toggle") {
       this.hass.callService("cover", "toggle", { entity_id: o.entity });
     } else {
-      this.dispatchEvent(
-        new CustomEvent("hass-more-info", {
-          detail: { entityId: o.entity },
-          bubbles: true,
-          composed: true,
-        })
-      );
+      this._openMoreInfo(o.entity);
     }
   }
 
