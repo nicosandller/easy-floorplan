@@ -37,6 +37,8 @@ import {
   openingIsActive,
   openingActionForGesture,
   openingIsPressable,
+  openingHasTwoPanels,
+  secondPanelOf,
   shutterAmount,
   shutterStyleOf,
   shutterActive,
@@ -244,6 +246,19 @@ export class FloorplanCard extends LitElement {
   private _openingActive(o: Opening): boolean {
     const state = o.entity ? this.hass?.states[o.entity] : undefined;
     return openingIsActive(o, state);
+  }
+
+  /**
+   * The second panel's own state for a biparting slider with a sensor on each
+   * leaf (issue #145). `undefined` — no second sensor, or a style with only one
+   * moving panel — leaves both panels on the first entity, so nothing about a
+   * single-sensor slider changes.
+   */
+  private _openingSecond(o: Opening): { amount: number; active: boolean } | undefined {
+    if (!o.secondaryEntity || !openingHasTwoPanels(o)) return undefined;
+    const panel = secondPanelOf(o);
+    const state = this.hass?.states[o.secondaryEntity];
+    return { amount: resolveOpeningAmount(panel, state), active: openingIsActive(panel, state) };
   }
 
   private _itemIcon(item: FloorItem): string {
@@ -809,6 +824,8 @@ export class FloorplanCard extends LitElement {
                 amount,
                 active: this._openingActive(o),
                 accent: o.activeColor ?? SKIN_ACCENT,
+                // Per-leaf state for a two-sensor biparting slider (issue #145).
+                second: this._openingSecond(o),
                 // External roller shutter layer (issue #74). No entity bound
                 // yet → previewed shut, like a static plan.
                 shutter: o.shutterEntity

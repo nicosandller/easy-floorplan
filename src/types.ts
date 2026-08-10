@@ -84,6 +84,15 @@ export interface Opening {
    * drawn open (swing symbol) and windows closed, matching a static floor plan.
    */
   entity?: string;
+  /**
+   * Biparting sliders only: a second contact / `cover` driving the **other**
+   * moving panel (issue #145), for a two-panel door with a sensor on each leaf.
+   * `entity` keeps the first panel — the one at the −x jamb in the opening's own
+   * frame, so `flipH` swaps which panel each sensor draws, exactly as it mirrors
+   * everything else. Unset (the default) leaves both panels on `entity`, which
+   * is what a single-sensor slider has always drawn. `invert` covers both.
+   */
+  secondaryEntity?: string;
   /** Flip the open/closed interpretation of `entity` (for inverted sensors). */
   invert?: boolean;
   /** Color of the leaf/sash and swing arc while actively open. Falls back to the primary color. */
@@ -197,10 +206,14 @@ export interface Opening {
    * - `bypass` — two panels on parallel tracks; one slides behind the other
    *   (patio-door style).
    * - `biparting` — two panels meet in the middle and part, each recessing into
-   *   the wall on its own side.
+   *   the wall on its own side (a pocket door / galandage).
+   * - `biparting-bypass` — the same two panels, but they stack over a fixed
+   *   panel at each jamb instead of vanishing into the wall (issue #145), so
+   *   nothing leaves the opening and at most its middle half ever clears. The
+   *   common patio / bay slider.
    * Ignored for swinging openings.
    */
-  sliderStyle?: "single" | "bypass" | "biparting";
+  sliderStyle?: "single" | "bypass" | "biparting" | "biparting-bypass";
 }
 
 /**

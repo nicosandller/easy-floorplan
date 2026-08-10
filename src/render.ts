@@ -1662,8 +1662,32 @@ export function openingMirror(o: Opening): { sx: 1 | -1; sy: 1 | -1 } {
  * Resolve a sliding opening's panel arrangement. Only meaningful while sliding
  * (swinging openings always resolve to `single`), defaulting to `single`.
  */
-export function sliderStyleOf(o: Opening): "single" | "bypass" | "biparting" {
+export function sliderStyleOf(
+  o: Opening,
+): "single" | "bypass" | "biparting" | "biparting-bypass" {
   return openingMotion(o) === "slide" ? (o.sliderStyle ?? "single") : "single";
+}
+
+/**
+ * Whether this opening draws **two** moving panels — the two biparting styles.
+ * `single` and `bypass` both move one panel (bypass's other panel is fixed), so
+ * only these two have a second leaf for `secondaryEntity` to drive (issue #145).
+ */
+export function openingHasTwoPanels(o: Opening): boolean {
+  const style = sliderStyleOf(o);
+  return style === "biparting" || style === "biparting-bypass";
+}
+
+/**
+ * The second moving panel as an opening in its own right, so it can go through
+ * {@link resolveOpeningAmount} / {@link openingIsActive} unchanged rather than
+ * threading a "which panel" argument down the whole resolver chain (issue #145).
+ * Shares the geometry and `invert`; only the bound entity differs. Callers must
+ * check {@link openingHasTwoPanels} and a set `secondaryEntity` first — with no
+ * entity this resolves to the type default, not to the first panel's state.
+ */
+export function secondPanelOf(o: Opening): Opening {
+  return { ...o, entity: o.secondaryEntity };
 }
 
 /**
@@ -2184,6 +2208,13 @@ export interface OpeningStyle {
     accent?: string;
     flip?: boolean;
   };
+  /**
+   * The second moving panel of a biparting slider (issue #145), when it has a
+   * sensor of its own. Omitted — the only case before that issue — leaves both
+   * panels sharing `amount` and `active`, so a single-entity slider parts
+   * symmetrically exactly as it always has. Ignored by every other style.
+   */
+  second?: { amount: number; active?: boolean };
 }
 
 /**
@@ -2286,6 +2317,15 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
         <line x1=${half} y1=${-cutH / 2} x2=${half} y2=${cutH / 2}
               stroke=${color} stroke-width="2" />`;
     const sliderStyle = sliderStyleOf(o);
+    // The second moving panel of a biparting slider (issue #145). With a sensor
+    // of its own it opens and accents independently; without one it mirrors the
+    // first panel, which is what a single-entity slider has always drawn.
+    const amt2 = style.second
+      ? Math.max(0, Math.min(1, style.second.amount))
+      : amt;
+    const tone2 = style.second
+      ? cssColorOr(style.second.active ? accent : color, SKIN_ACCENT)
+      : tone;
     if (sliderStyle === "bypass") {
       // Double bypass: two half-width panels on parallel tracks. The moving
       // (back) panel slides left to stack behind the fixed (front) panel.
@@ -2307,17 +2347,46 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
     } else if (sliderStyle === "biparting") {
       // Biparting: two half-width panels meet at the centre and part, each
       // recessing into the wall on its own side (left panel → left, right → right).
-      const shift = half * amt;
       body = svg`
         ${jambs}
         <!-- track -->
         <line x1=${-half} y1="0" x2=${half} y2="0"
               stroke=${color} stroke-width="0.75" opacity="0.6" />
-        <g class="fp-slide-panel" style="transform:translateX(${-shift}px);">
+        <g class="fp-slide-panel" style="transform:translateX(${-half * amt}px);">
           <rect x=${-half} y=${-t / 2} width=${half} height=${t} style="fill:${tone};" />
         </g>
-        <g class="fp-slide-panel" style="transform:translateX(${shift}px);">
-          <rect x="0" y=${-t / 2} width=${half} height=${t} style="fill:${tone};" />
+        <g class="fp-slide-panel" style="transform:translateX(${half * amt2}px);">
+          <rect x="0" y=${-t / 2} width=${half} height=${t} style="fill:${tone2};" />
+        </g>`;
+    } else if (sliderStyle === "biparting-bypass") {
+      // Biparting over fixed panels (issue #145) — the patio / bay slider. The
+      // opening divides into four: a fixed panel at each jamb on the front
+      // track, and two moving panels on the back track that meet in the middle
+      // and part until each sits over the fixed panel on its side. Nothing
+      // recesses into the wall, so travel is a quarter of the opening rather
+      // than half, and even wide open the outer quarters stay glazed — which is
+      // the whole difference from `biparting` and the reason it can't be faked
+      // by clamping that one's travel.
+      const off = 1.75; // half the gap between the two tracks, as in bypass
+      const q = half / 2; // one panel: the opening splits into four
+      body = svg`
+        ${jambs}
+        <!-- tracks -->
+        <line x1=${-half} y1=${-off} x2=${half} y2=${-off}
+              stroke=${color} stroke-width="0.75" opacity="0.6" />
+        <line x1=${-half} y1=${off} x2=${half} y2=${off}
+              stroke=${color} stroke-width="0.75" opacity="0.6" />
+        <!-- fixed panels: outer quarters, front track. Never accented, even
+             wide open — the accent marks what has moved, and lighting these
+             would accent exactly the half that is still glazed shut. -->
+        <rect x=${-half} y=${off - t / 2} width=${q} height=${t} fill=${color} />
+        <rect x=${half - q} y=${off - t / 2} width=${q} height=${t} fill=${color} />
+        <!-- moving panels: inner quarters, back track -->
+        <g class="fp-slide-panel" style="transform:translateX(${-q * amt}px);">
+          <rect x=${-q} y=${-off - t / 2} width=${q} height=${t} style="fill:${tone};" />
+        </g>
+        <g class="fp-slide-panel" style="transform:translateX(${q * amt2}px);">
+          <rect x="0" y=${-off - t / 2} width=${q} height=${t} style="fill:${tone2};" />
         </g>`;
     } else {
       // Single panel: fills the opening closed, slides fully aside when open.

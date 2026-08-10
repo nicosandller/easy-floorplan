@@ -183,8 +183,16 @@ window, a `blind` → a slider, a `garage` or `shutter` → a roll-up); adjust a
   tracks the position live. Everything else uses the on/off behavior above.
 - **Motion** — **swing** (default), **slide**, or **roll** (a slatted curtain that thins
   onto its track). Sliding openings take a **Style**: *single* (one panel into the wall),
-  *bypass* (two panels on parallel tracks), or *biparting* (two panels parting at the
-  middle). **Slide** sets the direction.
+  *bypass* (two panels on parallel tracks), *biparting (into the walls)* (two panels
+  parting at the middle, each recessing into its own wall — a pocket door), or
+  *biparting (over fixed panels)* (the same two panels stacking over a fixed panel at
+  each jamb — the usual patio / bay slider, where nothing leaves the opening and the
+  middle half is as clear as it gets). **Slide** sets the direction; a biparting slider
+  parts both ways, so it has none.
+- **One sensor per panel** — a biparting slider with a contact on each leaf takes a
+  **Second panel** entity, and then each panel opens and accents on its own state: left
+  open and right shut draws exactly that. Leave it empty and both panels follow the first
+  entity, as they always have. **Invert** covers both, and a tap still acts on the first.
 - **Orientation** — **Hinge** (left / right) and **Opens** (this side / other side) face a
   swing door any of four ways; they're pure mirrors (`flipH` / `flipV`), so the animation
   follows.
@@ -203,6 +211,9 @@ window, a `blind` → a slider, a `garage` or `shutter` → a roll-up); adjust a
 openings:
   # sliding window, patio-door style, driven by a cover
   - { id: patio, type: window, motion: slide, sliderStyle: biparting, x: 640, y: 500, length: 160, angle: 0, entity: cover.patio_door }
+  # a two-panel patio slider with a contact on each leaf: the panels stack over
+  # the fixed side panels, and each one follows its own sensor
+  - { id: bay, type: window, motion: slide, sliderStyle: biparting-bypass, x: 300, y: 500, length: 200, angle: 0, entity: binary_sensor.sliding_door_left, secondaryEntity: binary_sensor.sliding_door_right }
   # a swing door hinged on the right, opening into the other room
   - { id: hall, type: door, x: 300, y: 100, length: 80, angle: 0, flipH: true, flipV: true }
 ```
@@ -378,16 +389,17 @@ distorted anyway.
 | `length`      | number                      | Length along the wall.                                 |
 | `angle`       | number                      | Rotation in degrees.                                   |
 | `entity`      | string                      | Contact `binary_sensor` / `cover` driving open/closed (or `current_position` for partial). |
+| `secondaryEntity` | string                  | Biparting sliders: a second contact / `cover` for the other panel, so each leaf moves on its own state. Unset = both follow `entity`. |
 | `invert`      | boolean                     | Flip the open/closed interpretation.                   |
 | `activeColor` | string                      | Leaf/arc color while actively open (default primary).  |
 | `flipH`       | boolean                     | Mirror left↔right. Swing door: hinge jamb. Sliding: slide direction. |
 | `flipV`       | boolean                     | Mirror across the wall so a swing opening faces the other room. |
-| `sliderStyle` | `single` \| `bypass` \| `biparting` | With `motion: slide`: one panel (default), two stacking, or two centre-parting. |
 | `showShutterIcon` | boolean                 | Draw that icon (default `true` whenever both are bound). Editor: **Shutter icon**. Turning it off changes nothing about the gestures — for a plan where every window has a shutter and the icons start to shout. |
 | `shutterIcon` | string                      | Override the icon's glyph. Left unset it follows the shutter entity, whose default comes in an open/closed pair; an override is one glyph for both states, and colour still reports the state. |
 | `tapTarget`   | `opening` \| `shutter`      | With both entities bound, which one a tap acts on (default `opening`); the other moves to press-and-hold. Editor: **Tap opens**. Pointing it at the shutter opens the shutter's dialog — it does not drive the motor; set `tap_action: toggle` for that. |
 | `tap_action`  | ActionConfig                | Standard Lovelace action, acting on whichever entity `tapTarget` leads with (or on `shutterEntity` when it is the only one bound). By default an open/close `cover` toggles and everything else opens more-info. An action's own `entity` picks which of the two it acts on. |
 | `hold_action` / `double_tap_action` | ActionConfig | With both entities bound, hold opens the shutter's more-info by default — a tap is never retargeted at the shutter motor. Double-tap does nothing unless configured. |
+| `sliderStyle` | `single` \| `bypass` \| `biparting` \| `biparting-bypass` | With `motion: slide`: one panel (default), two stacking, two centre-parting into the walls, or two centre-parting over a fixed panel at each jamb. |
 
 ### Item (device)
 

@@ -20,6 +20,8 @@ import {
   openingMotion,
   openingMirror,
   sliderStyleOf,
+  openingHasTwoPanels,
+  secondPanelOf,
   openingFromDeviceClass,
   windowSash,
   shutterAmount,
@@ -251,6 +253,63 @@ describe("sliderStyleOf", () => {
   });
   it("is single for swinging openings regardless of sliderStyle", () => {
     expect(sliderStyleOf({ type: "door", sliderStyle: "bypass" } as Opening)).toBe("single");
+  });
+  it("carries the biparting-bypass style through (issue #145)", () => {
+    expect(
+      sliderStyleOf({ type: "door", motion: "slide", sliderStyle: "biparting-bypass" } as Opening),
+    ).toBe("biparting-bypass");
+  });
+});
+
+describe("openingHasTwoPanels / secondPanelOf (issue #145)", () => {
+  const slider = (extra: Partial<Opening> = {}) =>
+    ({ type: "door", motion: "slide", ...extra }) as Opening;
+
+  it("is true for exactly the two biparting styles", () => {
+    expect(openingHasTwoPanels(slider({ sliderStyle: "biparting" }))).toBe(true);
+    expect(openingHasTwoPanels(slider({ sliderStyle: "biparting-bypass" }))).toBe(true);
+    // bypass moves one panel past a fixed one; single moves the only panel.
+    expect(openingHasTwoPanels(slider({ sliderStyle: "bypass" }))).toBe(false);
+    expect(openingHasTwoPanels(slider())).toBe(false);
+    // A swing door has leaves, but no sliding panel to bind a second sensor to.
+    expect(openingHasTwoPanels({ type: "door", sliderStyle: "biparting" } as Opening)).toBe(false);
+  });
+
+  it("swaps in the second entity and keeps everything else", () => {
+    const o = slider({
+      sliderStyle: "biparting",
+      entity: "binary_sensor.left",
+      secondaryEntity: "binary_sensor.right",
+      invert: true,
+      length: 90,
+    });
+    expect(secondPanelOf(o)).toEqual({ ...o, entity: "binary_sensor.right" });
+  });
+
+  it("resolves the second panel independently, sharing invert", () => {
+    const o = slider({
+      sliderStyle: "biparting",
+      entity: "binary_sensor.left",
+      secondaryEntity: "binary_sensor.right",
+    });
+    const panel = secondPanelOf(o);
+    expect(resolveOpeningAmount(panel, { state: "on" })).toBe(1);
+    expect(resolveOpeningAmount(panel, { state: "off" })).toBe(0);
+    expect(openingIsActive(panel, { state: "on" })).toBe(true);
+    expect(openingIsActive(panel, { state: "off" })).toBe(false);
+    // Position-aware covers drive the panel partway, and invert flips it.
+    expect(
+      resolveOpeningAmount(panel, { state: "open", attributes: { current_position: 40 } }),
+    ).toBeCloseTo(0.4);
+    expect(
+      resolveOpeningAmount(secondPanelOf({ ...o, invert: true }), {
+        state: "open",
+        attributes: { current_position: 40 },
+      }),
+    ).toBeCloseTo(0.6);
+    // An outage on one leaf fails that leaf closed, not the whole opening.
+    expect(resolveOpeningAmount(panel, { state: "unavailable" })).toBe(0);
+    expect(openingIsActive(panel, { state: "unavailable" })).toBe(false);
   });
 });
 

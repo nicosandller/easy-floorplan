@@ -47,6 +47,7 @@ import {
   normalizePlanRotation,
   openingActionForGesture,
   openingMotion,
+  openingHasTwoPanels,
   pressEffectOf,
   sliderStyleOf,
   shutterStyleOf,
@@ -174,6 +175,7 @@ export function furnitureLabel(type: string, catalog: SymbolCatalog = BUILTIN_SY
 export function openingForm(o: Opening, featuresOf: (entityId: string) => number = () => 0): FormSpec {
   const motion = openingMotion(o);
   const style = sliderStyleOf(o);
+  const twoPanels = openingHasTwoPanels(o);
   const fields: FormField[] = [
     { name: "type", label: "Type", selector: dropdown(opt("door", "Door"), opt("window", "Window")) },
     {
@@ -211,7 +213,9 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
     });
   }
   if (motion === "slide") {
-    if (style !== "biparting") {
+    // A biparting slider parts both ways at once, so there is no direction to
+    // pick — `flipH` only swaps which panel each sensor drives (issue #145).
+    if (!twoPanels) {
       fields.push({
         name: "slide",
         label: "Slide",
@@ -224,16 +228,30 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: dropdown(
         opt("single", "Single"),
         opt("bypass", "Bypass (stack)"),
-        opt("biparting", "Biparting (split)")
+        opt("biparting", "Biparting (into the walls)"),
+        opt("biparting-bypass", "Biparting (over fixed panels)")
       ),
     });
   }
   fields.push({
     name: "entity",
     label: "Entity",
-    helper: "Type and motion follow the entity's device class",
+    helper: twoPanels
+      ? "Drives the first panel; type and motion follow its device class"
+      : "Type and motion follow the entity's device class",
     selector: { entity: { filter: [{ domain: ["binary_sensor", "cover"] }] } },
   });
+  // One sensor per leaf (issue #145). Only the biparting styles have a second
+  // moving panel to drive, and only once the first is bound — a slider whose
+  // *second* panel alone has a sensor would be more confusing than useful.
+  if (twoPanels && o.entity) {
+    fields.push({
+      name: "secondaryEntity",
+      label: "Second panel",
+      helper: "Its own sensor for the other panel — leave empty to move both together",
+      selector: { entity: { filter: [{ domain: ["binary_sensor", "cover"] }] } },
+    });
+  }
   // Offered on doors too: French doors and patio doors get shutters as well.
   // A hinged shutter usually reports through a contact sensor, so binary
   // sensors belong in the picker next to covers (issue #74).
@@ -348,6 +366,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       style,
       sash: windowSash(o),
       entity: o.entity ?? "",
+      secondaryEntity: o.secondaryEntity ?? "",
       shutterEntity: o.shutterEntity ?? "",
       shutterStyle: shutterStyleOf(o),
       shutterSide: o.shutterFlipV ? "near" : "far",
@@ -389,12 +408,20 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         else if (k === "showShutterIcon") out.showShutterIcon = v ? undefined : false;
         else if (k === "motion") {
           out.motion = v === "slide" || v === "roll" ? v : undefined;
-          // sliderStyle only applies while sliding — drop it when switching away.
-          if (v !== "slide") out.sliderStyle = undefined;
+          // sliderStyle only applies while sliding — drop it when switching
+          // away, and with it the second panel's sensor (issue #145).
+          if (v !== "slide") {
+            out.sliderStyle = undefined;
+            out.secondaryEntity = undefined;
+          }
         } else if (k === "sash") out.sash = v === "single" ? "single" : undefined;
         else if (k === "hinge" || k === "slide") out.flipH = v === "right" || undefined;
         else if (k === "opens") out.flipV = v === "other" || undefined;
-        else if (k === "style") out.sliderStyle = v === "single" ? undefined : v;
+        else if (k === "style") {
+          out.sliderStyle = v === "single" ? undefined : v;
+          // Only a biparting slider has a second moving panel to bind.
+          if (v !== "biparting" && v !== "biparting-bypass") out.secondaryEntity = undefined;
+        }
         else if (k === "invert") out.invert = v || undefined;
         else out[k] = v;
       }
