@@ -368,7 +368,7 @@ distorted anyway.
 | `type`        | `door` \| `window`          | The kind of opening.                                   |
 | `motion`      | `swing` \| `slide` \| `roll` | How it moves: hinged (default), sliding panels, or a roll-up curtain (garage / roller shutter). |
 | `sash`        | `single` \| `double`        | Swing windows only: one full-width sash, or the classic two. Default `double`. |
-| `shutterEntity` | string                     | An external shutter over the same gap (`cover` or contact), with its own open/closed state. |
+| `shutterEntity` | string                     | An external shutter over the same gap (`cover` or contact), with its own open/closed state. Tapping the opening opens this entity's more-info dialog. |
 | `shutterStyle` | `swing` \| `roll`           | Louvered panels or a roll-up curtain. Defaults from the entity (contact → `swing`, `cover` → `roll`). |
 | `x`, `y`      | number                      | Center position.                                       |
 | `length`      | number                      | Length along the wall.                                 |
