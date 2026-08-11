@@ -23,7 +23,7 @@
  * {@link SKINS} and need no new plumbing.
  */
 
-import { css } from "lit";
+import { css, unsafeCSS } from "lit";
 
 /**
  * Every token a skin may set. Exported so the tests can assert each skin is
@@ -195,6 +195,10 @@ export function findSkin(id: unknown): Skin | undefined {
  * sanitise here — but they still land in a `style="…"` attribute, and
  * `skins.test.ts` holds them to the same no-breakout rule `cssColor` enforces
  * for user input.
+ *
+ * The **card** no longer uses this — see {@link skinPalettes} for why an inline
+ * style was the wrong place for a skin. The editor still does: nothing
+ * card-mods the editor, and its canvas already carries an inline style.
  */
 export function skinStyle(id: unknown): string {
   const skin = findSkin(id);
@@ -203,6 +207,44 @@ export function skinStyle(id: unknown): string {
     .map(([k, v]) => `${k}:${v};`)
     .join("");
 }
+
+/** The `data-skin` a card should carry, or `undefined` for no attribute. */
+export function skinAttribute(id: unknown): string | undefined {
+  const skin = findSkin(id);
+  return skin && skin.id !== DEFAULT_SKIN ? skin.id : undefined;
+}
+
+/**
+ * Every non-default palette, as a rule per skin on `:host` (issue #155).
+ *
+ * A skin used to be an inline `style` on the card's `<ha-card>` — the same
+ * element the README tells people to card-mod. An inline style beats any
+ * non-`!important` rule, so picking a skin silently killed every documented
+ * `--fp-skin-*` override, all sixteen of them. Only the default skin escaped,
+ * and only because it writes no inline style at all.
+ *
+ * Declared on `:host` the tokens sit *above* `ha-card` rather than on it, so a
+ * card-mod rule wins by inheritance instead of losing the cascade — which is
+ * exactly why overrides already worked on an unskinned plan. It also puts a
+ * palette where {@link skinTokens} already puts the defaults.
+ *
+ * Built by hand rather than through `css` because the selector is per-skin.
+ * Nothing here is user input — ids and values are module constants, the card
+ * only ever emits an id {@link findSkin} matched, and `skins.test.ts` holds
+ * both to the same no-breakout rule user colours go through.
+ */
+export const skinPalettes = unsafeCSS(
+  SKINS.filter((s) => s.id !== DEFAULT_SKIN)
+    .map(
+      (s) =>
+        `:host([data-skin="${s.id}"]){` +
+        Object.entries(s.vars)
+          .map(([k, v]) => `${k}:${v};`)
+          .join("") +
+        `}`
+    )
+    .join("\n")
+);
 
 /**
  * Default values for every token, to be included in the `static styles` of both

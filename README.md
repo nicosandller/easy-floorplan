@@ -733,7 +733,9 @@ so the canvas reads as the plan, and a **background image** still covers the ski
 ### Rolling your own
 
 A skin is a set of CSS custom properties, so [card-mod](#styling-hooks-card-mod) can set
-the same ones for the same result:
+the same ones for the same result — including on top of a skin, to change one thing about
+it rather than replace it. A skinned card also carries its id as `data-skin` on the card
+element, so a rule can apply to one skin only:
 
 ```yaml
 type: custom:easy-floorplan-card
@@ -746,6 +748,11 @@ card_mod:
       --fp-skin-accent: #f2aa4c;
     }
 ```
+
+Values are plain CSS, so quoting them breaks the declaration rather than setting it:
+`--fp-skin-wall-width: 5` works, `--fp-skin-wall-width: "5"` draws hairline walls. The
+`var()` default can't catch that — a fallback only applies to a property that is *unset*,
+never to one set to something invalid.
 
 | Token | Default | Paints |
 | --- | --- | --- |

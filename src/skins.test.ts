@@ -7,6 +7,8 @@ import {
   type SkinToken,
   findSkin,
   skinStyle,
+  skinAttribute,
+  skinPalettes,
   SKIN_ACCENT,
   SKIN_PAPER,
   SKIN_TEXT,
@@ -125,6 +127,57 @@ describe("skinStyle", () => {
     expect(findSkin("pastel")?.label).toBe("Pastel");
     expect(findSkin("Pastel")).toBeUndefined();
     expect(findSkin(undefined)).toBeUndefined();
+  });
+});
+
+/**
+ * Issue #155: a skin used to ride an inline `style` on the same `<ha-card>` the
+ * README tells people to card-mod, and inline beats a plain rule — so choosing
+ * a skin silently killed every documented `--fp-skin-*` override. The palette
+ * now lands on `:host`, above that element, where a card-mod rule beats it by
+ * inheritance instead.
+ */
+describe("skinAttribute / skinPalettes (issue #155)", () => {
+  const palettes = skinPalettes.cssText;
+
+  it("names a real skin, and nothing else", () => {
+    expect(skinAttribute("tron")).toBe("tron");
+    expect(skinAttribute("pastel")).toBe("pastel");
+    // No attribute for the default, an id we don't ship, or a non-string —
+    // the same rule skinStyle applies, so an unknown skin renders unskinned.
+    expect(skinAttribute(DEFAULT_SKIN)).toBeUndefined();
+    expect(skinAttribute("nintendo")).toBeUndefined();
+    expect(skinAttribute(undefined)).toBeUndefined();
+    expect(skinAttribute(42)).toBeUndefined();
+  });
+
+  it("carries a host rule per non-default skin, and none for the default", () => {
+    for (const s of SKINS.slice(1)) {
+      expect(palettes).toContain(`:host([data-skin="${s.id}"])`);
+    }
+    expect(palettes).not.toContain(`[data-skin="${DEFAULT_SKIN}"]`);
+  });
+
+  it("declares each skin's complete token set, same as the inline style did", () => {
+    for (const s of SKINS.slice(1)) {
+      const block = palettes.split(`:host([data-skin="${s.id}"]){`)[1].split("}")[0];
+      for (const token of SKIN_TOKENS) {
+        expect(block).toContain(`${token}:${s.vars[token as SkinToken]};`);
+      }
+    }
+  });
+
+  // The selector interpolates the id, so a future skin called `a"],*` would be
+  // a stylesheet-wide rule rather than one skin's. The registry's id shape test
+  // is what prevents it; this asserts the two stay tied together.
+  it("interpolates only ids that cannot escape the selector", () => {
+    for (const s of SKINS) expect(s.id).toMatch(/^[a-z][a-z0-9-]*$/);
+  });
+
+  it("puts the palette on the host, never on the card-mod target", () => {
+    // The whole fix in one assertion: nothing here may select `ha-card`, or a
+    // card-mod rule on that element would be back to losing the cascade.
+    expect(palettes).not.toContain("ha-card");
   });
 });
 

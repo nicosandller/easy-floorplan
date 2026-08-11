@@ -70,7 +70,15 @@ import {
 } from "./render";
 import { deadSpacesCached } from "./dead-space";
 import type { Opening } from "./types";
-import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
+import {
+  skinAttribute,
+  skinPalettes,
+  skinTokens,
+  SKIN_ACCENT,
+  SKIN_PAPER,
+  SKIN_TEXT,
+  SKIN_WALL,
+} from "./skins";
 import { actionForGesture, executeAction, hasAction, itemIsInteractive } from "./actions";
 import { actionHandler } from "./action-handler";
 
@@ -154,6 +162,20 @@ export class FloorplanCard extends LitElement {
     const prev = changed.get("hass") as HomeAssistant | undefined;
     if (!prev || !this.hass) return true;
     return hassRenderInputsChanged(prev, this.hass, this._watchedEntities);
+  }
+
+  /**
+   * Carry the skin as an attribute on the host, where `skinPalettes` picks it
+   * up (issue #155). It has to be the host and not the template, because the
+   * point is to sit *above* the `<ha-card>` a card-mod rule targets — see
+   * skins.ts. Only ever a `findSkin` match, so an unrecognised `skin:` puts no
+   * attribute on the element at all.
+   */
+  protected willUpdate(changed: PropertyValues): void {
+    if (!changed.has("_config")) return;
+    const skin = skinAttribute(this._config?.skin);
+    if (skin) this.setAttribute("data-skin", skin);
+    else this.removeAttribute("data-skin");
   }
 
   public getCardSize(): number {
@@ -496,7 +518,9 @@ export class FloorplanCard extends LitElement {
            floor switcher and the card's own background follow it too — a Tron
            plan floating on a white card would read as a bug. Every token the
            card draws with is declared on :host, so this only ever overrides. -->
-      <ha-card .header=${c.title ?? nothing} style=${skinStyle(c.skin) || nothing}>
+      <!-- No skin style here: the palette comes from data-skin on the host, so
+           a card-mod rule on this element still wins (issue #155). -->
+      <ha-card .header=${c.title ?? nothing}>
         <div
           class="stage press-${pressEffectOf(c)}"
           style="aspect-ratio: ${dims.w} / ${dims.h};"
@@ -736,11 +760,14 @@ export class FloorplanCard extends LitElement {
     `;
   }
 
-  // skinTokens declares every --fp-skin-* default on :host (issue #122). It
-  // comes first so a skin's inline overrides on <ha-card> — a descendant — win
-  // by the cascade's ordinary inheritance rules rather than by !important.
+  // skinTokens declares every --fp-skin-* default on :host (issue #122), and
+  // skinPalettes the chosen skin's values on the same element (issue #155).
+  // Both sit above <ha-card>, so a card-mod rule on that element beats them by
+  // ordinary inheritance rather than needing !important. Palettes come second:
+  // same specificity as the defaults, so tree order is what picks the skin.
   static styles = [
     skinTokens,
+    skinPalettes,
     css`
     ha-card {
       height: 100%;
