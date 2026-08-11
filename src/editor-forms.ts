@@ -949,7 +949,7 @@ export function projectSkinForm(c: FloorplanCardConfig): FormSpec {
  * tablet's orientation, a dashboard tile's size), not day-to-day editing, so
  * they stay out of the way.
  */
-export function projectRotationForm(c: FloorplanCardConfig): FormSpec {
+export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
   return {
     fields: [
       {

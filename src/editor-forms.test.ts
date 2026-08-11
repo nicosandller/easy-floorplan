@@ -10,7 +10,7 @@ import {
   trackerForm,
   wallForm,
   projectForm,
-  projectRotationForm,
+  projectDisplayForm,
   projectPressForm,
   projectSkinForm,
   projectSunForm,
@@ -614,13 +614,13 @@ describe("wallForm / projectForm / floorImageForm", () => {
   });
 
   it("rotation lives in the bottom-row display form, defaults to 0°, and patches as a number", () => {
-    const form = projectRotationForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
+    const form = projectDisplayForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
     expect(form.fields.map((x) => x.name)).toEqual(["rotation", "overlayScale"]);
     expect(form.data.rotation).toBe("0");
     // 0 comes back as undefined so an unrotated plan stays out of the YAML.
     expect(form.toPatch({ rotation: "0" })).toEqual({ rotation: undefined });
     expect(form.toPatch({ rotation: "90" })).toEqual({ rotation: 90 });
-    const rotated = projectRotationForm({
+    const rotated = projectDisplayForm({
       type: "t",
       width: 1000,
       height: 600,
@@ -689,13 +689,13 @@ describe("wallForm / projectForm / floorImageForm", () => {
   });
 
   it("overlay scale shares that form, defaults to fixed, and stays out of the YAML when default", () => {
-    const form = projectRotationForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
+    const form = projectDisplayForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
     expect(form.data.overlayScale).toBe("fixed");
     expect(form.toPatch({ overlayScale: "fixed" })).toEqual({ overlayScale: undefined });
     expect(form.toPatch({ overlayScale: "plan" })).toEqual({ overlayScale: "plan" });
     // Patching one field must not invent a value for the other.
     expect(form.toPatch({ rotation: "90" })).toEqual({ rotation: 90 });
-    const scaled = projectRotationForm({
+    const scaled = projectDisplayForm({
       type: "t",
       width: 1000,
       height: 600,

@@ -519,6 +519,8 @@ animated inside a rectangular tracked area:
   Mirrors the linked HA area's name when `haArea` is set.
 - `labelSize` — that label's size, `8`–`40`, default `14`. Px under `overlayScale: fixed`,
   canvas units under `plan`. Small rooms want a smaller number than the big ones beside them.
+  Left unset on a `fixed` card the size stays in the stylesheet, so a card-mod rule on
+  `.area-label` still wins; set it, or switch to `plan`, and it moves inline and takes over.
 - `color` / `opacity` — the room's fill; theme primary and `0.25` by default.
 - `haArea` — id of a linked Home Assistant area, set by the editor when `name` matches one.
 - `filterEntities` — with `haArea` set, scopes the entity picker for devices inside this
@@ -814,14 +816,35 @@ height: 700
 overlayScale: plan
 ```
 
-Use it whenever the card renders smaller than its canvas — a dashboard tile, a sidebar, a
-desktop widget. Leave it off for a wall tablet showing the plan at full size, where fixed
-px is what keeps text legible from across the room. The default stays `fixed`, so an
-existing card looks exactly as it did.
-
 Sizes are read in canvas units under `plan`, so the numbers mean the same thing as
 everything else in the config: `labelSize: 14` is 14 units on a `980`-unit-wide canvas,
 about 1.4 % of the card's width whatever that turns out to be.
+
+### Where it helps, and where it costs
+
+Scaling with the drawing cuts both ways: it stops text overflowing its room, and it also
+keeps shrinking past the point text can be read. On a `980`-wide canvas at the default
+sizes (room name `14`, device label `12`):
+
+| Card width | Room name | Device label |
+| --- | --- | --- |
+| 1200 | 17px | 15px |
+| 800 | 11px | 10px |
+| 600 | 9px | 7px |
+| 450 | 6px | 6px |
+| 350 | 5px | 4px |
+
+So `plan` suits a card rendering down to roughly **two-thirds of its canvas width** on the
+defaults. Below that it trades collision for illegibility, and the sizes have to come up
+to compensate — a `labelSize` of `20`–`24` on a card at half its canvas width lands back
+where the default was. That is a real trade, not a free win: sizes are relative, and
+nothing puts a floor under them.
+
+Use it whenever the card renders smaller than its canvas but not drastically so — a
+dashboard tile, a sidebar, a desktop widget. Leave it off for a wall tablet showing the
+plan at full size, where fixed px is what keeps text legible from across the room, and
+for a card so small that scaled text would disappear. The default stays `fixed`, so an
+existing card looks exactly as it did.
 
 ## Styling hooks (card-mod)
 
@@ -839,6 +862,7 @@ it by something stable.
 | Wall | `wall`, `fp-wall` | `data-id` |
 | Device | `item`, `fp-item` | `data-id`, `data-entity`, `data-kind` |
 | Text | `text`, `fp-text` | `data-id` |
+| Room name | `area-label` | — |
 | Tracker | `tracker`, `fp-tracker` | `data-id` |
 
 Ids come from the editor (`area_a5r5nwl`, `furn_3j66s50`, …) and are stable across edits.

@@ -18,6 +18,7 @@ import {
   DEFAULT_ITEM_SIZE,
   DEFAULT_TEXT_SIZE,
   DEFAULT_RIPPLE_SIZE,
+  DEFAULT_AREA_LABEL_SIZE,
   DEFAULT_SUN_MIN,
   DEFAULT_SUN_MAX,
   PRESS_SCALE,
@@ -65,7 +66,7 @@ import {
   pressEffectOf,
   itemHiddenWhenInactive,
   itemLabelSize,
-  areaLabelSize,
+  areaLabelFontSize,
   normalizeOverlayScale,
   overlayLength,
   hassRenderInputsChanged,
@@ -435,11 +436,13 @@ export class FloorplanCard extends LitElement {
     const centroid = polygonCentroid(a.points);
     const p = rotatePlanPoint(centroid.x, centroid.y, c.width, c.height, rot);
     const d = rotatedCanvasSize(c.width, c.height, rot);
+    // Empty unless the size has something to say the stylesheet doesn't — see
+    // areaLabelFontSize, which keeps card-mod's `.area-label` hook working.
+    const fontSize = areaLabelFontSize(a.labelSize, scale);
     return html`
       <div
         class="area-label"
-        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
-               font-size:${overlayLength(areaLabelSize(a.labelSize), scale)};"
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${fontSize}"
       >
         ${a.name}
       </div>
@@ -826,11 +829,14 @@ export class FloorplanCard extends LitElement {
      * oversize every label by exactly the letterboxing.
      *
      * --fp-u -- one canvas unit as a length -- is declared on the overlay
-     * *inside* .plan, never on .plan itself: container units resolve against an
-     * element's nearest *ancestor* container, so 100cqw read on .plan would
-     * measure the stage. Declared here it is only ever substituted into
-     * descendants, which do resolve against .plan. (.plan's own width reads
-     * 100cqh and keeps resolving against .stage, for the same reason.)
+     * *inside* .plan rather than on .plan itself. Both work today: --fp-u is an
+     * unregistered custom property, so its value is substituted as a token
+     * stream and the cqw resolves wherever it is finally used -- always a
+     * descendant of .plan. Declaring it here is what stays correct if --fp-u is
+     * ever registered with @property, which would resolve the cqw at the
+     * declaring element instead. (.plan's own width reads 100cqh against
+     * .stage, since container units look at an element's *ancestor* container;
+     * adding inline-size containment to .plan doesn't disturb it.)
      *
      * inline-size containment is enough for cqw and is cheaper than the size
      * containment .stage needs; .plan's height comes from its inline
@@ -1218,8 +1224,12 @@ export class FloorplanCard extends LitElement {
       white-space: nowrap;
       transform: translate(-50%, -50%);
       font-weight: 600;
-      /* Size is inline, from the area's labelSize (default
-         DEFAULT_AREA_LABEL_SIZE) through overlayLength. */
+      /* The default size stays a normal rule so card-mod can still override it
+         — room names had no config option before overlayScale landed, and this
+         selector was the only way to change them. An area's own labelSize, and
+         overlayScale: plan, come through as an inline style that wins over
+         this. Keep in step with DEFAULT_AREA_LABEL_SIZE. */
+      font-size: ${DEFAULT_AREA_LABEL_SIZE}px;
       letter-spacing: 0.02em;
       text-transform: uppercase;
       line-height: 1;

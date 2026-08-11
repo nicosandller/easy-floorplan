@@ -936,9 +936,9 @@ export function areaLabelSize(v: unknown): number {
 // twice the size the drawing expects and rooms fill up with colliding text.
 //
 // `overlayScale: plan` expresses those measures in canvas units instead. The
-// stage becomes a query container and `--fp-u` (declared on the overlay, see
-// below) is one canvas unit as a length, so `calc(14 * var(--fp-u))` is 14
-// canvas units however large the card ends up.
+// plan box becomes a query container and `--fp-u` (declared on the overlay
+// inside it, see the card's stylesheet) is one canvas unit as a length, so
+// `calc(14 * var(--fp-u))` is 14 canvas units however large the card ends up.
 
 /** Coerce a config `overlayScale`; anything unrecognised means the default. */
 export function normalizeOverlayScale(v: unknown): OverlayScale {
@@ -950,9 +950,30 @@ export function normalizeOverlayScale(v: unknown): OverlayScale {
  * under `plan`. `units` is already coerced by the caller (cssNumber and the
  * per-measure clamps), which is what makes this safe to drop into an inline
  * `style` — it interpolates a number, never a config string.
+ *
+ * The `1px` fallback only matters if a caller ever renders outside `.items`,
+ * where `--fp-u` is undefined: without it the whole property is invalid at
+ * computed-value time and the measure silently inherits. A wrong-but-visible
+ * size is the better failure.
  */
 export function overlayLength(units: number, scale: OverlayScale): string {
-  return scale === "plan" ? `calc(${units} * var(--fp-u))` : `${units}px`;
+  return scale === "plan" ? `calc(${units} * var(--fp-u, 1px))` : `${units}px`;
+}
+
+/**
+ * The `font-size` declaration for a room name, or `""` to leave it to the
+ * stylesheet.
+ *
+ * Room names are the one overlay measure with no config option before
+ * `overlayScale` landed, so `card-mod` on `.area-label` was the only way to
+ * resize them — and an inline style beats any non-`!important` rule. So the
+ * size is written inline only when it says something the stylesheet cannot:
+ * canvas units under `plan`, or an explicit `labelSize`. An untouched card
+ * keeps its rule, and the override that worked before keeps working.
+ */
+export function areaLabelFontSize(labelSize: unknown, scale: OverlayScale): string {
+  if (scale !== "plan" && labelSize === undefined) return "";
+  return `font-size:${overlayLength(areaLabelSize(labelSize), scale)};`;
 }
 
 /** Default mdi icon per item kind, used when neither config nor entity supplies one. */
