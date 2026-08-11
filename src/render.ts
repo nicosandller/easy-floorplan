@@ -19,6 +19,7 @@ import type {
   HassEntity,
   FloorItem,
   OverlayScale,
+  ActionConfig,
 } from "./types";
 import {
   FURNITURE_COLOR,
@@ -44,6 +45,7 @@ import {
   trackerAxisFraction,
 } from "./types";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, cssIcon } from "./css-safe";
+import { hasAction } from "./actions";
 import { SKIN_ACCENT, SKIN_PAPER, SKIN_WALL, MAX_SKIN_WALL_WIDTH } from "./skins";
 // The same tolerance #141 uses to decide an opening sits on a wall, so "this
 // door is in this wall" means one thing across the card.
@@ -1682,27 +1684,37 @@ export function shutterStyleOf(o: Pick<Opening, "shutterEntity" | "shutterStyle"
 
 export function shutterAmount(
   state: { state: string; attributes?: Record<string, unknown> } | undefined,
+  invert = false,
 ): number {
+  // The outage check comes first, before `invert` can touch anything: a
+  // dropout must fail closed, and inverting one would turn "we don't know"
+  // into a shutter drawn wide open (see {@link isSensorOutage}).
   if (!state || isSensorOutage(state.state)) return 0;
   const pos = state.attributes?.current_position;
   if (typeof pos === "number" && Number.isFinite(pos)) {
-    return Math.max(0, Math.min(1, pos / 100));
+    const frac = Math.max(0, Math.min(1, pos / 100));
+    return invert ? 1 - frac : frac;
   }
-  return state.state === "open" || state.state === "opening" || state.state === "closing" ||
-    state.state === "on"
-    ? 1
-    : 0;
+  const open =
+    state.state === "open" || state.state === "opening" || state.state === "closing" ||
+    state.state === "on";
+  return (invert ? !open : open) ? 1 : 0;
 }
 
 /**
  * Whether the shutter layer wears the accent — drawn (partly) open or still in
  * transit, matching {@link openingIsActive}'s "active = open" semantics.
+ *
+ * `invert` flips the reading, not the motion: a cover reporting `opening` or
+ * `closing` is active either way round, because something is moving out there
+ * whichever end of the travel the contact calls "open".
  */
 export function shutterActive(
   state: { state: string; attributes?: Record<string, unknown> } | undefined,
+  invert = false,
 ): boolean {
   if (!state || isSensorOutage(state.state)) return false;
-  return shutterAmount(state) > 0 || state.state === "opening" || state.state === "closing";
+  return shutterAmount(state, invert) > 0 || state.state === "opening" || state.state === "closing";
 }
 
 /** HA `cover` / `binary_sensor` device classes that read as a window (glass). */
@@ -1750,6 +1762,95 @@ export function openingClickAction(
   return domain === "cover" && (supportedFeatures & COVER_OPEN_CLOSE) !== 0
     ? "cover-toggle"
     : "more-info";
+}
+
+/** An opening's two bindable entities, and the actions it may carry. */
+type PressableOpening = Pick<
+  Opening,
+  "entity" | "shutterEntity" | "tapTarget" | "tap_action" | "hold_action" | "double_tap_action"
+>;
+
+/** What a gesture on an opening resolves to: an action, and what it acts on. */
+export interface OpeningPress {
+  /** The entity the action targets. Absent for an action that needs none (navigate, url). */
+  entity?: string;
+  config: ActionConfig;
+}
+
+/**
+ * Which action a gesture on an opening performs, and on **which** of its two
+ * entities (issue #74 follow-up). An opening can bind the window/door itself
+ * and its external shutter; only the first was ever reachable.
+ *
+ * The rule that shapes the rest: a tap is never *silently* retargeted at the
+ * shutter motor. Tapping is the gesture people make by accident, the shutter
+ * is real hardware that takes seconds to travel, and moving it because the
+ * plan quietly decided the shutter was the more interesting entity is exactly
+ * the accidental-hardware-move that issue #47 took out of the device defaults.
+ * So by default the tap stays on the opening and the shutter is reached by
+ * holding — until {@link Opening.tapTarget} says otherwise, which is a
+ * decision rather than an accident.
+ *
+ * - A configured `*_action` always wins. Its own `entity` picks which of the
+ *   two it acts on; without one it acts on the primary.
+ * - **primary** is the opening's `entity`, falling back to the shutter, so a
+ *   shutter-only opening is pressable at all. `tapTarget: "shutter"` swaps the
+ *   two over, but only when both are bound.
+ * - **secondary** is whichever one the primary is not, and only exists when
+ *   both are bound — otherwise it would be the same entity under another name.
+ * - Tap defaults to toggling an open/close-capable `cover`, else more-info
+ *   ({@link openingClickAction}); hold defaults to more-info on the secondary;
+ *   double-tap defaults to nothing.
+ */
+export function openingActionForGesture(
+  o: PressableOpening,
+  gesture: "tap" | "hold" | "double_tap",
+  featuresOf: (entityId: string) => number,
+): OpeningPress | undefined {
+  const opening = o.entity || undefined;
+  const shutter = o.shutterEntity || undefined;
+  // Only a genuine choice: with one entity bound there is nothing to swap.
+  const leadsWithShutter = !!(opening && shutter && o.tapTarget === "shutter");
+  const primary = leadsWithShutter ? shutter : (opening ?? shutter);
+  const secondary = opening && shutter ? (leadsWithShutter ? opening : shutter) : undefined;
+  const configured =
+    gesture === "tap" ? o.tap_action : gesture === "hold" ? o.hold_action : o.double_tap_action;
+  if (configured) return { entity: configured.entity ?? primary, config: configured };
+  if (gesture === "tap") {
+    if (!primary) return undefined;
+    return {
+      entity: primary,
+      config: {
+        action:
+          // Pointing the tap at the shutter opens its dialog; it does not
+          // drive the motor. Choosing *which* entity answers is not the same
+          // as choosing to move hardware on a tap, and that second decision
+          // stays where it is explicit — `tap_action: toggle` (issue #47).
+          !leadsWithShutter &&
+          openingClickAction(primary, featuresOf(primary)) === "cover-toggle"
+            ? "toggle"
+            : "more-info",
+      },
+    };
+  }
+  // Hold reaches whichever entity the tap left alone.
+  if (gesture === "hold" && secondary) return { entity: secondary, config: { action: "more-info" } };
+  return undefined;
+}
+
+/**
+ * Whether pressing an opening does anything at all — the mirror of
+ * {@link itemIsInteractive}, and used for the same things: the hit target, the
+ * `button` role and the tab stop. An opening with nothing bound draws no
+ * affordance it cannot honour, and a shutter-only opening finally gets one.
+ */
+export function openingIsPressable(
+  o: PressableOpening,
+  featuresOf: (entityId: string) => number,
+): boolean {
+  return (["tap", "hold", "double_tap"] as const).some((g) =>
+    hasAction(openingActionForGesture(o, g, featuresOf)?.config),
+  );
 }
 
 /**
@@ -1863,17 +1964,23 @@ function rollCurtain(length: number, tone: string, amt: number): SVGTemplateResu
  * drawn just **outside** the wall band so they never collide with the
  * window's own casement sashes (which swing to the near side), rotating
  * outward as they open. Closed, they cover the opening.
+ *
+ * `side` picks which face of the wall they hang on: `1` (default) is the far
+ * side from the sashes, `-1` the sash's own side, for a window whose outside
+ * is the near side of the wall. It flips both the offset and the fold
+ * direction, so the panels still swing *away* from the wall either way.
  */
 function swingShutter(
   length: number,
   cutH: number,
   tone: string,
-  amt: number
+  amt: number,
+  side: 1 | -1 = 1
 ): SVGTemplateResult {
   const half = length / 2;
   const t = 3;
-  // Sit the panels beyond the wall band, on the far side from the sashes.
-  const y0 = cutH / 2 + t / 2;
+  // Sit the panels beyond the wall band, clear of the sashes on their side.
+  const y0 = side * (cutH / 2 + t / 2);
   /** Slat ticks across a panel whose rect starts at `x0` and runs `w` wide. */
   const louvers = (x0: number, w: number): SVGTemplateResult[] => {
     const out: SVGTemplateResult[] = [];
@@ -1891,17 +1998,87 @@ function swingShutter(
   // panels animate with the rest of the plan for free.
   return svg`
       <g transform="translate(${-half} ${y0})">
-        <g class="fp-door-leaf" style="transform:rotate(${90 * amt}deg);">
+        <g class="fp-door-leaf" style="transform:rotate(${side * 90 * amt}deg);">
           <rect x="0" y=${-t / 2} width=${half} height=${t} style="fill:${tone};" />
           ${louvers(0, half)}
         </g>
       </g>
       <g transform="translate(${half} ${y0})">
-        <g class="fp-leaf-r" style="transform:rotate(${-90 * amt}deg);">
+        <g class="fp-leaf-r" style="transform:rotate(${-side * 90 * amt}deg);">
           <rect x=${-half} y=${-t / 2} width=${half} height=${t} style="fill:${tone};" />
           ${louvers(-half, half)}
         </g>
       </g>`;
+}
+
+/**
+ * How far off the wall centre line the shutter badge sits, in canvas units.
+ * Clear of the wall band, the hinged panels (which reach ~9) and the roll
+ * curtain, so it never lands on the thing it is describing.
+ */
+export const SHUTTER_MARK_OFFSET = 22;
+
+/**
+ * Where an opening's shutter badge sits, in plan coordinates (issue #74
+ * follow-up).
+ *
+ * The badge is HTML, not SVG — it holds a real `ha-icon` and has to stay
+ * upright and screen-sized — so the position is worked out here rather than
+ * falling out of the symbol's own transform. It follows the shutter to the
+ * outside of the wall: the offset is taken along the opening's normal and
+ * mirrored by `flipV`, which is what moves the drawn shutter too.
+ */
+export function shutterMarkPoint(
+  o: Pick<Opening, "x" | "y" | "angle" | "flipV">,
+  offset: number = SHUTTER_MARK_OFFSET,
+): { x: number; y: number } {
+  const dy = (o.flipV ? -1 : 1) * offset;
+  const rad = (o.angle * Math.PI) / 180;
+  return { x: o.x - Math.sin(rad) * dy, y: o.y + Math.cos(rad) * dy };
+}
+
+/**
+ * Whether an opening earns a shutter badge: both entities bound (issue #74
+ * follow-up).
+ *
+ * The badge exists because the second entity is otherwise invisible — the plan
+ * draws the shutter, but nothing says the symbol answers to two different
+ * things, so press-and-hold is a gesture you would have to already know about
+ * to find. With one entity bound there is no second thing to reveal.
+ */
+export function hasShutterMark(o: Pick<Opening, "entity" | "shutterEntity">): boolean {
+  return !!(o.entity && o.shutterEntity);
+}
+
+/** Last-resort shutter glyphs, for an entity with no device class of its own. */
+const SHUTTER_FALLBACK_ICON = { on: "mdi:window-shutter-open", off: "mdi:window-shutter" };
+
+/**
+ * The glyph for an opening's shutter badge — the shutter entity's **own**
+ * icon, resolved exactly as Home Assistant resolves it, so the badge shows
+ * whatever that entity shows everywhere else in HA: the registry override
+ * first, then the icon on the state, then the domain/device-class default.
+ *
+ * State-aware at every level: HA's own defaults are pairs (a `shutter` cover
+ * reads `window-shutter-open` while open), so the glyph itself carries the
+ * open/closed reading rather than only its colour. `open` is the already
+ * inverted reading from {@link shutterAmount}, so a reed contact wired the
+ * other way round still picks the right half of the pair.
+ */
+export function shutterMarkIcon(
+  st: { state: string; attributes?: Record<string, unknown> } | undefined,
+  entityId: string,
+  open: boolean,
+  registryIcon?: string,
+): string {
+  const registry = cssIcon(registryIcon);
+  if (registry) return registry;
+  const attr = cssIcon(st?.attributes?.icon);
+  if (attr) return attr;
+  return (
+    entityDefaultIcon(entityId, st?.attributes?.device_class as string | undefined, open) ??
+    (open ? SHUTTER_FALLBACK_ICON.on : SHUTTER_FALLBACK_ICON.off)
+  );
 }
 
 /** Style options for {@link renderOpening}. */
@@ -1927,8 +2104,19 @@ export interface OpeningStyle {
    * External roller shutter layered over the opening (issue #74): how far
    * open (0..1, see {@link shutterAmount}) and whether it wears the accent.
    * Rendered as the roll curtain on top of the sash.
+   *
+   * `accent` is the shutter's own — it may read differently from the sash it
+   * covers — and falls back to the opening's. `flip` hangs hinged panels on
+   * the sash's own side of the wall; the roll curtain ignores it, being drawn
+   * symmetrically about the wall line.
    */
-  shutter?: { amount: number; active?: boolean; style?: "roll" | "swing" };
+  shutter?: {
+    amount: number;
+    active?: boolean;
+    style?: "roll" | "swing";
+    accent?: string;
+    flip?: boolean;
+  };
 }
 
 /**
@@ -2107,13 +2295,13 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   // active/accent state is independent of the window's.
   if (style.shutter) {
     const shutterTone = cssColorOr(
-      style.shutter.active ? accent : color,
+      style.shutter.active ? (style.shutter.accent ?? accent) : color,
       SKIN_ACCENT
     );
     const amt2 = Math.max(0, Math.min(1, style.shutter.amount));
     body = svg`${body}${
       style.shutter.style === "swing"
-        ? swingShutter(o.length, cutH, shutterTone, amt2)
+        ? swingShutter(o.length, cutH, shutterTone, amt2, style.shutter.flip ? -1 : 1)
         : rollCurtain(o.length, shutterTone, amt2)
     }`;
   }

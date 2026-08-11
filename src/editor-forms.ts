@@ -39,6 +39,7 @@ import {
   isPresenceEntity,
   normalizeOverlayScale,
   normalizePlanRotation,
+  openingActionForGesture,
   openingMotion,
   pressEffectOf,
   sliderStyleOf,
@@ -197,7 +198,14 @@ export const FURNITURE_LABELS: Record<FurnitureType, string> = {
   airHandler: "air handler",
 };
 
-export function openingForm(o: Opening): FormSpec {
+/**
+ * `featuresOf` reads an entity's `supported_features`, the one hass-derived
+ * fact this form needs: it decides whether a tap on a `cover` toggles it or
+ * opens more-info, so it is what lets the Tap field name the default the card
+ * would *actually* take rather than a guess. Defaults to "no features", which
+ * is what a form rendered without hass can honestly say.
+ */
+export function openingForm(o: Opening, featuresOf: (entityId: string) => number = () => 0): FormSpec {
   const motion = openingMotion(o);
   const style = sliderStyleOf(o);
   const fields: FormField[] = [
@@ -276,9 +284,73 @@ export function openingForm(o: Opening): FormSpec {
       helper: "Hinged panels fold back against the wall; roll-up slats disappear upward",
       selector: dropdown(opt("swing", "Hinged (louvered panels)"), opt("roll", "Roll-up (slats)")),
     });
+    // Which face of the wall hinged panels hang on. Only asked for hinged
+    // shutters: the roll curtain is drawn symmetrically about the wall line,
+    // so the answer would change nothing on screen.
+    if (shutterStyleOf(o) === "swing") {
+      fields.push({
+        name: "shutterSide",
+        label: "Shutter side",
+        helper: "Which side of the wall the panels hang on",
+        selector: dropdown(opt("far", "Away from the sash"), opt("near", "Same side as the sash")),
+      });
+    }
+    // Its own switch, not the opening's: a reed contact on a hinged shutter
+    // routinely reads `on` when the panels are shut, while the window behind
+    // it reads the other way round.
+    fields.push({ name: "shutterInvert", label: "Invert shutter", selector: { boolean: {} } });
   }
   if (o.entity) fields.push({ name: "invert", label: "Invert", selector: { boolean: {} } });
   fields.push(angleField());
+  // With both bound, which one a press leads with. Only a real question when
+  // there are two entities to choose between — and the reason it exists: the
+  // shutter used to be reachable by hold alone, which is not discoverable and
+  // is awkward on a wall tablet.
+  if (o.entity && o.shutterEntity) {
+    fields.push({
+      name: "tapTarget",
+      label: "Tap opens",
+      helper: "The other one moves to press-and-hold. Opens the dialog; use Tap action below to move the shutter itself",
+      selector: dropdown(
+        opt("opening", o.type === "door" ? "The door" : "The window"),
+        opt("shutter", "The shutter")
+      ),
+    });
+  }
+  // Actions, once there is anything to act on. The tap default names what the
+  // card would do untouched — toggle for an open/close cover, more-info
+  // otherwise — so the field never claims a default the card doesn't take.
+  if (o.entity || o.shutterEntity) {
+    fields.push(
+      {
+        name: "tap_action",
+        label: "Tap action",
+        selector: {
+          ui_action: {
+            default_action:
+              openingActionForGesture(o, "tap", featuresOf)?.config.action ?? "none",
+          },
+        },
+      },
+      {
+        name: "hold_action",
+        label: "Hold action",
+        // With both bound, holding reaches whichever entity the tap does not.
+        // With only one, there is nothing left for hold to open.
+        helper: o.entity && o.shutterEntity ? "Opens the entity the tap doesn't" : undefined,
+        selector: {
+          ui_action: {
+            default_action: o.entity && o.shutterEntity ? "more-info" : "none",
+          },
+        },
+      },
+      {
+        name: "double_tap_action",
+        label: "Double-tap action",
+        selector: { ui_action: { default_action: "none" } },
+      }
+    );
+  }
   return {
     fields,
     data: {
@@ -293,13 +365,37 @@ export function openingForm(o: Opening): FormSpec {
       entity: o.entity ?? "",
       shutterEntity: o.shutterEntity ?? "",
       shutterStyle: shutterStyleOf(o),
+      shutterSide: o.shutterFlipV ? "near" : "far",
+      shutterInvert: o.shutterInvert ?? false,
+      tapTarget: o.tapTarget ?? "opening",
       invert: o.invert ?? false,
       angle: o.angle,
+      tap_action: o.tap_action,
+      hold_action: o.hold_action,
+      double_tap_action: o.double_tap_action,
     },
     toPatch(patch) {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(patch)) {
-        if (k === "motion") {
+        if (k === "shutterEntity") {
+          out.shutterEntity = v;
+          // Everything that only means something *with* a shutter goes with
+          // it. Left behind, a stale invert or side would silently reapply to
+          // whatever shutter is bound next.
+          if (!v) {
+            out.shutterStyle = undefined;
+            out.shutterFlipV = undefined;
+            out.shutterInvert = undefined;
+            out.shutterActiveColor = undefined;
+            // Nothing left to lead with, so the choice goes too — otherwise it
+            // would silently point the tap at the next shutter bound here.
+            out.tapTarget = undefined;
+          }
+        } else if (k === "shutterSide") out.shutterFlipV = v === "near" || undefined;
+        else if (k === "shutterInvert") out.shutterInvert = v || undefined;
+        // The opening is the default, so it stays out of the YAML.
+        else if (k === "tapTarget") out.tapTarget = v === "shutter" ? "shutter" : undefined;
+        else if (k === "motion") {
           out.motion = v === "slide" || v === "roll" ? v : undefined;
           // sliderStyle only applies while sliding — drop it when switching away.
           if (v !== "slide") out.sliderStyle = undefined;

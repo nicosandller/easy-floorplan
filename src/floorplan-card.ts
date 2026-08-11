@@ -35,10 +35,15 @@ import {
   sunBrightness,
   resolveOpeningAmount,
   openingIsActive,
-  openingClickAction,
+  openingActionForGesture,
+  openingIsPressable,
   shutterAmount,
   shutterStyleOf,
   shutterActive,
+  shutterMarkPoint,
+  shutterMarkIcon,
+  hasShutterMark,
+  entityStateText,
   renderRipple,
   renderFurniture,
   furnitureColor,
@@ -232,44 +237,77 @@ export class FloorplanCard extends LitElement {
     executeAction(this, this.hass, item, actionForGesture(item, ev.detail.action));
   }
 
-  /** Open Home Assistant's more-info dialog for an entity. */
-  private _openMoreInfo(entityId: string): void {
-    this.dispatchEvent(
-      new CustomEvent("hass-more-info", {
-        detail: { entityId },
-        bubbles: true,
-        composed: true,
-      })
-    );
+  /**
+   * An entity's `supported_features` bitmask, or 0 when it isn't in `hass`.
+   * An arrow property so it can be handed to the pure resolvers in `render.ts`
+   * without a `.bind(this)` at every call site.
+   */
+  private _featuresOf = (id: string): number =>
+    (this.hass?.states[id]?.attributes?.supported_features as number) ?? 0;
+
+  /** What a gesture on this opening would do, if anything. */
+  private _openingPress(o: Opening, gesture: "tap" | "hold" | "double_tap") {
+    return openingActionForGesture(o, gesture, this._featuresOf);
   }
 
   /**
-   * Tapping an entity-bound opening. A bound `shutterEntity` wins the tap and
-   * opens its more-info dialog, where a position-aware `cover` exposes its
-   * slider. Otherwise a controllable `cover` toggles and everything else opens
-   * its own dialog. See {@link openingClickAction}.
+   * Pressing an opening (issue #74 follow-up). Which entity answers — the
+   * window/door or its shutter — is {@link openingActionForGesture}'s call;
+   * from here it is the same Lovelace dispatch every device uses.
    */
-  private _onOpeningClick(o: Opening): void {
+  private _onOpeningAction(
+    ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>,
+    o: Opening
+  ): void {
     if (!this.hass) return;
-    // An opening can carry two entities: "entity" is the sash's own
-    // contact or cover, "shutterEntity" the external roller shutter drawn
-    // over it (#74). The shutter is the layer a user can actually move, so
-    // it wins the tap and opens its more-info dialog - that is where a
-    // position-aware cover offers its slider. The sash keeps reporting
-    // itself through the swinging leaf on the plan, so nothing is lost.
-    // Openings carrying only a shutter used to be inert: the old
-    // "!o.entity" guard returned before anything could happen.
-    if (o.shutterEntity) {
-      this._openMoreInfo(o.shutterEntity);
-      return;
-    }
-    if (!o.entity) return;
-    const features = (this.hass.states[o.entity]?.attributes?.supported_features as number) ?? 0;
-    if (openingClickAction(o.entity, features) === "cover-toggle") {
-      this.hass.callService("cover", "toggle", { entity_id: o.entity });
-    } else {
-      this._openMoreInfo(o.entity);
-    }
+    const press = this._openingPress(o, ev.detail.action);
+    if (!press) return;
+    executeAction(this, this.hass, { entity: press.entity }, press.config);
+  }
+
+  /**
+   * The shutter badge (issue #74 follow-up): the shutter entity's own icon,
+   * beside an opening that binds both a window/door and a shutter.
+   *
+   * HTML rather than SVG, like the device badges and for the same two
+   * reasons: it holds a real `ha-icon`, and it is sized in screen pixels, so
+   * it stays legible on a plan whose canvas units are whatever the author
+   * chose. The glyph carries the open/closed reading on its own — HA's shutter
+   * icons come in pairs — and the accent says the same thing again in colour.
+   *
+   * Tapping it opens the shutter, whatever the opening's own tap does. That is
+   * the point of drawing it: the entity the opening symbol does not lead with
+   * gets a control of its own, instead of living behind a press-and-hold
+   * nobody can see.
+   */
+  private _renderShutterMark(o: Opening, c: FloorplanCardConfig, rot: PlanRotation): TemplateResult {
+    const id = o.shutterEntity!;
+    const st = this.hass?.states[id];
+    const open = shutterAmount(st, o.shutterInvert) > 0;
+    const active = shutterActive(st, o.shutterInvert);
+    const icon = shutterMarkIcon(st, id, open, this.hass?.entities?.[id]?.icon);
+    const accent = cssColor(o.shutterActiveColor ?? o.activeColor) ?? SKIN_ACCENT;
+    const at = shutterMarkPoint(o);
+    const p = rotatePlanPoint(at.x, at.y, c.width, c.height, rot);
+    const d = rotatedCanvasSize(c.width, c.height, rot);
+    const name =
+      (this.hass?.states[id]?.attributes?.friendly_name as string | undefined) ?? id;
+    return html`
+      <div
+        class="shutter-mark ${active ? "on" : "off"}"
+        data-entity=${cssEntityId(id) ?? nothing}
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;--fp-active:${accent};"
+        title="${name} · ${entityStateText(this.hass, id)}"
+        role="button"
+        tabindex="0"
+        @action=${() => {
+          if (this.hass) executeAction(this, this.hass, { entity: id }, { action: "more-info" });
+        }}
+        .actionHandler=${actionHandler({})}
+      >
+        <ha-icon icon=${icon}></ha-icon>
+      </div>
+    `;
   }
 
   private _renderBadge(item: FloorItem, scale: OverlayScale): TemplateResult {
@@ -690,19 +728,35 @@ export class FloorplanCard extends LitElement {
                 // yet → previewed shut, like a static plan.
                 shutter: o.shutterEntity
                   ? {
-                      amount: shutterAmount(shutterState),
-                      active: shutterActive(shutterState),
+                      amount: shutterAmount(shutterState, o.shutterInvert),
+                      active: shutterActive(shutterState, o.shutterInvert),
                       style: shutterStyleOf(o),
+                      // The shutter's own accent, falling back to the
+                      // opening's and then to the skin's.
+                      accent: o.shutterActiveColor ?? o.activeColor ?? SKIN_ACCENT,
+                      flip: o.shutterFlipV,
                     }
                   : undefined,
               });
-              if (!o.entity) return symbol;
-              // Entity-bound openings are tappable — a transparent rect over the
-              // opening's wall gap gives a reliable hit target beyond the thin
-              // leaf/panel strokes.
+              // Only an opening that answers gets a hit target — the same test
+              // devices get (issue #134), so an unbound opening is not a button
+              // that does nothing. A shutter-only opening does answer, which is
+              // why this is no longer `if (!o.entity)`.
+              if (!openingIsPressable(o, this._featuresOf)) return symbol;
+              // A transparent rect over the opening's wall gap gives a reliable
+              // hit target beyond the thin leaf/panel strokes.
               const half = o.length / 2;
               const cutH = WALL_THICKNESS + 4;
-              return svg`<g class="fp-opening" @click=${() => this._onOpeningClick(o)}>
+              return svg`<g class="fp-opening" role="button" tabindex="0"
+                    @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
+                      this._onOpeningAction(ev, o)}
+                    .actionHandler=${actionHandler({
+                      // Only wait out the hold/double-tap timers when a gesture
+                      // actually resolves: otherwise every tap on a plain
+                      // contact sensor would sit for 500ms before answering.
+                      hasHold: hasAction(this._openingPress(o, "hold")?.config),
+                      hasDoubleClick: hasAction(this._openingPress(o, "double_tap")?.config),
+                    })}>
                   ${symbol}
                   <rect class="fp-opening-hit" x=${o.x - half} y=${o.y - cutH / 2}
                         width=${o.length} height=${cutH}
@@ -744,6 +798,13 @@ export class FloorplanCard extends LitElement {
           <div class="items">
             ${active.areas?.map((a) => this._renderAreaLabel(a, c, rot, scale))}
             ${active.texts.map((t) => this._renderText(t, c, rot, scale))}
+            ${repeat(
+              // Keyed like the openings above: a floor switch must build fresh
+              // nodes rather than morph one floor's badges into another's.
+              active.openings.filter((o) => hasShutterMark(o)),
+              (o, i) => `${o.id || i}-shutter`,
+              (o) => this._renderShutterMark(o, c, rot)
+            )}
             ${repeat(
               // No entity filter: devices that exist physically but have no HA
               // entity still deserve their badge (issue #39). Keyed by id so a
@@ -998,6 +1059,41 @@ export class FloorplanCard extends LitElement {
     .fp-opening-hit {
       fill: transparent;
       pointer-events: all;
+    }
+    /* Shutter badge (issue #74 follow-up): screen-sized, so it stays legible
+       whatever canvas units the plan is drawn in — the same reason device
+       badges are sized in pixels. Sits in the .items overlay, which is
+       pointer-events:none, so it takes its own back. */
+    .shutter-mark {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      pointer-events: auto;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--fp-skin-paper, var(--card-background-color, #fff));
+      border: 1px solid var(--fp-skin-wall, var(--primary-text-color, #212121));
+      color: var(--fp-skin-wall, var(--primary-text-color, #212121));
+      opacity: 0.75;
+      transition: color 0.3s ease, opacity 0.3s ease, border-color 0.3s ease;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
+    }
+    /* Open: the accent, said twice — the glyph is already the "open" half of
+       HA's icon pair, and the colour repeats it for a glance across the room. */
+    .shutter-mark.on {
+      color: var(--fp-active, var(--fp-skin-accent, var(--primary-color, #03a9f4)));
+      border-color: var(--fp-active, var(--fp-skin-accent, var(--primary-color, #03a9f4)));
+      opacity: 1;
+    }
+    .shutter-mark ha-icon {
+      --mdc-icon-size: 15px;
+      display: flex;
     }
     .fp-slide-panel {
       transform-box: fill-box;

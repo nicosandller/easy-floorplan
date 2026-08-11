@@ -800,6 +800,179 @@ describe("openingForm — sash and shutter (issues #73 / #74)", () => {
   });
 });
 
+describe("openingForm — shutter invert and side (issue #74 follow-up)", () => {
+  const win = { id: "w1", type: "window", x: 0, y: 0, length: 90, angle: 0 } as Opening;
+  const hinged = { ...win, shutterEntity: "binary_sensor.persiana" } as Opening;
+  const roller = { ...win, shutterEntity: "cover.tapparella" } as Opening;
+  const names = (o: Opening) => openingForm(o).fields.map((f) => f.name);
+
+  it("offers Invert shutter only once a shutter is bound", () => {
+    expect(names(win)).not.toContain("shutterInvert");
+    expect(names(hinged)).toContain("shutterInvert");
+    expect(names(roller)).toContain("shutterInvert");
+  });
+
+  it("keeps it separate from the opening's own Invert", () => {
+    // A reed contact on the shutter and the window's own sensor routinely
+    // disagree about which way round `on` means open.
+    const both = { ...hinged, entity: "binary_sensor.win" } as Opening;
+    expect(names(both)).toContain("invert");
+    expect(names(both)).toContain("shutterInvert");
+    expect(openingForm({ ...both, shutterInvert: true, invert: false } as Opening).data)
+      .toMatchObject({ shutterInvert: true, invert: false });
+  });
+
+  it("asks which side only for hinged panels", () => {
+    // The roll curtain is symmetric about the wall line, so the answer would
+    // change nothing on screen.
+    expect(names(hinged)).toContain("shutterSide");
+    expect(names(roller)).not.toContain("shutterSide");
+    // …and it follows the explicit style, not just the entity's domain.
+    expect(names({ ...roller, shutterStyle: "swing" } as Opening)).toContain("shutterSide");
+    expect(names({ ...hinged, shutterStyle: "roll" } as Opening)).not.toContain("shutterSide");
+  });
+
+  it("reads the side back off shutterFlipV", () => {
+    expect(openingForm(hinged).data.shutterSide).toBe("far");
+    expect(openingForm({ ...hinged, shutterFlipV: true } as Opening).data.shutterSide).toBe("near");
+  });
+
+  it("patches the side and the invert back into config keys", () => {
+    const { toPatch } = openingForm(hinged);
+    expect(toPatch({ shutterSide: "near" })).toEqual({ shutterFlipV: true });
+    // "far" is the default, so it stays out of the YAML.
+    expect(toPatch({ shutterSide: "far" })).toEqual({ shutterFlipV: undefined });
+    expect(toPatch({ shutterInvert: true })).toEqual({ shutterInvert: true });
+    expect(toPatch({ shutterInvert: false })).toEqual({ shutterInvert: undefined });
+  });
+
+  it("clearing the shutter clears everything that only meant something with it", () => {
+    const decorated = {
+      ...hinged,
+      shutterStyle: "swing",
+      shutterFlipV: true,
+      shutterInvert: true,
+      shutterActiveColor: "#ff0000",
+    } as Opening;
+    // Left behind, a stale invert or side would silently reapply to whatever
+    // shutter is bound next.
+    expect(openingForm(decorated).toPatch({ shutterEntity: undefined })).toEqual({
+      shutterEntity: undefined,
+      shutterStyle: undefined,
+      shutterFlipV: undefined,
+      shutterInvert: undefined,
+      shutterActiveColor: undefined,
+    });
+  });
+
+  it("binding a different shutter keeps its settings", () => {
+    expect(openingForm(hinged).toPatch({ shutterEntity: "cover.other" })).toEqual({
+      shutterEntity: "cover.other",
+    });
+  });
+});
+
+describe("openingForm — actions (issue #74 follow-up)", () => {
+  const win = { id: "w1", type: "window", x: 0, y: 0, length: 90, angle: 0 } as Opening;
+  const names = (o: Opening) => openingForm(o).fields.map((f) => f.name);
+  const gestures = ["tap_action", "hold_action", "double_tap_action"];
+  /** A cover that can open and close; everything else reports no features. */
+  const toggleable = (id: string) => (id.startsWith("cover.") ? 3 : 0);
+  const defaultOf = (o: Opening, name: string, featuresOf?: (id: string) => number) =>
+    (openingForm(o, featuresOf).fields.find((f) => f.name === name)!.selector as {
+      ui_action: { default_action: string };
+    }).ui_action.default_action;
+
+  it("offers no actions until there is something to act on", () => {
+    for (const g of gestures) expect(names(win)).not.toContain(g);
+  });
+
+  it("offers all three once either entity is bound", () => {
+    for (const g of gestures) {
+      expect(names({ ...win, entity: "binary_sensor.win" } as Opening)).toContain(g);
+      // A shutter-only opening is pressable too, so it gets them as well.
+      expect(names({ ...win, shutterEntity: "cover.tapparella" } as Opening)).toContain(g);
+    }
+  });
+
+  it("the tap default names what the card would actually do", () => {
+    const cover = { ...win, entity: "cover.win" } as Opening;
+    expect(defaultOf(cover, "tap_action", toggleable)).toBe("toggle");
+    // Without a features lookup the form can only say "no features", and a
+    // cover it cannot open reads more-info — same as the card would do.
+    expect(defaultOf(cover, "tap_action")).toBe("more-info");
+    expect(defaultOf({ ...win, entity: "binary_sensor.win" } as Opening, "tap_action", toggleable))
+      .toBe("more-info");
+    // A shutter-only opening taps its shutter, since nothing else is bound.
+    expect(
+      defaultOf({ ...win, shutterEntity: "cover.tapparella" } as Opening, "tap_action", toggleable)
+    ).toBe("toggle");
+  });
+
+  it("hold defaults to more-info only when there is a shutter to reach", () => {
+    const both = { ...win, entity: "binary_sensor.win", shutterEntity: "cover.s" } as Opening;
+    expect(defaultOf(both, "hold_action", toggleable)).toBe("more-info");
+    expect(defaultOf({ ...win, entity: "binary_sensor.win" } as Opening, "hold_action")).toBe("none");
+    expect(defaultOf({ ...win, shutterEntity: "cover.s" } as Opening, "hold_action")).toBe("none");
+  });
+
+  it("offers the tap target only with two entities to choose between", () => {
+    expect(names({ ...win, entity: "binary_sensor.win" } as Opening)).not.toContain("tapTarget");
+    expect(names({ ...win, shutterEntity: "cover.s" } as Opening)).not.toContain("tapTarget");
+    const both = { ...win, entity: "binary_sensor.win", shutterEntity: "cover.s" } as Opening;
+    expect(names(both)).toContain("tapTarget");
+    expect(openingForm(both).data.tapTarget).toBe("opening");
+    expect(openingForm({ ...both, tapTarget: "shutter" } as Opening).data.tapTarget).toBe("shutter");
+  });
+
+  it("names the opening's own half after what it is", () => {
+    const label = (o: Opening) =>
+      (openingForm(o).fields.find((f) => f.name === "tapTarget")!.selector as {
+        select: { options: { value: string; label: string }[] };
+      }).select.options[0].label;
+    const bound = { entity: "binary_sensor.x", shutterEntity: "cover.s" };
+    expect(label({ ...win, ...bound } as Opening)).toBe("The window");
+    expect(label({ ...win, ...bound, type: "door" } as Opening)).toBe("The door");
+  });
+
+  it("the tap default follows the chosen target", () => {
+    const both = { ...win, entity: "binary_sensor.win", shutterEntity: "cover.s" } as Opening;
+    expect(defaultOf(both, "tap_action", toggleable)).toBe("more-info");
+    // Pointing it at an open/close cover still reads more-info: the choice
+    // opens the shutter's dialog rather than driving the motor.
+    expect(defaultOf({ ...both, tapTarget: "shutter" } as Opening, "tap_action", toggleable)).toBe(
+      "more-info"
+    );
+  });
+
+  it("keeps the default out of the YAML and drops it with the shutter", () => {
+    const both = { ...win, entity: "binary_sensor.win", shutterEntity: "cover.s" } as Opening;
+    const { toPatch } = openingForm(both);
+    expect(toPatch({ tapTarget: "shutter" })).toEqual({ tapTarget: "shutter" });
+    expect(toPatch({ tapTarget: "opening" })).toEqual({ tapTarget: undefined });
+    // Unbinding the shutter leaves nothing to lead with.
+    expect(
+      openingForm({ ...both, tapTarget: "shutter" } as Opening).toPatch({ shutterEntity: undefined })
+        .tapTarget
+    ).toBeUndefined();
+  });
+
+  it("double-tap always defaults to nothing", () => {
+    const both = { ...win, entity: "cover.win", shutterEntity: "cover.s" } as Opening;
+    expect(defaultOf(both, "double_tap_action", toggleable)).toBe("none");
+  });
+
+  it("round-trips the configured actions untouched", () => {
+    const tap = { action: "toggle", entity: "cover.s" };
+    const o = { ...win, entity: "binary_sensor.win", tap_action: tap } as Opening;
+    expect(openingForm(o).data.tap_action).toBe(tap);
+    expect(openingForm(o).data.hold_action).toBeUndefined();
+    expect(openingForm(o).toPatch({ tap_action: tap })).toEqual({ tap_action: tap });
+    // A configured tap replaces the default the field would otherwise name.
+    expect(defaultOf(o, "tap_action", toggleable)).toBe("toggle");
+  });
+});
+
 describe("area scoping never traps you (issue reported on #83)", () => {
   const item = { id: "i", entity: "", kind: "light", x: 0, y: 0 } as FloorItem;
 

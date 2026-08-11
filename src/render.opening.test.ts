@@ -211,3 +211,104 @@ describe("renderOpening — hinged external shutter (issue #74)", () => {
     expect(s).toContain("rotate(0deg)");
   });
 });
+
+describe("renderOpening — which side the shutter hangs on (issue #74 follow-up)", () => {
+  const win = { type: "window" } as Partial<Opening>;
+  // cutH/2 + t/2 = (8 + 4)/2 + 3/2
+  const OFFSET = 7.5;
+
+  it("hangs the panels on the far side of the wall by default", () => {
+    const s = svgOf(win, { open: false, shutter: { amount: 0.5, style: "swing" } });
+    expect(s).toContain(`translate(-45 ${OFFSET})`);
+    expect(s).toContain(`translate(45 ${OFFSET})`);
+  });
+
+  it("flip moves them to the sash's own side, offset and all", () => {
+    const s = svgOf(win, { open: false, shutter: { amount: 0.5, style: "swing", flip: true } });
+    expect(s).toContain(`translate(-45 ${-OFFSET})`);
+    expect(s).toContain(`translate(45 ${-OFFSET})`);
+    expect(s).not.toContain(`translate(-45 ${OFFSET})`);
+  });
+
+  it("flipped panels still fold away from the wall, not through it", () => {
+    // Same two angles either way — what changes is which panel takes which,
+    // so that both still swing outward from their own jamb.
+    const far = svgOf(win, { open: false, shutter: { amount: 0.5, style: "swing" } });
+    expect(far).toMatch(/translate\(-45 7\.5\)[\s\S]*?fp-door-leaf" style="transform:rotate\(45deg\)/);
+    expect(far).toMatch(/translate\(45 7\.5\)[\s\S]*?fp-leaf-r" style="transform:rotate\(-45deg\)/);
+    const near = svgOf(win, { open: false, shutter: { amount: 0.5, style: "swing", flip: true } });
+    expect(near).toMatch(/translate\(-45 -7\.5\)[\s\S]*?fp-door-leaf" style="transform:rotate\(-45deg\)/);
+    expect(near).toMatch(/translate\(45 -7\.5\)[\s\S]*?fp-leaf-r" style="transform:rotate\(45deg\)/);
+  });
+
+  it("shut is shut on either side — the panels still cover the opening", () => {
+    const near = svgOf(win, { open: false, shutter: { amount: 0, style: "swing", flip: true } });
+    expect(near).toContain("rotate(0deg)");
+    expect(near).toContain(`translate(-45 ${-OFFSET})`);
+  });
+
+  it("the roll curtain ignores the side — it is symmetric about the wall line", () => {
+    const plain = svgOf(win, { open: false, shutter: { amount: 0.4, style: "roll" } });
+    const flipped = svgOf(win, { open: false, shutter: { amount: 0.4, style: "roll", flip: true } });
+    expect(flipped).toBe(plain);
+  });
+});
+
+describe("renderOpening — the symbol stays a symbol (issue #74 follow-up)", () => {
+  const bound = { entity: "binary_sensor.win", shutterEntity: "cover.tapparella" };
+
+  it("draws no badge of its own for the second entity", () => {
+    // The shutter badge is HTML in the overlay, not SVG: it carries a real
+    // ha-icon and is sized in screen pixels. See shutterMarkPoint / the card.
+    const s = svgOf({ type: "window", ...bound }, { shutter: { amount: 0.5 } });
+    expect(s).not.toContain("<circle");
+    expect(s).not.toContain("<title>");
+    // …and binding the second entity adds nothing to the symbol: the shutter
+    // is drawn from `style.shutter`, which the host resolves either way.
+    expect(s).toBe(
+      svgOf({ type: "window", entity: "binary_sensor.win" }, { shutter: { amount: 0.5 } })
+    );
+  });
+});
+
+describe("renderOpening — the shutter's own accent (issue #74 follow-up)", () => {
+  const win = { type: "window" } as Partial<Opening>;
+
+  it("an open shutter wears its own accent, not the opening's", () => {
+    const s = svgOf(win, {
+      open: true,
+      active: true,
+      accent: "#ff0000",
+      shutter: { amount: 0.5, active: true, accent: "#00ff00" },
+    });
+    expect(s).toContain("#00ff00"); // the curtain
+    expect(s).toContain("#ff0000"); // the sash it covers, unchanged
+  });
+
+  it("falls back to the opening's accent when it has none of its own", () => {
+    const s = svgOf(win, {
+      open: false,
+      accent: "#ff0000",
+      shutter: { amount: 0.5, active: true },
+    });
+    expect(s).toContain("#ff0000");
+    expect(s).not.toContain("#00ff00");
+  });
+
+  it("an accent it isn't wearing yet paints nothing — a shut shutter is base colour", () => {
+    const s = svgOf(win, {
+      open: false,
+      shutter: { amount: 0, active: false, accent: "#00ff00", style: "swing" },
+    });
+    expect(s).not.toContain("#00ff00");
+    expect(s).toContain("#000"); // the base colour passed as `color`
+  });
+
+  it("applies to the hinged panels as well as the roll curtain", () => {
+    const swing = svgOf(win, {
+      open: false,
+      shutter: { amount: 0.5, active: true, accent: "#00ff00", style: "swing" },
+    });
+    expect(swing).toContain("fill:#00ff00");
+  });
+});

@@ -126,6 +126,56 @@ export interface Opening {
    */
   shutterStyle?: "roll" | "swing";
   /**
+   * Flip the open/closed interpretation of {@link shutterEntity}, exactly as
+   * {@link invert} does for `entity`. Not the same switch: a reed contact on a
+   * hinged shutter commonly reports `on` when the panels are **shut** (the
+   * magnet only meets its contact when they are folded together), while the
+   * window behind it reports the other way round. One flag could not describe
+   * both.
+   */
+  shutterInvert?: boolean;
+  /**
+   * Colour of the shutter while it is (partly) open. Falls back to
+   * {@link activeColor}, then the skin accent — so a plan that only wants one
+   * accent still sets one, and a plan that wants the shutter to read
+   * separately from the sash it covers can say so.
+   */
+  shutterActiveColor?: string;
+  /**
+   * Hinged shutters only: put the panels on the sash's **own** side of the
+   * wall instead of the far side (the default). Shutters live outside, and
+   * which side of a wall "outside" is depends on the room — a window drawn
+   * with `flipV` opens the other way, and its shutters follow it.
+   *
+   * Ignored by the roll curtain, which is drawn symmetrically about the wall
+   * line and so looks identical either way.
+   */
+  shutterFlipV?: boolean;
+  /**
+   * With both entities bound, which one the gestures lead with — the
+   * window/door itself (the default), or the shutter. The other one moves to
+   * hold. Meaningless with only one bound, since there is nothing to choose
+   * between.
+   *
+   * The default is the opening because a tap is the gesture people make by
+   * accident and the shutter is real hardware that takes seconds to travel
+   * (issue #47). Naming the shutter here is the opposite of an accident, so
+   * the choice is honoured — it opens the shutter's dialog rather than driving
+   * the motor. Moving it on a tap is a further step, and stays with
+   * {@link tap_action}.
+   */
+  tapTarget?: OpeningTapTarget;
+  /**
+   * Lovelace actions for the opening (issue #74 follow-up). Same shape as
+   * {@link FloorItem.tap_action}; an action's own `entity` picks which of
+   * `entity` / `shutterEntity` it acts on. Defaults: tap opens/toggles the
+   * primary entity, hold shows more-info for the shutter when both are bound,
+   * double-tap does nothing. See {@link openingActionForGesture}.
+   */
+  tap_action?: ActionConfig;
+  hold_action?: ActionConfig;
+  double_tap_action?: ActionConfig;
+  /**
    * Sliding openings only (`motion: "slide"`): how the panels are arranged.
    * - `single` (default) — one panel slides aside into the wall.
    * - `bypass` — two panels on parallel tracks; one slides behind the other
@@ -136,6 +186,14 @@ export interface Opening {
    */
   sliderStyle?: "single" | "bypass" | "biparting";
 }
+
+/**
+ * Which of an opening's two entities its gestures lead with — see
+ * {@link Opening.tapTarget}. Named by role rather than by entity id, like
+ * {@link BadgeEntity}, so renaming an entity in Home Assistant cannot orphan
+ * the choice.
+ */
+export type OpeningTapTarget = "opening" | "shutter";
 
 export type ItemKind =
   | "light"

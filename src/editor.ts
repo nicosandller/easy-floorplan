@@ -61,6 +61,11 @@ import {
   openingDefaultOpen,
   openingMotion,
   shutterStyleOf,
+  shutterAmount,
+  shutterActive,
+  shutterMarkIcon,
+  shutterMarkPoint,
+  hasShutterMark,
   openingFromDeviceClass,
   renderRipple,
   renderFurniture,
@@ -1867,6 +1872,16 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
+   * An entity's `supported_features` bitmask, or 0 when it isn't in `hass`.
+   * Handed to {@link openingForm} so its Tap field can name the default the
+   * live card would take — which for a `cover` depends on whether it can
+   * actually open and close.
+   */
+  private _supportedFeatures(id: string): number {
+    return (this.hass?.states[id]?.attributes?.supported_features as number) ?? 0;
+  }
+
+  /**
    * The glyph a device shows when no state rule names one — what a rule's
    * empty icon box falls back to. Resolved exactly as the card resolves it,
    * with the rules removed so a currently-matching rule cannot report itself
@@ -2917,6 +2932,9 @@ export class FloorplanCardEditor extends LitElement {
             )}
             <div class="items">
               ${floor.texts.map((t) => this._renderTextOverlay(t, c))}
+              ${floor.openings
+                .filter((o) => hasShutterMark(o))
+                .map((o) => this._renderShutterMarkOverlay(o, c))}
               ${floor.items.map((it) => this._renderItemOverlay(it, c))}
             </div>
           </div>
@@ -3346,7 +3364,9 @@ export class FloorplanCardEditor extends LitElement {
           amount: openingMotion(o) !== "swing" ? 0.55 : undefined,
           // Shutter previewed half-rolled so the layer is visible while
           // configuring, whatever the live state.
-          shutter: o.shutterEntity ? { amount: 0.55, style: shutterStyleOf(o) } : undefined,
+          shutter: o.shutterEntity
+            ? { amount: 0.55, style: shutterStyleOf(o), flip: o.shutterFlipV }
+            : undefined,
         })}
       </g>`;
   }
@@ -3490,6 +3510,31 @@ export class FloorplanCardEditor extends LitElement {
             : svg`<circle cx=${p.x} cy=${p.y} r="5" class="area-draft-point" />`
         )}
       </g>`;
+  }
+
+  /**
+   * The card's shutter badge, previewed (issue #74 follow-up) — an opening
+   * with both entities bound shows the shutter's own icon beside it, and the
+   * editor is where you find out whether it lands somewhere sensible.
+   *
+   * Inert here: the canvas selects and drags openings by clicking them, and a
+   * badge that swallowed those clicks would make the opening under it awkward
+   * to grab. On the card it is a control; here it is a picture of one.
+   */
+  private _renderShutterMarkOverlay(o: Opening, c: FloorplanCardConfig): TemplateResult {
+    const id = o.shutterEntity!;
+    const st = this.hass?.states[id];
+    const open = shutterAmount(st, o.shutterInvert) > 0;
+    const icon = shutterMarkIcon(st, id, open, this.hass?.entities?.[id]?.icon);
+    const accent = cssColor(o.shutterActiveColor ?? o.activeColor) ?? SKIN_ACCENT;
+    const at = shutterMarkPoint(o);
+    return html`<div
+      class="shutter-mark ${shutterActive(st, o.shutterInvert) ? "on" : "off"}"
+      style="left:${(at.x / c.width) * 100}%; top:${(at.y / c.height) * 100}%;--fp-active:${accent};"
+      title=${`${(st?.attributes?.friendly_name as string | undefined) ?? id} — shown on the card, tap it there to open the shutter`}
+    >
+      <ha-icon icon=${icon}></ha-icon>
+    </div>`;
   }
 
   private _renderItemOverlay(it: FloorItem, c: FloorplanCardConfig): TemplateResult {
@@ -3696,7 +3741,7 @@ export class FloorplanCardEditor extends LitElement {
       const o = this._floor().openings.find((x) => x.id === sel.id);
       if (!o) return html`${nothing}`;
       return html`
-        ${this._renderForm(openingForm(o), (patch, live) => {
+        ${this._renderForm(openingForm(o, (id) => this._supportedFeatures(id)), (patch, live) => {
           if ("entity" in patch) {
             // Infer type/motion from the entity's HA device_class (e.g. a
             // `cover` with device_class `window` → a window; a `garage`
@@ -3718,6 +3763,22 @@ export class FloorplanCardEditor extends LitElement {
               placeholder: "(primary)",
               onLive: (activeColor) => this._updateOpeningLive(o.id, { activeColor }),
               onCommit: (activeColor) => this._updateOpening(o.id, { activeColor }),
+            })
+          : nothing}
+        ${o.shutterEntity
+          ? // The shutter's own accent, so an open shutter over a shut window
+            // can read as a separate thing from the sash it covers. Falls back
+            // to the opening's active color, hence the placeholder.
+            this._renderColorRow({
+              label: "Shutter color",
+              title: "Shutter color while it is open",
+              value: o.shutterActiveColor,
+              swatch: o.activeColor ?? "#03a9f4",
+              placeholder: o.activeColor ? "(active color)" : "(primary)",
+              onLive: (shutterActiveColor) =>
+                this._updateOpeningLive(o.id, { shutterActiveColor }),
+              onCommit: (shutterActiveColor) =>
+                this._updateOpening(o.id, { shutterActiveColor }),
             })
           : nothing}
       `;
@@ -4637,6 +4698,31 @@ export class FloorplanCardEditor extends LitElement {
       position: absolute;
       inset: 0;
       pointer-events: none;
+    }
+    /* Preview of the card's shutter badge. Inherits .items' pointer-events:
+       none — the opening underneath stays clickable for selection and drag. */
+    .shutter-mark {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      background: var(--fp-skin-paper, var(--card-background-color, #fff));
+      border: 1px solid var(--fp-skin-wall, var(--primary-text-color, #212121));
+      color: var(--fp-skin-wall, var(--primary-text-color, #212121));
+      opacity: 0.75;
+    }
+    .shutter-mark.on {
+      color: var(--fp-active, var(--fp-skin-accent, var(--primary-color, #03a9f4)));
+      border-color: var(--fp-active, var(--fp-skin-accent, var(--primary-color, #03a9f4)));
+      opacity: 1;
+    }
+    .shutter-mark ha-icon {
+      --mdc-icon-size: 15px;
+      display: flex;
     }
     .edit-item {
       position: absolute;

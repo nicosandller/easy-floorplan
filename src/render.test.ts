@@ -35,6 +35,12 @@ import {
   DEAD_SPACE_HATCH_OPACITY,
   shutterActive,
   openingClickAction,
+  openingActionForGesture,
+  openingIsPressable,
+  hasShutterMark,
+  shutterMarkPoint,
+  shutterMarkIcon,
+  SHUTTER_MARK_OFFSET,
   resolveOpeningOpen,
   resolveOpeningAmount,
   kindFromEntity,
@@ -2014,6 +2020,335 @@ describe("shutterAmount / shutterActive (issue #74)", () => {
     expect(shutterActive(st("open", 40))).toBe(true);
     expect(shutterActive(st("closing", 0))).toBe(true);
     expect(shutterActive(st("closed", 0))).toBe(false);
+  });
+});
+
+describe("shutterAmount / shutterActive — inverted shutters (issue #74 follow-up)", () => {
+  const st = (state: string, pos?: number) =>
+    ({ state, attributes: pos === undefined ? {} : { current_position: pos } });
+
+  it("inverts the position, not just the state", () => {
+    expect(shutterAmount(st("open", 100), true)).toBe(0);
+    expect(shutterAmount(st("closed", 0), true)).toBe(1);
+    expect(shutterAmount(st("open", 30), true)).toBeCloseTo(0.7);
+  });
+
+  it("inverts the open-ish states of a plain contact", () => {
+    // A reed contact on a hinged shutter reads `on` while the panels are shut.
+    expect(shutterAmount(st("on"), true)).toBe(0);
+    expect(shutterAmount(st("off"), true)).toBe(1);
+    expect(shutterAmount(st("open"), true)).toBe(0);
+    expect(shutterAmount(st("closed"), true)).toBe(1);
+  });
+
+  it("an outage still fails closed — invert must never flip it open", () => {
+    // The whole point of checking the outage first: 1 - 0 would read as a
+    // wide-open shutter drawn from a reading we do not have.
+    expect(shutterAmount(st("unavailable"), true)).toBe(0);
+    expect(shutterAmount(st("unknown"), true)).toBe(0);
+    expect(shutterAmount(st("unavailable", 100), true)).toBe(0);
+    expect(shutterAmount(undefined, true)).toBe(0);
+    expect(shutterActive(st("unavailable"), true)).toBe(false);
+    expect(shutterActive(st("unknown", 0), true)).toBe(false);
+    expect(shutterActive(undefined, true)).toBe(false);
+  });
+
+  it("active follows the inverted reading", () => {
+    expect(shutterActive(st("on"), true)).toBe(false); // inverted: shut
+    expect(shutterActive(st("off"), true)).toBe(true); // inverted: open
+    expect(shutterActive(st("open", 100), true)).toBe(false);
+  });
+
+  it("transit is active either way round", () => {
+    // Something is moving out there whichever end the contact calls "open".
+    for (const invert of [false, true]) {
+      expect(shutterActive(st("opening", 0), invert)).toBe(true);
+      expect(shutterActive(st("closing", 100), invert)).toBe(true);
+    }
+  });
+
+  it("without the flag nothing changes (default is uninverted)", () => {
+    expect(shutterAmount(st("open", 30))).toBeCloseTo(0.3);
+    expect(shutterAmount(st("on"))).toBe(1);
+    expect(shutterActive(st("closed", 0))).toBe(false);
+  });
+});
+
+describe("openingActionForGesture (issue #74 follow-up)", () => {
+  const o = (extra: Partial<Opening> = {}) =>
+    ({ id: "o", type: "window", x: 0, y: 0, length: 90, angle: 0, ...extra }) as Opening;
+  /** A cover that can open and close; everything else reports no features. */
+  const toggleable = (id: string) => (id.startsWith("cover.") ? 3 : 0);
+  const none = () => 0;
+
+  it("tap opens more-info on the window itself", () => {
+    expect(openingActionForGesture(o({ entity: "binary_sensor.win" }), "tap", none)).toEqual({
+      entity: "binary_sensor.win",
+      config: { action: "more-info" },
+    });
+  });
+
+  it("tap toggles a cover that can open and close, and only that", () => {
+    expect(openingActionForGesture(o({ entity: "cover.win" }), "tap", toggleable)).toEqual({
+      entity: "cover.win",
+      config: { action: "toggle" },
+    });
+    // Position-only cover: no open/close bits, so more-info rather than a
+    // toggle the hardware could not honour.
+    expect(openingActionForGesture(o({ entity: "cover.win" }), "tap", () => 4)?.config).toEqual({
+      action: "more-info",
+    });
+  });
+
+  it("a shutter-only opening is driven by its shutter as the primary", () => {
+    const shutterOnly = o({ shutterEntity: "cover.tapparella" });
+    expect(openingActionForGesture(shutterOnly, "tap", toggleable)).toEqual({
+      entity: "cover.tapparella",
+      config: { action: "toggle" },
+    });
+    // Nothing is left over to be a secondary, so hold has nothing to open.
+    expect(openingActionForGesture(shutterOnly, "hold", toggleable)).toBeUndefined();
+  });
+
+  it("with both bound, the tap stays on the window and hold reaches the shutter", () => {
+    const both = o({ entity: "binary_sensor.win", shutterEntity: "cover.tapparella" });
+    // The shutter is real hardware that takes seconds to travel: a tap must
+    // never be silently retargeted at it (the lesson of issue #47).
+    expect(openingActionForGesture(both, "tap", toggleable)).toEqual({
+      entity: "binary_sensor.win",
+      config: { action: "more-info" },
+    });
+    expect(openingActionForGesture(both, "hold", toggleable)).toEqual({
+      entity: "cover.tapparella",
+      config: { action: "more-info" },
+    });
+  });
+
+  it("tapTarget: shutter swaps which entity leads", () => {
+    const both = o({
+      entity: "binary_sensor.win",
+      shutterEntity: "cover.tapparella",
+      tapTarget: "shutter",
+    });
+    // The tap opens the shutter's dialog — it does NOT drive the motor, even
+    // though the cover could be toggled. Choosing which entity answers is not
+    // choosing to move hardware on a tap (issue #47).
+    expect(openingActionForGesture(both, "tap", toggleable)).toEqual({
+      entity: "cover.tapparella",
+      config: { action: "more-info" },
+    });
+    // …and hold picks up whichever one the tap left alone.
+    expect(openingActionForGesture(both, "hold", toggleable)).toEqual({
+      entity: "binary_sensor.win",
+      config: { action: "more-info" },
+    });
+  });
+
+  it("tapTarget is ignored unless there are two entities to choose between", () => {
+    // Shutter-only: it is already the primary, and stays a plain cover tap.
+    expect(
+      openingActionForGesture(
+        o({ shutterEntity: "cover.tapparella", tapTarget: "shutter" }),
+        "tap",
+        toggleable
+      )
+    ).toEqual({ entity: "cover.tapparella", config: { action: "toggle" } });
+    // Window-only: nothing to swap to, so the choice cannot strand the press.
+    expect(
+      openingActionForGesture(o({ entity: "cover.win", tapTarget: "shutter" }), "tap", toggleable)
+    ).toEqual({ entity: "cover.win", config: { action: "toggle" } });
+  });
+
+  it("a configured tap_action still wins, and lands on the chosen entity", () => {
+    const both = o({
+      entity: "binary_sensor.win",
+      shutterEntity: "cover.tapparella",
+      tapTarget: "shutter",
+      tap_action: { action: "toggle" },
+    });
+    // Asking for a toggle *and* pointing the tap at the shutter is how you
+    // move the shutter with one press — both halves stated explicitly.
+    expect(openingActionForGesture(both, "tap", toggleable)).toEqual({
+      entity: "cover.tapparella",
+      config: { action: "toggle" },
+    });
+  });
+
+  it("tapTarget: opening is the default, spelled out", () => {
+    const both = { entity: "binary_sensor.win", shutterEntity: "cover.tapparella" };
+    expect(openingActionForGesture(o({ ...both, tapTarget: "opening" }), "tap", toggleable)).toEqual(
+      openingActionForGesture(o(both), "tap", toggleable)
+    );
+    expect(openingActionForGesture(o({ ...both, tapTarget: "opening" }), "hold", toggleable)).toEqual(
+      { entity: "cover.tapparella", config: { action: "more-info" } }
+    );
+  });
+
+  it("double-tap does nothing by default", () => {
+    const both = o({ entity: "binary_sensor.win", shutterEntity: "cover.tapparella" });
+    expect(openingActionForGesture(both, "double_tap", toggleable)).toBeUndefined();
+    expect(openingActionForGesture(o({ entity: "cover.win" }), "double_tap", toggleable))
+      .toBeUndefined();
+  });
+
+  it("an opening with nothing bound resolves no gesture at all", () => {
+    for (const g of ["tap", "hold", "double_tap"] as const) {
+      expect(openingActionForGesture(o(), g, toggleable)).toBeUndefined();
+    }
+  });
+
+  it("a configured action wins over the default, on the primary", () => {
+    const cfg = { action: "toggle" };
+    const both = o({
+      entity: "binary_sensor.win",
+      shutterEntity: "cover.tapparella",
+      tap_action: cfg,
+    });
+    expect(openingActionForGesture(both, "tap", toggleable)).toEqual({
+      entity: "binary_sensor.win",
+      config: cfg,
+    });
+  });
+
+  it("a configured action's own entity picks which of the two it acts on", () => {
+    const both = o({
+      entity: "binary_sensor.win",
+      shutterEntity: "cover.tapparella",
+      tap_action: { action: "toggle", entity: "cover.tapparella" },
+      hold_action: { action: "more-info", entity: "binary_sensor.win" },
+    });
+    expect(openingActionForGesture(both, "tap", toggleable)?.entity).toBe("cover.tapparella");
+    // Naming the shutter on the tap is a decision, so it overrides the rule
+    // that the default tap never moves it.
+    expect(openingActionForGesture(both, "hold", toggleable)?.entity).toBe("binary_sensor.win");
+  });
+
+  it("a configured action survives even with no entity to act on", () => {
+    // navigate/url need none, and dropping them would silently kill the press.
+    const nav = { action: "navigate", navigation_path: "/lovelace/0" };
+    const press = openingActionForGesture(o({ tap_action: nav }), "tap", none);
+    expect(press).toEqual({ entity: undefined, config: nav });
+  });
+
+  it("an explicit none is honoured rather than falling back to the default", () => {
+    const off = o({ entity: "cover.win", tap_action: { action: "none" } });
+    expect(openingActionForGesture(off, "tap", toggleable)?.config).toEqual({ action: "none" });
+  });
+});
+
+describe("the shutter badge (issue #74 follow-up)", () => {
+  const win = (extra: Partial<Opening> = {}) =>
+    ({ id: "o", type: "window", x: 500, y: 100, length: 90, angle: 0, ...extra }) as Opening;
+
+  it("is earned only by an opening with both entities bound", () => {
+    expect(hasShutterMark(win())).toBe(false);
+    expect(hasShutterMark(win({ entity: "binary_sensor.win" }))).toBe(false);
+    // A shutter alone has no second entity to reveal — the symbol is it.
+    expect(hasShutterMark(win({ shutterEntity: "cover.t" }))).toBe(false);
+    expect(hasShutterMark(win({ entity: "binary_sensor.win", shutterEntity: "cover.t" }))).toBe(
+      true
+    );
+  });
+
+  it("sits off the wall on the shutter's side, along the opening's normal", () => {
+    // Horizontal wall: straight out in +y, the side the shutter is drawn on.
+    expect(shutterMarkPoint(win())).toEqual({ x: 500, y: 100 + SHUTTER_MARK_OFFSET });
+    // flipV moves the shutter to the other face; the badge follows it.
+    expect(shutterMarkPoint(win({ flipV: true }))).toEqual({
+      x: 500,
+      y: 100 - SHUTTER_MARK_OFFSET,
+    });
+  });
+
+  it("follows the wall's rotation", () => {
+    // A wall running north-south (angle -90): the normal points along -x.
+    const west = shutterMarkPoint(win({ x: 172, y: 269.5, angle: -90 }));
+    expect(west.x).toBeCloseTo(172 + SHUTTER_MARK_OFFSET);
+    expect(west.y).toBeCloseTo(269.5);
+    const east = shutterMarkPoint(win({ x: 172, y: 269.5, angle: -90, flipV: true }));
+    expect(east.x).toBeCloseTo(172 - SHUTTER_MARK_OFFSET);
+    expect(east.y).toBeCloseTo(269.5);
+    // 180° puts it back on the other side of a horizontal wall.
+    expect(shutterMarkPoint(win({ angle: 180 })).y).toBeCloseTo(100 - SHUTTER_MARK_OFFSET);
+  });
+
+  it("takes a custom distance, so callers can nudge it off a crowded wall", () => {
+    expect(shutterMarkPoint(win(), 40)).toEqual({ x: 500, y: 140 });
+  });
+
+  it("shows the entity's own icon, registry override first", () => {
+    const st = { state: "open", attributes: { icon: "mdi:from-state", device_class: "shutter" } };
+    expect(shutterMarkIcon(st, "cover.s", true, "mdi:from-registry")).toBe("mdi:from-registry");
+    expect(shutterMarkIcon(st, "cover.s", true)).toBe("mdi:from-state");
+  });
+
+  it("falls back to HA's own device-class pair, which is state-aware", () => {
+    const st = (state: string) => ({ state, attributes: { device_class: "shutter" } });
+    expect(shutterMarkIcon(st("open"), "cover.s", true)).toBe("mdi:window-shutter-open");
+    expect(shutterMarkIcon(st("closed"), "cover.s", false)).toBe("mdi:window-shutter");
+  });
+
+  it("still says shutter when the entity declares no class at all", () => {
+    // An unclassed cover, or a bare contact — neither has a pair of its own,
+    // and an empty icon box would say less than a wrong-but-readable one.
+    expect(shutterMarkIcon({ state: "on", attributes: {} }, "cover.s", true)).toBe(
+      "mdi:window-shutter-open"
+    );
+    expect(shutterMarkIcon(undefined, "cover.s", false)).toBe("mdi:window-shutter");
+    expect(shutterMarkIcon(undefined, "binary_sensor.s", true)).toBe("mdi:window-shutter-open");
+  });
+
+  it("refuses an icon string that isn't one (issue #64/#106)", () => {
+    const nasty = { state: "open", attributes: { icon: "mdi:x;background:url(//evil)" } };
+    expect(shutterMarkIcon(nasty, "cover.s", true, "mdi:y;}")).toBe("mdi:window-shutter-open");
+  });
+
+  it("the open half follows the *inverted* reading, not the raw state", () => {
+    // shutterAmount has already applied shutterInvert by the time the card
+    // asks for the glyph, so a reversed contact gets the right one.
+    const contact = { state: "on", attributes: {} };
+    const open = shutterAmount(contact, true) > 0;
+    expect(open).toBe(false);
+    expect(shutterMarkIcon(contact, "binary_sensor.s", open)).toBe("mdi:window-shutter");
+  });
+});
+
+describe("openingIsPressable (issue #74 follow-up)", () => {
+  const o = (extra: Partial<Opening> = {}) =>
+    ({ id: "o", type: "window", x: 0, y: 0, length: 90, angle: 0, ...extra }) as Opening;
+  const none = () => 0;
+
+  it("an unbound opening is not a button", () => {
+    expect(openingIsPressable(o(), none)).toBe(false);
+  });
+
+  it("either entity alone makes it pressable", () => {
+    expect(openingIsPressable(o({ entity: "binary_sensor.win" }), none)).toBe(true);
+    // The gap this closes: a shutter-only opening answered to nothing before.
+    expect(openingIsPressable(o({ shutterEntity: "cover.tapparella" }), none)).toBe(true);
+  });
+
+  it("tap_action: none leaves nothing pressable — unless another gesture does", () => {
+    expect(openingIsPressable(o({ entity: "cover.win", tap_action: { action: "none" } }), none))
+      .toBe(false);
+    // Hold still resolves (both entities bound), so it is a button again.
+    expect(
+      openingIsPressable(
+        o({ entity: "cover.win", shutterEntity: "cover.s", tap_action: { action: "none" } }),
+        none
+      )
+    ).toBe(true);
+    // …or because a gesture was configured by hand.
+    expect(
+      openingIsPressable(
+        o({
+          entity: "cover.win",
+          tap_action: { action: "none" },
+          double_tap_action: { action: "more-info" },
+        }),
+        none
+      )
+    ).toBe(true);
   });
 });
 
