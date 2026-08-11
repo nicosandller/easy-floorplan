@@ -21,6 +21,7 @@ import {
   openingMirror,
   sliderStyleOf,
   openingHasTwoPanels,
+  sliderStyleHasTwoPanels,
   secondPanelOf,
   openingFromDeviceClass,
   windowSash,
@@ -254,10 +255,12 @@ describe("sliderStyleOf", () => {
   it("is single for swinging openings regardless of sliderStyle", () => {
     expect(sliderStyleOf({ type: "door", sliderStyle: "bypass" } as Opening)).toBe("single");
   });
-  it("carries the biparting-bypass style through (issue #145)", () => {
-    expect(
-      sliderStyleOf({ type: "door", motion: "slide", sliderStyle: "biparting-bypass" } as Opening),
-    ).toBe("biparting-bypass");
+  it("carries the two-panel styles through (issue #145)", () => {
+    for (const sliderStyle of ["biparting-bypass", "converging"] as const) {
+      expect(sliderStyleOf({ type: "door", motion: "slide", sliderStyle } as Opening)).toBe(
+        sliderStyle,
+      );
+    }
   });
 });
 
@@ -265,12 +268,16 @@ describe("openingHasTwoPanels / secondPanelOf (issue #145)", () => {
   const slider = (extra: Partial<Opening> = {}) =>
     ({ type: "door", motion: "slide", ...extra }) as Opening;
 
-  it("is true for exactly the two biparting styles", () => {
-    expect(openingHasTwoPanels(slider({ sliderStyle: "biparting" }))).toBe(true);
-    expect(openingHasTwoPanels(slider({ sliderStyle: "biparting-bypass" }))).toBe(true);
+  it("is true for exactly the styles that move both panels", () => {
+    for (const sliderStyle of ["biparting", "biparting-bypass", "converging"] as const) {
+      expect(openingHasTwoPanels(slider({ sliderStyle }))).toBe(true);
+      expect(sliderStyleHasTwoPanels(sliderStyle)).toBe(true);
+    }
     // bypass moves one panel past a fixed one; single moves the only panel.
     expect(openingHasTwoPanels(slider({ sliderStyle: "bypass" }))).toBe(false);
     expect(openingHasTwoPanels(slider())).toBe(false);
+    expect(sliderStyleHasTwoPanels("bypass")).toBe(false);
+    expect(sliderStyleHasTwoPanels("single")).toBe(false);
     // A swing door has leaves, but no sliding panel to bind a second sensor to.
     expect(openingHasTwoPanels({ type: "door", sliderStyle: "biparting" } as Opening)).toBe(false);
   });

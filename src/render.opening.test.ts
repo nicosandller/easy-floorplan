@@ -118,35 +118,95 @@ describe("renderOpening — biparting over fixed panels", () => {
   });
 });
 
-describe("renderOpening — a biparting slider's second panel (issue #145)", () => {
-  for (const sliderStyle of ["biparting", "biparting-bypass"] as const) {
-    const travel = sliderStyle === "biparting" ? 45 : 22.5;
+// Issue #145: the two-operable-leaf slider. No fixed panels at all — both
+// leaves move, toward each other, and stack over the middle.
+describe("renderOpening — converging", () => {
+  const converging = (extra: Partial<Opening> = {}) =>
+    sliding({ sliderStyle: "converging", ...extra });
+
+  it("draws two half-width moving panels and nothing fixed", () => {
+    const closed = svgOf(converging(), { open: false });
+    // length 90 → two 45 panels, both of them on a slide group. Contrast with
+    // biparting-bypass, which splits the same opening into four quarters.
+    expect(closed.match(/width=45/g)?.length).toBe(2);
+    expect(closed.match(/fp-slide-panel/g)?.length).toBe(2);
+    expect(closed).not.toContain("width=22.5");
+    expect(closed).toContain("translateX(0px)"); // meet in the middle when shut
+  });
+
+  it("runs the panels toward each other, not apart", () => {
+    const open = svgOf(converging(), { open: true });
+    // First panel (at the −x jamb) travels +, second −: the opposite of every
+    // biparting style, and the whole point of this one.
+    expect(open).toContain("translateX(22.5px)");
+    expect(open).toContain("translateX(-22.5px)");
+  });
+
+  it("stacks over the middle half, clearing a quarter at each jamb", () => {
+    const open = svgOf(converging(), { open: true });
+    // Panel one spans −45..0 and shifts +22.5 → −22.5..22.5; panel two spans
+    // 0..45 and shifts −22.5 → the same. Both land on the middle half, so the
+    // outer quarters (−45..−22.5 and 22.5..45) are what actually clears.
+    expect(open).toContain("x=-45");
+    expect(open).toContain('x="0"');
+    expect(open).toContain("width=45");
+  });
+
+  it("keeps the panels on parallel tracks so neither blocks the other", () => {
+    const s = svgOf(converging(), { open: false });
+    expect(s).toContain("y1=1.75"); // two tracks, as in bypass
+    expect(s).toContain("y1=-1.75");
+    expect(s).toContain("y=0.5"); // first panel on the front track
+    expect(s).toContain("y=-3"); // second on the back track, clear of it
+  });
+
+  it("accents both panels when both are open — neither one is fixed", () => {
+    const open = svgOf(converging(), { open: true, active: true, accent: "#f00" });
+    expect(open.match(/fill:#f00/g)?.length).toBe(2);
+    expect(open).not.toContain("fill=#000"); // no fixed panel to keep the base color
+  });
+});
+
+describe("renderOpening — a two-panel slider's second panel (issue #145)", () => {
+  // Travel per panel, and which way the *first* one goes. The biparting styles
+  // part outward from the centre; `converging` runs the other way, so the same
+  // per-panel rules have to hold with both signs.
+  const TWO_PANEL = [
+    { sliderStyle: "biparting", travel: 45, out: -1 },
+    { sliderStyle: "biparting-bypass", travel: 22.5, out: -1 },
+    { sliderStyle: "converging", travel: 22.5, out: 1 },
+  ] as const;
+  for (const { sliderStyle, travel, out } of TWO_PANEL) {
+    // Signed travel: `first` is what panel one shows fully open, `second` its
+    // opposite number — the panels always move against each other.
+    const first = `translateX(${out * travel}px)`;
+    const second = `translateX(${-out * travel}px)`;
     describe(sliderStyle, () => {
       it("moves both panels together when no second state is given", () => {
         const open = svgOf(sliding({ sliderStyle }), { amount: 1 });
-        expect(open).toContain(`translateX(-${travel}px)`);
-        expect(open).toContain(`translateX(${travel}px)`);
+        expect(open).toContain(first);
+        expect(open).toContain(second);
       });
       it("opens one panel while the other stays shut", () => {
         const s = svgOf(sliding({ sliderStyle }), { amount: 1, second: { amount: 0 } });
-        expect(s).toContain(`translateX(-${travel}px)`); // first panel open
+        expect(s).toContain(first); // first panel open
         expect(s).toContain("translateX(0px)"); // second still closed
-        expect(s).not.toContain(`translateX(${travel}px)`);
+        expect(s).not.toContain(second);
       });
       it("opens the second panel while the first stays shut", () => {
         const s = svgOf(sliding({ sliderStyle }), { amount: 0, second: { amount: 1 } });
-        expect(s).toContain(`translateX(${travel}px)`);
+        expect(s).toContain(second);
         expect(s).toContain("translateX(0px)");
-        expect(s).not.toContain(`translateX(-${travel}px)`);
+        expect(s).not.toContain(first);
       });
       it("gives each panel its own travel for two position-aware covers", () => {
         const s = svgOf(sliding({ sliderStyle }), { amount: 0.5, second: { amount: 1 } });
-        expect(s).toContain(`translateX(-${travel / 2}px)`);
-        expect(s).toContain(`translateX(${travel}px)`);
+        expect(s).toContain(`translateX(${(out * travel) / 2}px)`);
+        expect(s).toContain(second);
       });
       it("clamps a second panel's out-of-range amount", () => {
         const s = svgOf(sliding({ sliderStyle }), { amount: 0, second: { amount: 4 } });
-        expect(s).toContain(`translateX(${travel}px)`);
+        expect(s).toContain(second);
       });
       it("accents only the panel whose own sensor reads open", () => {
         const s = svgOf(sliding({ sliderStyle }), {

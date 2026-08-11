@@ -182,14 +182,22 @@ window, a `blind` → a slider, a `garage` or `shutter` → a roll-up); adjust a
 - **Partial** — a `cover` reporting `current_position` (0–100) is drawn partly open and
   tracks the position live. Everything else uses the on/off behavior above.
 - **Motion** — **swing** (default), **slide**, or **roll** (a slatted curtain that thins
-  onto its track). Sliding openings take a **Style**: *single* (one panel into the wall),
-  *bypass* (two panels on parallel tracks), *biparting (into the walls)* (two panels
-  parting at the middle, each recessing into its own wall — a pocket door), or
-  *biparting (over fixed panels)* (the same two panels stacking over a fixed panel at
-  each jamb — the usual patio / bay slider, where nothing leaves the opening and the
-  middle half is as clear as it gets). **Slide** sets the direction; a biparting slider
-  parts both ways, so it has none.
-- **One sensor per panel** — a biparting slider with a contact on each leaf takes a
+  onto its track). Sliding openings take a **Style**, and which one you want comes down to
+  where the panels go and what is left clear:
+
+  | Style | Panels | Where they go | What clears |
+  | --- | --- | --- | --- |
+  | *single* | one moving | into the wall | the whole opening |
+  | *bypass* | one moving, one fixed | behind the fixed one | half |
+  | *biparting (into the walls)* | two moving | each recesses into its own wall — a pocket door | the whole opening |
+  | *biparting (over fixed panels)* | two moving, two fixed | out onto a fixed panel at each jamb | the middle half |
+  | *converging* | two moving | toward each other, stacking in the middle | a quarter at each jamb |
+
+  The last two are both patio sliders and they are mirror images: pick *biparting (over
+  fixed panels)* if the outer quarters of your door are fixed glass, and *converging* if
+  every leaf slides. **Slide** sets the direction; a style that moves both panels has
+  none.
+- **One sensor per panel** — a two-panel slider with a contact on each leaf takes a
   **Second panel** entity, and then each panel opens and accents on its own state: left
   open and right shut draws exactly that. Leave it empty and both panels follow the first
   entity, as they always have. **Invert** covers both, and a tap still acts on the first.
@@ -214,6 +222,8 @@ openings:
   # a two-panel patio slider with a contact on each leaf: the panels stack over
   # the fixed side panels, and each one follows its own sensor
   - { id: bay, type: window, motion: slide, sliderStyle: biparting-bypass, x: 300, y: 500, length: 200, angle: 0, entity: binary_sensor.sliding_door_left, secondaryEntity: binary_sensor.sliding_door_right }
+  # the same door with no fixed glass: both leaves slide and stack in the middle
+  - { id: terrace, type: window, motion: slide, sliderStyle: converging, x: 300, y: 700, length: 200, angle: 0, entity: binary_sensor.terrace_left, secondaryEntity: binary_sensor.terrace_right }
   # a swing door hinged on the right, opening into the other room
   - { id: hall, type: door, x: 300, y: 100, length: 80, angle: 0, flipH: true, flipV: true }
 ```
@@ -389,7 +399,7 @@ distorted anyway.
 | `length`      | number                      | Length along the wall.                                 |
 | `angle`       | number                      | Rotation in degrees.                                   |
 | `entity`      | string                      | Contact `binary_sensor` / `cover` driving open/closed (or `current_position` for partial). |
-| `secondaryEntity` | string                  | Biparting sliders: a second contact / `cover` for the other panel, so each leaf moves on its own state. Unset = both follow `entity`. |
+| `secondaryEntity` | string                  | Two-panel sliders (`biparting`, `biparting-bypass`, `converging`): a second contact / `cover` for the other panel, so each leaf moves on its own state. Unset = both follow `entity`. |
 | `invert`      | boolean                     | Flip the open/closed interpretation.                   |
 | `activeColor` | string                      | Leaf/arc color while actively open (default primary).  |
 | `flipH`       | boolean                     | Mirror left↔right. Swing door: hinge jamb. Sliding: slide direction. |
@@ -399,7 +409,7 @@ distorted anyway.
 | `tapTarget`   | `opening` \| `shutter`      | With both entities bound, which one a tap acts on (default `opening`); the other moves to press-and-hold. Editor: **Tap opens**. Pointing it at the shutter opens the shutter's dialog — it does not drive the motor; set `tap_action: toggle` for that. |
 | `tap_action`  | ActionConfig                | Standard Lovelace action, acting on whichever entity `tapTarget` leads with (or on `shutterEntity` when it is the only one bound). By default an open/close `cover` toggles and everything else opens more-info. An action's own `entity` picks which of the two it acts on. |
 | `hold_action` / `double_tap_action` | ActionConfig | With both entities bound, hold opens the shutter's more-info by default — a tap is never retargeted at the shutter motor. Double-tap does nothing unless configured. |
-| `sliderStyle` | `single` \| `bypass` \| `biparting` \| `biparting-bypass` | With `motion: slide`: one panel (default), two stacking, two centre-parting into the walls, or two centre-parting over a fixed panel at each jamb. |
+| `sliderStyle` | `single` \| `bypass` \| `biparting` \| `biparting-bypass` \| `converging` | With `motion: slide`: one panel (default), two stacking, two centre-parting into the walls, two centre-parting over a fixed panel at each jamb, or two running together to stack in the middle. |
 
 ### Item (device)
 

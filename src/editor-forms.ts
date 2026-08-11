@@ -14,6 +14,7 @@ import type {
   FloorplanCardConfig,
   Furniture,
   Opening,
+  SliderStyle,
   Tracker,
   Wall,
 } from "./types";
@@ -48,6 +49,7 @@ import {
   openingActionForGesture,
   openingMotion,
   openingHasTwoPanels,
+  sliderStyleHasTwoPanels,
   pressEffectOf,
   sliderStyleOf,
   shutterStyleOf,
@@ -213,7 +215,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
     });
   }
   if (motion === "slide") {
-    // A biparting slider parts both ways at once, so there is no direction to
+    // A two-panel slider moves both ways at once, so there is no direction to
     // pick — `flipH` only swaps which panel each sensor drives (issue #145).
     if (!twoPanels) {
       fields.push({
@@ -229,7 +231,8 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         opt("single", "Single"),
         opt("bypass", "Bypass (stack)"),
         opt("biparting", "Biparting (into the walls)"),
-        opt("biparting-bypass", "Biparting (over fixed panels)")
+        opt("biparting-bypass", "Biparting (over fixed panels)"),
+        opt("converging", "Converging (both panels stack in the middle)")
       ),
     });
   }
@@ -241,7 +244,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       : "Type and motion follow the entity's device class",
     selector: { entity: { filter: [{ domain: ["binary_sensor", "cover"] }] } },
   });
-  // One sensor per leaf (issue #145). Only the biparting styles have a second
+  // One sensor per leaf (issue #145). Only a two-panel style has a second
   // moving panel to drive, and only once the first is bound — a slider whose
   // *second* panel alone has a sensor would be more confusing than useful.
   if (twoPanels && o.entity) {
@@ -419,8 +422,9 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         else if (k === "opens") out.flipV = v === "other" || undefined;
         else if (k === "style") {
           out.sliderStyle = v === "single" ? undefined : v;
-          // Only a biparting slider has a second moving panel to bind.
-          if (v !== "biparting" && v !== "biparting-bypass") out.secondaryEntity = undefined;
+          // Only a two-panel style has a second moving panel to bind. Asked of
+          // the style itself, so a style added later can't be forgotten here.
+          if (!sliderStyleHasTwoPanels(v as SliderStyle)) out.secondaryEntity = undefined;
         }
         else if (k === "invert") out.invert = v || undefined;
         else out[k] = v;

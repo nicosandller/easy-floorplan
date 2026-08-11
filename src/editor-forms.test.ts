@@ -171,31 +171,35 @@ describe("openingForm", () => {
   });
 });
 
-describe("openingForm — biparting sliders (issue #145)", () => {
+describe("openingForm — two-panel sliders (issue #145)", () => {
   const slider = (extra: Partial<Opening> = {}) =>
     ({ ...door, motion: "slide", ...extra }) as Opening;
   const names = (o: Opening) => openingForm(o).fields.map((x) => x.name);
+  // Every style with a second moving panel for `secondaryEntity` to drive.
+  const TWO_PANEL = ["biparting", "biparting-bypass", "converging"] as const;
 
-  it("offers both biparting styles", () => {
+  it("offers every slider style", () => {
     const styleField = openingForm(slider()).fields.find((x) => x.name === "style")!;
     const opts = (styleField.selector as { select: { options: { value: string }[] } }).select
       .options.map((o) => o.value);
-    expect(opts).toEqual(["single", "bypass", "biparting", "biparting-bypass"]);
+    expect(opts).toEqual(["single", "bypass", "biparting", "biparting-bypass", "converging"]);
   });
 
-  it("hides the slide direction for both of them — they part both ways", () => {
-    expect(names(slider({ sliderStyle: "biparting-bypass" }))).not.toContain("slide");
+  it("hides the slide direction for each of them — both panels move", () => {
+    for (const sliderStyle of TWO_PANEL) {
+      expect(names(slider({ sliderStyle }))).not.toContain("slide");
+    }
     expect(names(slider({ sliderStyle: "bypass" }))).toContain("slide");
   });
 
-  it("offers a second panel entity only on a bound biparting slider", () => {
+  it("offers a second panel entity only on a bound two-panel slider", () => {
     // Nothing to bind without a first entity, or with only one moving panel.
     expect(names(slider({ sliderStyle: "biparting" }))).not.toContain("secondaryEntity");
     expect(names(slider({ sliderStyle: "bypass", entity: "binary_sensor.a" })))
       .not.toContain("secondaryEntity");
     expect(names({ ...door, entity: "binary_sensor.a" } as Opening))
       .not.toContain("secondaryEntity");
-    for (const sliderStyle of ["biparting", "biparting-bypass"] as const) {
+    for (const sliderStyle of TWO_PANEL) {
       const bound = openingForm(slider({ sliderStyle, entity: "binary_sensor.a" }));
       expect(bound.fields.map((x) => x.name)).toContain("secondaryEntity");
       const field = bound.fields.find((x) => x.name === "secondaryEntity")!;
@@ -224,10 +228,10 @@ describe("openingForm — biparting sliders (issue #145)", () => {
     expect(form.toPatch({ style: "bypass" }).secondaryEntity).toBeUndefined();
     expect(form.toPatch({ motion: "swing" }).secondaryEntity).toBeUndefined();
     expect(form.toPatch({ motion: "roll" }).secondaryEntity).toBeUndefined();
-    // Switching between the two biparting styles keeps it: both have two panels.
-    expect(form.toPatch({ style: "biparting-bypass" })).toEqual({
-      sliderStyle: "biparting-bypass",
-    });
+    // Switching between two-panel styles keeps it: they all have a second leaf.
+    for (const sliderStyle of TWO_PANEL) {
+      expect(form.toPatch({ style: sliderStyle })).toEqual({ sliderStyle });
+    }
     expect(form.toPatch({ secondaryEntity: "binary_sensor.c" })).toEqual({
       secondaryEntity: "binary_sensor.c",
     });

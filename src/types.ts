@@ -57,6 +57,14 @@ export interface Wall {
 export type OpeningType = "door" | "window";
 
 /**
+ * How a sliding opening's panels are arranged. Named as a type rather than
+ * inlined on {@link Opening.sliderStyle} so the render and the editor agree on
+ * the set — three of these carry a second moving panel and the list had started
+ * being retyped by hand (issue #145). See that field for what each one draws.
+ */
+export type SliderStyle = "single" | "bypass" | "biparting" | "biparting-bypass" | "converging";
+
+/**
  * A door or window. Positioned by its center point and rotation so it can be
  * dropped onto (and aligned with) a wall, but it is stored independently.
  */
@@ -85,7 +93,7 @@ export interface Opening {
    */
   entity?: string;
   /**
-   * Biparting sliders only: a second contact / `cover` driving the **other**
+   * Two-panel sliders only: a second contact / `cover` driving the **other**
    * moving panel (issue #145), for a two-panel door with a sensor on each leaf.
    * `entity` keeps the first panel — the one at the −x jamb in the opening's own
    * frame, so `flipH` swaps which panel each sensor draws, exactly as it mirrors
@@ -211,9 +219,14 @@ export interface Opening {
    *   panel at each jamb instead of vanishing into the wall (issue #145), so
    *   nothing leaves the opening and at most its middle half ever clears. The
    *   common patio / bay slider.
+   * - `converging` — two moving panels and nothing else (issue #145): they
+   *   travel *toward* each other and stack in the middle, clearing a quarter of
+   *   the opening at each jamb. The two-operable-leaf slider, and the mirror
+   *   image of `biparting-bypass` — where that one clears the middle, this
+   *   clears the ends.
    * Ignored for swinging openings.
    */
-  sliderStyle?: "single" | "bypass" | "biparting" | "biparting-bypass";
+  sliderStyle?: SliderStyle;
 }
 
 /**

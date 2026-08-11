@@ -10,6 +10,7 @@ import type {
   FloorplanCardConfig,
   Floor,
   Opening,
+  SliderStyle,
   ItemKind,
   IconAnimation,
   StateColorRule,
@@ -1662,20 +1663,25 @@ export function openingMirror(o: Opening): { sx: 1 | -1; sy: 1 | -1 } {
  * Resolve a sliding opening's panel arrangement. Only meaningful while sliding
  * (swinging openings always resolve to `single`), defaulting to `single`.
  */
-export function sliderStyleOf(
-  o: Opening,
-): "single" | "bypass" | "biparting" | "biparting-bypass" {
+export function sliderStyleOf(o: Opening): SliderStyle {
   return openingMotion(o) === "slide" ? (o.sliderStyle ?? "single") : "single";
 }
 
 /**
- * Whether this opening draws **two** moving panels — the two biparting styles.
- * `single` and `bypass` both move one panel (bypass's other panel is fixed), so
- * only these two have a second leaf for `secondaryEntity` to drive (issue #145).
+ * Whether a slider style draws **two** moving panels, and so has a second leaf
+ * for `secondaryEntity` to drive (issue #145). `single` and `bypass` both move
+ * one panel — bypass's other panel is fixed — so neither qualifies.
+ *
+ * Takes the style rather than the opening because the editor asks about a style
+ * the user has just picked, before it is on any opening.
  */
+export function sliderStyleHasTwoPanels(style: SliderStyle): boolean {
+  return style === "biparting" || style === "biparting-bypass" || style === "converging";
+}
+
+/** {@link sliderStyleHasTwoPanels} for an opening as configured. */
 export function openingHasTwoPanels(o: Opening): boolean {
-  const style = sliderStyleOf(o);
-  return style === "biparting" || style === "biparting-bypass";
+  return sliderStyleHasTwoPanels(sliderStyleOf(o));
 }
 
 /**
@@ -2387,6 +2393,39 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
         </g>
         <g class="fp-slide-panel" style="transform:translateX(${q * amt2}px);">
           <rect x="0" y=${-off - t / 2} width=${q} height=${t} style="fill:${tone2};" />
+        </g>`;
+    } else if (sliderStyle === "converging") {
+      // Two moving panels and nothing else (issue #145) — the slider whose
+      // leaves are both operable. They ride parallel tracks, so neither blocks
+      // the other, and they travel *toward* each other until they stack over
+      // the middle half: the mirror image of `biparting-bypass`, which clears
+      // the middle and leaves the ends glazed.
+      //
+      // Travel is a quarter, not a panel's full width, and that is the whole
+      // design of this style. A leaf physically can slide its own width, right
+      // across its neighbour — but then two open leaves simply swap sides and
+      // cover the opening again, which is the one thing a floor plan must not
+      // draw. Parking each at the halfway point makes both-open the case it
+      // reads as: stacked in the middle, a quarter clear at each jamb. The
+      // price is that a single open leaf draws a quarter clear rather than the
+      // half it could reach, and that is the right way round — under-promising
+      // the gap you can walk through beats inventing one that isn't there.
+      const off = 1.75; // half the gap between the two tracks, as in bypass
+      const q = half / 2; // each panel parks over the middle half
+      body = svg`
+        ${jambs}
+        <!-- tracks -->
+        <line x1=${-half} y1=${-off} x2=${half} y2=${-off}
+              stroke=${color} stroke-width="0.75" opacity="0.6" />
+        <line x1=${-half} y1=${off} x2=${half} y2=${off}
+              stroke=${color} stroke-width="0.75" opacity="0.6" />
+        <!-- both panels move, so both take the accent on their own state:
+             front track travels right, back track left, and they meet. -->
+        <g class="fp-slide-panel" style="transform:translateX(${q * amt}px);">
+          <rect x=${-half} y=${off - t / 2} width=${half} height=${t} style="fill:${tone};" />
+        </g>
+        <g class="fp-slide-panel" style="transform:translateX(${-q * amt2}px);">
+          <rect x="0" y=${-off - t / 2} width=${half} height=${t} style="fill:${tone2};" />
         </g>`;
     } else {
       // Single panel: fills the opening closed, slides fully aside when open.
