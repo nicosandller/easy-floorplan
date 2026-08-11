@@ -2305,6 +2305,81 @@ export function polygonCentroid(points: readonly AreaPoint[]): { x: number; y: n
   return { x: sum.x / points.length, y: sum.y / points.length };
 }
 
+/** Neutral (unzoomed) result of {@link areaZoomTransform} — identity view. */
+export const IDENTITY_ZOOM: AreaZoomTransform = { scale: 1, txPercent: 0, tyPercent: 0 };
+
+export interface AreaZoomTransform {
+  /** Uniform scale applied to the whole plan. */
+  scale: number;
+  /** Translation as a percentage of the transformed element's own box (so it
+   *  is resolution-independent — see the CSS `translate()` percentage rule). */
+  txPercent: number;
+  tyPercent: number;
+}
+
+/**
+ * A CSS `translate(%) scale()` pair that frames an area's bounding box inside
+ * the `w`×`h` canvas ("zoom in to an area on tap"). Applied with
+ * `transform-origin: 0 0` to a wrapper around both the SVG and the HTML
+ * overlay, so both layers — which are positioned in two different ways —
+ * reframe identically instead of drifting apart.
+ *
+ * Uses `rotatePlanPoint` on the area's own points rather than the raw
+ * `points` array so this lines up with a rotated plan (issue #33): the
+ * overlay already remaps every point through the same function, and the SVG
+ * layer carries the matching group transform.
+ *
+ * `padFrac` pads the bounding box (as a fraction of its own larger
+ * dimension) so the zoomed room isn't cropped edge-to-edge; `maxScale`
+ * caps how far a small room can zoom in. Never zooms *out* past 1x — an
+ * area bigger than the canvas simply fills it edge-to-edge.
+ *
+ * The pan is clamped so the plan's own edge never moves inside the visible
+ * box — centering a room near a corner would otherwise pan the wrapper past
+ * the canvas and show bare card background where the plan should be. At
+ * `scale === 1` the clamp range collapses to exactly `[0, 0]`, so a room too
+ * big to zoom into (taller or wider than the canvas) reports no pan either —
+ * without this, tapping such a room would slide the plan sideways for no
+ * zoom at all.
+ */
+export function areaZoomTransform(
+  points: readonly AreaPoint[],
+  w: number,
+  h: number,
+  rot: PlanRotation,
+  padFrac = 0.15,
+  maxScale = 4
+): AreaZoomTransform {
+  if (!points.length) return IDENTITY_ZOOM;
+  const rotated = points.map((p) => rotatePlanPoint(p.x, p.y, w, h, rot));
+  const d = rotatedCanvasSize(w, h, rot);
+  const xs = rotated.map((p) => p.x);
+  const ys = rotated.map((p) => p.y);
+  const minX = Math.min(...xs);
+  const maxX = Math.max(...xs);
+  const minY = Math.min(...ys);
+  const maxY = Math.max(...ys);
+  const pad = Math.max(maxX - minX, maxY - minY) * padFrac;
+  const bw = Math.max(maxX - minX + pad * 2, 1);
+  const bh = Math.max(maxY - minY + pad * 2, 1);
+  const scale = Math.max(1, Math.min(maxScale, Math.min(d.w / bw, d.h / bh)));
+  // A non-finite input (NaN/Infinity coordinates from a hand-edited config)
+  // must never reach the style sink: --fp-inv-zoom:NaN invalidates the whole
+  // custom property, and .item's transform is built from it, so every device
+  // badge on the plan would lose its centering along with the scale.
+  if (!Number.isFinite(scale)) return IDENTITY_ZOOM;
+  const cxFrac = (minX + maxX) / 2 / d.w;
+  const cyFrac = (minY + maxY) / 2 / d.h;
+  // Range collapses to [0, 0] at scale === 1, so an unzoomable room (bigger
+  // than the canvas along its binding axis) reports no pan.
+  const clamp = (t: number) => Math.min(0, Math.max(100 * (1 - scale), t));
+  return {
+    scale,
+    txPercent: clamp(50 - scale * cxFrac * 100),
+    tyPercent: clamp(50 - scale * cyFrac * 100),
+  };
+}
+
 /**
  * Diagonal hatching, at 45°, spaced in canvas units so it keeps the same weight
  * on the plan whatever size the card is drawn at.

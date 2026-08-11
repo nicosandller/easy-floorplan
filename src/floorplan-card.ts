@@ -79,6 +79,8 @@ import {
   rotatedCanvasSize,
   rotatePlanPoint,
   planRotationTransform,
+  areaZoomTransform,
+  IDENTITY_ZOOM,
   type PlanRotation,
 } from "./render";
 import { deadSpacesCached } from "./dead-space";
@@ -113,6 +115,8 @@ export class FloorplanCard extends LitElement {
   @state() private _config?: FloorplanCardConfig;
   /** View-state: which floor is shown. Never persisted to config. */
   @state() private _activeFloorId?: string;
+  /** View-state: which area (if any) the plan is zoomed in to. Never persisted. */
+  @state() private _zoomedAreaId?: string;
   private readonly _wallMaskId = `fp-wall-mask-${FloorplanCard._nextWallMaskId++}`;
   /** Prefix for this card's glow gradient ids, unique per instance (issue #6). */
   private readonly _glowIdBase = `fp-glow-${FloorplanCard._nextGlowId++}`;
@@ -251,6 +255,11 @@ export class FloorplanCard extends LitElement {
         })
       );
     }
+  }
+
+  /** Tapping a room zooms the plan in to it; tapping the same room again zooms back out. */
+  private _onAreaClick(a: Area): void {
+    this._zoomedAreaId = this._zoomedAreaId === a.id ? undefined : a.id;
   }
 
   private _renderBadge(item: FloorItem, scale: OverlayScale): TemplateResult {
@@ -465,7 +474,7 @@ export class FloorplanCard extends LitElement {
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
                font-size:${overlayLength(cssNumber(t.size, DEFAULT_TEXT_SIZE), scale)};
                color:${cssColorOr(t.color, SKIN_TEXT)};
-               transform:translate(-50%,-50%) rotate(${cssNumber(t.angle, 0)}deg);"
+               transform:translate(-50%,-50%) scale(var(--fp-inv-zoom,1)) rotate(${cssNumber(t.angle, 0)}deg);"
       >
         ${t.text}
       </div>
@@ -530,6 +539,12 @@ export class FloorplanCard extends LitElement {
           lightWalls
         )
       : nothing;
+    // Zoom-to-room (tap an area). Both the SVG and the HTML overlay live
+    // inside one transformed wrapper below, so the two layers — positioned
+    // completely differently (a group transform vs. per-point left/top%) —
+    // reframe identically instead of drifting apart under zoom.
+    const zoomedArea = active.areas?.find((a) => a.id === this._zoomedAreaId);
+    const zoom = zoomedArea ? areaZoomTransform(zoomedArea.points, c.width, c.height, rot) : IDENTITY_ZOOM;
     return html`
       <!-- The skin (issue #122) rides on the card rather than on .plan, so the
            floor switcher and the card's own background follow it too — a Tron
@@ -570,6 +585,15 @@ export class FloorplanCard extends LitElement {
                count), "meet" letterboxes the SVG away from the overlay and
                every icon drifts off the wall it was placed on, while "none"
                stretches both layers identically: distorted, but aligned. -->
+          <!-- Zoom-to-room (tap an area). One wrapper around both the SVG and
+               the HTML overlay so a CSS transform here reframes both layers
+               identically — see areaZoomTransform. Wraps the keyed() skin
+               block below rather than sitting inside it, so a skin change
+               (which rebuilds that subtree) never disturbs this transform. -->
+          <div
+            class="plan-zoom"
+            style="transform: translate(${zoom.txPercent}%, ${zoom.tyPercent}%) scale(${zoom.scale});"
+          >
           <!-- Keyed on the skin (issue #122). A skin changes custom properties on
                an ancestor, and Chromium does not repaint an SVG element whose
                colour comes from a var() inside a presentation attribute or an
@@ -588,8 +612,11 @@ export class FloorplanCard extends LitElement {
                           preserveAspectRatio=${imageFitRatio(active.imageFit)}
                           opacity=${active.imageOpacity ?? 1} />`
               : nothing}
-            ${active.areas?.map((a) =>
-              renderArea(a, areaColor(a, a.entity ? this.hass?.states[a.entity]?.state : undefined))
+            ${active.areas?.map(
+              (a) =>
+                svg`<g class="area-tap-target" @click=${() => this._onAreaClick(a)}>
+                  ${renderArea(a, areaColor(a, a.entity ? this.hass?.states[a.entity]?.state : undefined))}
+                </g>`
             )}
             <!-- Dead spaces (issue #88): the regions the walls seal off that no
                  door or window reaches, hatched. Above the room fills, so a
@@ -722,7 +749,7 @@ export class FloorplanCard extends LitElement {
             </g>
           </svg>`
           )}
-          <div class="items">
+          <div class="items" style="--fp-inv-zoom:${1 / zoom.scale};">
             ${active.areas?.map((a) => this._renderAreaLabel(a, c, rot, scale))}
             ${active.texts.map((t) => this._renderText(t, c, rot, scale))}
             ${repeat(
@@ -743,6 +770,16 @@ export class FloorplanCard extends LitElement {
             )}
           </div>
           </div>
+          ${zoom.scale > 1
+            ? html`<button
+                class="zoom-out"
+                title="Zoom out"
+                aria-label="Zoom out"
+                @click=${() => (this._zoomedAreaId = undefined)}
+              >
+                <ha-icon icon="mdi:magnify-minus-outline"></ha-icon>
+              </button>`
+            : nothing}
           ${floors.length > 1 ? this._renderFloorSwitcher(floors, active) : nothing}
         </div>
       </ha-card>
@@ -766,6 +803,8 @@ export class FloorplanCard extends LitElement {
                 this._activeFloorId = f.id;
                 // Remember it for the next element the editor preview builds.
                 lastViewedFloor.set(floorMemoryKey(floors), f.id);
+                // A room on the floor just left is meaningless on the new one.
+                this._zoomedAreaId = undefined;
               }}
             >
               ${f.short || f.name}
@@ -897,6 +936,40 @@ export class FloorplanCard extends LitElement {
       color: var(--fp-skin-accent-ink, var(--text-primary-color, #fff));
       border-color: var(--fp-skin-accent, var(--primary-color, #03a9f4));
     }
+    /* Zoom-to-room (tap an area). One wrapper around both the SVG and the
+       HTML overlay so a transform here reframes both layers identically —
+       transform-origin:0 0 matches the translate-percent math in
+       areaZoomTransform(). Setting a transform (even the identity) makes this
+       div establish the containing block for its absolutely-positioned
+       svg/.items children, so it needs the same inset:0 they'd otherwise use. */
+    .plan-zoom {
+      position: absolute;
+      inset: 0;
+      transform-origin: 0 0;
+      transition: transform 0.4s ease;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .plan-zoom {
+        transition: none;
+      }
+    }
+    .zoom-out {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      z-index: 1;
+      cursor: pointer;
+      border: 1px solid var(--divider-color, #ccc);
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+      border-radius: 6px;
+      padding: 4px;
+      line-height: 0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    .area-tap-target {
+      cursor: pointer;
+    }
     svg {
       position: absolute;
       inset: 0;
@@ -1003,7 +1076,15 @@ export class FloorplanCard extends LitElement {
     }
     .item {
       position: absolute;
-      transform: translate(-50%, -50%);
+      /* Counter-scaled against the zoom-to-room transform (--fp-inv-zoom,
+         set on .items) so a badge stays a constant, legible screen size
+         instead of ballooning with the room it's tapped into. Same duration
+         and easing as .plan-zoom's own transition, so the zoom and its
+         counter-scale animate in lockstep — without this the custom property
+         changes in a single frame while the plan takes 0.4s to catch up, and
+         every badge is briefly the wrong size mid-transition. */
+      transform: translate(-50%, -50%) scale(var(--fp-inv-zoom, 1));
+      transition: transform 0.4s ease;
       pointer-events: auto;
       /* Not a hand: a device with nothing bound, or tap_action set to none,
          is not a button (issue #134). Only .interactive gets the pointer. */
@@ -1029,12 +1110,16 @@ export class FloorplanCard extends LitElement {
 
     /* Scale: the transform has to repeat the translate, since .item is
        centred on its own anchor and a bare scale() would drop that and jump
-       the device down-right by half its size. */
+       the device down-right by half its size. Also has to repeat the
+       zoom-to-room counter-scale (--fp-inv-zoom) and multiply rather than
+       replace it — restating scale(${PRESS_SCALE}) alone would drop the
+       counter-scale along with the translate, and a badge held down at 4x
+       zoom would balloon to roughly 4x its resting size instead of shrinking. */
     .press-scale .item.interactive {
       transition: transform ${PRESS_OUT_MS}ms cubic-bezier(0.2, 0.8, 0.3, 1);
     }
     .press-scale .item.interactive:active {
-      transform: translate(-50%, -50%) scale(${PRESS_SCALE});
+      transform: translate(-50%, -50%) scale(calc(var(--fp-inv-zoom, 1) * ${PRESS_SCALE}));
       transition-duration: ${PRESS_IN_MS}ms;
     }
 
@@ -1091,7 +1176,7 @@ export class FloorplanCard extends LitElement {
         transition: none;
       }
       .press-scale .item.interactive:active {
-        transform: translate(-50%, -50%);
+        transform: translate(-50%, -50%) scale(var(--fp-inv-zoom, 1));
       }
       .press-scale .item.interactive:active,
       .press-ripple .item.interactive:active,
@@ -1218,12 +1303,17 @@ export class FloorplanCard extends LitElement {
       white-space: nowrap;
       font-weight: 500;
       line-height: 1;
+      /* Keeps its own counter-scale (inline, see _renderText) in step with
+         .plan-zoom's transition — same reasoning as .item's transform. */
+      transition: transform 0.4s ease;
     }
     .area-label {
       position: absolute;
       pointer-events: none;
       white-space: nowrap;
-      transform: translate(-50%, -50%);
+      transform: translate(-50%, -50%) scale(var(--fp-inv-zoom, 1));
+      /* Same lockstep-with-.plan-zoom reasoning as .item and .text above. */
+      transition: transform 0.4s ease;
       font-weight: 600;
       /* The default size stays a normal rule so card-mod can still override it
          — room names had no config option before overlayScale landed, and this

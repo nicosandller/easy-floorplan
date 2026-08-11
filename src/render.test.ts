@@ -81,6 +81,8 @@ import {
   rotatePlanPoint,
   planRotationTransform,
   polygonCentroid,
+  areaZoomTransform,
+  IDENTITY_ZOOM,
   renderArea,
   renderAreaBorder,
   WALL_THICKNESS,
@@ -2039,6 +2041,77 @@ describe("polygonCentroid", () => {
 
   it("returns the origin for an empty polygon", () => {
     expect(polygonCentroid([])).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe("areaZoomTransform", () => {
+  it("returns the identity transform for an empty polygon", () => {
+    expect(areaZoomTransform([], 100, 100, 0)).toEqual(IDENTITY_ZOOM);
+  });
+
+  it("centers a small room and scales it up, capped at maxScale", () => {
+    // A 10x10 room centered in a 100x100 canvas — the padded bbox is small,
+    // so scale would blow past maxScale without the cap. Centered (not near
+    // an edge) so the pan clamp below doesn't interfere with this assertion.
+    const room = [{ x: 45, y: 45 }, { x: 55, y: 45 }, { x: 55, y: 55 }, { x: 45, y: 55 }];
+    const t = areaZoomTransform(room, 100, 100, 0, 0.15, 4);
+    expect(t.scale).toBe(4);
+    // Room center (50,50) as a fraction of the canvas is (0.5, 0.5); at 4x
+    // that must land back on the wrapper's own center (50%) — i.e. no pan.
+    expect(t.txPercent).toBeCloseTo(50 - 4 * 0.5 * 100);
+    expect(t.tyPercent).toBeCloseTo(50 - 4 * 0.5 * 100);
+  });
+
+  it("never zooms out past 1x for a room bigger than the canvas", () => {
+    const room = [{ x: -50, y: -50 }, { x: 500, y: -50 }, { x: 500, y: 500 }, { x: -50, y: 500 }];
+    const t = areaZoomTransform(room, 100, 100, 0);
+    expect(t.scale).toBe(1);
+  });
+
+  it("accounts for whole-plan rotation the same way rotatePlanPoint does", () => {
+    // A 100x50 canvas rotated 90°: the displayed frame is 50x100. A room
+    // spanning the full un-rotated width should end up spanning the
+    // *displayed* height once rotated, not overflow it.
+    const room = [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 10 }, { x: 0, y: 10 }];
+    const t = areaZoomTransform(room, 100, 50, 90);
+    // The rotated bbox should exactly fill the 50-wide, 100-tall displayed
+    // canvas along its constraining axis, so scale caps at 1 (room already
+    // spans the full displayed height).
+    expect(t.scale).toBe(1);
+  });
+
+  it("clamps the pan so a room near a corner never uncovers the plan", () => {
+    // A 10x10 room in the corner of a 980x700 canvas at 4x scale, mirroring
+    // the reviewer's reproduction (canvas 980x700, area (40,40)-(140,110)).
+    const room = [{ x: 40, y: 40 }, { x: 140, y: 40 }, { x: 140, y: 110 }, { x: 40, y: 110 }];
+    const t = areaZoomTransform(room, 980, 700, 0);
+    // Uncentered pan would be positive (panning the plan's top-left corner
+    // into view, uncovering blank space beyond it) — clamped to exactly 0.
+    expect(t.txPercent).toBe(0);
+    expect(t.tyPercent).toBe(0);
+  });
+
+  it("clamps the pan to 0 when scale floors to 1 (room too big to zoom into)", () => {
+    // A room taller than the canvas: scale floors to 1, and without the
+    // clamp the pan would still shift the plan sideways for no zoom at all.
+    const room = [{ x: 40, y: 40 }, { x: 400, y: 40 }, { x: 400, y: 660 }, { x: 40, y: 660 }];
+    const t = areaZoomTransform(room, 980, 700, 0);
+    expect(t.scale).toBe(1);
+    expect(t.txPercent).toBe(0);
+    expect(t.tyPercent).toBe(0);
+  });
+
+  it("returns the identity transform for a non-finite input instead of emitting NaN", () => {
+    // A single hand-edited non-numeric coordinate must never reach the style
+    // sink — NaN there would invalidate --fp-inv-zoom and, through it, every
+    // device badge's transform on the plan.
+    const room = [
+      { x: Number.NaN, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 10 },
+      { x: 0, y: 10 },
+    ];
+    expect(areaZoomTransform(room, 100, 100, 0)).toEqual(IDENTITY_ZOOM);
   });
 });
 
