@@ -2525,6 +2525,66 @@ describe("collectWatchedEntities includes shutter entities (issue #74)", () => {
   });
 });
 
+/**
+ * Review on #151: the openings loop took `entity` and `shutterEntity` and not
+ * `secondaryEntity`, so a plan never re-rendered when only the *second* panel's
+ * contact moved — the headline case of #145, silently not working.
+ *
+ * The failure was worse than a frozen panel: any other watched entity moving
+ * dragged a render along with it and the panel caught up, so it looked
+ * intermittent. Both halves are asserted below, because set membership alone
+ * would not have caught it — `hassRenderInputsChanged` compares state objects
+ * by identity, which is the thing that actually decides whether a render runs.
+ */
+describe("collectWatchedEntities includes a slider's second panel (issue #145)", () => {
+  const twoPanelPlan = (secondaryEntity?: string) =>
+    ({
+      type: "t", width: 1000, height: 600,
+      floors: [{ id: "f", name: "F", walls: [], items: [], texts: [], furniture: [], trackers: [],
+        openings: [{ id: "o", type: "window", x: 0, y: 0, length: 200, angle: 0,
+          motion: "slide", sliderStyle: "converging",
+          entity: "binary_sensor.left", ...(secondaryEntity ? { secondaryEntity } : {}) }] }],
+    }) as unknown as FloorplanCardConfig;
+
+  it("watches both leaves' sensors", () => {
+    const ids = collectWatchedEntities(twoPanelPlan("binary_sensor.right"));
+    expect(ids.has("binary_sensor.left")).toBe(true);
+    expect(ids.has("binary_sensor.right")).toBe(true);
+  });
+
+  it("adds nothing when the opening has only one sensor", () => {
+    expect(collectWatchedEntities(twoPanelPlan()).size).toBe(1);
+  });
+
+  // The assertion that actually pins the bug: HA hands over a fresh state
+  // object for what changed and carries the rest across by identity, so a
+  // render only happens if the *second* sensor's id is in the watched set.
+  it("re-renders when only the second panel's sensor changes", () => {
+    const watched = collectWatchedEntities(twoPanelPlan("binary_sensor.right"));
+    const left = { state: "off" };
+    const prev = {
+      states: { "binary_sensor.left": left, "binary_sensor.right": { state: "off" } },
+    } as unknown as RenderHass;
+    const next = {
+      // Same object for the left sensor — nothing about it moved.
+      states: { "binary_sensor.left": left, "binary_sensor.right": { state: "on" } },
+    } as unknown as RenderHass;
+    expect(hassRenderInputsChanged(prev, next, watched)).toBe(true);
+  });
+
+  it("still skips a tick where neither leaf moved", () => {
+    const watched = collectWatchedEntities(twoPanelPlan("binary_sensor.right"));
+    const states = { "binary_sensor.left": { state: "off" }, "binary_sensor.right": { state: "off" } };
+    expect(
+      hassRenderInputsChanged(
+        { states } as unknown as RenderHass,
+        { states } as unknown as RenderHass,
+        watched
+      )
+    ).toBe(false);
+  });
+});
+
 describe("polygonCentroid", () => {
   it("averages the vertices", () => {
     const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];

@@ -114,6 +114,11 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
     for (const o of f.openings) {
       if (o.entity) ids.add(o.entity);
       if (o.shutterEntity) ids.add(o.shutterEntity);
+      // The second panel of a two-panel slider (issue #145). Exactly the trap
+      // named above, and the worst version of it: the panel is not frozen, it
+      // catches up whenever some *other* watched entity moves, so it reads as
+      // intermittent rather than broken.
+      if (o.secondaryEntity) ids.add(o.secondaryEntity);
     }
     for (const it of f.items) {
       if (it.entity) ids.add(it.entity);
