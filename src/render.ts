@@ -2035,6 +2035,16 @@ export const SHUTTER_MARK_OFFSET = 22;
 export const SHUTTER_MARK_PIXEL_OFFSET = 14;
 
 /**
+ * The badge's own size, and its glyph's. In the same unit as
+ * {@link SHUTTER_MARK_PIXEL_OFFSET} — screen pixels by default, canvas units
+ * under `overlayScale: plan` (#148), which is why the offset above is sized
+ * against it: both have to answer to the same choice or the badge lands on the
+ * opening at one scale and floats away at another.
+ */
+export const SHUTTER_MARK_SIZE = 22;
+export const SHUTTER_MARK_ICON_SIZE = 15;
+
+/**
  * The direction the shutter badge is pushed, as a unit vector in **screen**
  * space — the opening's normal, mirrored by `flipV` like the drawn shutter,
  * then turned by the plan's own display rotation (issue #33), since the badge

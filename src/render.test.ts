@@ -43,6 +43,8 @@ import {
   shutterMarkNormal,
   SHUTTER_MARK_OFFSET,
   SHUTTER_MARK_PIXEL_OFFSET,
+  SHUTTER_MARK_SIZE,
+  SHUTTER_MARK_ICON_SIZE,
   resolveOpeningOpen,
   resolveOpeningAmount,
   kindFromEntity,
@@ -2348,7 +2350,10 @@ describe("the shutter badge (issue #74 follow-up)", () => {
     // The canvas offset scales with the plan; the badge does not. Without the
     // pixel half, a large canvas in a narrow card pulls the badge onto the
     // opening it describes — and that opening is a tap target.
-    expect(SHUTTER_MARK_PIXEL_OFFSET).toBeGreaterThan(11); // the badge's own radius
+    // Sized against the badge's own radius, so the circle clears the opening
+    // whichever unit `overlayScale` (#148) puts them both in.
+    expect(SHUTTER_MARK_PIXEL_OFFSET).toBeGreaterThan(SHUTTER_MARK_SIZE / 2);
+    expect(SHUTTER_MARK_ICON_SIZE).toBeLessThan(SHUTTER_MARK_SIZE);
     expect(shutterMarkNormal(win())).toEqual({ x: -0, y: 1 });
     expect(shutterMarkNormal(win({ flipV: true }))).toEqual({ x: 0, y: -1 });
   });

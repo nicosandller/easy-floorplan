@@ -67,6 +67,7 @@ import {
   shutterMarkPoint,
   shutterMarkNormal,
   SHUTTER_MARK_PIXEL_OFFSET,
+  SHUTTER_MARK_SIZE,
   hasShutterMark,
   openingFromDeviceClass,
   renderRipple,
@@ -3533,10 +3534,14 @@ export class FloorplanCardEditor extends LitElement {
     // Same two-part offset as the card (canvas units + screen pixels), so the
     // preview shows where the badge will actually sit. The editor never
     // rotates the plan, hence no rotation argument.
+    // Always the fixed-pixel form here: the editor canvas is zoomed by the
+    // user rather than sized by the card, so `overlayScale: plan` has no
+    // meaning on it — the badges it draws for devices are fixed too.
     const n = shutterMarkNormal(o);
     return html`<div
       class="shutter-mark ${shutterActive(st, o.shutterInvert) ? "on" : "off"}"
       style="left:${(at.x / c.width) * 100}%; top:${(at.y / c.height) * 100}%;
+             width:${SHUTTER_MARK_SIZE}px;height:${SHUTTER_MARK_SIZE}px;
              transform:translate(-50%,-50%) translate(${n.x * SHUTTER_MARK_PIXEL_OFFSET}px, ${
                n.y * SHUTTER_MARK_PIXEL_OFFSET
              }px);--fp-active:${accent};"
@@ -4712,12 +4717,10 @@ export class FloorplanCardEditor extends LitElement {
        none — the opening underneath stays clickable for selection and drag. */
     .shutter-mark {
       position: absolute;
-      /* transform is set inline: the pixel push along the wall normal. */
+      /* transform and size are set inline, matching the card. */
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
       border-radius: 50%;
       background: var(--fp-skin-paper, var(--card-background-color, #fff));
       border: 1px solid var(--fp-skin-wall, var(--primary-text-color, #212121));

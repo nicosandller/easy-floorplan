@@ -44,6 +44,8 @@ import {
   shutterMarkIcon,
   shutterMarkNormal,
   SHUTTER_MARK_PIXEL_OFFSET,
+  SHUTTER_MARK_SIZE,
+  SHUTTER_MARK_ICON_SIZE,
   hasShutterMark,
   entityStateText,
   renderRipple,
@@ -271,18 +273,27 @@ export class FloorplanCard extends LitElement {
    * The shutter badge (issue #74 follow-up): the shutter entity's own icon,
    * beside an opening that binds both a window/door and a shutter.
    *
-   * HTML rather than SVG, like the device badges and for the same two
-   * reasons: it holds a real `ha-icon`, and it is sized in screen pixels, so
-   * it stays legible on a plan whose canvas units are whatever the author
-   * chose. The glyph carries the open/closed reading on its own — HA's shutter
-   * icons come in pairs — and the accent says the same thing again in colour.
+   * HTML rather than SVG, like the device badges: it holds a real `ha-icon`.
+   * And like them it follows `overlayScale` (#148) — fixed pixels by default,
+   * so it stays legible whatever canvas units the author chose, or canvas
+   * units under `plan`, so it shrinks with the drawing instead of towering
+   * over a scaled-down one. Both offsets follow the same choice, or the badge
+   * would drift off the opening at one scale and sit on it at another.
+   *
+   * The glyph carries the open/closed reading on its own — HA's shutter icons
+   * come in pairs — and the accent says the same thing again in colour.
    *
    * Tapping it opens the shutter, whatever the opening's own tap does. That is
    * the point of drawing it: the entity the opening symbol does not lead with
    * gets a control of its own, instead of living behind a press-and-hold
    * nobody can see.
    */
-  private _renderShutterMark(o: Opening, c: FloorplanCardConfig, rot: PlanRotation): TemplateResult {
+  private _renderShutterMark(
+    o: Opening,
+    c: FloorplanCardConfig,
+    rot: PlanRotation,
+    scale: OverlayScale
+  ): TemplateResult {
     const id = o.shutterEntity!;
     const st = this.hass?.states[id];
     const open = shutterAmount(st, o.shutterInvert) > 0;
@@ -292,12 +303,14 @@ export class FloorplanCard extends LitElement {
     const at = shutterMarkPoint(o);
     const p = rotatePlanPoint(at.x, at.y, c.width, c.height, rot);
     const d = rotatedCanvasSize(c.width, c.height, rot);
-    // Pushed clear of the opening in screen pixels as well as canvas units, so
-    // the tap target underneath stays reachable however the plan is scaled.
+    // Pushed clear of the opening by the badge's own size as well as by the
+    // canvas offset, so the tap target underneath stays reachable. In the
+    // badge's own unit: fixed pixels never shrink with the plan, and would
+    // otherwise cover the opening on a large canvas in a narrow card.
     const n = shutterMarkNormal(o, rot);
-    const push = `translate(${n.x * SHUTTER_MARK_PIXEL_OFFSET}px, ${
-      n.y * SHUTTER_MARK_PIXEL_OFFSET
-    }px)`;
+    const step = overlayLength(SHUTTER_MARK_PIXEL_OFFSET, scale);
+    const push = `translate(calc(${n.x} * ${step}), calc(${n.y} * ${step}))`;
+    const box = overlayLength(SHUTTER_MARK_SIZE, scale);
     const name =
       (this.hass?.states[id]?.attributes?.friendly_name as string | undefined) ?? id;
     return html`
@@ -305,6 +318,7 @@ export class FloorplanCard extends LitElement {
         class="shutter-mark ${active ? "on" : "off"}"
         data-entity=${cssEntityId(id) ?? nothing}
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
+               width:${box};height:${box};
                transform:translate(-50%,-50%) ${push};--fp-active:${accent};"
         title="${name} · ${entityStateText(this.hass, id)}"
         role="button"
@@ -314,7 +328,10 @@ export class FloorplanCard extends LitElement {
         }}
         .actionHandler=${actionHandler({})}
       >
-        <ha-icon icon=${icon}></ha-icon>
+        <ha-icon
+          icon=${icon}
+          style="--mdc-icon-size:${overlayLength(SHUTTER_MARK_ICON_SIZE, scale)};"
+        ></ha-icon>
       </div>
     `;
   }
@@ -812,7 +829,7 @@ export class FloorplanCard extends LitElement {
               // nodes rather than morph one floor's badges into another's.
               active.openings.filter((o) => hasShutterMark(o)),
               (o, i) => `${o.id || i}-shutter`,
-              (o) => this._renderShutterMark(o, c, rot)
+              (o) => this._renderShutterMark(o, c, rot, scale)
             )}
             ${repeat(
               // No entity filter: devices that exist physically but have no HA
@@ -1081,8 +1098,7 @@ export class FloorplanCard extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      width: 22px;
-      height: 22px;
+      /* width/height are inline: they follow overlayScale (#148). */
       border-radius: 50%;
       background: var(--fp-skin-paper, var(--card-background-color, #fff));
       border: 1px solid var(--fp-skin-wall, var(--primary-text-color, #212121));
@@ -1101,7 +1117,7 @@ export class FloorplanCard extends LitElement {
       opacity: 1;
     }
     .shutter-mark ha-icon {
-      --mdc-icon-size: 15px;
+      /* --mdc-icon-size is inline, for the same reason. */
       display: flex;
     }
     .fp-slide-panel {
