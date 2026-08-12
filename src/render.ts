@@ -2019,6 +2019,42 @@ function swingShutter(
 export const SHUTTER_MARK_OFFSET = 22;
 
 /**
+ * A second offset for the badge, in **screen pixels**, applied on top of
+ * {@link SHUTTER_MARK_OFFSET}.
+ *
+ * Two offsets because two things have to be cleared, and they are measured in
+ * different units. The wall and the shutter panels are canvas units and shrink
+ * with the plan; the badge is a fixed 22px and does not. With only the canvas
+ * offset, a plan drawn on a large canvas in a narrow card pulls the badge so
+ * close that its own circle covers the opening underneath — and the opening is
+ * a tap target, so it stops being comfortably hittable.
+ *
+ * Sized against the badge's own radius (11px) plus air, so the opening stays
+ * clear at any scale.
+ */
+export const SHUTTER_MARK_PIXEL_OFFSET = 14;
+
+/**
+ * The direction the shutter badge is pushed, as a unit vector in **screen**
+ * space — the opening's normal, mirrored by `flipV` like the drawn shutter,
+ * then turned by the plan's own display rotation (issue #33), since the badge
+ * lives in the HTML overlay and does not rotate with the SVG.
+ */
+export function shutterMarkNormal(
+  o: Pick<Opening, "angle" | "flipV">,
+  rot: PlanRotation = 0,
+): { x: number; y: number } {
+  const s = o.flipV ? -1 : 1;
+  const rad = (o.angle * Math.PI) / 180;
+  const n = { x: -Math.sin(rad) * s, y: Math.cos(rad) * s };
+  // The linear half of rotatePlanPoint: (x,y) → (−y,x) at 90°, and so on.
+  if (rot === 90) return { x: -n.y, y: n.x };
+  if (rot === 180) return { x: -n.x, y: -n.y };
+  if (rot === 270) return { x: n.y, y: -n.x };
+  return n;
+}
+
+/**
  * Where an opening's shutter badge sits, in plan coordinates (issue #74
  * follow-up).
  *
@@ -2038,16 +2074,22 @@ export function shutterMarkPoint(
 }
 
 /**
- * Whether an opening earns a shutter badge: both entities bound (issue #74
- * follow-up).
+ * Whether an opening earns a shutter badge: both entities bound, and not
+ * switched off (issue #74 follow-up).
  *
  * The badge exists because the second entity is otherwise invisible — the plan
  * draws the shutter, but nothing says the symbol answers to two different
  * things, so press-and-hold is a gesture you would have to already know about
  * to find. With one entity bound there is no second thing to reveal.
+ *
+ * On by default, because a discoverability aid nobody switches on helps
+ * nobody. Off is for the plan where every window has a shutter and the icons
+ * become the loudest thing on it; the gestures keep working either way.
  */
-export function hasShutterMark(o: Pick<Opening, "entity" | "shutterEntity">): boolean {
-  return !!(o.entity && o.shutterEntity);
+export function hasShutterMark(
+  o: Pick<Opening, "entity" | "shutterEntity" | "showShutterIcon">,
+): boolean {
+  return !!(o.entity && o.shutterEntity) && (o.showShutterIcon ?? true);
 }
 
 /** Last-resort shutter glyphs, for an entity with no device class of its own. */
@@ -2066,11 +2108,16 @@ const SHUTTER_FALLBACK_ICON = { on: "mdi:window-shutter-open", off: "mdi:window-
  * other way round still picks the right half of the pair.
  */
 export function shutterMarkIcon(
+  o: Pick<Opening, "shutterEntity" | "shutterIcon">,
   st: { state: string; attributes?: Record<string, unknown> } | undefined,
-  entityId: string,
   open: boolean,
   registryIcon?: string,
 ): string {
+  const entityId = o.shutterEntity ?? "";
+  // The author's own choice first, as it is for a device (issue #106) — the
+  // one candidate that is a decision rather than a default.
+  const configured = cssIcon(o.shutterIcon);
+  if (configured) return configured;
   const registry = cssIcon(registryIcon);
   if (registry) return registry;
   const attr = cssIcon(st?.attributes?.icon);

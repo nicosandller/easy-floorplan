@@ -307,6 +307,25 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
   // shutter used to be reachable by hold alone, which is not discoverable and
   // is awkward on a wall tablet.
   if (o.entity && o.shutterEntity) {
+    // The badge that makes the second entity visible. On by default; the
+    // switch is for a plan where every window has one and they start to shout.
+    fields.push({
+      name: "showShutterIcon",
+      label: "Shutter icon",
+      helper: "Shows the shutter's state beside the opening, and opens it when tapped",
+      selector: { boolean: {} },
+    });
+    // Only worth asking once the badge is actually drawn. Left empty the badge
+    // follows the entity, whose default glyph changes with the state — an
+    // override is one glyph for both, which is why it is not the default.
+    if (o.showShutterIcon ?? true) {
+      fields.push({
+        name: "shutterIcon",
+        label: "Icon",
+        helper: "Overrides the shutter entity's own icon, which changes with its state",
+        selector: { icon: {} },
+      });
+    }
     fields.push({
       name: "tapTarget",
       label: "Tap opens",
@@ -367,6 +386,8 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       shutterStyle: shutterStyleOf(o),
       shutterSide: o.shutterFlipV ? "near" : "far",
       shutterInvert: o.shutterInvert ?? false,
+      showShutterIcon: o.showShutterIcon ?? true,
+      shutterIcon: o.shutterIcon ?? "",
       tapTarget: o.tapTarget ?? "opening",
       invert: o.invert ?? false,
       angle: o.angle,
@@ -390,11 +411,16 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
             // Nothing left to lead with, so the choice goes too — otherwise it
             // would silently point the tap at the next shutter bound here.
             out.tapTarget = undefined;
+            // Same for the badge and its glyph: there is nothing to badge.
+            out.showShutterIcon = undefined;
+            out.shutterIcon = undefined;
           }
         } else if (k === "shutterSide") out.shutterFlipV = v === "near" || undefined;
         else if (k === "shutterInvert") out.shutterInvert = v || undefined;
         // The opening is the default, so it stays out of the YAML.
         else if (k === "tapTarget") out.tapTarget = v === "shutter" ? "shutter" : undefined;
+        // Shown is the default: only "off" is worth writing down.
+        else if (k === "showShutterIcon") out.showShutterIcon = v ? undefined : false;
         else if (k === "motion") {
           out.motion = v === "slide" || v === "roll" ? v : undefined;
           // sliderStyle only applies while sliding — drop it when switching away.

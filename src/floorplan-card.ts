@@ -42,6 +42,8 @@ import {
   shutterActive,
   shutterMarkPoint,
   shutterMarkIcon,
+  shutterMarkNormal,
+  SHUTTER_MARK_PIXEL_OFFSET,
   hasShutterMark,
   entityStateText,
   renderRipple,
@@ -285,18 +287,25 @@ export class FloorplanCard extends LitElement {
     const st = this.hass?.states[id];
     const open = shutterAmount(st, o.shutterInvert) > 0;
     const active = shutterActive(st, o.shutterInvert);
-    const icon = shutterMarkIcon(st, id, open, this.hass?.entities?.[id]?.icon);
+    const icon = shutterMarkIcon(o, st, open, this.hass?.entities?.[id]?.icon);
     const accent = cssColor(o.shutterActiveColor ?? o.activeColor) ?? SKIN_ACCENT;
     const at = shutterMarkPoint(o);
     const p = rotatePlanPoint(at.x, at.y, c.width, c.height, rot);
     const d = rotatedCanvasSize(c.width, c.height, rot);
+    // Pushed clear of the opening in screen pixels as well as canvas units, so
+    // the tap target underneath stays reachable however the plan is scaled.
+    const n = shutterMarkNormal(o, rot);
+    const push = `translate(${n.x * SHUTTER_MARK_PIXEL_OFFSET}px, ${
+      n.y * SHUTTER_MARK_PIXEL_OFFSET
+    }px)`;
     const name =
       (this.hass?.states[id]?.attributes?.friendly_name as string | undefined) ?? id;
     return html`
       <div
         class="shutter-mark ${active ? "on" : "off"}"
         data-entity=${cssEntityId(id) ?? nothing}
-        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;--fp-active:${accent};"
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
+               transform:translate(-50%,-50%) ${push};--fp-active:${accent};"
         title="${name} · ${entityStateText(this.hass, id)}"
         role="button"
         tabindex="0"
@@ -1066,7 +1075,7 @@ export class FloorplanCard extends LitElement {
        pointer-events:none, so it takes its own back. */
     .shutter-mark {
       position: absolute;
-      transform: translate(-50%, -50%);
+      /* transform is set inline: the pixel push along the wall normal. */
       pointer-events: auto;
       cursor: pointer;
       display: flex;

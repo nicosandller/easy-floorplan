@@ -916,6 +916,43 @@ describe("openingForm — actions (issue #74 follow-up)", () => {
     expect(defaultOf({ ...win, shutterEntity: "cover.s" } as Opening, "hold_action")).toBe("none");
   });
 
+  it("offers the icon switch only with two entities, and the glyph only while it is on", () => {
+    const both = { ...win, entity: "binary_sensor.win", shutterEntity: "cover.s" } as Opening;
+    expect(names({ ...win, shutterEntity: "cover.s" } as Opening)).not.toContain("showShutterIcon");
+    expect(names(both)).toContain("showShutterIcon");
+    expect(names(both)).toContain("shutterIcon");
+    // Nothing drawn, nothing to restyle.
+    expect(names({ ...both, showShutterIcon: false } as Opening)).not.toContain("shutterIcon");
+    expect(names({ ...both, showShutterIcon: false } as Opening)).toContain("showShutterIcon");
+  });
+
+  it("reads the switch back as on unless it was turned off", () => {
+    const both = { ...win, entity: "binary_sensor.win", shutterEntity: "cover.s" } as Opening;
+    expect(openingForm(both).data.showShutterIcon).toBe(true);
+    expect(openingForm({ ...both, showShutterIcon: false } as Opening).data.showShutterIcon).toBe(
+      false
+    );
+    expect(openingForm(both).data.shutterIcon).toBe("");
+    expect(openingForm({ ...both, shutterIcon: "mdi:mine" } as Opening).data.shutterIcon).toBe(
+      "mdi:mine"
+    );
+  });
+
+  it("writes down only the off switch, and drops both with the shutter", () => {
+    const both = { ...win, entity: "binary_sensor.win", shutterEntity: "cover.s" } as Opening;
+    const { toPatch } = openingForm(both);
+    expect(toPatch({ showShutterIcon: false })).toEqual({ showShutterIcon: false });
+    expect(toPatch({ showShutterIcon: true })).toEqual({ showShutterIcon: undefined });
+    expect(toPatch({ shutterIcon: "mdi:mine" })).toEqual({ shutterIcon: "mdi:mine" });
+    const cleared = openingForm({
+      ...both,
+      showShutterIcon: false,
+      shutterIcon: "mdi:mine",
+    } as Opening).toPatch({ shutterEntity: undefined });
+    expect(cleared.showShutterIcon).toBeUndefined();
+    expect(cleared.shutterIcon).toBeUndefined();
+  });
+
   it("offers the tap target only with two entities to choose between", () => {
     expect(names({ ...win, entity: "binary_sensor.win" } as Opening)).not.toContain("tapTarget");
     expect(names({ ...win, shutterEntity: "cover.s" } as Opening)).not.toContain("tapTarget");

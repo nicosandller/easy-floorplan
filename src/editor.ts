@@ -65,6 +65,8 @@ import {
   shutterActive,
   shutterMarkIcon,
   shutterMarkPoint,
+  shutterMarkNormal,
+  SHUTTER_MARK_PIXEL_OFFSET,
   hasShutterMark,
   openingFromDeviceClass,
   renderRipple,
@@ -3525,12 +3527,19 @@ export class FloorplanCardEditor extends LitElement {
     const id = o.shutterEntity!;
     const st = this.hass?.states[id];
     const open = shutterAmount(st, o.shutterInvert) > 0;
-    const icon = shutterMarkIcon(st, id, open, this.hass?.entities?.[id]?.icon);
+    const icon = shutterMarkIcon(o, st, open, this.hass?.entities?.[id]?.icon);
     const accent = cssColor(o.shutterActiveColor ?? o.activeColor) ?? SKIN_ACCENT;
     const at = shutterMarkPoint(o);
+    // Same two-part offset as the card (canvas units + screen pixels), so the
+    // preview shows where the badge will actually sit. The editor never
+    // rotates the plan, hence no rotation argument.
+    const n = shutterMarkNormal(o);
     return html`<div
       class="shutter-mark ${shutterActive(st, o.shutterInvert) ? "on" : "off"}"
-      style="left:${(at.x / c.width) * 100}%; top:${(at.y / c.height) * 100}%;--fp-active:${accent};"
+      style="left:${(at.x / c.width) * 100}%; top:${(at.y / c.height) * 100}%;
+             transform:translate(-50%,-50%) translate(${n.x * SHUTTER_MARK_PIXEL_OFFSET}px, ${
+               n.y * SHUTTER_MARK_PIXEL_OFFSET
+             }px);--fp-active:${accent};"
       title=${`${(st?.attributes?.friendly_name as string | undefined) ?? id} — shown on the card, tap it there to open the shutter`}
     >
       <ha-icon icon=${icon}></ha-icon>
@@ -4703,7 +4712,7 @@ export class FloorplanCardEditor extends LitElement {
        none — the opening underneath stays clickable for selection and drag. */
     .shutter-mark {
       position: absolute;
-      transform: translate(-50%, -50%);
+      /* transform is set inline: the pixel push along the wall normal. */
       display: flex;
       align-items: center;
       justify-content: center;

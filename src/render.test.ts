@@ -40,7 +40,9 @@ import {
   hasShutterMark,
   shutterMarkPoint,
   shutterMarkIcon,
+  shutterMarkNormal,
   SHUTTER_MARK_OFFSET,
+  SHUTTER_MARK_PIXEL_OFFSET,
   resolveOpeningOpen,
   resolveOpeningAmount,
   kindFromEntity,
@@ -2240,14 +2242,25 @@ describe("the shutter badge (issue #74 follow-up)", () => {
   const win = (extra: Partial<Opening> = {}) =>
     ({ id: "o", type: "window", x: 500, y: 100, length: 90, angle: 0, ...extra }) as Opening;
 
+  const both = { entity: "binary_sensor.win", shutterEntity: "cover.t" };
+
   it("is earned only by an opening with both entities bound", () => {
     expect(hasShutterMark(win())).toBe(false);
     expect(hasShutterMark(win({ entity: "binary_sensor.win" }))).toBe(false);
     // A shutter alone has no second entity to reveal — the symbol is it.
     expect(hasShutterMark(win({ shutterEntity: "cover.t" }))).toBe(false);
-    expect(hasShutterMark(win({ entity: "binary_sensor.win", shutterEntity: "cover.t" }))).toBe(
-      true
-    );
+    expect(hasShutterMark(win(both))).toBe(true);
+  });
+
+  it("can be switched off, and off is the only value worth storing", () => {
+    expect(hasShutterMark(win({ ...both, showShutterIcon: false }))).toBe(false);
+    // Absent means shown: a discoverability aid nobody switches on helps nobody.
+    expect(hasShutterMark(win({ ...both, showShutterIcon: undefined }))).toBe(true);
+    expect(hasShutterMark(win({ ...both, showShutterIcon: true }))).toBe(true);
+    // Switching it off says nothing about the gestures.
+    expect(
+      openingActionForGesture(win({ ...both, showShutterIcon: false }), "hold", () => 0)?.entity
+    ).toBe("cover.t");
   });
 
   it("sits off the wall on the shutter's side, along the opening's normal", () => {
@@ -2276,31 +2289,48 @@ describe("the shutter badge (issue #74 follow-up)", () => {
     expect(shutterMarkPoint(win(), 40)).toEqual({ x: 500, y: 140 });
   });
 
-  it("shows the entity's own icon, registry override first", () => {
+  it("shows the entity's own icon: config override, then registry, then state", () => {
+    const o = { shutterEntity: "cover.s" };
     const st = { state: "open", attributes: { icon: "mdi:from-state", device_class: "shutter" } };
-    expect(shutterMarkIcon(st, "cover.s", true, "mdi:from-registry")).toBe("mdi:from-registry");
-    expect(shutterMarkIcon(st, "cover.s", true)).toBe("mdi:from-state");
+    expect(shutterMarkIcon({ ...o, shutterIcon: "mdi:mine" }, st, true, "mdi:from-registry")).toBe(
+      "mdi:mine"
+    );
+    expect(shutterMarkIcon(o, st, true, "mdi:from-registry")).toBe("mdi:from-registry");
+    expect(shutterMarkIcon(o, st, true)).toBe("mdi:from-state");
+  });
+
+  it("an override is one glyph for both states, by definition", () => {
+    const o = { shutterEntity: "cover.s", shutterIcon: "mdi:mine" };
+    const st = (state: string) => ({ state, attributes: { device_class: "shutter" } });
+    expect(shutterMarkIcon(o, st("open"), true)).toBe("mdi:mine");
+    expect(shutterMarkIcon(o, st("closed"), false)).toBe("mdi:mine");
   });
 
   it("falls back to HA's own device-class pair, which is state-aware", () => {
+    const o = { shutterEntity: "cover.s" };
     const st = (state: string) => ({ state, attributes: { device_class: "shutter" } });
-    expect(shutterMarkIcon(st("open"), "cover.s", true)).toBe("mdi:window-shutter-open");
-    expect(shutterMarkIcon(st("closed"), "cover.s", false)).toBe("mdi:window-shutter");
+    expect(shutterMarkIcon(o, st("open"), true)).toBe("mdi:window-shutter-open");
+    expect(shutterMarkIcon(o, st("closed"), false)).toBe("mdi:window-shutter");
   });
 
   it("still says shutter when the entity declares no class at all", () => {
     // An unclassed cover, or a bare contact — neither has a pair of its own,
     // and an empty icon box would say less than a wrong-but-readable one.
-    expect(shutterMarkIcon({ state: "on", attributes: {} }, "cover.s", true)).toBe(
+    expect(shutterMarkIcon({ shutterEntity: "cover.s" }, { state: "on", attributes: {} }, true)).toBe(
       "mdi:window-shutter-open"
     );
-    expect(shutterMarkIcon(undefined, "cover.s", false)).toBe("mdi:window-shutter");
-    expect(shutterMarkIcon(undefined, "binary_sensor.s", true)).toBe("mdi:window-shutter-open");
+    expect(shutterMarkIcon({ shutterEntity: "cover.s" }, undefined, false)).toBe(
+      "mdi:window-shutter"
+    );
+    expect(shutterMarkIcon({ shutterEntity: "binary_sensor.s" }, undefined, true)).toBe(
+      "mdi:window-shutter-open"
+    );
   });
 
-  it("refuses an icon string that isn't one (issue #64/#106)", () => {
+  it("refuses an icon string that isn't one (issue #64/#106), at every level", () => {
     const nasty = { state: "open", attributes: { icon: "mdi:x;background:url(//evil)" } };
-    expect(shutterMarkIcon(nasty, "cover.s", true, "mdi:y;}")).toBe("mdi:window-shutter-open");
+    const o = { shutterEntity: "cover.s", shutterIcon: "mdi:evil;}" };
+    expect(shutterMarkIcon(o, nasty, true, "mdi:y;}")).toBe("mdi:window-shutter-open");
   });
 
   it("the open half follows the *inverted* reading, not the raw state", () => {
@@ -2309,7 +2339,42 @@ describe("the shutter badge (issue #74 follow-up)", () => {
     const contact = { state: "on", attributes: {} };
     const open = shutterAmount(contact, true) > 0;
     expect(open).toBe(false);
-    expect(shutterMarkIcon(contact, "binary_sensor.s", open)).toBe("mdi:window-shutter");
+    expect(shutterMarkIcon({ shutterEntity: "binary_sensor.s" }, contact, open)).toBe(
+      "mdi:window-shutter"
+    );
+  });
+
+  it("is pushed off the opening in screen pixels too, along the wall's normal", () => {
+    // The canvas offset scales with the plan; the badge does not. Without the
+    // pixel half, a large canvas in a narrow card pulls the badge onto the
+    // opening it describes — and that opening is a tap target.
+    expect(SHUTTER_MARK_PIXEL_OFFSET).toBeGreaterThan(11); // the badge's own radius
+    expect(shutterMarkNormal(win())).toEqual({ x: -0, y: 1 });
+    expect(shutterMarkNormal(win({ flipV: true }))).toEqual({ x: 0, y: -1 });
+  });
+
+  it("turns that push with the wall and with the plan's display rotation", () => {
+    const west = shutterMarkNormal(win({ angle: -90 }));
+    expect(west.x).toBeCloseTo(1);
+    expect(west.y).toBeCloseTo(0);
+    // The badge lives in the HTML overlay, which does not rotate with the SVG,
+    // so a rotated plan (issue #33) has to turn the vector itself.
+    const rotated = shutterMarkNormal(win(), 90);
+    expect(rotated.x).toBeCloseTo(-1);
+    expect(rotated.y).toBeCloseTo(0);
+    expect(shutterMarkNormal(win(), 180).y).toBeCloseTo(-1);
+    expect(shutterMarkNormal(win(), 270).x).toBeCloseTo(1);
+  });
+
+  it("the normal always points where the badge's anchor already went", () => {
+    // Same direction as shutterMarkPoint's own offset, or the two halves of
+    // the offset would fight each other.
+    for (const o of [win(), win({ flipV: true }), win({ angle: -90 }), win({ angle: 37 })]) {
+      const at = shutterMarkPoint(o);
+      const n = shutterMarkNormal(o);
+      expect(Math.sign(at.x - o.x) || 0).toBe(Math.sign(Number(n.x.toFixed(6))) || 0);
+      expect(Math.sign(at.y - o.y) || 0).toBe(Math.sign(Number(n.y.toFixed(6))) || 0);
+    }
   });
 });
 

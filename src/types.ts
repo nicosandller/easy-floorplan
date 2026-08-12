@@ -166,6 +166,22 @@ export interface Opening {
    */
   tapTarget?: OpeningTapTarget;
   /**
+   * Draw the shutter's icon beside the opening (default true, whenever both
+   * entities are bound). It is what makes the second entity visible at all —
+   * and a control of its own, since tapping it opens the shutter — but on a
+   * dense plan, or one where every window has a shutter, it is a lot of
+   * icons. Turning it off leaves the gestures untouched.
+   */
+  showShutterIcon?: boolean;
+  /**
+   * Override that icon. Absent, it is the shutter entity's own — the registry
+   * override, then the icon on the state, then Home Assistant's
+   * domain/device-class default, which is a **pair**, so the glyph itself
+   * carries open/closed. An override is a single glyph and gives that up;
+   * colour still reports the state.
+   */
+  shutterIcon?: string;
+  /**
    * Lovelace actions for the opening (issue #74 follow-up). Same shape as
    * {@link FloorItem.tap_action}; an action's own `entity` picks which of
    * `entity` / `shutterEntity` it acts on. Defaults: tap opens/toggles the
