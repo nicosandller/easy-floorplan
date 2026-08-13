@@ -84,18 +84,45 @@ export const SYMBOL_CATEGORIES = [
 ] as const;
 
 /**
+ * Every lookup in this file is keyed by an untrusted string — a symbol id, a
+ * role name, a path command — and `cssIdent` happily passes `__proto__`,
+ * `toString` and `constructor`, which are all just letters and underscores.
+ *
+ * On a plain object that is a real fault, not a nicety. Reading
+ * `catalog["toString"]` returns `Object.prototype.toString`, a truthy value, so
+ * every `?? FALLBACK_SYMBOL` guard sails past it and the renderer destructures
+ * a function — which throws and takes the **whole card** down, from a config
+ * that never defined a symbol at all. Writing `out["__proto__"] = def` is worse
+ * in a quieter way: the assignment hits the inherited setter, so the symbol
+ * vanishes from `Object.keys` while every unrelated lookup starts resolving
+ * through the injected object.
+ *
+ * So every table here is null-prototype, and {@link own} is the one way any of
+ * them is read. Null-prototype construction alone would be enough today, but it
+ * is an invariant every future caller has to remember; the helper makes it hold
+ * even for a catalogue somebody hands us built the ordinary way.
+ */
+const dict = <T>(entries: Record<string, T>): Record<string, T> =>
+  Object.assign(Object.create(null) as Record<string, T>, entries);
+
+const own = <T>(table: Record<string, T>, key: unknown): T | undefined =>
+  typeof key === "string" && Object.prototype.hasOwnProperty.call(table, key)
+    ? table[key]
+    : undefined;
+
+/**
  * Role defaults — the de-facto design system the built-in glyphs already used,
  * read off the 26 of them: a filled carcass, then three weights of line art,
  * then the one solid fill (the fish tank's tails).
  */
-const ROLE_STYLE: Record<SymbolRole, Omit<PartStyle, "role">> = {
+const ROLE_STYLE = dict<Omit<PartStyle, "role">>({
   body: { width: 2, opacity: 1, fillOpacity: 0.12 },
   line: { width: 2, opacity: 1, fillOpacity: 0 },
   thin: { width: 1.5, opacity: 1, fillOpacity: 0 },
   detail: { width: 1.5, opacity: 0.7, fillOpacity: 0 },
   hint: { width: 1, opacity: 0.6, fillOpacity: 0 },
   solid: { width: 0, opacity: 0.7, fillOpacity: 1 },
-};
+});
 
 const DEFAULT_VIEW_BOX: [number, number, number, number] = [0, 0, 100, 100];
 
@@ -138,7 +165,7 @@ function points(v: unknown): Array<[number, number]> | null {
   return out;
 }
 
-const PATH_ARITY: Record<string, number> = { M: 2, L: 2, Q: 4, C: 6, Z: 0 };
+const PATH_ARITY = dict<number>({ M: 2, L: 2, Q: 4, C: 6, Z: 0 });
 
 function pathCmds(v: unknown): PathCmd[] | null {
   if (!Array.isArray(v) || !v.length || v.length > MAX_PATH_CMDS) return null;
@@ -146,7 +173,7 @@ function pathCmds(v: unknown): PathCmd[] | null {
   for (const c of v) {
     if (!Array.isArray(c) || typeof c[0] !== "string") return null;
     const op = c[0].toUpperCase();
-    const arity = PATH_ARITY[op];
+    const arity = own(PATH_ARITY, op);
     if (arity === undefined) return null;
     const args = nums(c.slice(1), arity);
     if (!args) return null;
@@ -159,11 +186,11 @@ function pathCmds(v: unknown): PathCmd[] | null {
 }
 
 function styleOf(raw: Record<string, unknown>, fallback: SymbolRole): PartStyle {
-  const role: SymbolRole =
-    typeof raw.role === "string" && raw.role in ROLE_STYLE
-      ? (raw.role as SymbolRole)
-      : fallback;
-  const base = ROLE_STYLE[role];
+  // `in` would walk the prototype chain, so `role: "toString"` passed the guard
+  // and then read a function whose `.width` is undefined — a part stroked
+  // `stroke-width="undefined"`.
+  const role: SymbolRole = own(ROLE_STYLE, raw.role) ? (raw.role as SymbolRole) : fallback;
+  const base = ROLE_STYLE[role]!;
   const width = num(raw.width);
   const opacity = num(raw.opacity);
   const fillOpacity = num(raw.fillOpacity);
@@ -199,7 +226,10 @@ function normalizePart(raw: unknown): SymbolPart | null {
   }
   if ("rect" in r) {
     const v = nums(r.rect, 4);
-    if (!v) return null;
+    // SVG rejects a negative width or height outright, so a mistyped rect drew
+    // nothing at all, with no error anywhere — exactly the silent failure this
+    // validator exists to prevent. Same rule the radii already had.
+    if (!v || v[2]! < 0 || v[3]! < 0) return null;
     return {
       kind: "rect", x: v[0]!, y: v[1]!, w: v[2]!, h: v[3]!,
       rx: Math.max(0, num(r.rx) ?? 0), space, style: styleOf(r, "body"),
@@ -375,13 +405,24 @@ export const BUILTIN_SYMBOLS: SymbolCatalog = (() => {
     string,
     unknown
   >;
-  const out: Record<string, SymbolDef> = {};
+  const out = dict<SymbolDef>({});
   for (const [path, raw] of Object.entries(files)) {
     const def = normalizeSymbol(raw, path.split("/").pop()?.replace(/\.json$/, ""));
     if (def) out[def.id] = def;
   }
   return out;
 })();
+
+/**
+ * Resolve a config-supplied `type` against a catalogue.
+ *
+ * The one way a catalogue is read. See {@link own}: a bare `catalog[type]` on a
+ * plain object answers `toString` with a function, which every `??` fallback in
+ * the renderers treats as a hit.
+ */
+export function findSymbol(catalog: SymbolCatalog, type: unknown): SymbolDef | undefined {
+  return own(catalog as Record<string, SymbolDef>, type);
+}
 
 let cacheKey: unknown;
 let cacheValue: SymbolCatalog = BUILTIN_SYMBOLS;
@@ -394,7 +435,10 @@ let cacheValue: SymbolCatalog = BUILTIN_SYMBOLS;
 export function symbolCatalog(symbols?: Record<string, unknown>): SymbolCatalog {
   if (!symbols || typeof symbols !== "object") return BUILTIN_SYMBOLS;
   if (symbols === cacheKey) return cacheValue;
-  const out: Record<string, SymbolDef> = { ...BUILTIN_SYMBOLS };
+  // Object.assign onto a null-prototype target, not a spread: `{ ...x }` would
+  // hand back an ordinary object and undo the whole point.
+  const out = dict<SymbolDef>({});
+  Object.assign(out, BUILTIN_SYMBOLS);
   for (const [key, raw] of Object.entries(symbols)) {
     const def = normalizeSymbol(raw, key);
     if (def) out[def.id] = def;
@@ -432,7 +476,7 @@ export function symbolSize(type: string, catalog: SymbolCatalog = BUILTIN_SYMBOL
   w: number;
   h: number;
 } {
-  return catalog[type]?.size ?? { w: 60, h: 60 };
+  return findSymbol(catalog, type)?.size ?? { w: 60, h: 60 };
 }
 
 /**

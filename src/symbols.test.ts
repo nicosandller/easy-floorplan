@@ -7,6 +7,7 @@ import {
   MAX_STROKE_WIDTH,
   MIN_STROKE_WIDTH,
   SYMBOL_CATEGORIES,
+  findSymbol,
   normalizeSymbol,
   renderSymbolParts,
   symbolCatalog,
@@ -349,8 +350,16 @@ describe("validating an untrusted symbol", () => {
     expect(normalizeSymbol({ id: "t", parts: [{ circle: [0, 0, 1, 1] }] })).toBeNull();
   });
 
-  it("rejects a negative radius", () => {
+  // SVG rejects a negative width/height outright, so the part drew nothing at
+  // all and said nothing about why — the silent failure this validator is for.
+  it("rejects a negative radius or a negative rect size", () => {
     expect(normalizeSymbol({ id: "t", parts: [{ circle: [0, 0, -5] }] })).toBeNull();
+    expect(normalizeSymbol({ id: "t", parts: [{ ellipse: [0, 0, 5, -5] }] })).toBeNull();
+    expect(normalizeSymbol({ id: "t", parts: [{ rect: [0, 0, -50, 20] }] })).toBeNull();
+    expect(normalizeSymbol({ id: "t", parts: [{ rect: [0, 0, 50, -20] }] })).toBeNull();
+    // Zero is degenerate but legal, and a repeat of collapsed parts is a valid
+    // way to build up a shape, so it is not the validator's business.
+    expect(normalizeSymbol({ id: "t", parts: [{ rect: [0, 0, 0, 0] }] })).not.toBeNull();
   });
 
   it("drops a part whose primitive it does not know, keeping the rest", () => {
@@ -408,6 +417,59 @@ describe("validating an untrusted symbol", () => {
   it("files an unrecognised category under other", () => {
     const def = normalizeSymbol({ id: "t", category: "garage", parts: [{ line: [0, 0, 1, 1] }] })!;
     expect(def.category).toBe("other");
+  });
+});
+
+/**
+ * `cssIdent` keeps letters, digits, `-` and `_` — so `__proto__`, `toString`
+ * and `constructor` are all perfectly legal symbol ids, and every table in
+ * `symbols.ts` is keyed by a string a config supplies. On plain objects that
+ * combination is a crash, not a curiosity.
+ */
+describe("ids that collide with Object.prototype", () => {
+  it("does not let a __proto__ symbol hijack the catalogue", () => {
+    // JSON.parse creates a real own `__proto__` property, unlike an object
+    // literal — so this is exactly what the paste box hands us.
+    const symbols = JSON.parse('{"__proto__":{"id":"__proto__","parts":[{"line":[0,0,1,1]}]}}');
+    const cat = symbolCatalog(symbols);
+    expect(Object.getPrototypeOf(cat)).toBeNull();
+    expect(cat.sofa?.name).toBe("sofa");
+    // Nothing leaks through a prototype into unrelated lookups.
+    expect(findSymbol(cat, "parts")).toBeUndefined();
+    expect(findSymbol(cat, "id")).toBeUndefined();
+  });
+
+  it("answers a type named after a prototype member with nothing, not a function", () => {
+    for (const t of ["toString", "valueOf", "constructor", "hasOwnProperty", "__proto__"]) {
+      expect(findSymbol(BUILTIN_SYMBOLS, t), t).toBeUndefined();
+    }
+  });
+
+  // This threw, and it took the whole card with it: `catalog["toString"]` is a
+  // truthy function, so `?? FALLBACK_SYMBOL` never fired and the renderer
+  // destructured it. Reachable from a config that defines no symbols at all.
+  it("draws the fallback box for such a type instead of throwing", () => {
+    for (const t of ["toString", "valueOf", "constructor", "__proto__"]) {
+      const markup = flatten(renderSymbolParts(
+        findSymbol(BUILTIN_SYMBOLS, t) ?? FALLBACK_SYMBOL, 60, 60, "#111"
+      ));
+      expect(markup, t).toContain("<rect");
+    }
+  });
+
+  it("does not read a role off the prototype chain", () => {
+    // `"toString" in ROLE_STYLE` was true, and the style read off it had an
+    // undefined width — a part stroked `stroke-width="undefined"`.
+    for (const role of ["toString", "constructor", "__proto__"]) {
+      expect(attr("stroke-width", draw([{ line: [0, 0, 10, 10], role }])), role).toEqual([2]);
+    }
+  });
+
+  it("does not read a path command off the prototype chain", () => {
+    for (const op of ["constructor", "toString"]) {
+      expect(normalizeSymbol({ id: "t", parts: [{ path: [["M", 0, 0], [op, 1, 1]] }] }), op)
+        .toBeNull();
+    }
   });
 });
 

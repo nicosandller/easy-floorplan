@@ -19,6 +19,7 @@ import type {
 } from "./types";
 import {
   BUILTIN_SYMBOLS,
+  findSymbol,
   symbolList,
   type SymbolCatalog,
   type SymbolDef,
@@ -159,7 +160,7 @@ export function furnitureChoices(catalog: SymbolCatalog = BUILTIN_SYMBOLS): Symb
 
 /** A symbol's display name, falling back to its raw id for an unknown type. */
 export function furnitureLabel(type: string, catalog: SymbolCatalog = BUILTIN_SYMBOLS): string {
-  return catalog[type]?.name ?? type;
+  return findSymbol(catalog, type)?.name ?? type;
 }
 
 export function openingForm(o: Opening): FormSpec {

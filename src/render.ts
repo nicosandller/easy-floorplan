@@ -2,6 +2,7 @@ import { svg, html, nothing, type SVGTemplateResult, type TemplateResult } from 
 import {
   BUILTIN_SYMBOLS,
   FALLBACK_SYMBOL,
+  findSymbol,
   renderSymbolParts,
   type SymbolCatalog,
 } from "./symbols";
@@ -826,7 +827,7 @@ export function renderGlowMask(
           // The symbol says which shape its outline is, so a round-bodied piece
           // casts a round shadow. This used to be a hard-coded list of the three
           // round types, kept in sync by hand with the same list in the glyph.
-          const roundBase = catalog[f.type]?.footprint === "ellipse";
+          const roundBase = findSymbol(catalog, f.type)?.footprint === "ellipse";
           // A mask's luminance is its transmission, and the region is already
           // white ("all the light"). So furniture paints *black* at the share
           // it blocks, leaving the share it lets through.
@@ -2498,7 +2499,7 @@ export function renderFurniture(
   catalog: SymbolCatalog = BUILTIN_SYMBOLS,
 ): SVGTemplateResult {
   const color = override ?? f.color ?? FURNITURE_COLOR;
-  const parts = renderSymbolParts(catalog[f.type] ?? FALLBACK_SYMBOL, f.w, f.h, color);
+  const parts = renderSymbolParts(findSymbol(catalog, f.type) ?? FALLBACK_SYMBOL, f.w, f.h, color);
 
   // `hand: "left"` is the same symbol reflected, not a second drawing \u2014 which is
   // what the L-shaped sectional's two hands always were, and it now works on any
