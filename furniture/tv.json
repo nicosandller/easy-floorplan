@@ -1,0 +1,11 @@
+{
+  "id": "tv",
+  "name": "tv",
+  "category": "living",
+  "keywords": ["television", "screen", "media"],
+  "size": { "w": 110, "h": 18 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 22.222222 },
+    { "line": [32, 100, 68, 200], "role": "line" }
+  ]
+}

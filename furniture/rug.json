@@ -1,0 +1,11 @@
+{
+  "id": "rug",
+  "name": "rug",
+  "category": "living",
+  "keywords": ["carpet", "mat"],
+  "size": { "w": 180, "h": 120 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 12, "role": "body", "fillOpacity": 0.08, "dash": [8, 5] },
+    { "rect": [10, 10, 80, 80], "rx": 8, "role": "detail", "opacity": 0.6 }
+  ]
+}

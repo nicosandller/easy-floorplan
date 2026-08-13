@@ -1,0 +1,13 @@
+{
+  "id": "bed",
+  "name": "bed",
+  "category": "bedroom",
+  "keywords": ["double", "mattress", "sleep"],
+  "size": { "w": 150, "h": 200 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 2.666667 },
+    { "line": [0, 26, 100, 26], "role": "line" },
+    { "rect": [10, 6, 34, 14], "rx": 2, "role": "thin" },
+    { "rect": [56, 6, 34, 14], "rx": 2, "role": "thin" }
+  ]
+}

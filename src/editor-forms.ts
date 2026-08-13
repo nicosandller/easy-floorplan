@@ -13,11 +13,16 @@ import type {
   FloorText,
   FloorplanCardConfig,
   Furniture,
-  FurnitureType,
   Opening,
   Tracker,
   Wall,
 } from "./types";
+import {
+  BUILTIN_SYMBOLS,
+  symbolList,
+  type SymbolCatalog,
+  type SymbolDef,
+} from "./symbols";
 import {
   DEFAULT_AREA_OPACITY,
   DEFAULT_AREA_LABEL_SIZE,
@@ -138,64 +143,24 @@ const dropdown = (...options: { value: string; label: string }[]) => ({
   select: { mode: "dropdown", options },
 });
 
-export const FURNITURE_TYPES: FurnitureType[] = [
-  "table",
-  "roundTable",
-  "desk",
-  "chair",
-  "sofa",
-  "bed",
-  "wardrobe",
-  "rug",
-  "plant",
-  "fridge",
-  "stove",
-  "sink",
-  "toilet",
-  "stairs",
-  "tv",
-  "sectional",
-  "washer",
-  "dryer",
-  "dishwasher",
-  "bathtub",
-  "vanity",
-  "waterHeater",
-  "airHandler",
-  "fishTank",
-  "piano",
-  "hotTub",
-];
+/**
+ * Every symbol the picker and the type dropdown offer, grouped by room and
+ * alphabetical inside each group.
+ *
+ * Derived from the catalogue rather than hand-listed (issue #90). The two lists
+ * that used to live here — an ordering array and a label map — had to be edited
+ * for every new glyph, and only the label map was exhaustiveness-checked: a type
+ * added to the union but forgotten in the array simply never appeared in the
+ * editor, silently. A symbol now carries its own name and category.
+ */
+export function furnitureChoices(catalog: SymbolCatalog = BUILTIN_SYMBOLS): SymbolDef[] {
+  return symbolList(catalog);
+}
 
-/** User-facing labels for furniture types (the enum uses camelCase). */
-export const FURNITURE_LABELS: Record<FurnitureType, string> = {
-  table: "table",
-  roundTable: "round table",
-  desk: "desk",
-  chair: "chair",
-  sofa: "sofa",
-  bed: "bed",
-  wardrobe: "wardrobe",
-  rug: "rug",
-  plant: "plant",
-  fridge: "fridge",
-  stove: "stove",
-  sink: "sink",
-  toilet: "toilet",
-  stairs: "stairs",
-  tv: "tv",
-  sectional: "sectional (L)",
-  fishTank: "fish tank",
-  piano: "piano",
-  hotTub: "hot tub",
-  washer: "washer",
-  dryer: "dryer",
-  dishwasher: "dishwasher",
-  bathtub: "bathtub",
-  vanity: "vanity",
-  waterHeater: "water heater",
-  airHandler: "air handler",
-};
+/** A symbol's display name, falling back to its raw id for an unknown type. */
+export function furnitureLabel(type: string, catalog: SymbolCatalog = BUILTIN_SYMBOLS): string {
+  return catalog[type]?.name ?? type;
+}
 
 export function openingForm(o: Opening): FormSpec {
   const motion = openingMotion(o);
@@ -674,18 +639,24 @@ export function textForm(t: FloorText): FormSpec {
  * {@link itemForm} — a plant drawn inside the Living Room offers the Living
  * Room's sensors first.
  */
-export function furnitureForm(f: Furniture, areaScope?: AreaEntityScope): FormSpec {
+export function furnitureForm(
+  f: Furniture,
+  areaScope?: AreaEntityScope,
+  catalog: SymbolCatalog = BUILTIN_SYMBOLS
+): FormSpec {
+  const choices = furnitureChoices(catalog);
+  // A piece whose symbol this install doesn't have keeps its own id in the
+  // list, so opening the form doesn't silently retype it to whatever sorts
+  // first — the config would then be quietly rewritten on the next commit.
+  const options = choices.some((s) => s.id === f.type)
+    ? choices.map((s) => ({ value: s.id, label: s.name }))
+    : [{ value: f.type, label: `${f.type} (missing)` }, ...choices.map((s) => ({ value: s.id, label: s.name }))];
   return {
     fields: [
       {
         name: "type",
         label: "Type",
-        selector: {
-          select: {
-            mode: "dropdown",
-            options: FURNITURE_TYPES.map((t) => ({ value: t, label: FURNITURE_LABELS[t] })),
-          },
-        },
+        selector: { select: { mode: "dropdown", options } },
       },
       // L-shaped sectional only (#40): which side the chaise extends on,
       // facing the sofa from the front. Conditional, in the same shape

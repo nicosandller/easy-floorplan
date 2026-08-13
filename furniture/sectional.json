@@ -1,0 +1,13 @@
+{
+  "id": "sectional",
+  "name": "sectional (L)",
+  "category": "living",
+  "keywords": ["couch", "sofa", "corner", "chaise"],
+  "size": { "w": 230, "h": 180 },
+  "parts": [
+    { "polygon": [[0, 0], [100, 0], [100, 100], [58, 100], [58, 55], [0, 55]], "role": "body" },
+    { "line": [0, 16, 100, 16], "role": "line" },
+    { "line": [9, 16, 9, 55], "role": "line" },
+    { "line": [58, 16, 58, 100], "role": "line" }
+  ]
+}

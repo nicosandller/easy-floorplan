@@ -12,7 +12,9 @@
     "skipLibCheck": true,
     "isolatedModules": true,
     "esModuleInterop": true,
-    "resolveJsonModule": true
+    "resolveJsonModule": true,
+    // `import.meta.glob`, which bundles furniture/*.json into the card.
+    "types": ["vite/client"]
   },
   "include": ["src"]
 }

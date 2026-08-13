@@ -1,0 +1,16 @@
+{
+  "id": "fishTank",
+  "name": "fish tank",
+  "category": "living",
+  "keywords": ["aquarium", "fish", "water"],
+  "size": { "w": 100, "h": 40 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 10 },
+    { "rect": [5, 12, 90, 76], "role": "hint" },
+    { "ellipse": [32, 40, 7, 9], "role": "thin" },
+    { "path": [["M", 39, 40], ["L", 44, 32], ["L", 44, 48], ["Z"]], "role": "solid" },
+    { "ellipse": [68, 60, 7, 9], "role": "thin" },
+    { "path": [["M", 61, 60], ["L", 56, 52], ["L", 56, 68], ["Z"]], "role": "solid" },
+    { "circle": [82, 32, 4], "role": "hint" }
+  ]
+}

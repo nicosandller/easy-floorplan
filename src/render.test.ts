@@ -3,7 +3,6 @@ import { html, nothing } from "lit";
 import type { Area, Furniture, FurnitureType, ItemKind } from "./types";
 import { SKIN_ACCENT, SKIN_WALL, MAX_SKIN_WALL_WIDTH } from "./skins";
 import {
-  FURNITURE_DEFAULT_SIZE,
   DEFAULT_GLOW_RADIUS,
   DEFAULT_GLOW_COLOR,
   GLOW_MIN_OPACITY,
@@ -41,9 +40,6 @@ import {
   defaultIcon,
   renderFurniture,
   furnitureColor,
-  sectionalPoints,
-  SECTIONAL_CHAISE_FRACTION,
-  SECTIONAL_SEAT_FRACTION,
   entityDefaultIcon,
   trackerSensorReading,
   openingInMotion,
@@ -96,6 +92,7 @@ import {
   renderRipple,
 } from "./render";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
+import { symbolCatalog, symbolSize } from "./symbols";
 
 /**
  * Render a Lit template to the string it would emit, for asserting on markup.
@@ -1118,64 +1115,78 @@ describe("furnitureColor (issue #82)", () => {
   });
 });
 
-describe("sectionalPoints", () => {
+describe("the sectional's L-shaped outline", () => {
   const w = 200;
   const h = 160;
+  // Fractions the sectional symbol is drawn to: the chaise's share of the
+  // width, and the main run's depth from the back.
+  const CHAISE = 0.42;
+  const SEAT = 0.55;
+
+  /** The base polygon's corners, read back out of the rendered glyph. */
+  function outline(hand?: "left" | "right"): Array<[number, number]> {
+    const markup = flattenMarkup(
+      renderFurniture({ id: "s", type: "sectional", x: 0, y: 0, w, h, hand })
+    );
+    const pts = markup.match(/<polygon[^>]*\spoints=([^\s>]+(?:\s[-\d.]+,[-\d.]+)*)/)?.[1];
+    expect(pts, "the sectional draws a polygon base").toBeTruthy();
+    return pts!
+      .trim()
+      .split(/\s+/)
+      .map((p) => p.split(",").map(Number) as [number, number]);
+  }
 
   function area(pts: Array<[number, number]>): number {
     let a = 0;
     for (let i = 0; i < pts.length; i++) {
-      const [x1, y1] = pts[i];
-      const [x2, y2] = pts[(i + 1) % pts.length];
+      const [x1, y1] = pts[i]!;
+      const [x2, y2] = pts[(i + 1) % pts.length]!;
       a += x1 * y2 - x2 * y1;
     }
     return Math.abs(a) / 2;
   }
 
   it("is an L: six corners, not a rectangle", () => {
-    expect(sectionalPoints(w, h, "right")).toHaveLength(6);
+    expect(outline("right")).toHaveLength(6);
   });
 
   it("fills the bounding box minus the notch", () => {
-    const chaise = w * SECTIONAL_CHAISE_FRACTION;
-    const seat = h * SECTIONAL_SEAT_FRACTION;
-    const expected = w * h - (w - chaise) * (h - seat);
-    expect(area(sectionalPoints(w, h, "right"))).toBeCloseTo(expected, 6);
+    const expected = w * h - (w - w * CHAISE) * (h - h * SEAT);
+    expect(area(outline("right"))).toBeCloseTo(expected, 6);
   });
 
   it("puts the chaise on the right when hand is right", () => {
-    const pts = sectionalPoints(w, h, "right");
     // the front edge (max y) should only be occupied on the right half
-    const front = pts.filter(([, y]) => y === h / 2).map(([x]) => x);
+    const front = outline("right").filter(([, y]) => y === h / 2).map(([x]) => x);
     expect(Math.min(...front)).toBeGreaterThan(0);
     expect(Math.max(...front)).toBeCloseTo(w / 2, 6);
   });
 
-  it("puts the chaise on the left when hand is left", () => {
-    const pts = sectionalPoints(w, h, "left");
-    const front = pts.filter(([, y]) => y === h / 2).map(([x]) => x);
-    expect(Math.max(...front)).toBeLessThan(0);
-    expect(Math.min(...front)).toBeCloseTo(-w / 2, 6);
-  });
-
-  it("left is right mirrored across x, not a different shape", () => {
-    const r = sectionalPoints(w, h, "right");
-    const l = sectionalPoints(w, h, "left");
-    expect(area(l)).toBeCloseTo(area(r), 6);
-    expect(l.map(([x, y]) => [-x, y])).toEqual(r);
-  });
-
   it("defaults to right-handed", () => {
-    expect(sectionalPoints(w, h)).toEqual(sectionalPoints(w, h, "right"));
+    expect(outline()).toEqual(outline("right"));
   });
 
   it("stays inside its bounding box", () => {
-    for (const hand of ["left", "right"] as const) {
-      for (const [x, y] of sectionalPoints(w, h, hand)) {
-        expect(Math.abs(x)).toBeLessThanOrEqual(w / 2 + 1e-9);
-        expect(Math.abs(y)).toBeLessThanOrEqual(h / 2 + 1e-9);
-      }
+    for (const [x, y] of outline("right")) {
+      expect(Math.abs(x)).toBeLessThanOrEqual(w / 2 + 1e-9);
+      expect(Math.abs(y)).toBeLessThanOrEqual(h / 2 + 1e-9);
     }
+  });
+
+  // The two hands were always one polygon reflected, and still are — only now
+  // the reflection is a transform on the group rather than a mapped point list,
+  // so it applies to every part of the glyph and to any other symbol too.
+  it("draws the left hand as the right one mirrored, not a second shape", () => {
+    expect(outline("left")).toEqual(outline("right"));
+    const left = flattenMarkup(
+      renderFurniture({ id: "s", type: "sectional", x: 10, y: 20, w, h, hand: "left" })
+    );
+    const right = flattenMarkup(
+      renderFurniture({ id: "s", type: "sectional", x: 10, y: 20, w, h, hand: "right" })
+    );
+    expect(left).toContain("rotate(0) scale(-1 1)");
+    expect(right).not.toContain("scale(-1 1)");
+    expect(left.replace(" scale(-1 1)", "")).toBe(right);
   });
 });
 
@@ -1189,7 +1200,7 @@ describe("every furniture type renders and has a default size", () => {
 
   it("has a default size for each", () => {
     for (const t of types) {
-      const s = FURNITURE_DEFAULT_SIZE[t];
+      const s = symbolSize(t);
       expect(s, t).toBeTruthy();
       expect(s.w, t).toBeGreaterThan(0);
       expect(s.h, t).toBeGreaterThan(0);
@@ -1198,9 +1209,19 @@ describe("every furniture type renders and has a default size", () => {
 
   it("renders each without throwing", () => {
     for (const t of types) {
-      const { w, h } = FURNITURE_DEFAULT_SIZE[t];
+      const { w, h } = symbolSize(t);
       expect(() => renderFurniture({ id: t, type: t, x: 0, y: 0, w, h }), t).not.toThrow();
     }
+  });
+
+  // The fallback the old `switch`'s `default` case gave an unrecognised type,
+  // now that a type can name a symbol this install simply doesn't have.
+  it("draws an unknown type as a plain box rather than nothing", () => {
+    const markup = flattenMarkup(
+      renderFurniture({ id: "x", type: "no-such-symbol", x: 0, y: 0, w: 100, h: 60 })
+    );
+    expect(markup).toContain("<rect");
+    expect(markup).toContain("fp-furniture-no-such-symbol");
   });
 
   it("renders a sectional of each hand", () => {
@@ -3161,6 +3182,26 @@ describe("renderGlowMask — furniture is dimmed, not blacked out (#108, #106)",
     expect(markup).toContain("<ellipse");
     // Explicit region, not the viewport default (the issue #102 lesson).
     expect(markup).toContain("width=1016");
+  });
+
+  // The footprint comes off the symbol now (issue #90), not off a hard-coded
+  // list of the three round built-ins — so a contributed round piece casts a
+  // round shadow without anyone editing this file.
+  it("takes a config symbol's own footprint, not just the built-in round ones", () => {
+    const catalog = symbolCatalog({
+      pouffe: { id: "pouffe", footprint: "ellipse", parts: [{ ellipse: [50, 50, 50, 50] }] },
+      crate: { id: "crate", parts: [{ rect: [0, 0, 100, 100] }] },
+    });
+    const round = flattenMarkup(
+      renderGlowMask([{ id: "p", type: "pouffe", x: 0, y: 0, w: 40, h: 40 }] as never,
+        100, 100, "gm", catalog)
+    );
+    const square = flattenMarkup(
+      renderGlowMask([{ id: "c", type: "crate", x: 0, y: 0, w: 40, h: 40 }] as never,
+        100, 100, "gm", catalog)
+    );
+    expect(round).toContain("<ellipse");
+    expect(square).not.toContain("<ellipse");
   });
 
   // This is the guard in *both* directions, and the reason the level is a

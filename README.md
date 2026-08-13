@@ -26,7 +26,7 @@ screen size.
 <img width="240" height="358" alt="conditionals" src="https://github.com/user-attachments/assets/11d359b6-de8c-483c-8763-105ddf7d915b" />
 
 - **Animated doors & windows** — bind a contact `binary_sensor` or `cover` and openings swing, slide or roll with their real state, partial positions included.
-- **Furniture** — 26 gray line-art diagrams (table, sofa, bed, stove, stairs, tv…), each bindable to an entity.
+- (${\color{red}NEW!}$) **Furniture** — 26 gray line-art diagrams (table, sofa, bed, stove, stairs, tv…), each bindable to an entity, in a searchable picker. Every one is a plain JSON file of numbers you can copy: draw your own in the editor's paste box, use it straight away, and open a PR when it's good. No SVG, so nothing you paste can run anything.
 - **Areas** — trace room polygons that color live from an entity, and link them to Home Assistant areas to scope entity pickers and bulk-add devices.
 - **Live position trackers** — map one or two distance sensors (mmWave / radar) onto a marker that moves across the plan in real time.
 - (${\color{red}NEW!}$) **Dead spaces** — hatch the spaces your walls seal off that no door or window reaches: a service shaft, the void behind a boxed-in stairwell. Nothing to draw — the regions come from the walls and openings themselves, so cutting a doorway into one stops it being dead the moment you place the door.
@@ -324,6 +324,7 @@ The editor writes this config for you; manual editing is optional.
 | `furniture`  | Furniture[]| `[]`             | Gray furniture/fixture diagrams.             |
 | `trackers`   | Tracker[]| `[]`               | Live position trackers (see [Tracker](#tracker)).    |
 | `areas`      | Area[]   | `[]`               | Named room polygons (see [Area](#area)).          |
+| `symbols`    | map      | —                  | Furniture symbols this plan defines for itself, merged over the shipped library. See [Drawing your own](#drawing-your-own). |
 
 When `floors` is present each floor carries its own `walls`, `openings`, `items`, `texts`,
 `furniture`, `trackers` and `areas`. The top-level arrays describe a single implicit floor
@@ -475,11 +476,15 @@ without turning into the color of the light. Pools never intercept clicks.
 
 `{ id, type, x, y, w, h, angle?, hand?, color?, entity?, activeColor?, stateColor? }`
 
-`type` is one of `table`, `roundTable`, `desk`, `chair`, `sofa`, `sectional`, `bed`,
-`wardrobe`, `rug`, `plant`, `fridge`, `stove`, `sink`, `dishwasher`, `washer`, `dryer`,
-`toilet`, `bathtub`, `vanity`, `stairs`, `tv`, `piano`, `fishTank`, `hotTub`,
-`waterHeater`, `airHandler`. `color` defaults to gray so furniture reads differently from
-walls; `hand` (`left` / `right`) picks which end an L-shaped `sectional`'s chaise sits on.
+`type` names a **symbol** — one of the ~26 the card ships with (`table`, `sofa`, `bed`,
+`fridge`, `stairs`, …; the full set is [`furniture/`](furniture/), a file each), or one you
+supply yourself. `color` defaults to gray so furniture reads differently from walls; `hand`
+(`left` / `right`) mirrors the symbol, and picks which end an L-shaped `sectional`'s chaise
+sits on. A `type` nothing answers to draws a plain box, so a missing symbol is a visible
+placeholder rather than a hole in the plan.
+
+The editor's **+ Add** picker draws every symbol at its real size and is searchable — type
+`couch` and you get the sofa and the sectional.
 
 Bind an **entity** and `stateColor` / `activeColor` recolor the whole diagram — a plant
 goes red when its soil sensor says it needs watering, a cabinet highlights while its
@@ -490,6 +495,41 @@ contact sensor is open.
   entity: sensor.ficus_soil_moisture,
   stateColor: [ { above: 80, color: green }, { above: 65, color: yellow }, { color: red } ] }
 ```
+
+#### Drawing your own
+
+The library will never have every piece of furniture — someone always has a wardrobe with
+seven doors. So a symbol is **data**, not code: a list of primitives with numeric attributes
+only, which the card assembles into SVG itself. Nothing you paste is ever parsed as markup.
+
+Define one in a top-level `symbols:` block and use it like any other type:
+
+```yaml
+symbols:
+  wardrobe7:
+    name: wardrobe (7 doors)
+    category: bedroom
+    keywords: [closet, fitted]
+    size: { w: 420, h: 55 }
+    parts:
+      - { rect: [0, 0, 100, 100], rx: 7.3 }
+      - { repeat: 6, step: [14.29, 0], part: { line: [14.29, 0, 14.29, 100], role: line } }
+      - { repeat: 7, step: [14.29, 0], part: { line: [11.4, 40, 11.4, 60], role: line } }
+
+furniture:
+  - { id: w1, type: wardrobe7, x: 300, y: 90, w: 420, h: 55 }
+```
+
+Coordinates are a fraction of the piece's box (`0`–`100` across and down); stroke widths are
+canvas units and don't scale. A part picks a **role** (`body`, `line`, `thin`, `detail`,
+`hint`, `solid`) rather than a colour, so your symbol inherits skins and entity recoloring
+for free. `repeat` stamps one part along a step vector.
+
+You don't have to hand-write it: **Project → Custom symbols** in the editor takes pasted JSON,
+validates it, and drops it into `symbols:` — it then shows up in the picker beside the
+built-ins. If it turns out to be generally useful, the same JSON is what you contribute to
+[`furniture/`](furniture/). The full format is in
+[`furniture/README.md`](furniture/README.md).
 
 ### Tracker
 
@@ -937,6 +977,10 @@ drives them on `requestAnimationFrame`.
 
 The harness lives entirely under `dev/` and is not in the production build. Flip
 `START_WITH_DEMO` in `dev/dev.ts` to start with a sample room instead of a blank floor.
+
+`/dev/symbols.html` on the same server draws every symbol in [`furniture/`](furniture/) on
+one page — the contact sheet to check a new one against. It reads the directory, so a file
+you add appears with no other edit.
 
 ## License
 

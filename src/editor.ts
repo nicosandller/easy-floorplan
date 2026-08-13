@@ -12,7 +12,6 @@ import type {
   FloorItem,
   FloorText,
   Furniture,
-  FurnitureType,
   ItemKind,
   Tracker,
   TrackerSensor,
@@ -22,6 +21,14 @@ import type {
   StateColorRule,
 } from "./types";
 import {
+  normalizeSymbol,
+  symbolCatalog,
+  symbolMatches,
+  symbolSize,
+  type SymbolCatalog,
+  type SymbolDef,
+} from "./symbols";
+import {
   DEFAULT_CUSTOM_PERCENT,
   DEFAULT_GRID,
   DEFAULT_ITEM_SIZE,
@@ -30,7 +37,6 @@ import {
   DEFAULT_HEIGHT,
   DEFAULT_RIPPLE_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
-  FURNITURE_DEFAULT_SIZE,
   configsEqual,
   emptyConfig,
   getFloors,
@@ -114,8 +120,8 @@ import {
 } from "./editor-geometry";
 import type { AreaEntityScope } from "./editor-forms";
 import {
-  FURNITURE_LABELS,
-  FURNITURE_TYPES,
+  furnitureChoices,
+  furnitureLabel,
   areaForm,
   areaNameForm,
   diffFormValue,
@@ -279,6 +285,15 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _floorMenuOpen = false;
   /** "+ Add" popover (device / text / furniture glyphs) visibility. */
   @state() private _addMenuOpen = false;
+  /**
+   * Search query for the furniture picker (issue #90). Lives beside
+   * `_addMenuOpen` and is cleared wherever that is, so reopening the popover
+   * always shows the whole library rather than the last thing you looked for.
+   */
+  @state() private _addQuery = "";
+  /** Paste-a-symbol box in the Project panel, and its last validation error. */
+  @state() private _symbolDraft = "";
+  @state() private _symbolError = "";
   /** Project section expanded? Collapsed by default — page settings are touched rarely. */
   @state() private _projectOpen = false;
   /**
@@ -409,6 +424,15 @@ export class FloorplanCardEditor extends LitElement {
   private _floor(): Floor {
     const floors = this._config.floors ?? [];
     return floors.find((f) => f.id === this._activeFloorId) ?? floors[0];
+  }
+
+  /**
+   * The shipped symbol library with this config's own `symbols:` merged over
+   * it (issue #90). Memoized on the config's identity inside `symbolCatalog`,
+   * so calling it per cell in the picker costs one lookup.
+   */
+  private _symbols(): SymbolCatalog {
+    return symbolCatalog(this._config.symbols);
   }
 
   /** Discrete change to the active floor's elements (snapshots for undo). */
@@ -912,6 +936,7 @@ export class FloorplanCardEditor extends LitElement {
         ev.stopPropagation();
         this._floorMenuOpen = false;
         this._addMenuOpen = false;
+        this._addQuery = "";
         return;
       }
       if (this._draft || this._draftTracker || this._draftArea || this._marquee || this._drag) {
@@ -1472,8 +1497,8 @@ export class FloorplanCardEditor extends LitElement {
     this._tool = "select";
   }
 
-  private _addFurniture(type: FurnitureType): void {
-    const size = FURNITURE_DEFAULT_SIZE[type];
+  private _addFurniture(type: string): void {
+    const size = symbolSize(type, this._symbols());
     const f: Furniture = {
       id: uid("furn"),
       type,
@@ -2296,7 +2321,7 @@ export class FloorplanCardEditor extends LitElement {
       case "furniture": {
         const fu = f.furniture.find((x) => x.id === sel.id);
         if (!fu) return "Furniture";
-        const label = FURNITURE_LABELS[fu.type];
+        const label = furnitureLabel(fu.type, this._symbols());
         return `${label.charAt(0).toUpperCase()}${label.slice(1)} · ${Math.round(fu.w)}×${Math.round(fu.h)}`;
       }
       case "area": {
@@ -2535,6 +2560,7 @@ export class FloorplanCardEditor extends LitElement {
               @click=${() => {
                 this._floorMenuOpen = false;
                 this._addMenuOpen = false;
+                this._addQuery = "";
               }}
             ></div>`
           : nothing}
@@ -2655,6 +2681,7 @@ export class FloorplanCardEditor extends LitElement {
               @click=${() => {
                 this._floorMenuOpen = !this._floorMenuOpen;
                 this._addMenuOpen = false;
+                this._addQuery = "";
               }}
             >
               <ha-icon icon="mdi:cog-outline"></ha-icon>
@@ -2828,7 +2855,10 @@ export class FloorplanCardEditor extends LitElement {
                    what you place is what you get. Previewed at full strength
                    with no hass in the editor, so the radius is adjustable
                    without having to turn the real light on. -->
-              ${renderGlowMask(floor.furniture, c.width, c.height, `${this._wallMaskId}-glowmask`)}
+              ${renderGlowMask(
+                floor.furniture, c.width, c.height,
+                `${this._wallMaskId}-glowmask`, this._symbols()
+              )}
               <g class="fp-glows"
                  mask=${floor.furniture.length ? `url(#${this._wallMaskId}-glowmask)` : nothing}>
                 ${floor.items.map((it, i) => {
@@ -3208,13 +3238,27 @@ export class FloorplanCardEditor extends LitElement {
     // Any open toolbar popover would be orphaned by the layout change.
     this._floorMenuOpen = false;
     this._addMenuOpen = false;
+    this._addQuery = "";
   }
 
-  /** The "+ Add" popover: device, text, then every furniture type as its real glyph. */
+  /**
+   * The "+ Add" popover: device, text, then every symbol as its real glyph.
+   *
+   * The grid is searchable and grouped (issue #90). It was 26 fixed cells over
+   * six rows, which was already the tallest thing in the editor; with a
+   * community library behind it the list only grows, so the query filters on id,
+   * name, category and the symbol's own keywords — "couch" finds the sofa.
+   */
   private _renderAddMenu(): TemplateResult {
     const close = () => {
       this._addMenuOpen = false;
+      this._addQuery = "";
     };
+    const catalog = this._symbols();
+    const matches = furnitureChoices(catalog).filter((s) => symbolMatches(s, this._addQuery));
+    const grouped = !this._addQuery.trim();
+    let lastCategory = "";
+
     return html`
       <div class="pop left add-pop">
         <button
@@ -3235,31 +3279,64 @@ export class FloorplanCardEditor extends LitElement {
         >
           <ha-icon icon="mdi:format-text"></ha-icon> Text
         </button>
-        <div class="add-furn-grid">
-          ${FURNITURE_TYPES.map((t) => {
-            const size = FURNITURE_DEFAULT_SIZE[t];
-            // Glyphs are drawn centered at the origin; pad the viewBox a bit
-            // (tv draws its stand below the box, plants overflow slightly).
-            const pad = Math.max(size.w, size.h) * 0.25 + 6;
-            const vb = `${-size.w / 2 - pad} ${-size.h / 2 - pad} ${size.w + pad * 2} ${size.h + pad * 2}`;
-            return html`
-              <button
-                class="furn-cell"
-                title=${FURNITURE_LABELS[t]}
-                @click=${() => {
-                  this._addFurniture(t);
-                  close();
-                }}
-              >
-                <svg viewBox=${vb}>
-                  ${renderFurniture({ id: "preview", type: t, x: 0, y: 0, w: size.w, h: size.h })}
-                </svg>
-                <span>${FURNITURE_LABELS[t]}</span>
-              </button>
-            `;
-          })}
+        <div class="furn-search">
+          <ha-icon icon="mdi:magnify"></ha-icon>
+          <input
+            type="search"
+            placeholder="Search furniture"
+            .value=${this._addQuery}
+            @input=${(e: Event) => {
+              this._addQuery = (e.target as HTMLInputElement).value;
+            }}
+            @keydown=${(e: KeyboardEvent) => {
+              // Escape clears the query first; the popover's own Escape
+              // handler closes it, so without this one key would do both.
+              if (e.key === "Escape" && this._addQuery) {
+                e.stopPropagation();
+                this._addQuery = "";
+              }
+            }}
+          />
+        </div>
+        <div class="add-furn-scroll">
+          ${matches.length
+            ? matches.map((s) => {
+                const header = grouped && s.category !== lastCategory ? s.category : "";
+                lastCategory = s.category;
+                return html`${header ? html`<div class="furn-group">${header}</div>` : nothing}
+                  ${this._renderFurnCell(s, close)}`;
+              })
+            : html`<div class="furn-empty">No symbol matches “${this._addQuery}”</div>`}
         </div>
       </div>
+    `;
+  }
+
+  /** One picker cell: the symbol drawn at its own default size, plus its name. */
+  private _renderFurnCell(s: SymbolDef, close: () => void): TemplateResult {
+    // Glyphs are drawn centered at the origin; pad the viewBox a bit
+    // (tv draws its stand below the box, plants overflow slightly).
+    const { w, h } = s.size;
+    const pad = Math.max(w, h) * 0.25 + 6;
+    const vb = `${-w / 2 - pad} ${-h / 2 - pad} ${w + pad * 2} ${h + pad * 2}`;
+    return html`
+      <button
+        class="furn-cell"
+        title=${s.name}
+        @click=${() => {
+          this._addFurniture(s.id);
+          close();
+        }}
+      >
+        <svg viewBox=${vb}>
+          ${renderFurniture(
+            { id: "preview", type: s.id, x: 0, y: 0, w, h },
+            undefined,
+            this._symbols()
+          )}
+        </svg>
+        <span>${s.name}</span>
+      </button>
     `;
   }
 
@@ -3391,7 +3468,7 @@ export class FloorplanCardEditor extends LitElement {
     return svg`
       <g class="furn-hit ${selected ? "selected" : ""}"
          @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "furniture", id: f.id })}>
-        ${renderFurniture(f)}
+        ${renderFurniture(f, undefined, this._symbols())}
         ${
           selected
             ? svg`<rect x=${f.x - f.w / 2 - 4} y=${f.y - f.h / 2 - 4}
@@ -3678,8 +3755,100 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderForm(projectDeadSpaceForm(this._config), (patch) =>
           this._patchConfig(patch as Partial<FloorplanCardConfig>)
         )}
+        ${this._renderSymbolsPanel()}
       </div>
     `;
+  }
+
+  /**
+   * Paste a furniture symbol into this plan (issue #90).
+   *
+   * The point is that you don't need a pull request to draw something the
+   * library hasn't got: paste the geometry here, it lands in the config's
+   * `symbols:` block, and it appears in the picker beside the built-ins. If it
+   * turns out to be generally useful, the same JSON is what you contribute to
+   * `furniture/`.
+   *
+   * It is validated through `normalizeSymbol` — the same function the shipped
+   * library goes through — so a malformed paste is reported here rather than
+   * becoming a broken glyph on the plan. Nothing pasted is ever parsed as
+   * markup; see `symbols.ts`.
+   */
+  private _renderSymbolsPanel(): TemplateResult {
+    const own = Object.keys(this._config.symbols ?? {});
+    return html`
+      <div class="row col symbols-panel">
+        <label>Custom symbols</label>
+        ${own.length
+          ? html`<div class="symbol-list">
+              ${own.map(
+                (id) => html`
+                  <span class="symbol-chip">
+                    ${id}
+                    <button
+                      class="chip-x"
+                      title=${`Remove ${id}`}
+                      @click=${() => this._removeSymbol(id)}
+                    >
+                      ✕
+                    </button>
+                  </span>
+                `
+              )}
+            </div>`
+          : nothing}
+        <textarea
+          class="symbol-input"
+          rows="4"
+          spellcheck="false"
+          placeholder=${'{ "id": "my-desk", "size": { "w": 120, "h": 60 }, "parts": [ … ] }'}
+          .value=${this._symbolDraft}
+          @input=${(e: Event) => {
+            this._symbolDraft = (e.target as HTMLTextAreaElement).value;
+            this._symbolError = "";
+          }}
+        ></textarea>
+        ${this._symbolError ? html`<div class="symbol-error">${this._symbolError}</div>` : nothing}
+        <div class="symbol-actions">
+          <button ?disabled=${!this._symbolDraft.trim()} @click=${this._addSymbol}>
+            Add symbol
+          </button>
+          <a
+            href="https://github.com/nicosandller/easy-floorplan/blob/main/furniture/README.md"
+            target="_blank"
+            rel="noreferrer"
+            >How to draw one</a
+          >
+        </div>
+      </div>
+    `;
+  }
+
+  private _addSymbol = (): void => {
+    let raw: unknown;
+    try {
+      raw = JSON.parse(this._symbolDraft);
+    } catch (err) {
+      this._symbolError = `Not valid JSON — ${(err as Error).message}`;
+      return;
+    }
+    const problems: string[] = [];
+    const def = normalizeSymbol(raw, undefined, problems);
+    if (!def) {
+      this._symbolError = problems[0] ?? "Not a usable symbol.";
+      return;
+    }
+    this._patchConfig({ symbols: { ...(this._config.symbols ?? {}), [def.id]: raw } });
+    this._symbolDraft = "";
+    this._symbolError = "";
+  };
+
+  private _removeSymbol(id: string): void {
+    const rest = { ...(this._config.symbols ?? {}) };
+    delete rest[id];
+    // Drop the key entirely when the last one goes, so removing every symbol
+    // leaves the config as it was rather than carrying an empty block forever.
+    this._patchConfig({ symbols: Object.keys(rest).length ? rest : undefined });
   }
 
   /**
@@ -3812,7 +3981,7 @@ export class FloorplanCardEditor extends LitElement {
       const f = this._floor().furniture.find((x) => x.id === sel.id);
       if (!f) return html`${nothing}`;
       return html`
-        ${this._renderForm(furnitureForm(f, this._areaEntitiesAt(f.x, f.y)), (patch, live) =>
+        ${this._renderForm(furnitureForm(f, this._areaEntitiesAt(f.x, f.y), this._symbols()), (patch, live) =>
           this._applyElementPatch("furniture", f.id, patch, live)
         )}
         ${this._renderColorRow({
@@ -4527,13 +4696,57 @@ export class FloorplanCardEditor extends LitElement {
     .add-entry:hover {
       background: var(--secondary-background-color, #f5f5f5);
     }
-    .add-furn-grid {
+    /* Search row above the grid (issue #90): the library grows with every
+       contributed symbol, so the list has to be findable, not just scrollable. */
+    .furn-search {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-top: 8px;
+      padding: 4px 6px;
+      border: 1px solid var(--divider-color, #e0e0e0);
+      border-radius: 6px;
+    }
+    .furn-search ha-icon {
+      --mdc-icon-size: 16px;
+      color: var(--secondary-text-color);
+      flex: none;
+    }
+    .furn-search input {
+      flex: 1;
+      min-width: 0;
+      border: none;
+      outline: none;
+      background: none;
+      font: inherit;
+      font-size: 12px;
+      color: var(--primary-text-color);
+    }
+    .add-furn-scroll {
       display: grid;
       grid-template-columns: repeat(5, 1fr);
       gap: 4px;
       margin-top: 8px;
       padding-top: 8px;
       border-top: 1px solid var(--divider-color, #eee);
+      /* 26 built-ins already filled six rows; a community library is unbounded. */
+      max-height: 46vh;
+      overflow-y: auto;
+    }
+    .furn-group {
+      grid-column: 1 / -1;
+      font-size: 10px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--secondary-text-color);
+      opacity: 0.8;
+      padding: 4px 2px 0;
+    }
+    .furn-empty {
+      grid-column: 1 / -1;
+      padding: 10px 2px;
+      font-size: 12px;
+      color: var(--secondary-text-color);
     }
     .furn-cell {
       display: flex;
@@ -5159,6 +5372,72 @@ export class FloorplanCardEditor extends LitElement {
     }
     .row input.num {
       flex: 0 0 64px;
+    }
+    /* Paste-a-symbol block (issue #90): a stacked row, since a JSON blob does
+       not fit the label-then-control shape the rest of the panel uses. */
+    .row.col {
+      flex-direction: column;
+      align-items: stretch;
+    }
+    .row.col > label {
+      flex: none;
+      margin-bottom: 2px;
+    }
+    .symbol-input {
+      width: 100%;
+      box-sizing: border-box;
+      padding: 6px;
+      border-radius: 4px;
+      border: 1px solid var(--divider-color, #ccc);
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+      font-family: var(--code-font-family, ui-monospace, monospace);
+      font-size: 11px;
+      resize: vertical;
+    }
+    .symbol-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+    .symbol-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 2px 6px;
+      border-radius: 10px;
+      font-size: 11px;
+      background: var(--secondary-background-color, #f2f2f2);
+      color: var(--primary-text-color);
+    }
+    .symbol-chip button.chip-x {
+      border: none;
+      background: none;
+      padding: 0;
+      font-size: 11px;
+      line-height: 1;
+      color: var(--secondary-text-color);
+    }
+    .symbol-actions button[disabled] {
+      opacity: 0.5;
+      cursor: default;
+    }
+    .symbol-actions {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      margin-top: 6px;
+      font-size: 12px;
+    }
+    .symbol-actions a {
+      color: var(--secondary-text-color);
+    }
+    .symbol-error {
+      margin-top: 4px;
+      font-size: 11px;
+      color: var(--error-color, #c62828);
     }
     /* Compact inline checkbox+label used inside a .row that already has its
        primary <label> on the left (e.g. the Tracker sensor "invert" toggle). */

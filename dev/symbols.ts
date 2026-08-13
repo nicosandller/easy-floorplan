@@ -1,6 +1,6 @@
 import "../src/index";
 import type { FloorplanCardConfig } from "../src/types";
-import { FURNITURE_DEFAULT_SIZE } from "../src/types";
+import { BUILTIN_SYMBOLS } from "../src/symbols";
 
 if (!customElements.get("ha-card")) {
   class C extends HTMLElement {
@@ -16,10 +16,12 @@ if (!customElements.get("ha-card")) {
 }
 if (!customElements.get("ha-icon")) customElements.define("ha-icon", class extends HTMLElement {} as any);
 
-const TYPES = Object.keys(FURNITURE_DEFAULT_SIZE) as Array<keyof typeof FURNITURE_DEFAULT_SIZE>;
+// Straight off the bundled catalogue, so a symbol dropped into furniture/ shows
+// up here with no other edit — this page is the contact sheet you check it on.
+const TYPES = Object.keys(BUILTIN_SYMBOLS);
 const COLS = 6, CELL = 260;
 const furniture = TYPES.map((t, i) => {
-  const { w, h } = FURNITURE_DEFAULT_SIZE[t];
+  const { w, h } = BUILTIN_SYMBOLS[t]!.size;
   return { id: t, type: t, x: (i % COLS) * CELL + CELL / 2, y: Math.floor(i / COLS) * CELL + CELL / 2, w, h };
 });
 // both hands of the sectional, side by side

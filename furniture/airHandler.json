@@ -1,0 +1,12 @@
+{
+  "id": "airHandler",
+  "name": "air handler",
+  "category": "utility",
+  "keywords": ["hvac", "ahu", "furnace", "ventilation"],
+  "size": { "w": 60, "h": 56 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 7.142857 },
+    { "line": [8, 8, 92, 92], "role": "detail", "opacity": 0.8 },
+    { "line": [8, 92, 92, 8], "role": "detail", "opacity": 0.8 }
+  ]
+}

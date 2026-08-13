@@ -1,0 +1,12 @@
+{
+  "id": "toilet",
+  "name": "toilet",
+  "category": "bath",
+  "keywords": ["wc", "loo", "lavatory"],
+  "size": { "w": 48, "h": 68 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 8.333333 },
+    { "rect": [10, 0, 80, 22], "rx": 6.25, "role": "line" },
+    { "ellipse": [50, 68, 34, 30], "role": "line" }
+  ]
+}

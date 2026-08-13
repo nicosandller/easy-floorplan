@@ -1,0 +1,11 @@
+{
+  "id": "chair",
+  "name": "chair",
+  "category": "living",
+  "keywords": ["seat"],
+  "size": { "w": 44, "h": 44 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 9.090909 },
+    { "line": [0, 22, 100, 22], "role": "line" }
+  ]
+}

@@ -1,0 +1,14 @@
+{
+  "id": "plant",
+  "name": "plant",
+  "category": "living",
+  "keywords": ["pot", "tree", "greenery"],
+  "size": { "w": 44, "h": 44 },
+  "footprint": "ellipse",
+  "parts": [
+    { "ellipse": [50, 50, 50, 50], "role": "body" },
+    { "circle": [50, 38, 18], "role": "thin" },
+    { "circle": [34, 58, 18], "role": "thin" },
+    { "circle": [66, 58, 18], "role": "thin" }
+  ]
+}

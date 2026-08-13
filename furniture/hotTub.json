@@ -1,0 +1,15 @@
+{
+  "id": "hotTub",
+  "name": "hot tub",
+  "category": "bath",
+  "keywords": ["jacuzzi", "spa", "whirlpool"],
+  "size": { "w": 120, "h": 120 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 3.333333 },
+    { "circle": [50, 50, 36], "role": "line" },
+    { "circle": [27.68, 27.68, 5], "role": "hint", "space": "square" },
+    { "circle": [72.32, 27.68, 5], "role": "hint", "space": "square" },
+    { "circle": [27.68, 72.32, 5], "role": "hint", "space": "square" },
+    { "circle": [72.32, 72.32, 5], "role": "hint", "space": "square" }
+  ]
+}

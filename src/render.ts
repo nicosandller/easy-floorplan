@@ -1,8 +1,13 @@
 import { svg, html, nothing, type SVGTemplateResult, type TemplateResult } from "lit";
+import {
+  BUILTIN_SYMBOLS,
+  FALLBACK_SYMBOL,
+  renderSymbolParts,
+  type SymbolCatalog,
+} from "./symbols";
 import type {
   FloorplanCardConfig,
   Floor,
-  SectionalHand,
   Opening,
   ItemKind,
   IconAnimation,
@@ -807,6 +812,7 @@ export function renderGlowMask(
   width: number,
   height: number,
   id: string,
+  catalog: SymbolCatalog = BUILTIN_SYMBOLS,
 ): SVGTemplateResult {
   const pad = WALL_THICKNESS;
   return svg`
@@ -817,7 +823,10 @@ export function renderGlowMask(
               fill="white" />
         ${furniture.map((f) => {
           const rot = f.angle ? `rotate(${f.angle} ${f.x} ${f.y})` : undefined;
-          const roundBase = f.type === "roundTable" || f.type === "plant" || f.type === "waterHeater";
+          // The symbol says which shape its outline is, so a round-bodied piece
+          // casts a round shadow. This used to be a hard-coded list of the three
+          // round types, kept in sync by hand with the same list in the glyph.
+          const roundBase = catalog[f.type]?.footprint === "ellipse";
           // A mask's luminance is its transmission, and the region is already
           // white ("all the light"). So furniture paints *black* at the share
           // it blocks, leaving the share it lets through.
@@ -2468,298 +2477,38 @@ export function renderAreaBorder(
 }
 
 /**
- * Render a furniture/fixture diagram as line art inside its w×h box, centered at the
- * origin, then translated and rotated into place. Defaults to gray so it reads
- * differently from black walls.
- */
-/** Fraction of the bounding box the chaise occupies, and the main seat's depth. */
-export const SECTIONAL_CHAISE_FRACTION = 0.42;
-export const SECTIONAL_SEAT_FRACTION = 0.55;
-
-/**
- * The six corners of an L-shaped sectional, centred on the origin, back at -y.
+ * A furniture diagram: the symbol named by `f.type`, drawn as line art inside
+ * its w\u00d7h box, centered at the origin and then translated and rotated into
+ * place. Defaults to gray so it reads differently from black walls.
  *
- * `hand` is read facing the sofa from the front: a `right` sectional puts the
- * chaise on your right, extending toward you. Mirroring across x gives `left`,
- * so the two hands are the same polygon reflected -- not two separate shapes.
+ * Every glyph is data now (issue #90) \u2014 one JSON file per symbol under
+ * `furniture/`, plus whatever a config's own `symbols:` adds. `override` is the
+ * entity-driven color resolved by the caller (issue #82) \u2014 see
+ * {@link furnitureColor}; the editor passes nothing and keeps the static look
+ * while you are drawing.
+ *
+ * An unknown type draws the plain box with no detail, which is what the old
+ * hand-written `switch`'s `default` case did: a config naming a symbol that was
+ * never installed leaves a placeholder you can see and move, rather than an
+ * invisible hole in the plan.
  */
-export function sectionalPoints(
-  w: number,
-  h: number,
-  hand: SectionalHand = "right",
-): Array<[number, number]> {
-  const hw = w / 2;
-  const hh = h / 2;
-  const seat = h * SECTIONAL_SEAT_FRACTION;   // depth of the main run, from the back
-  const chaise = w * SECTIONAL_CHAISE_FRACTION;
-
-  //  back  ( -y )
-  //  +-----------------+
-  //  |                 |
-  //  |         +-------+   <- chaise, on the right
-  //  |         |
-  //  +---------+
-  //  front ( +y )
-  const pts: Array<[number, number]> = [
-    [-hw, -hh],
-    [hw, -hh],
-    [hw, hh],
-    [hw - chaise, hh],
-    [hw - chaise, -hh + seat],
-    [-hw, -hh + seat],
-  ];
-  return hand === "left" ? pts.map(([x, y]) => [-x, y] as [number, number]) : pts;
-}
-
-/**
- * A furniture diagram. `override` is the entity-driven color resolved by the
- * caller (issue #82) — see {@link furnitureColor}; the editor passes nothing
- * and keeps the static look while you are drawing.
- */
-export function renderFurniture(f: Furniture, override?: string): SVGTemplateResult {
+export function renderFurniture(
+  f: Furniture,
+  override?: string,
+  catalog: SymbolCatalog = BUILTIN_SYMBOLS,
+): SVGTemplateResult {
   const color = override ?? f.color ?? FURNITURE_COLOR;
-  const w = f.w;
-  const h = f.h;
-  const hw = w / 2;
-  const hh = h / 2;
+  const parts = renderSymbolParts(catalog[f.type] ?? FALLBACK_SYMBOL, f.w, f.h, color);
 
-  const roundBase =
-    f.type === "roundTable" || f.type === "plant" || f.type === "waterHeater";
-  const base = f.type === "sectional"
-    ? svg`<polygon points=${sectionalPoints(w, h, f.hand).map((p) => p.join(",")).join(" ")}
-                   fill=${color} fill-opacity="0.12" stroke=${color} stroke-width="2"
-                   stroke-linejoin="round" />`
-    : roundBase
-    ? svg`<ellipse cx="0" cy="0" rx=${hw} ry=${hh}
-                   fill=${color} fill-opacity="0.12" stroke=${color} stroke-width="2" />`
-    : f.type === "rug"
-      ? svg`<rect x=${-hw} y=${-hh} width=${w} height=${h} rx=${Math.min(w, h) * 0.12}
-                  fill=${color} fill-opacity="0.08" stroke=${color} stroke-width="2"
-                  stroke-dasharray="8 5" />`
-      : svg`<rect x=${-hw} y=${-hh} width=${w} height=${h} rx="4"
-                  fill=${color} fill-opacity="0.12" stroke=${color} stroke-width="2" />`;
+  // `hand: "left"` is the same symbol reflected, not a second drawing \u2014 which is
+  // what the L-shaped sectional's two hands always were, and it now works on any
+  // symbol. A mirror is uniform in |scale|, so strokes keep their width.
+  const mirror = f.hand === "left" ? " scale(-1 1)" : "";
 
-  let detail: SVGTemplateResult;
-  switch (f.type) {
-    case "chair":
-      detail = svg`<line x1=${-hw} y1=${-hh + h * 0.22} x2=${hw} y2=${-hh + h * 0.22}
-                         stroke=${color} stroke-width="2" />`;
-      break;
-    case "sofa":
-      detail = svg`
-        <line x1=${-hw} y1=${-hh + h * 0.3} x2=${hw} y2=${-hh + h * 0.3}
-              stroke=${color} stroke-width="2" />
-        <line x1=${-hw + w * 0.12} y1=${-hh + h * 0.3} x2=${-hw + w * 0.12} y2=${hh}
-              stroke=${color} stroke-width="2" />
-        <line x1=${hw - w * 0.12} y1=${-hh + h * 0.3} x2=${hw - w * 0.12} y2=${hh}
-              stroke=${color} stroke-width="2" />`;
-      break;
-    case "bed":
-      detail = svg`
-        <line x1=${-hw} y1=${-hh + h * 0.26} x2=${hw} y2=${-hh + h * 0.26}
-              stroke=${color} stroke-width="2" />
-        <rect x=${-hw + w * 0.1} y=${-hh + h * 0.06} width=${w * 0.34} height=${h * 0.14} rx="3"
-              fill="none" stroke=${color} stroke-width="1.5" />
-        <rect x=${hw - w * 0.44} y=${-hh + h * 0.06} width=${w * 0.34} height=${h * 0.14} rx="3"
-              fill="none" stroke=${color} stroke-width="1.5" />`;
-      break;
-    case "fridge":
-      detail = svg`
-        <line x1=${-hw} y1=${-hh + h * 0.4} x2=${hw} y2=${-hh + h * 0.4}
-              stroke=${color} stroke-width="2" />
-        <line x1=${hw - w * 0.16} y1=${-hh + h * 0.12} x2=${hw - w * 0.16} y2=${-hh + h * 0.3}
-              stroke=${color} stroke-width="2" />
-        <line x1=${hw - w * 0.16} y1=${-hh + h * 0.5} x2=${hw - w * 0.16} y2=${hh - h * 0.16}
-              stroke=${color} stroke-width="2" />`;
-      break;
-    case "stove": {
-      const r = Math.min(w, h) * 0.16;
-      const ox = w * 0.22;
-      const oy = h * 0.22;
-      detail = svg`
-        <circle cx=${-ox} cy=${-oy} r=${r} fill="none" stroke=${color} stroke-width="2" />
-        <circle cx=${ox} cy=${-oy} r=${r} fill="none" stroke=${color} stroke-width="2" />
-        <circle cx=${-ox} cy=${oy} r=${r} fill="none" stroke=${color} stroke-width="2" />
-        <circle cx=${ox} cy=${oy} r=${r} fill="none" stroke=${color} stroke-width="2" />`;
-      break;
-    }
-    case "sink":
-      detail = svg`
-        <rect x=${-hw + w * 0.12} y=${-hh + h * 0.18} width=${w * 0.76} height=${h * 0.5} rx="4"
-              fill="none" stroke=${color} stroke-width="2" />
-        <circle cx="0" cy=${-hh + h * 0.1} r=${Math.min(w, h) * 0.05}
-                fill="none" stroke=${color} stroke-width="2" />`;
-      break;
-    case "toilet":
-      detail = svg`
-        <rect x=${-hw + w * 0.1} y=${-hh} width=${w * 0.8} height=${h * 0.22} rx="3"
-              fill="none" stroke=${color} stroke-width="2" />
-        <ellipse cx="0" cy=${hh - h * 0.32} rx=${w * 0.34} ry=${h * 0.3}
-                 fill="none" stroke=${color} stroke-width="2" />`;
-      break;
-    case "stairs": {
-      const steps = 7;
-      const lines = [];
-      for (let i = 1; i < steps; i++) {
-        const y = -hh + (h / steps) * i;
-        lines.push(svg`<line x1=${-hw} y1=${y} x2=${hw} y2=${y} stroke=${color} stroke-width="1.5" />`);
-      }
-      detail = svg`${lines}
-        <line x1="0" y1=${hh - 6} x2="0" y2=${-hh + 6} stroke=${color} stroke-width="1.5" />
-        <path d="M ${-w * 0.12} ${-hh + h * 0.16} L 0 ${-hh + 4} L ${w * 0.12} ${-hh + h * 0.16}"
-              fill="none" stroke=${color} stroke-width="1.5" />`;
-      break;
-    }
-    case "tv":
-      detail = svg`<line x1=${-w * 0.18} y1=${hh} x2=${w * 0.18} y2=${hh + h}
-                         stroke=${color} stroke-width="2" />`;
-      break;
-    case "desk":
-      detail = svg`<line x1=${-hw} y1=${-hh + h * 0.55} x2=${hw} y2=${-hh + h * 0.55}
-                         stroke=${color} stroke-width="1.5" opacity="0.7" />`;
-      break;
-    case "wardrobe":
-      detail = svg`
-        <line x1="0" y1=${-hh} x2="0" y2=${hh} stroke=${color} stroke-width="2" />
-        <line x1=${-w * 0.06} y1=${-h * 0.1} x2=${-w * 0.06} y2=${h * 0.1}
-              stroke=${color} stroke-width="2" />
-        <line x1=${w * 0.06} y1=${-h * 0.1} x2=${w * 0.06} y2=${h * 0.1}
-              stroke=${color} stroke-width="2" />`;
-      break;
-    case "plant": {
-      const r = Math.min(w, h) * 0.18;
-      detail = svg`
-        <circle cx="0" cy=${-h * 0.12} r=${r} fill="none" stroke=${color} stroke-width="1.5" />
-        <circle cx=${-w * 0.16} cy=${h * 0.08} r=${r} fill="none" stroke=${color} stroke-width="1.5" />
-        <circle cx=${w * 0.16} cy=${h * 0.08} r=${r} fill="none" stroke=${color} stroke-width="1.5" />`;
-      break;
-    }
-    case "fishTank": {
-      // Issue #72: glass inset and two fish seen from above (lens body +
-      // tail) so it can't be mistaken for a rug, plus a rising bubble.
-      // Every measure scales with w/h like the other glyphs.
-      const fx = w * 0.18;
-      const fy = h * 0.1;
-      const bubble = Math.min(w, h) * 0.04;
-      const fish = (cx: number, cy: number, dir: number) => svg`
-        <ellipse cx=${cx} cy=${cy} rx=${w * 0.07} ry=${h * 0.09}
-                 fill="none" stroke=${color} stroke-width="1.5" />
-        <path d="M ${cx + dir * w * 0.07} ${cy} l ${dir * w * 0.05} ${-h * 0.08} l 0 ${h * 0.16} z"
-              fill=${color} opacity="0.7" />`;
-      detail = svg`
-        <rect x=${-hw + w * 0.05} y=${-hh + h * 0.12} width=${w * 0.9} height=${h * 0.76}
-              fill="none" stroke=${color} stroke-width="1" opacity="0.6" />
-        ${fish(-fx, -fy, 1)}
-        ${fish(fx, fy, -1)}
-        <circle cx=${w * 0.32} cy=${-h * 0.18} r=${bubble} fill="none" stroke=${color}
-                stroke-width="1" opacity="0.6" />`;
-      break;
-    }
-    case "piano": {
-      // Upright piano from above: body with a keyboard strip along the front
-      // edge, a few key separators, and the open lid line.
-      const stripY = hh - h * 0.3;
-      const keys: SVGTemplateResult[] = [];
-      for (let i = 1; i < 8; i++) {
-        const x = -hw + (w * i) / 8;
-        keys.push(svg`<line x1=${x} y1=${stripY} x2=${x} y2=${hh - h * 0.06}
-              stroke=${color} stroke-width="1" opacity="0.6" />`);
-      }
-      detail = svg`
-        <line x1=${-hw + w * 0.04} y1=${stripY} x2=${hw - w * 0.04} y2=${stripY}
-              stroke=${color} stroke-width="1.5" />
-        ${keys}
-        <line x1=${-hw + w * 0.04} y1=${-hh + h * 0.22} x2=${hw - w * 0.04} y2=${-hh + h * 0.22}
-              stroke=${color} stroke-width="1" opacity="0.5" />`;
-      break;
-    }
-    case "hotTub": {
-      // Square shell, round tub, jet bubbles in the corners of the water.
-      const r = Math.min(w, h) * 0.36;
-      const jr = Math.min(w, h) * 0.05;
-      const jd = r * 0.62;
-      detail = svg`
-        <circle cx="0" cy="0" r=${r} fill="none" stroke=${color} stroke-width="2" />
-        <circle cx=${-jd} cy=${-jd} r=${jr} fill="none" stroke=${color} stroke-width="1" opacity="0.6" />
-        <circle cx=${jd} cy=${-jd} r=${jr} fill="none" stroke=${color} stroke-width="1" opacity="0.6" />
-        <circle cx=${-jd} cy=${jd} r=${jr} fill="none" stroke=${color} stroke-width="1" opacity="0.6" />
-        <circle cx=${jd} cy=${jd} r=${jr} fill="none" stroke=${color} stroke-width="1" opacity="0.6" />`;
-      break;
-    }
-    case "rug":
-      detail = svg`<rect x=${-hw + w * 0.1} y=${-hh + h * 0.1} width=${w * 0.8} height=${h * 0.8}
-                         rx=${Math.min(w, h) * 0.08} fill="none" stroke=${color}
-                         stroke-width="1.5" opacity="0.6" />`;
-      break;
-    case "washer":
-    case "dryer": {
-      const r = Math.min(w, h) * 0.3;
-      detail = svg`
-        <line x1=${-hw + w * 0.06} y1=${-hh + h * 0.18} x2=${hw - w * 0.06} y2=${-hh + h * 0.18}
-              stroke=${color} stroke-width="1.5" opacity="0.7" />
-        <circle cx="0" cy=${h * 0.06} r=${r} fill="none" stroke=${color} stroke-width="2" />
-        ${f.type === "dryer"
-          ? svg`<circle cx="0" cy=${h * 0.06} r=${r * 0.45}
-                        fill="none" stroke=${color} stroke-width="1.5" opacity="0.7" />`
-          : svg`<circle cx=${-hw + w * 0.16} cy=${-hh + h * 0.09} r=${Math.min(w, h) * 0.045}
-                        fill="none" stroke=${color} stroke-width="1.5" />`}`;
-      break;
-    }
-    case "dishwasher":
-      detail = svg`
-        <rect x=${-hw + w * 0.1} y=${-hh + h * 0.24} width=${w * 0.8} height=${h * 0.62} rx="3"
-              fill="none" stroke=${color} stroke-width="1.5" opacity="0.8" />
-        <line x1=${-hw + w * 0.06} y1=${hh - h * 0.12} x2=${hw - w * 0.06} y2=${hh - h * 0.12}
-              stroke=${color} stroke-width="2" />`;
-      break;
-    case "waterHeater":
-      detail = svg`
-        <circle cx="0" cy="0" r=${Math.min(hw, hh) * 0.34}
-                fill="none" stroke=${color} stroke-width="1.5" />`;
-      break;
-    case "airHandler":
-      detail = svg`
-        <line x1=${-hw + w * 0.08} y1=${-hh + h * 0.08} x2=${hw - w * 0.08} y2=${hh - h * 0.08}
-              stroke=${color} stroke-width="1.5" opacity="0.8" />
-        <line x1=${-hw + w * 0.08} y1=${hh - h * 0.08} x2=${hw - w * 0.08} y2=${-hh + h * 0.08}
-              stroke=${color} stroke-width="1.5" opacity="0.8" />`;
-      break;
-    case "bathtub":
-      detail = svg`
-        <rect x=${-hw + w * 0.06} y=${-hh + h * 0.12} width=${w * 0.88} height=${h * 0.76}
-              rx=${Math.min(w, h) * 0.12} fill="none" stroke=${color} stroke-width="2" />
-        <circle cx=${-hw + w * 0.14} cy="0" r=${Math.min(w, h) * 0.055}
-                fill="none" stroke=${color} stroke-width="1.5" />`;
-      break;
-    case "vanity":
-      detail = svg`
-        <ellipse cx="0" cy=${h * 0.06} rx=${w * 0.2} ry=${h * 0.26}
-                 fill="none" stroke=${color} stroke-width="2" />
-        <circle cx="0" cy=${-hh + h * 0.14} r=${Math.min(w, h) * 0.05}
-                fill="none" stroke=${color} stroke-width="1.5" />`;
-      break;
-    case "sectional": {
-      const pts = sectionalPoints(w, h, f.hand);
-      const seatY = pts[4][1];               // where the chaise meets the main run
-      const backY = -hh + h * 0.16;
-      const divX = pts[3][0];                // the chaise's inner edge
-      const armX = f.hand === "left" ? hw - w * 0.09 : -hw + w * 0.09;
-      detail = svg`
-        <line x1=${-hw} y1=${backY} x2=${hw} y2=${backY} stroke=${color} stroke-width="2" />
-        <line x1=${armX} y1=${backY} x2=${armX} y2=${seatY} stroke=${color} stroke-width="2" />
-        <line x1=${divX} y1=${backY} x2=${divX} y2=${hh} stroke=${color} stroke-width="2" />`;
-      break;
-    }
-    case "table":
-    case "roundTable":
-    default:
-      detail = svg``;
-      break;
-  }
   return svg`<g class=${`fp-furniture fp-furniture-${cssIdent(f.type) ?? "unknown"}`}
                 data-id=${cssIdent(f.id) ?? nothing}
                 data-entity=${cssEntityId(f.entity) ?? nothing}
-                transform="translate(${f.x} ${f.y}) rotate(${f.angle ?? 0})">${base}${detail}</g>`;
+                transform="translate(${f.x} ${f.y}) rotate(${f.angle ?? 0})${mirror}">${parts}</g>`;
 }
 
 /**

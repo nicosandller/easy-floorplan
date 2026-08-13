@@ -1,0 +1,13 @@
+{
+  "id": "dryer",
+  "name": "dryer",
+  "category": "utility",
+  "keywords": ["tumble dryer", "laundry"],
+  "size": { "w": 60, "h": 62 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 6.666667 },
+    { "line": [6, 18, 94, 18], "role": "detail" },
+    { "circle": [50, 56, 30], "role": "line" },
+    { "circle": [50, 56, 13.5], "role": "detail" }
+  ]
+}

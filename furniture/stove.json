@@ -1,0 +1,14 @@
+{
+  "id": "stove",
+  "name": "stove",
+  "category": "kitchen",
+  "keywords": ["cooker", "hob", "oven", "range"],
+  "size": { "w": 64, "h": 64 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 6.25 },
+    { "circle": [28, 28, 16], "role": "line" },
+    { "circle": [72, 28, 16], "role": "line" },
+    { "circle": [28, 72, 16], "role": "line" },
+    { "circle": [72, 72, 16], "role": "line" }
+  ]
+}

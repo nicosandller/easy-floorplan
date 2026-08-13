@@ -1,0 +1,10 @@
+{
+  "id": "table",
+  "name": "table",
+  "category": "living",
+  "keywords": ["dining"],
+  "size": { "w": 120, "h": 80 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 5 }
+  ]
+}

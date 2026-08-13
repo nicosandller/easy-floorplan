@@ -1,0 +1,12 @@
+{
+  "id": "waterHeater",
+  "name": "water heater",
+  "category": "utility",
+  "keywords": ["boiler", "cylinder", "tank"],
+  "size": { "w": 52, "h": 52 },
+  "footprint": "ellipse",
+  "parts": [
+    { "ellipse": [50, 50, 50, 50], "role": "body" },
+    { "circle": [50, 50, 17], "role": "thin" }
+  ]
+}

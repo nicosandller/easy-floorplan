@@ -1,0 +1,13 @@
+{
+  "id": "piano",
+  "name": "piano",
+  "category": "living",
+  "keywords": ["upright", "keyboard", "music"],
+  "size": { "w": 140, "h": 60 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 6.666667 },
+    { "line": [4, 70, 96, 70], "role": "thin" },
+    { "repeat": 7, "step": [12.5, 0], "part": { "line": [12.5, 70, 12.5, 94], "role": "hint" } },
+    { "line": [4, 22, 96, 22], "role": "hint", "opacity": 0.5 }
+  ]
+}

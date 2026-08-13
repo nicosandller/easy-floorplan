@@ -1,0 +1,12 @@
+{
+  "id": "sink",
+  "name": "sink",
+  "category": "kitchen",
+  "keywords": ["basin", "tap", "faucet"],
+  "size": { "w": 64, "h": 48 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 8.333333 },
+    { "rect": [12, 18, 76, 50], "rx": 8.333333, "role": "line" },
+    { "circle": [50, 10, 5], "role": "line" }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+  "id": "roundTable",
+  "name": "round table",
+  "category": "living",
+  "keywords": ["dining", "circular"],
+  "size": { "w": 100, "h": 100 },
+  "footprint": "ellipse",
+  "parts": [
+    { "ellipse": [50, 50, 50, 50], "role": "body" }
+  ]
+}

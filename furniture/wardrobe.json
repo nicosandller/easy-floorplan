@@ -1,0 +1,13 @@
+{
+  "id": "wardrobe",
+  "name": "wardrobe",
+  "category": "bedroom",
+  "keywords": ["closet", "armoire", "cupboard"],
+  "size": { "w": 120, "h": 55 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 7.272727 },
+    { "line": [50, 0, 50, 100], "role": "line" },
+    { "line": [44, 40, 44, 60], "role": "line" },
+    { "line": [56, 40, 56, 60], "role": "line" }
+  ]
+}

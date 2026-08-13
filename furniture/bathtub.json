@@ -1,0 +1,12 @@
+{
+  "id": "bathtub",
+  "name": "bathtub",
+  "category": "bath",
+  "keywords": ["bath", "tub"],
+  "size": { "w": 150, "h": 76 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 5.263158 },
+    { "rect": [6, 12, 88, 76], "rx": 12, "role": "line" },
+    { "circle": [14, 50, 5.5], "role": "thin" }
+  ]
+}

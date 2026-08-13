@@ -1,0 +1,13 @@
+{
+  "id": "stairs",
+  "name": "stairs",
+  "category": "utility",
+  "keywords": ["steps", "staircase"],
+  "size": { "w": 90, "h": 170 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 4.444444 },
+    { "repeat": 6, "step": [0, 14.285714], "part": { "line": [0, 14.285714, 100, 14.285714], "role": "thin" } },
+    { "line": [50, 96.470588, 50, 3.529412], "role": "thin" },
+    { "path": [["M", 38, 16], ["L", 50, 2.352941], ["L", 62, 16]], "role": "thin" }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "id": "vanity",
+  "name": "vanity",
+  "category": "bath",
+  "keywords": ["washbasin", "sink", "bathroom"],
+  "size": { "w": 110, "h": 55 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 7.272727 },
+    { "ellipse": [50, 56, 20, 26], "role": "line" },
+    { "circle": [50, 14, 5], "role": "thin" }
+  ]
+}

@@ -399,6 +399,15 @@ export interface FloorText {
   angle?: number;
 }
 
+/**
+ * The symbols the card ships with, one JSON file each in `furniture/`.
+ *
+ * Not a closed set — {@link Furniture.type} takes any symbol id, including one
+ * a config defines in its own `symbols:` block or one contributed to
+ * `furniture/` (issue #90). This union is the shipped library, kept as a named
+ * type so the built-ins still autocomplete; `symbols.test.ts` asserts every
+ * member of it actually resolves.
+ */
 export type FurnitureType =
   | "table"
   | "roundTable"
@@ -429,14 +438,21 @@ export type FurnitureType =
 
 /**
  * Which end of an L-shaped sectional the chaise sits on, facing the sofa from
- * the front. Only meaningful for `type: "sectional"`; defaults to `"right"`.
+ * the front. Under the hood this mirrors the whole symbol across x, so it works
+ * on any glyph with a handedness; the editor only offers it on the sectional.
  */
 export type SectionalHand = "left" | "right";
 
 /** A gray furniture/fixture diagram placed on the plan. */
 export interface Furniture {
   id: string;
-  type: FurnitureType;
+  /**
+   * Which symbol to draw — a built-in {@link FurnitureType}, a symbol
+   * contributed to `furniture/`, or one this config defines in
+   * {@link FloorplanCardConfig.symbols}. An id nothing answers to draws the
+   * plain box, so a missing symbol is a visible placeholder rather than a hole.
+   */
+  type: FurnitureType | (string & {});
   /** L-shaped sectional only: which side the chaise extends on. Default `right`. */
   hand?: SectionalHand;
   x: number;
@@ -741,35 +757,12 @@ export const DEFAULT_RIPPLE_SIZE = 80;
 /** Neutral gray, so furniture reads differently from the walls. Skinnable (#122). */
 export const FURNITURE_COLOR = "var(--fp-skin-furniture, #9e9e9e)";
 
-/** Default width/height per furniture type, in virtual units. */
-export const FURNITURE_DEFAULT_SIZE: Record<FurnitureType, { w: number; h: number }> = {
-  table: { w: 120, h: 80 },
-  roundTable: { w: 100, h: 100 },
-  desk: { w: 120, h: 60 },
-  chair: { w: 44, h: 44 },
-  sofa: { w: 170, h: 72 },
-  bed: { w: 150, h: 200 },
-  wardrobe: { w: 120, h: 55 },
-  rug: { w: 180, h: 120 },
-  plant: { w: 44, h: 44 },
-  fridge: { w: 60, h: 64 },
-  stove: { w: 64, h: 64 },
-  sink: { w: 64, h: 48 },
-  toilet: { w: 48, h: 68 },
-  stairs: { w: 90, h: 170 },
-  tv: { w: 110, h: 18 },
-  washer: { w: 60, h: 62 },
-  dryer: { w: 60, h: 62 },
-  dishwasher: { w: 60, h: 60 },
-  waterHeater: { w: 52, h: 52 },
-  airHandler: { w: 60, h: 56 },
-  bathtub: { w: 150, h: 76 },
-  vanity: { w: 110, h: 55 },
-  sectional: { w: 230, h: 180 },
-  fishTank: { w: 100, h: 40 },
-  piano: { w: 140, h: 60 },
-  hotTub: { w: 120, h: 120 },
-};
+/**
+ * Default width/height per furniture type now lives with the symbol itself, in
+ * its `furniture/*.json` file — see `symbolSize` in `symbols.ts`. Kept out of
+ * here so a contributed symbol carries its own default rather than needing an
+ * entry in a table only the maintainer can edit.
+ */
 
 /**
  * A single floor/level. Each floor owns its own set of elements. The canvas
@@ -953,6 +946,18 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   furniture?: Furniture[];
   trackers?: Tracker[];
   areas?: Area[];
+  /**
+   * Symbols this plan defines for itself (issue #90), keyed by id and merged
+   * over the shipped `furniture/` library — so you can draw a piece nobody has
+   * contributed yet, use it today, and PR it later if it turns out to be
+   * generally useful.
+   *
+   * Deliberately typed loose: the values are untrusted geometry that
+   * `normalizeSymbol` validates on the way in, and a symbol that fails
+   * validation costs you that one glyph rather than the card. There is no
+   * markup here to sanitise — see `symbols.ts`.
+   */
+  symbols?: Record<string, unknown>;
 }
 
 export const DEFAULT_WIDTH = 1000;

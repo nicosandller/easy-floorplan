@@ -1,0 +1,13 @@
+{
+  "id": "fridge",
+  "name": "fridge",
+  "category": "kitchen",
+  "keywords": ["refrigerator", "freezer"],
+  "size": { "w": 60, "h": 64 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 6.666667 },
+    { "line": [0, 40, 100, 40], "role": "line" },
+    { "line": [84, 12, 84, 30], "role": "line" },
+    { "line": [84, 50, 84, 84], "role": "line" }
+  ]
+}

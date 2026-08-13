@@ -1,0 +1,11 @@
+{
+  "id": "desk",
+  "name": "desk",
+  "category": "living",
+  "keywords": ["office", "workstation"],
+  "size": { "w": 120, "h": 60 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 6.666667 },
+    { "line": [0, 55, 100, 55], "role": "detail" }
+  ]
+}

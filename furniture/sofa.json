@@ -1,0 +1,13 @@
+{
+  "id": "sofa",
+  "name": "sofa",
+  "category": "living",
+  "keywords": ["couch", "settee", "seat"],
+  "size": { "w": 170, "h": 72 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "rx": 5.555556 },
+    { "line": [0, 30, 100, 30], "role": "line" },
+    { "line": [12, 30, 12, 100], "role": "line" },
+    { "line": [88, 30, 88, 100], "role": "line" }
+  ]
+}
