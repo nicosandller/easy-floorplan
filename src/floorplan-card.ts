@@ -167,6 +167,7 @@ export class FloorplanCard extends LitElement {
   private _replayEventLogRef?: HTMLUListElement;
   private _replayLogExpanded = false;
   private _replayTimelineExpanded = false;
+  private _replaySpeedExpanded = false;
 
   public setConfig(config: FloorplanCardConfig): void {
     // Cheap shape assertions so malformed YAML surfaces as HA's error card
@@ -1024,6 +1025,7 @@ export class FloorplanCard extends LitElement {
            a card-mod rule on this element still wins (issue #155). -->
       <ha-card .header=${c.title ?? nothing}>
         <div class="card-shell">
+          ${this._config.historyReplay?.enabled ? this._renderReplayPanel() : nothing}
           <div
             class="stage press-${pressEffectOf(c)}"
             style="aspect-ratio: ${dims.w} / ${dims.h};"
@@ -1284,7 +1286,6 @@ export class FloorplanCard extends LitElement {
               </button>`
             : nothing}
           ${floors.length > 1 ? this._renderFloorSwitcher(floors, active) : nothing}
-          ${this._config.historyReplay?.enabled ? this._renderReplayPanel() : nothing}
         </div>
         </div>
       </ha-card>
@@ -1321,49 +1322,69 @@ export class FloorplanCard extends LitElement {
             <button title="Zoom in" @click=${() => this._zoomReplayWindow(1)}>⊕</button>
           </div>
         </div>
-        <div class="replay-view-tools">
-          <button class="replay-timeline-toggle" @click=${() => { this._replayTimelineExpanded = !this._replayTimelineExpanded; this.requestUpdate(); }}>
-            ${this._replayTimelineExpanded ? "Collapse lanes" : "Expand lanes"}
+        <div class="replay-toolbar">
+          <div class="replay-transport" role="group" aria-label="Replay transport controls">
+            <button title="Toggle replay mode" @click=${() => void this._toggleReplay()}>${this._replayEnabled ? "Disable" : "Enable"}</button>
+            <button aria-label="Jump back 30 seconds" title="Jump back 30 seconds" @click=${() => this._jumpReplay(-30)}>⏪</button>
+            <button aria-label="Step back one event" title="Step back" @click=${() => this._stepReplay(-1)}>◀</button>
+            <button class="replay-run-button" title=${this._playbackController.playing ? "Pause replay" : "Run replay"} @click=${() => (this._playbackController.playing ? this._pauseReplay() : this._playReplay())}>
+              ${this._playbackController.playing ? "⏸ Pause" : "▶ Run"}
+            </button>
+            <button aria-label="Step forward one event" title="Step forward" @click=${() => this._stepReplay(1)}>▶</button>
+            <button aria-label="Jump forward 30 seconds" title="Jump forward 30 seconds" @click=${() => this._jumpReplay(30)}>⏩</button>
+          </div>
+          <button
+            class="replay-speed-toggle"
+            aria-expanded=${this._replaySpeedExpanded}
+            @click=${() => {
+              this._replaySpeedExpanded = !this._replaySpeedExpanded;
+              this.requestUpdate();
+            }}
+          >
+            Speed ${this._formatReplaySpeed(replaySpeed)} ${this._replaySpeedExpanded ? "▴" : "▾"}
           </button>
         </div>
-        <easy-floorplan-history-timeline
-          .events=${this._historyEvents}
-          .startTime=${this._playbackController.startTime}
-          .endTime=${this._playbackController.endTime}
-          .currentTime=${this._playbackController.currentTime}
-          .expanded=${this._replayTimelineExpanded}
-          @seek=${(ev: CustomEvent<{ timestamp: number }>) => this._seekReplay(ev.detail.timestamp)}
-        ></easy-floorplan-history-timeline>
-        <div class="replay-toolbar">
-          <button title="Toggle replay mode" @click=${() => void this._toggleReplay()}>${this._replayEnabled ? "Disable" : "Enable"}</button>
-          <button title="Jump back 30 seconds" @click=${() => this._jumpReplay(-30)}>⏪</button>
-          <button title="Step back" @click=${() => this._stepReplay(-1)}>◀</button>
-          <button class="replay-run-button" title=${this._playbackController.playing ? "Pause replay" : "Run replay"} @click=${() => (this._playbackController.playing ? this._pauseReplay() : this._playReplay())}>
-            ${this._playbackController.playing ? "⏸ Pause" : "▶ Run"}
-          </button>
-          <button title="Step forward" @click=${() => this._stepReplay(1)}>▶</button>
-          <button title="Jump forward 30 seconds" @click=${() => this._jumpReplay(30)}>⏩</button>
-          <label class="replay-speed-field">
-            <span>Speed ${this._formatReplaySpeed(replaySpeed)}</span>
-            <input
-              class="replay-speed-slider"
-              type="range"
-              min=${FloorplanCard._REPLAY_SPEED_LOG_MIN}
-              max=${FloorplanCard._REPLAY_SPEED_LOG_MAX}
-              step="0.01"
-              .value=${this._replaySpeedToSliderValue(replaySpeed).toString()}
-              @input=${(ev: Event) => this._handleReplaySpeedSliderInput(ev)}
-            />
-            <input
-              class="replay-speed"
-              type="number"
-              min="0.01"
-              max="1000"
-              step="0.01"
-              .value=${replaySpeed.toString()}
-              @change=${(ev: Event) => this._setReplaySpeed(Number((ev.target as HTMLInputElement).value || 1))}
-            />
-          </label>
+        ${this._replaySpeedExpanded
+          ? html`<div class="replay-speed-panel">
+              <label class="replay-speed-field replay-speed-group">
+                <span>Playback speed</span>
+                <input
+                  class="replay-speed-slider"
+                  type="range"
+                  min=${FloorplanCard._REPLAY_SPEED_LOG_MIN}
+                  max=${FloorplanCard._REPLAY_SPEED_LOG_MAX}
+                  step="0.01"
+                  .value=${this._replaySpeedToSliderValue(replaySpeed).toString()}
+                  @input=${(ev: Event) => this._handleReplaySpeedSliderInput(ev)}
+                />
+                <input
+                  class="replay-speed"
+                  type="number"
+                  min="0.01"
+                  max="1000"
+                  step="0.01"
+                  .value=${replaySpeed.toString()}
+                  @change=${(ev: Event) => this._setReplaySpeed(Number((ev.target as HTMLInputElement).value || 1))}
+                />
+              </label>
+            </div>`
+          : nothing}
+        <div class="replay-lanes">
+          <div class="replay-view-tools">
+            <button class="replay-timeline-toggle" @click=${() => { this._replayTimelineExpanded = !this._replayTimelineExpanded; this.requestUpdate(); }}>
+              ${this._replayTimelineExpanded ? "Collapse lanes" : "Expand lanes"}
+            </button>
+          </div>
+          <div class="replay-timeline-wrap">
+            <easy-floorplan-history-timeline
+              .events=${this._historyEvents}
+              .startTime=${this._playbackController.startTime}
+              .endTime=${this._playbackController.endTime}
+              .currentTime=${this._playbackController.currentTime}
+              .expanded=${this._replayTimelineExpanded}
+              @seek=${(ev: CustomEvent<{ timestamp: number }>) => this._seekReplay(ev.detail.timestamp)}
+            ></easy-floorplan-history-timeline>
+          </div>
         </div>
         <div class=${`replay-event-log ${this._replayLogExpanded ? "expanded" : "collapsed"}`} role="log" aria-label="Replay event log">
           <button class="replay-log-toggle" @click=${() => { this._replayLogExpanded = !this._replayLogExpanded; this.requestUpdate(); }}>
@@ -1538,6 +1559,13 @@ export class FloorplanCard extends LitElement {
       display: flex;
       flex-direction: column;
       gap: 12px;
+      /* In fixed-height dashboards (e.g. Sections rows), replay controls can
+         extend past the visible card area. Keep content reachable by letting
+         this inner shell scroll inside the card instead of clipping. */
+      flex: 1 1 auto;
+      min-height: 0;
+      overflow-y: auto;
+      overflow-x: hidden;
     }
     .stage {
       position: relative;
@@ -1607,6 +1635,7 @@ export class FloorplanCard extends LitElement {
       border: 1px solid var(--divider-color, #e0e0e0);
       border-radius: 12px;
       background: var(--secondary-background-color, rgba(0, 0, 0, 0.03));
+      overflow-x: hidden;
     }
     .replay-header {
       display: flex;
@@ -1644,8 +1673,39 @@ export class FloorplanCard extends LitElement {
     .replay-toolbar {
       display: flex;
       flex-wrap: wrap;
+      gap: 10px;
+      align-items: end;
+      justify-content: space-between;
+    }
+    .replay-lanes {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      min-width: 0;
+    }
+    .replay-transport {
+      display: flex;
+      flex-wrap: wrap;
       gap: 6px;
       align-items: center;
+    }
+    .replay-speed-toggle {
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 999px;
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+      padding: 4px 10px;
+      font-size: 12px;
+      line-height: 1.2;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .replay-speed-panel {
+      border: 1px solid var(--divider-color, #ddd);
+      border-radius: 8px;
+      background: var(--card-background-color, #fff);
+      padding: 8px 10px;
+      min-width: 0;
     }
     .replay-range {
       display: flex;
@@ -1662,6 +1722,15 @@ export class FloorplanCard extends LitElement {
       gap: 6px;
       align-items: center;
     }
+    .replay-timeline-wrap {
+      max-height: 220px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 8px;
+      background: var(--card-background-color, #fff);
+      min-width: 0;
+    }
     .replay-range-field,
     .replay-speed-field {
       display: flex;
@@ -1669,6 +1738,16 @@ export class FloorplanCard extends LitElement {
       gap: 4px;
       font-size: 12px;
       color: var(--secondary-text-color, #666);
+    }
+    .replay-range-field {
+      flex: 1 1 210px;
+      min-width: 180px;
+    }
+    .replay-speed-group {
+      flex: 1 1 auto;
+      min-width: 0;
+      max-width: 100%;
+      margin-left: 0;
     }
     .replay-range input,
     .replay-speed-slider,
@@ -1695,7 +1774,14 @@ export class FloorplanCard extends LitElement {
     }
     .replay-speed-slider {
       padding: 0;
-      min-width: 220px;
+      width: 100%;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .replay-speed {
+      width: 92px;
+      min-width: 0;
+      align-self: flex-start;
     }
     .replay-run-button {
       min-width: 82px;
@@ -1704,6 +1790,15 @@ export class FloorplanCard extends LitElement {
     .replay-toolbar button,
     .replay-range-tools button {
       cursor: pointer;
+    }
+    @media (max-width: 720px) {
+      .replay-toolbar {
+        align-items: stretch;
+      }
+      .replay-speed-group {
+        margin-left: 0;
+        max-width: 100%;
+      }
     }
     .replay-event-log {
       border: 1px solid var(--divider-color, #e0e0e0);

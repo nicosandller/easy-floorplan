@@ -28,9 +28,18 @@ export class HistoryTimeline extends LitElement {
     return `${((timestamp - this.startTime) / Math.max(1, this.endTime - this.startTime)) * 100}%`;
   }
 
+  /**
+   * Keep markers visually centered while preventing edge overflow that can
+   * trigger horizontal scrollbars in tight containers.
+   */
+  private _getMarkerLeftClamped(timestamp: number, edgePx: number): string {
+    const raw = this._getMarkerLeft(timestamp);
+    return `clamp(${edgePx}px, ${raw}, calc(100% - ${edgePx}px))`;
+  }
+
   private _markerStyle(event: HistoryEventInput, stackOffset = "0px"): string {
     const color = resolveReplayEventColor(event);
-    const base = `left:${this._getMarkerLeft(event.timestamp)};--stack-offset:${stackOffset};`;
+    const base = `left:${this._getMarkerLeftClamped(event.timestamp, 7)};--stack-offset:${stackOffset};`;
     return color ? `${base}background:${color};box-shadow:0 0 0 2px ${color}22;` : base;
   }
 
@@ -105,7 +114,7 @@ export class HistoryTimeline extends LitElement {
             <div class="lane lane-track" style="grid-row:${row};">
               ${laneEvents.map((event) => {
                 const color = resolveReplayEventColor(event);
-                const left = this._getMarkerLeft(event.timestamp);
+                const left = this._getMarkerLeftClamped(event.timestamp, 4);
                 const passed = event.timestamp <= this.currentTime;
                 return html`
                   <button
@@ -167,7 +176,7 @@ export class HistoryTimeline extends LitElement {
         ${markerGroups.map((group) => html`
           <div
             class="marker-cluster ${group.passed ? "passed" : ""}"
-            style="left:${group.left};"
+            style="left:${this._getMarkerLeftClamped(group.timestamp, 7)};"
             title=${this._formatClusterTitle(group.events)}
             @click=${(ev: Event) => {
               ev.stopPropagation();
