@@ -320,10 +320,6 @@ export class FloorplanCard extends LitElement {
     return new LiveStateProvider(this.hass);
   }
 
-  private _getEntityState(entityId: string): HassEntity | undefined {
-    return this._getStateProvider().getEntityState(entityId);
-  }
-
   private _buildRenderHass(): RenderHass | undefined {
     if (!this.hass) return undefined;
     const provider = this._getStateProvider();
