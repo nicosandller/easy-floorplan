@@ -42,30 +42,47 @@ if (!customElements.get("ha-card")) {
 }
 
 if (!customElements.get("ha-icon")) {
-  // Render the mdi name as a tiny placeholder dot+label so icons are visible
-  // without pulling in the real mdi icon set.
   class HaIconStub extends HTMLElement {
     static observedAttributes = ["icon"];
     private _icon = "";
+
     set icon(v: string) {
-      this._icon = v;
+      this._icon = v ?? "";
       this._render();
     }
+
     attributeChangedCallback(_n: string, _o: string, v: string) {
-      this._icon = v;
+      this._icon = v ?? "";
       this._render();
     }
+
     connectedCallback() {
       this._render();
     }
+
     private _render() {
       if (!this.shadowRoot) this.attachShadow({ mode: "open" });
       this.shadowRoot!.innerHTML = `
-        <style>:host{display:inline-flex;align-items:center;justify-content:center;
-          width:var(--mdc-icon-size,24px);height:var(--mdc-icon-size,24px);}
-          i{display:block;width:62%;height:62%;border-radius:50%;
-            background:currentColor;opacity:0.85;}</style>
-        <i title="${this._icon}"></i>`;
+        <style>
+          :host {
+            display:inline-flex;
+            align-items:center;
+            justify-content:center;
+            width:var(--mdc-icon-size,24px);
+            height:var(--mdc-icon-size,24px);
+            color:#111827;
+            vertical-align:middle;
+          }
+          .dot {
+            display:block;
+            width:62%;
+            height:62%;
+            border-radius:50%;
+            background:currentColor;
+            opacity:0.85;
+          }
+        </style>
+        <i class="dot" title="${this._icon || "mdi:circle"}"></i>`;
     }
   }
   customElements.define("ha-icon", HaIconStub);
@@ -209,6 +226,7 @@ const entityRegistry: Record<
   [SENSOR_TEMPERATURE]: { entity_id: SENSOR_TEMPERATURE, display_precision: 1 },
   [SENSOR_HUMIDITY]: { entity_id: SENSOR_HUMIDITY, display_precision: 1 },
   "light.living_room": { entity_id: "light.living_room", device_id: "dev_living_light" },
+  "light.kitchen": { entity_id: "light.kitchen" },
   "media_player.living_tv": { entity_id: "media_player.living_tv", device_id: "dev_living_tv" },
   "fan.ceiling_fan": { entity_id: "fan.ceiling_fan" },
 };
@@ -243,11 +261,119 @@ function mockFormatEntityState(s: {
   return unit === "%" || unit === "°" ? `${body}${unit}` : `${body} ${unit}`;
 }
 
+function isoFromNow(offsetSeconds: number): string {
+  return new Date(Date.now() + offsetSeconds * 1000).toISOString();
+}
+
+const mockHistory = [
+  {
+    entity_id: "light.living_room",
+    states: [
+      { state: "off", last_updated: isoFromNow(-7200), attributes: { friendly_name: "Living Room", color: "#f4b400" } },
+      { state: "on", last_updated: isoFromNow(-5400), attributes: { friendly_name: "Living Room", color: "#f4b400" } },
+      { state: "off", last_updated: isoFromNow(-4200), attributes: { friendly_name: "Living Room", color: "#f4b400" } },
+      { state: "on", last_updated: isoFromNow(-3000), attributes: { friendly_name: "Living Room", color: "#f4b400" } },
+      { state: "off", last_updated: isoFromNow(-1800), attributes: { friendly_name: "Living Room", color: "#f4b400" } },
+      { state: "on", last_updated: isoFromNow(-900), attributes: { friendly_name: "Living Room", color: "#f4b400" } },
+    ],
+  },
+  {
+    entity_id: "light.kitchen",
+    states: [
+      { state: "off", last_updated: isoFromNow(-5400), attributes: { friendly_name: "Kitchen", color: "#f4b400" } },
+      { state: "on", last_updated: isoFromNow(-4200), attributes: { friendly_name: "Kitchen", color: "#f4b400" } },
+      { state: "off", last_updated: isoFromNow(-3000), attributes: { friendly_name: "Kitchen", color: "#f4b400" } },
+      { state: "on", last_updated: isoFromNow(-1800), attributes: { friendly_name: "Kitchen", color: "#f4b400" } },
+      { state: "off", last_updated: isoFromNow(-600), attributes: { friendly_name: "Kitchen", color: "#f4b400" } },
+    ],
+  },
+  {
+    entity_id: "cover.living_blinds",
+    states: [
+      { state: "closed", attributes: { friendly_name: "Living Blinds", current_position: 0, color: "#7b1fa2" }, last_updated: isoFromNow(-5400) },
+      { state: "open", attributes: { friendly_name: "Living Blinds", current_position: 100, color: "#7b1fa2" }, last_updated: isoFromNow(-4500) },
+      { state: "open", attributes: { friendly_name: "Living Blinds", current_position: 70, color: "#7b1fa2" }, last_updated: isoFromNow(-3300) },
+      { state: "open", attributes: { friendly_name: "Living Blinds", current_position: 40, color: "#7b1fa2" }, last_updated: isoFromNow(-2400) },
+      { state: "closed", attributes: { friendly_name: "Living Blinds", current_position: 0, color: "#7b1fa2" }, last_updated: isoFromNow(-1500) },
+      { state: "open", attributes: { friendly_name: "Living Blinds", current_position: 80, color: "#7b1fa2" }, last_updated: isoFromNow(-900) },
+      { state: "closed", attributes: { friendly_name: "Living Blinds", current_position: 0, color: "#7b1fa2" }, last_updated: isoFromNow(-120) },
+    ],
+  },
+  {
+    entity_id: SENSOR_TEMPERATURE,
+    states: [
+      { state: "19.2", attributes: { friendly_name: "Living Area Temperature", unit_of_measurement: "°C", color: "#1976d2" }, last_updated: isoFromNow(-5400) },
+      { state: "20.5", attributes: { friendly_name: "Living Area Temperature", unit_of_measurement: "°C", color: "#1976d2" }, last_updated: isoFromNow(-4200) },
+      { state: "21.7", attributes: { friendly_name: "Living Area Temperature", unit_of_measurement: "°C", color: "#1976d2" }, last_updated: isoFromNow(-3000) },
+      { state: "20.4", attributes: { friendly_name: "Living Area Temperature", unit_of_measurement: "°C", color: "#1976d2" }, last_updated: isoFromNow(-1800) },
+      { state: "22.1", attributes: { friendly_name: "Living Area Temperature", unit_of_measurement: "°C", color: "#1976d2" }, last_updated: isoFromNow(-900) },
+      { state: "21.3", attributes: { friendly_name: "Living Area Temperature", unit_of_measurement: "°C", color: "#1976d2" }, last_updated: isoFromNow(-300) },
+    ],
+  },
+  {
+    entity_id: SENSOR_HUMIDITY,
+    states: [
+      { state: "48.1", attributes: { friendly_name: "Living Area Humidity", unit_of_measurement: "%", color: "#00897b" }, last_updated: isoFromNow(-5400) },
+      { state: "50.2", attributes: { friendly_name: "Living Area Humidity", unit_of_measurement: "%", color: "#00897b" }, last_updated: isoFromNow(-4200) },
+      { state: "52.7", attributes: { friendly_name: "Living Area Humidity", unit_of_measurement: "%", color: "#00897b" }, last_updated: isoFromNow(-3000) },
+      { state: "49.2", attributes: { friendly_name: "Living Area Humidity", unit_of_measurement: "%", color: "#00897b" }, last_updated: isoFromNow(-1800) },
+      { state: "47.8", attributes: { friendly_name: "Living Area Humidity", unit_of_measurement: "%", color: "#00897b" }, last_updated: isoFromNow(-900) },
+    ],
+  },
+  {
+    entity_id: "binary_sensor.front_door",
+    states: [
+      { state: "off", attributes: { friendly_name: "Front Door", color: "#e53935" }, last_updated: isoFromNow(-3600) },
+      { state: "on", attributes: { friendly_name: "Front Door", color: "#e53935" }, last_updated: isoFromNow(-3000) },
+      { state: "off", attributes: { friendly_name: "Front Door", color: "#e53935" }, last_updated: isoFromNow(-2400) },
+      { state: "on", attributes: { friendly_name: "Front Door", color: "#e53935" }, last_updated: isoFromNow(-1500) },
+      { state: "off", attributes: { friendly_name: "Front Door", color: "#e53935" }, last_updated: isoFromNow(-600) },
+    ],
+  },
+  {
+    entity_id: "fan.ceiling_fan",
+    states: [
+      { state: "off", attributes: { friendly_name: "Ceiling Fan", color: "#00897b" }, last_updated: isoFromNow(-5400) },
+      { state: "on", attributes: { friendly_name: "Ceiling Fan", color: "#00897b" }, last_updated: isoFromNow(-4500) },
+      { state: "off", attributes: { friendly_name: "Ceiling Fan", color: "#00897b" }, last_updated: isoFromNow(-3300) },
+      { state: "on", attributes: { friendly_name: "Ceiling Fan", color: "#00897b" }, last_updated: isoFromNow(-2100) },
+      { state: "off", attributes: { friendly_name: "Ceiling Fan", color: "#00897b" }, last_updated: isoFromNow(-900) },
+    ],
+  },
+  {
+    entity_id: "media_player.living_tv",
+    states: [
+      { state: "idle", attributes: { friendly_name: "Living Room TV", color: "#6d4c41" }, last_updated: isoFromNow(-3600) },
+      { state: "playing", attributes: { friendly_name: "Living Room TV", color: "#6d4c41" }, last_updated: isoFromNow(-3000) },
+      { state: "paused", attributes: { friendly_name: "Living Room TV", color: "#6d4c41" }, last_updated: isoFromNow(-2100) },
+      { state: "playing", attributes: { friendly_name: "Living Room TV", color: "#6d4c41" }, last_updated: isoFromNow(-1200) },
+      { state: "idle", attributes: { friendly_name: "Living Room TV", color: "#6d4c41" }, last_updated: isoFromNow(-300) },
+    ],
+  },
+  {
+    entity_id: "switch.office_lamp",
+    states: [
+      { state: "off", attributes: { friendly_name: "Office Lamp", color: "#c2185b" }, last_updated: isoFromNow(-3600) },
+      { state: "on", attributes: { friendly_name: "Office Lamp", color: "#c2185b" }, last_updated: isoFromNow(-2800) },
+      { state: "off", attributes: { friendly_name: "Office Lamp", color: "#c2185b" }, last_updated: isoFromNow(-1800) },
+      { state: "on", attributes: { friendly_name: "Office Lamp", color: "#c2185b" }, last_updated: isoFromNow(-600) },
+    ],
+  },
+  {
+    entity_id: "lock.front_door_lock",
+    states: [
+      { state: "locked", attributes: { friendly_name: "Front Door Lock", color: "#455a64" }, last_updated: isoFromNow(-4200) },
+      { state: "unlocked", attributes: { friendly_name: "Front Door Lock", color: "#455a64" }, last_updated: isoFromNow(-2800) },
+      { state: "locked", attributes: { friendly_name: "Front Door Lock", color: "#455a64" }, last_updated: isoFromNow(-900) },
+    ],
+  },
+] as const;
+
 const hass = {
   states: {
     "binary_sensor.front_door": {
       entity_id: "binary_sensor.front_door",
-      state: "off",
+      state: "on",
       attributes: { friendly_name: "Front Door" },
     },
     "light.living_room": {
@@ -303,13 +429,18 @@ const hass = {
       state: "on",
       attributes: { friendly_name: "Plain switch", supported_color_modes: ["onoff"], color_mode: "onoff" },
     },
+    "light.kitchen": {
+      entity_id: "light.kitchen",
+      state: "on",
+      attributes: { friendly_name: "Kitchen" },
+    },
     // Per-device active colors (issue #79): this cover and the light above are
     // both active on the demo floor, with different `activeColor`s — the whole
     // point of the option is that they no longer look identical.
     "cover.living_blinds": {
       entity_id: "cover.living_blinds",
-      state: "open",
-      attributes: { friendly_name: "Living Blinds", device_class: "blind" },
+      state: "closed",
+      attributes: { friendly_name: "Living Blinds", device_class: "blind", current_position: 0 },
     },
     // Entity-bound furniture (issue #82): the plant on the demo floor reads
     // this, and the emulator below gives it a 0–100 slider.
@@ -389,6 +520,10 @@ const hass = {
   // two devices to try dragging in/out of the demo room's Area polygon.
   areas: areaRegistry,
   callService: (...args: unknown[]) => console.log("[mock hass] callService", ...args),
+  callApi: async (_method: string, path: string) => {
+    if (!path.startsWith("history/period/")) return [];
+    return mockHistory;
+  },
   formatEntityState: mockFormatEntityState,
   localize: (k: string) => k,
 } as unknown;
@@ -457,12 +592,13 @@ const demoFloor = {
     { id: "w6", x1: 240, y1: 220, x2: 240, y2: 100 },
   ],
   openings: [
-    { id: "o1", type: "window" as const, x: 500, y: 100, length: 140, angle: 0 },
-    { id: "o2", type: "door" as const, x: 500, y: 500, length: 90, angle: 0 },
+    { id: "o1", type: "window" as const, x: 300, y: 100, length: 140, angle: 0 },
+    { id: "o2", type: "door" as const, x: 620, y: 500, length: 100, angle: 0 },
+    { id: "o3", type: "door" as const, x: 420, y: 280, length: 110, angle: 90 },
     // Roll-up demo (issue #45): a garage door on the east wall, pre-bound so
     // the emulator's position slider drives the slatted curtain immediately.
     {
-      id: "o3",
+      id: "o4",
       type: "door" as const,
       motion: "roll" as const,
       x: 900,
@@ -479,8 +615,8 @@ const demoFloor = {
       id: "i1",
       entity: SENSOR_TEMPERATURE,
       secondaryEntity: SENSOR_HUMIDITY,
-      x: 500,
-      y: 300,
+      x: 650,
+      y: 220,
       kind: "sensor" as const,
     },
     // Sits inside the "Living Room" Area below, whose linked HA area (via
@@ -545,20 +681,24 @@ const demoFloor = {
     {
       id: "i4",
       entity: "cover.living_blinds",
-      x: 380,
-      y: 180,
+      x: 780,
+      y: 200,
       kind: "cover" as const,
       activeColor: "#8e24aa",
     },
+    { id: "i5", entity: "binary_sensor.front_door", x: 360, y: 420, kind: "binary_sensor" as const },
   ],
-  texts: [],
+  texts: [
+    { id: "t1", x: 240, y: 70, text: "Living room", size: 24 },
+    { id: "t2", x: 650, y: 70, text: "Kitchen", size: 24 },
+  ],
   // Issue #82: a plant bound to a soil sensor, colored by threshold — the
   // exact configuration the issue asks for.
   furniture: [
     {
       id: "fu1",
       type: "plant" as const,
-      x: 700,
+      x: 720,
       y: 380,
       w: 60,
       h: 60,
@@ -569,6 +709,7 @@ const demoFloor = {
         { color: "#c62828" },
       ],
     },
+    { id: "fu2", type: "sofa" as const, x: 250, y: 340, w: 110, h: 70 },
   ],
   trackers: [],
   // Area demo: the whole room, linked to the mock "living_room" HA area so
@@ -584,9 +725,21 @@ const demoFloor = {
       opacity: 0.15,
       points: [
         { x: 100, y: 100 },
+        { x: 500, y: 100 },
+        { x: 500, y: 500 },
+        { x: 100, y: 500 },
+      ],
+    },
+    {
+      id: "a2",
+      name: "Kitchen",
+      color: "#ffb74d",
+      opacity: 0.12,
+      points: [
+        { x: 500, y: 100 },
         { x: 900, y: 100 },
         { x: 900, y: 500 },
-        { x: 100, y: 500 },
+        { x: 500, y: 500 },
       ],
     },
   ],
@@ -622,7 +775,12 @@ const config: FloorplanCardConfig = {
   texts: [],
   furniture: [],
   defaultFloor: "f1",
-  floors: [START_WITH_DEMO ? demoFloor : emptyFloor],
+  historyReplay: {
+    enabled: true,
+    lookbackSeconds: 7200,
+    defaultSpeed: 1,
+  },
+  floors: START_WITH_DEMO ? [demoFloor] : [emptyFloor],
 };
 
 // ---- mount -----------------------------------------------------------------

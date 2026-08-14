@@ -899,6 +899,12 @@ export interface Floor {
 /** Sizing mode for the HTML overlay layer. See {@link FloorplanCardConfig.overlayScale}. */
 export type OverlayScale = "fixed" | "plan";
 
+export interface HistoryReplayConfig {
+  enabled?: boolean;
+  lookbackSeconds?: number;
+  defaultSpeed?: number;
+}
+
 export interface FloorplanCardConfig extends LovelaceCardConfig {
   type: string;
   title?: string;
@@ -1013,6 +1019,8 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   floors?: Floor[];
   /** Id of the floor shown first. Falls back to the first floor. */
   defaultFloor?: string;
+  /** Optional history replay controls and playback defaults. */
+  historyReplay?: HistoryReplayConfig;
   walls?: Wall[];
   openings?: Opening[];
   items?: FloorItem[];

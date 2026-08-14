@@ -2,6 +2,7 @@ import { LitElement, html, css, svg, nothing, type TemplateResult, type Property
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { keyed } from "lit/directives/keyed.js";
+import { ref } from "lit/directives/ref.js";
 import type {
   HomeAssistant,
   FloorplanCardConfig,
@@ -10,7 +11,13 @@ import type {
   Floor,
   Area,
   OverlayScale,
+  HassEntity,
+  RenderHass,
 } from "./types";
+import { HistoryService, type HistoryEventInput } from "./history-service";
+import { HistoryStateProvider, LiveStateProvider, type StateProvider } from "./state-provider";
+import { PlaybackController } from "./playback-controller";
+import "./history-timeline";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, contrastText } from "./css-safe";
 import {
   DEFAULT_WIDTH,
@@ -126,6 +133,9 @@ function floorMemoryKey(floors: readonly Floor[]): string {
 
 @customElement("easy-floorplan-card")
 export class FloorplanCard extends LitElement {
+  private static readonly _REPLAY_SPEED_LOG_MIN = -2;
+  private static readonly _REPLAY_SPEED_LOG_MAX = 3;
+
   private static _nextWallMaskId = 0;
   private static _nextGlowId = 0;
 
@@ -140,6 +150,23 @@ export class FloorplanCard extends LitElement {
   private readonly _glowIdBase = `fp-glow-${FloorplanCard._nextGlowId++}`;
   /** Entity ids this plan actually displays; used to skip irrelevant hass updates. */
   private _watchedEntities: Set<string> = new Set();
+  private readonly _historyService = new HistoryService({
+    loader: async (start, end) => this._loadHistoryEvents(start, end),
+  });
+  private _playbackController = new PlaybackController();
+  private _replayConfigured = false;
+  private _replayEnabled = false;
+  private _replayReady = false;
+  private _replayError?: string;
+  private _historyEvents: HistoryEventInput[] = [];
+  private _replayLoopId?: number;
+  private _lastReplayFrame?: number;
+  private _replayLoadRequested = false;
+  private _replayStartTime = 0;
+  private _replayEndTime = 0;
+  private _replayEventLogRef?: HTMLUListElement;
+  private _replayLogExpanded = false;
+  private _replayTimelineExpanded = false;
 
   public setConfig(config: FloorplanCardConfig): void {
     // Cheap shape assertions so malformed YAML surfaces as HA's error card
@@ -167,6 +194,21 @@ export class FloorplanCard extends LitElement {
       furniture: config.furniture ?? [],
     };
     this._watchedEntities = collectWatchedEntities(this._config);
+    this._replayConfigured = Boolean(config.historyReplay?.enabled);
+    this._replayEnabled = false;
+    this._replayError = undefined;
+    this._replayReady = false;
+    this._replayLoadRequested = false;
+    this._historyEvents = [];
+    const defaultWindow = this._getDefaultReplayWindow();
+    this._replayStartTime = defaultWindow.start;
+    this._replayEndTime = defaultWindow.end;
+    if (!this._replayConfigured) {
+      this._playbackController.pause();
+      this._stopReplayLoop();
+    } else if (this.hass) {
+      this._ensureReplayStarted();
+    }
     // Restore the floor this plan was last viewed on (issue #81). Only when
     // this instance has no floor of its own yet — a live floor switch always
     // wins — and only if that floor still exists.
@@ -205,6 +247,16 @@ export class FloorplanCard extends LitElement {
     else this.removeAttribute("data-skin");
   }
 
+  protected updated(changed: PropertyValues): void {
+    super.updated(changed);
+    if (changed.has("hass") && this.hass && this._config?.historyReplay?.enabled && !this._replayLoadRequested && !this._replayEnabled) {
+      this._ensureReplayStarted();
+    }
+    if (this._config?.historyReplay?.enabled && this._historyEvents.length) {
+      this._syncReplayLogToCurrentEvent();
+    }
+  }
+
   public getCardSize(): number {
     return 6;
   }
@@ -229,35 +281,349 @@ export class FloorplanCard extends LitElement {
     return { columns: 12, rows: 8, min_columns: 6, min_rows: 4 };
   }
 
-  private _isOn(item: FloorItem): boolean {
+  private _isOn(item: FloorItem, renderHass?: RenderHass): boolean {
     // Domain-aware: locks say "unlocked", vacuums "cleaning" — never "on".
-    return entityIsActive(item.entity, this.hass?.states[item.entity]?.state);
+    return entityIsActive(item.entity, renderHass?.states[item.entity]?.state);
   }
 
   /** How far open an opening should be drawn (0..1), from its entity (or default). */
-  private _openingAmount(o: Opening): number {
-    const state = o.entity ? this.hass?.states[o.entity] : undefined;
+  private _openingAmount(o: Opening, renderHass?: RenderHass): number {
+    const state = o.entity ? renderHass?.states[o.entity] : undefined;
     return resolveOpeningAmount(o, state);
   }
 
   /** Whether an opening wears its accent: drawn open, or a cover still in transit. */
-  private _openingActive(o: Opening): boolean {
-    const state = o.entity ? this.hass?.states[o.entity] : undefined;
+  private _openingActive(o: Opening, renderHass?: RenderHass): boolean {
+    const state = o.entity ? renderHass?.states[o.entity] : undefined;
     return openingIsActive(o, state);
   }
 
-  private _itemIcon(item: FloorItem): string {
+  private _itemIcon(item: FloorItem, renderHass?: RenderHass): string {
     return resolveItemIcon(
       item,
-      this.hass?.states[item.entity],
+      renderHass?.states[item.entity],
       this.hass?.entities?.[item.entity]?.icon,
     );
   }
 
-  private _label(item: FloorItem): string {
-    return (
-      item.name ?? this.hass?.states[item.entity]?.attributes?.friendly_name ?? item.entity ?? ""
-    );
+  private _label(item: FloorItem, renderHass?: RenderHass): string {
+    return item.name ?? renderHass?.states[item.entity]?.attributes?.friendly_name ?? item.entity ?? "";
+  }
+
+  private _getStateProvider(): StateProvider {
+    if (!this.hass) {
+      return { getEntityState: () => undefined };
+    }
+    if (this._replayEnabled) {
+      return new HistoryStateProvider(this._historyService, new LiveStateProvider(this.hass), this._playbackController.currentTime);
+    }
+    return new LiveStateProvider(this.hass);
+  }
+
+  private _getEntityState(entityId: string): HassEntity | undefined {
+    return this._getStateProvider().getEntityState(entityId);
+  }
+
+  private _buildRenderHass(): RenderHass | undefined {
+    if (!this.hass) return undefined;
+    const provider = this._getStateProvider();
+    const states: Record<string, HassEntity | undefined> = {};
+    for (const entityId of this._watchedEntities) {
+      states[entityId] = provider.getEntityState(entityId);
+    }
+    return {
+      states,
+      formatEntityState: (stateObj: HassEntity) => this.hass!.formatEntityState(stateObj),
+    };
+  }
+
+  private _getDefaultReplayWindow(): { start: number; end: number } {
+    const now = Date.now() / 1000;
+    const lookback = this._config?.historyReplay?.lookbackSeconds ?? 3600;
+    return {
+      start: Math.max(0, now - lookback),
+      end: now,
+    };
+  }
+
+  private _normalizeReplayWindow(start: number, end: number): { start: number; end: number } {
+    const normalizedStart = Math.min(start, end);
+    const normalizedEnd = Math.max(start, end);
+    return {
+      start: Math.max(0, normalizedStart),
+      end: Math.max(normalizedStart, normalizedEnd),
+    };
+  }
+
+  private _getReplaySpeedForRange(start: number, end: number): number {
+    const duration = Math.max(1, end - start);
+    const baselineSpeed = duration / 30;
+    const configuredSpeed = this._config?.historyReplay?.defaultSpeed;
+    const derivedSpeed = configuredSpeed != null ? configuredSpeed * baselineSpeed : baselineSpeed;
+    return Math.max(0.25, derivedSpeed);
+  }
+
+  private _parseReplayInputValue(value: string): number {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? Date.now() / 1000 : parsed / 1000;
+  }
+
+  private _formatReplayInputValue(timestamp: number): string {
+    if (!Number.isFinite(timestamp) || timestamp <= 0) return "";
+    const date = new Date(timestamp * 1000);
+    const year = date.getFullYear();
+    const month = `${date.getMonth() + 1}`.padStart(2, "0");
+    const day = `${date.getDate()}`.padStart(2, "0");
+    const hours = `${date.getHours()}`.padStart(2, "0");
+    const minutes = `${date.getMinutes()}`.padStart(2, "0");
+    return `${year}-${month}-${day}T${hours}:${minutes}`;
+  }
+
+  private _handleReplayRangeChange(kind: "start" | "end", ev: Event): void {
+    const input = ev.target as HTMLInputElement;
+    const timestamp = this._parseReplayInputValue(input.value);
+    if (kind === "start") {
+      this._replayStartTime = timestamp;
+    } else {
+      this._replayEndTime = timestamp;
+    }
+    this._updateReplayWindow(this._replayStartTime, this._replayEndTime);
+  }
+
+  private _updateReplayWindow(start: number, end: number): void {
+    const { start: replayStart, end: replayEnd } = this._normalizeReplayWindow(start, end);
+    const wasPlaying = this._playbackController.playing;
+    this._replayStartTime = replayStart;
+    this._replayEndTime = replayEnd;
+    this._playbackController.pause();
+    this._stopReplayLoop();
+    this.requestUpdate();
+    if (!this.hass || !this._config?.historyReplay?.enabled) return;
+    void this._startReplay({ preserveCurrentTime: true, keepPlaying: wasPlaying });
+  }
+
+  private _zoomReplayWindow(direction: -1 | 1): void {
+    const span = Math.max(60, this._replayEndTime - this._replayStartTime);
+    const anchor = this._playbackController.currentTime;
+    const nextSpan = direction > 0 ? Math.max(60, span * 0.8) : span * 1.25;
+    const halfSpan = nextSpan / 2;
+    const nextStart = Math.max(0, anchor - halfSpan);
+    const nextEnd = nextStart + nextSpan;
+    this._updateReplayWindow(nextStart, nextEnd);
+  }
+
+  private _ensureReplayStarted(): void {
+    if (!this.hass || !this._config?.historyReplay?.enabled || this._replayLoadRequested || this._replayEnabled) return;
+    void this._startReplay();
+  }
+
+  private async _toggleReplay(): Promise<void> {
+    if (!this.hass || !this._config?.historyReplay) return;
+    if (!this._replayEnabled) {
+      await this._startReplay();
+      return;
+    }
+    this._replayEnabled = false;
+    this._replayReady = false;
+    this._replayLoadRequested = false;
+    this._playbackController.pause();
+    this._stopReplayLoop();
+    this.requestUpdate();
+  }
+
+  private async _startReplay(options: { preserveCurrentTime?: boolean; keepPlaying?: boolean } = {}): Promise<void> {
+    if (!this.hass || !this._config?.historyReplay) return;
+    const start = this._replayStartTime || this._getDefaultReplayWindow().start;
+    const end = this._replayEndTime || this._getDefaultReplayWindow().end;
+    const { start: replayStart, end: replayEnd } = this._normalizeReplayWindow(start, end);
+    this._replayStartTime = replayStart;
+    this._replayEndTime = replayEnd;
+    this._replayEnabled = true;
+    this._replayLoadRequested = true;
+    this._replayError = undefined;
+    this._replayReady = false;
+    const initialTime = options.preserveCurrentTime
+      ? Math.min(replayEnd, Math.max(replayStart, this._playbackController.currentTime))
+      : replayEnd;
+    this._playbackController = new PlaybackController({
+      startTime: replayStart,
+      endTime: replayEnd,
+      initialSpeed: this._getReplaySpeedForRange(replayStart, replayEnd),
+    });
+    this._playbackController.seek(initialTime);
+    if (options.keepPlaying) {
+      this._playbackController.play();
+    }
+    this._historyEvents = [];
+    console.info("[easy-floorplan] Starting replay", { start: replayStart, end: replayEnd, lookback: replayEnd - replayStart });
+    await this._loadReplayRange(replayStart, replayEnd);
+    this.requestUpdate();
+  }
+
+  private async _loadReplayRange(start: number, end: number): Promise<void> {
+    try {
+      await this._historyService.loadHistory(start, end);
+      this._historyEvents = this._historyService.getEvents().map((event) => ({
+        ...event,
+        color: this._getReplayEventColor(event),
+      }));
+      this._replayReady = true;
+      this._replayError = undefined;
+      console.info("[easy-floorplan] Replay history loaded", { eventCount: this._historyEvents.length });
+      this.requestUpdate();
+    } catch (error) {
+      this._replayReady = false;
+      this._replayLoadRequested = false;
+      this._replayError = error instanceof Error ? error.message : "Unable to load history.";
+      console.error("[easy-floorplan] Replay history loading failed", error);
+    }
+  }
+
+  private async _loadHistoryEvents(start: number, end: number): Promise<HistoryEventInput[]> {
+    if (!this.hass) return [];
+    const api = (this.hass as HomeAssistant & { callApi?: (method: string, path: string) => Promise<unknown> }).callApi;
+    if (typeof api !== "function") {
+      throw new Error("Unable to load history.");
+    }
+    const endTime = new Date(end * 1000).toISOString();
+    const history = (await api("GET", `history/period/${endTime}`)) as Array<{
+      entity_id?: string;
+      states?: Array<{ state?: string; attributes?: Record<string, unknown>; last_updated?: string; last_changed?: string }>;
+    }>;
+    const normalized: HistoryEventInput[] = [];
+    for (const entity of history ?? []) {
+      const entityId = entity.entity_id;
+      if (!entityId || !Array.isArray(entity.states)) continue;
+      for (let index = 1; index < entity.states.length; index += 1) {
+        const prev = entity.states[index - 1];
+        const next = entity.states[index];
+        const prevTs = Date.parse(prev.last_updated ?? prev.last_changed ?? endTime) / 1000;
+        const nextTs = Date.parse(next.last_updated ?? next.last_changed ?? endTime) / 1000;
+        if (!Number.isFinite(prevTs) || !Number.isFinite(nextTs)) continue;
+        if (nextTs < start || prevTs > end) continue;
+        if (prev.state === next.state) continue;
+        normalized.push({
+          timestamp: nextTs,
+          entityId,
+          oldState: prev.state ?? "unknown",
+          newState: next.state ?? "unknown",
+          attributes: (next.attributes as Record<string, unknown> | undefined) ?? {},
+        });
+      }
+    }
+    return normalized.sort((a, b) => a.timestamp - b.timestamp);
+  }
+
+  private _seekReplay(timestamp: number): void {
+    this._playbackController.seek(timestamp);
+    console.info("[easy-floorplan] Replay seek", { timestamp });
+    this.requestUpdate();
+  }
+
+  private _jumpReplay(seconds: number): void {
+    this._playbackController.seek(this._playbackController.currentTime + seconds);
+    console.info("[easy-floorplan] Replay jump", { seconds });
+    this.requestUpdate();
+  }
+
+  private _stepReplay(direction: 1 | -1): void {
+    if (!this._historyEvents.length) return;
+    const target = this._playbackController.currentTime + direction * 5;
+    const candidate = direction > 0
+      ? this._historyService.getEventAfter(target)
+      : this._historyService.getEventBefore(target);
+    if (candidate) {
+      this._playbackController.seek(candidate.timestamp);
+    } else {
+      this._playbackController.seek(target);
+    }
+    this.requestUpdate();
+  }
+
+  private _setReplaySpeed(speed: number): void {
+    this._playbackController.setPlaybackSpeed(speed);
+    console.info("[easy-floorplan] Replay speed", { speed });
+    this.requestUpdate();
+  }
+
+  private _replaySpeedToSliderValue(speed: number): number {
+    if (!Number.isFinite(speed) || speed <= 0) return 0;
+    const value = Math.log10(speed);
+    return Math.min(FloorplanCard._REPLAY_SPEED_LOG_MAX, Math.max(FloorplanCard._REPLAY_SPEED_LOG_MIN, value));
+  }
+
+  private _sliderValueToReplaySpeed(value: number): number {
+    const clamped = Math.min(FloorplanCard._REPLAY_SPEED_LOG_MAX, Math.max(FloorplanCard._REPLAY_SPEED_LOG_MIN, value));
+    return Number((10 ** clamped).toPrecision(4));
+  }
+
+  private _formatReplaySpeed(speed: number): string {
+    if (speed >= 100) return `${Math.round(speed)}x`;
+    if (speed >= 10) return `${speed.toFixed(1)}x`;
+    if (speed >= 1) return `${speed.toFixed(2)}x`;
+    return `${speed.toFixed(3)}x`;
+  }
+
+  private _handleReplaySpeedSliderInput(ev: Event): void {
+    const slider = ev.target as HTMLInputElement;
+    const value = Number(slider.value);
+    if (!Number.isFinite(value)) return;
+    this._setReplaySpeed(this._sliderValueToReplaySpeed(value));
+  }
+
+  private _playReplay(): void {
+    if (!this._replayReady) {
+      void this._loadReplayRange(this._playbackController.currentTime - 3600, this._playbackController.currentTime);
+    }
+    if (this._playbackController.currentTime >= this._playbackController.endTime) {
+      this._playbackController.seek(this._playbackController.startTime);
+    }
+    this._playbackController.play();
+    this._startReplayLoop();
+    console.info("[easy-floorplan] Replay play", { currentTime: this._playbackController.currentTime });
+    this.requestUpdate();
+  }
+
+  private _pauseReplay(): void {
+    this._playbackController.pause();
+    this._stopReplayLoop();
+    console.info("[easy-floorplan] Replay pause", { currentTime: this._playbackController.currentTime });
+    this.requestUpdate();
+  }
+
+  private _startReplayLoop(): void {
+    if (this._replayLoopId) return;
+    this._lastReplayFrame = undefined;
+    const tick = (timestamp: number): void => {
+      if (this._playbackController.playing) {
+        if (this._lastReplayFrame === undefined) {
+          this._lastReplayFrame = timestamp;
+        } else {
+          this._playbackController.tick(timestamp - this._lastReplayFrame);
+          this._lastReplayFrame = timestamp;
+          this.requestUpdate();
+        }
+        if (this._playbackController.currentTime >= this._playbackController.endTime) {
+          this._pauseReplay();
+          return;
+        }
+      }
+      this._replayLoopId = window.requestAnimationFrame(tick);
+    };
+    this._replayLoopId = window.requestAnimationFrame(tick);
+  }
+
+  private _stopReplayLoop(): void {
+    if (this._replayLoopId) {
+      window.cancelAnimationFrame(this._replayLoopId);
+      this._replayLoopId = undefined;
+    }
+    this._lastReplayFrame = undefined;
+  }
+
+  public disconnectedCallback(): void {
+    this._stopReplayLoop();
+    super.disconnectedCallback();
   }
 
   private _handleItemAction(
@@ -368,7 +734,7 @@ export class FloorplanCard extends LitElement {
     this._zoomedAreaId = this._zoomedAreaId === a.id ? undefined : a.id;
   }
 
-  private _renderBadge(item: FloorItem, scale: OverlayScale): TemplateResult {
+  private _renderBadge(item: FloorItem, scale: OverlayScale, renderHass?: RenderHass): TemplateResult {
     const size = cssNumber(item.size, DEFAULT_ITEM_SIZE);
     const box = overlayLength(size, scale);
     // Animation goes on the inner ha-icon, not the badge: the badge carries
@@ -376,7 +742,7 @@ export class FloorplanCard extends LitElement {
     // overwrite it.
     const anim = resolveIconAnimation(
       item,
-      item.entity ? this.hass?.states[item.entity]?.state : undefined,
+      item.entity ? renderHass?.states[item.entity]?.state : undefined,
     );
     // "Show the reading, not a picture" (issue #106). Same badge — size, angle,
     // state colour, ripple stacking all unchanged — with the glyph swapped for
@@ -395,7 +761,7 @@ export class FloorplanCard extends LitElement {
             >`
           : html`<ha-icon
               class=${anim ? `anim-${anim}` : ""}
-              icon=${this._itemIcon(item)}
+              icon=${this._itemIcon(item, renderHass)}
               style="--mdc-icon-size:${overlayLength(itemIconSize(size), scale)};"
             ></ha-icon>`}
       </div>
@@ -432,16 +798,17 @@ export class FloorplanCard extends LitElement {
     item: FloorItem,
     c: FloorplanCardConfig,
     rot: PlanRotation,
-    scale: OverlayScale
+    scale: OverlayScale,
+    renderHass?: RenderHass
   ): TemplateResult {
-    const on = this._isOn(item);
+    const on = this._isOn(item, renderHass);
     // Name/state composition lives in itemBadgeLabel, including #39's
     // no-entity guard (an unbound device gets no state line).
-    const labelText = itemBadgeLabel(this.hass, item);
+    const labelText = itemBadgeLabel(renderHass, item);
     // Threshold color (issue #68), judged on the displayed value (attribute
     // when set, else the state). cssColor gates the config string (#64).
-    const st = item.entity ? this.hass?.states[item.entity] : undefined;
-    const rawValue = itemRawValue(item, st);
+    const st = item.entity ? renderHass?.states[item.entity] : undefined;
+  const rawValue = itemRawValue(item, st);
     // One resolved colour drives the whole element (issue #79 follow-up): the
     // label *and* the badge. A sensor is never "on", so tying the badge to the
     // active state alone left threshold colours invisible on exactly the
@@ -450,7 +817,6 @@ export class FloorplanCard extends LitElement {
     const labelColor = stateColor;
     // "none" is the old `showIcon: false` — no badge, label only (issue #106).
     const showIcon = badgeContentOf(item) !== "none";
-    const display = item.display ?? "badge";
     // Per-device active color (issue #79). Ripples follow it too, so a device
     // given one color does not come out yellow-badged with a blue ring.
     // State rules win over the fixed active colour — they are the more
@@ -468,17 +834,18 @@ export class FloorplanCard extends LitElement {
     // var()/color-mix()/gradient keeps the theme ink, exactly as before.
     const badgeInk = contrastText(stateColor ?? activeColor);
     const rippleSize = item.rippleSize ?? DEFAULT_RIPPLE_SIZE;
+    const displayMode = item.display ?? (on && !["sensor", "binary_sensor"].includes(item.kind) ? "iconRipple" : "badge");
 
     let visual: TemplateResult | typeof nothing = nothing;
-    if (display === "ripple") {
+    if (displayMode === "ripple") {
       visual = renderRipple(on, rippleColor, rippleSize, 3, scale);
-    } else if (display === "iconRipple") {
+    } else if (displayMode === "iconRipple") {
       visual = html`<div class="stack">
         ${renderRipple(on, rippleColor, rippleSize, 3, scale)}
-        ${showIcon ? html`<div class="stack-icon">${this._renderBadge(item, scale)}</div>` : nothing}
+        ${showIcon ? html`<div class="stack-icon">${this._renderBadge(item, scale, renderHass)}</div>` : nothing}
       </div>`;
     } else if (showIcon) {
-      visual = this._renderBadge(item, scale);
+      visual = this._renderBadge(item, scale, renderHass);
     }
 
     // Rotated frame: the overlay is HTML, so each anchor is remapped instead
@@ -509,7 +876,7 @@ export class FloorplanCard extends LitElement {
           : ""}${activeColor
           ? `--fp-active:${activeColor};`
           : ""}${badgeInk ? `--fp-ink:${badgeInk};` : ""}"
-        title=${this._label(item)}
+  title=${this._label(item, renderHass)}
         role=${interactive ? "button" : nothing}
         tabindex=${interactive ? "0" : nothing}
         @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
@@ -590,6 +957,7 @@ export class FloorplanCard extends LitElement {
   protected render(): TemplateResult {
     if (!this._config) return html`${nothing}`;
     const c = this._config;
+    const renderHass = this._buildRenderHass();
     const floors = getFloors(c);
     const active =
       floors.find((f) => f.id === this._activeFloorId) ??
@@ -659,10 +1027,11 @@ export class FloorplanCard extends LitElement {
       <!-- No skin style here: the palette comes from data-skin on the host, so
            a card-mod rule on this element still wins (issue #155). -->
       <ha-card .header=${c.title ?? nothing}>
-        <div
-          class="stage press-${pressEffectOf(c)}"
-          style="aspect-ratio: ${dims.w} / ${dims.h};"
-        >
+        <div class="card-shell">
+          <div
+            class="stage press-${pressEffectOf(c)}"
+            style="aspect-ratio: ${dims.w} / ${dims.h};"
+          >
           <!-- The plan box: exactly the canvas ratio, fitted inside whatever
                height the card was actually given, and centred there (closes
                #115). Sized off the container's height so it shrinks when the
@@ -761,7 +1130,7 @@ export class FloorplanCard extends LitElement {
             ${active.furniture.map((f) =>
               renderFurniture(
                 f,
-                furnitureColor(f, f.entity ? this.hass?.states[f.entity]?.state : undefined),
+                furnitureColor(f, f.entity ? renderHass?.states[f.entity]?.state : undefined),
                 symbolCatalog(c.symbols)
               )
             )}
@@ -799,15 +1168,15 @@ export class FloorplanCard extends LitElement {
               active.openings,
               (o, i) => o.id || i,
               (o) => {
-              const amount = this._openingAmount(o);
+              const amount = this._openingAmount(o, renderHass);
               const shutterState = o.shutterEntity
-                ? this.hass?.states[o.shutterEntity]
+                ? renderHass?.states[o.shutterEntity]
                 : undefined;
               const symbol = renderOpening(o, {
                 color: SKIN_WALL,
                 open: amount > 0,
                 amount,
-                active: this._openingActive(o),
+                active: this._openingActive(o, renderHass),
                 accent: o.activeColor ?? SKIN_ACCENT,
                 // External roller shutter layer (issue #74). No entity bound
                 // yet → previewed shut, like a static plan.
@@ -854,10 +1223,10 @@ export class FloorplanCard extends LitElement {
               (tr) =>
               renderTracker(tr, {
                 editing: false,
-                xReading: trackerSensorReading(this.hass?.states, tr.xSensor?.entity),
-                yReading: trackerSensorReading(this.hass?.states, tr.ySensor?.entity),
-                xPresent: trackerPresenceDetected(this.hass?.states, tr.xSensor?.presence),
-                yPresent: trackerPresenceDetected(this.hass?.states, tr.ySensor?.presence),
+                xReading: trackerSensorReading(renderHass?.states, tr.xSensor?.entity),
+                yReading: trackerSensorReading(renderHass?.states, tr.ySensor?.entity),
+                xPresent: trackerPresenceDetected(renderHass?.states, tr.xSensor?.presence),
+                yPresent: trackerPresenceDetected(renderHass?.states, tr.ySensor?.presence),
               })
             )}
             <!-- Sun dimming (issue #113). Last inside the rotated group, so it
@@ -900,11 +1269,11 @@ export class FloorplanCard extends LitElement {
                 (it) =>
                   !itemHiddenWhenInactive(
                     it,
-                    it.entity ? this.hass?.states[it.entity]?.state : undefined
+                    it.entity ? renderHass?.states[it.entity]?.state : undefined
                   )
               ),
               (it, i) => it.id || i,
-              (it) => this._renderItem(it, c, rot, scale)
+              (it) => this._renderItem(it, c, rot, scale, renderHass)
             )}
           </div>
           </div>
@@ -919,9 +1288,195 @@ export class FloorplanCard extends LitElement {
               </button>`
             : nothing}
           ${floors.length > 1 ? this._renderFloorSwitcher(floors, active) : nothing}
+          ${this._config.historyReplay?.enabled ? this._renderReplayPanel() : nothing}
+        </div>
         </div>
       </ha-card>
     `;
+  }
+
+  private _renderReplayPanel(): TemplateResult {
+    const currentTimeLabel = this._formatReplayTime(this._playbackController.currentTime);
+    const currentEvent = this._getCurrentReplayEvent();
+    const replaySpeed = this._playbackController.speed;
+    return html`
+      <div class="replay-panel">
+        <div class="replay-header">
+          <div class="replay-meta">
+            <span class="replay-chip">${this._replayReady ? "Replay ready" : this._replayEnabled ? "Loading replay…" : "Replay paused"}</span>
+            <span class="replay-time">${currentTimeLabel}</span>
+          </div>
+          <div class="replay-status">
+            ${this._replayError ? html`<span class="replay-error">${this._replayError}</span>` : nothing}
+            ${!this._replayReady && this._replayEnabled && !this._replayError ? html`<span class="replay-loading">Loading history…</span>` : nothing}
+          </div>
+        </div>
+        <div class="replay-range">
+          <label class="replay-range-field">
+            <span>Start</span>
+            <input type="datetime-local" .value=${this._formatReplayInputValue(this._replayStartTime)} @change=${(ev: Event) => this._handleReplayRangeChange("start", ev)} />
+          </label>
+          <label class="replay-range-field">
+            <span>End</span>
+            <input type="datetime-local" .value=${this._formatReplayInputValue(this._replayEndTime)} @change=${(ev: Event) => this._handleReplayRangeChange("end", ev)} />
+          </label>
+          <div class="replay-range-tools">
+            <button title="Zoom out" @click=${() => this._zoomReplayWindow(-1)}>⊖</button>
+            <button title="Zoom in" @click=${() => this._zoomReplayWindow(1)}>⊕</button>
+          </div>
+        </div>
+        <div class="replay-view-tools">
+          <button class="replay-timeline-toggle" @click=${() => { this._replayTimelineExpanded = !this._replayTimelineExpanded; this.requestUpdate(); }}>
+            ${this._replayTimelineExpanded ? "Collapse lanes" : "Expand lanes"}
+          </button>
+        </div>
+        <easy-floorplan-history-timeline
+          .events=${this._historyEvents}
+          .startTime=${this._playbackController.startTime}
+          .endTime=${this._playbackController.endTime}
+          .currentTime=${this._playbackController.currentTime}
+          .expanded=${this._replayTimelineExpanded}
+          @seek=${(ev: CustomEvent<{ timestamp: number }>) => this._seekReplay(ev.detail.timestamp)}
+        ></easy-floorplan-history-timeline>
+        <div class="replay-toolbar">
+          <button title="Toggle replay mode" @click=${() => void this._toggleReplay()}>${this._replayEnabled ? "Disable" : "Enable"}</button>
+          <button title="Jump back 30 seconds" @click=${() => this._jumpReplay(-30)}>⏪</button>
+          <button title="Step back" @click=${() => this._stepReplay(-1)}>◀</button>
+          <button class="replay-run-button" title=${this._playbackController.playing ? "Pause replay" : "Run replay"} @click=${() => (this._playbackController.playing ? this._pauseReplay() : this._playReplay())}>
+            ${this._playbackController.playing ? "⏸ Pause" : "▶ Run"}
+          </button>
+          <button title="Step forward" @click=${() => this._stepReplay(1)}>▶</button>
+          <button title="Jump forward 30 seconds" @click=${() => this._jumpReplay(30)}>⏩</button>
+          <label class="replay-speed-field">
+            <span>Speed ${this._formatReplaySpeed(replaySpeed)}</span>
+            <input
+              class="replay-speed-slider"
+              type="range"
+              min=${FloorplanCard._REPLAY_SPEED_LOG_MIN}
+              max=${FloorplanCard._REPLAY_SPEED_LOG_MAX}
+              step="0.01"
+              .value=${this._replaySpeedToSliderValue(replaySpeed).toString()}
+              @input=${(ev: Event) => this._handleReplaySpeedSliderInput(ev)}
+            />
+            <input
+              class="replay-speed"
+              type="number"
+              min="0.01"
+              max="1000"
+              step="0.01"
+              .value=${replaySpeed.toString()}
+              @change=${(ev: Event) => this._setReplaySpeed(Number((ev.target as HTMLInputElement).value || 1))}
+            />
+          </label>
+        </div>
+        <div class=${`replay-event-log ${this._replayLogExpanded ? "expanded" : "collapsed"}`} role="log" aria-label="Replay event log">
+          <button class="replay-log-toggle" @click=${() => { this._replayLogExpanded = !this._replayLogExpanded; this.requestUpdate(); }}>
+            ${this._replayLogExpanded ? "Hide log" : "Show log"}
+          </button>
+          ${this._historyEvents.length
+            ? html`
+                ${this._replayLogExpanded
+                  ? html`<ul class="replay-event-list" ${ref(this._setReplayEventLogRef)}>${repeat(this._historyEvents, (event) => `${event.timestamp}-${event.entityId}-${event.newState}`, (event) => this._renderReplayEvent(event, currentEvent?.timestamp === event.timestamp))}</ul>`
+                  : nothing}
+              `
+            : html`<div class="replay-empty">No history events yet.</div>`}
+        </div>
+      </div>
+    `;
+  }
+
+  private _renderReplayEvent(event: HistoryEventInput, isCurrent: boolean): TemplateResult {
+    const passed = event.timestamp <= this._playbackController.currentTime;
+    const color = event.color ?? this._getReplayEventColor(event);
+    return html`
+      <li class="replay-event-item ${passed ? "replay-event-passed" : ""} ${isCurrent ? "replay-event-current" : ""}">
+        <span class="replay-event-dot" style=${color ? `background:${color}; box-shadow:0 0 0 2px ${color}22;` : nothing}></span>
+        <span class="replay-event-time">${this._formatReplayTime(event.timestamp)}</span>
+        <span class="replay-event-entity">${event.entityId}</span>
+        <span class="replay-event-change">${event.oldState} → ${event.newState}</span>
+      </li>
+    `;
+  }
+
+  private _getReplayEventColor(event: HistoryEventInput): string | undefined {
+    if (!this._config) return event.color;
+
+    const configuredColor = this._findConfiguredReplayColor(event.entityId);
+    const active = entityIsActive(event.entityId, event.newState);
+    if (configuredColor) return active ? configuredColor : "#ffffff";
+
+    const rawColor = event.attributes?.color;
+    if (typeof rawColor === "string" && rawColor.trim()) return active ? rawColor : "#ffffff";
+
+    if (event.entityId.startsWith("light.")) return active ? "#f4b400" : "#ffffff";
+    if (event.entityId.startsWith("cover.")) return active ? "#7b1fa2" : "#ffffff";
+    if (event.entityId.startsWith("sensor.")) return active ? "#1976d2" : "#ffffff";
+    if (event.entityId.startsWith("binary_sensor.")) return active ? "#e53935" : "#ffffff";
+    if (event.entityId.startsWith("fan.")) return active ? "#00897b" : "#ffffff";
+    if (event.entityId.startsWith("media_player.")) return active ? "#6d4c41" : "#ffffff";
+    return undefined;
+  }
+
+  private _findConfiguredReplayColor(entityId: string): string | undefined {
+    if (!this._config) return undefined;
+    const floors = getFloors(this._config);
+    for (const floor of floors) {
+      for (const item of floor.items ?? []) {
+        if (item.entity === entityId) {
+          return item.activeColor ?? item.rippleColor;
+        }
+      }
+      for (const opening of floor.openings ?? []) {
+        if (opening.entity === entityId) {
+          return opening.activeColor;
+        }
+      }
+      for (const furniture of floor.furniture ?? []) {
+        if (furniture.entity === entityId) {
+          return furniture.activeColor;
+        }
+      }
+    }
+    return undefined;
+  }
+
+  private _getCurrentReplayEvent(): HistoryEventInput | undefined {
+    if (!this._historyEvents.length) return undefined;
+    let current: HistoryEventInput | undefined;
+    for (const event of this._historyEvents) {
+      if (event.timestamp <= this._playbackController.currentTime) {
+        current = event;
+      } else {
+        break;
+      }
+    }
+    return current ?? this._historyEvents[0];
+  }
+
+  private _setReplayEventLogRef = (element: Element | undefined): void => {
+    this._replayEventLogRef = element instanceof HTMLUListElement ? element : undefined;
+    if (this._replayEventLogRef && this._historyEvents.length) this._syncReplayLogToCurrentEvent();
+  };
+
+  private _syncReplayLogToCurrentEvent(): void {
+    if (!this._replayEventLogRef) return;
+    const current = this._replayEventLogRef.querySelector<HTMLElement>(".replay-event-item.replay-event-current");
+    if (current && typeof current.scrollIntoView === "function") {
+      current.scrollIntoView({ block: "nearest", inline: "nearest" });
+    }
+  }
+
+  private _formatReplayTime(timestamp: number): string {
+    if (!Number.isFinite(timestamp)) return "—";
+    try {
+      return new Intl.DateTimeFormat(undefined, {
+        hour: "numeric",
+        minute: "2-digit",
+        second: "2-digit",
+      }).format(new Date(timestamp * 1000));
+    } catch {
+      return new Date(timestamp * 1000).toISOString();
+    }
   }
 
   private _renderFloorSwitcher(floors: Floor[], active: Floor): TemplateResult {
@@ -983,6 +1538,11 @@ export class FloorplanCard extends LitElement {
       display: flex;
       flex-direction: column;
     }
+    .card-shell {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
     .stage {
       position: relative;
       width: 100%;
@@ -1042,6 +1602,193 @@ export class FloorplanCard extends LitElement {
     }
     .plan.scale-plan .item > .label {
       top: calc(100% + 0.17em);
+    }
+    .replay-panel {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      padding: 12px 12px 10px;
+      border: 1px solid var(--divider-color, #e0e0e0);
+      border-radius: 12px;
+      background: var(--secondary-background-color, rgba(0, 0, 0, 0.03));
+    }
+    .replay-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .replay-meta {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    .replay-chip {
+      display: inline-flex;
+      align-items: center;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+    }
+    .replay-time {
+      font-size: 12px;
+      color: var(--secondary-text-color, #666);
+    }
+    .replay-status {
+      font-size: 12px;
+      color: var(--secondary-text-color, #666);
+    }
+    .replay-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      align-items: center;
+    }
+    .replay-range {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      align-items: end;
+    }
+    .replay-range-tools {
+      display: flex;
+      gap: 4px;
+    }
+    .replay-view-tools {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .replay-range-field,
+    .replay-speed-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      font-size: 12px;
+      color: var(--secondary-text-color, #666);
+    }
+    .replay-range input,
+    .replay-speed-slider,
+    .replay-speed-field input {
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 6px;
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+      padding: 4px 8px;
+      font-size: 12px;
+      min-width: 150px;
+    }
+    .replay-toolbar button,
+    .replay-range-tools button,
+    .replay-toolbar select,
+    .replay-speed-field input {
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 6px;
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+      padding: 4px 8px;
+      font-size: 12px;
+      line-height: 1;
+    }
+    .replay-speed-slider {
+      padding: 0;
+      min-width: 220px;
+    }
+    .replay-run-button {
+      min-width: 82px;
+      font-weight: 600;
+    }
+    .replay-toolbar button,
+    .replay-range-tools button {
+      cursor: pointer;
+    }
+    .replay-event-log {
+      border: 1px solid var(--divider-color, #e0e0e0);
+      border-radius: 8px;
+      background: var(--card-background-color, #fff);
+      padding: 8px 10px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .replay-event-log.collapsed {
+      padding-bottom: 8px;
+    }
+    .replay-timeline-toggle,
+    .replay-log-toggle {
+      align-self: flex-start;
+      border: 1px solid var(--divider-color, #ccc);
+      border-radius: 999px;
+      background: var(--secondary-background-color, rgba(0, 0, 0, 0.03));
+      color: var(--primary-text-color);
+      padding: 4px 8px;
+      font-size: 11px;
+      cursor: pointer;
+    }
+    .replay-event-log ul {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      max-height: 180px;
+      overflow: auto;
+      overscroll-behavior: contain;
+    }
+    .replay-event-item {
+      display: grid;
+      grid-template-columns: auto auto minmax(0, 1fr) auto;
+      gap: 8px;
+      align-items: center;
+      font-size: 12px;
+      color: var(--secondary-text-color, #666);
+      user-select: text;
+      cursor: text;
+      padding: 2px 0;
+    }
+    .replay-event-passed {
+      color: var(--primary-text-color);
+    }
+    .replay-event-current {
+      background: var(--secondary-background-color, rgba(0, 0, 0, 0.03));
+      border-radius: 6px;
+      padding: 4px 6px;
+      margin: -4px -6px;
+    }
+    .replay-event-dot {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      background: var(--divider-color, #ccc);
+      flex-shrink: 0;
+    }
+    .replay-event-time {
+      color: var(--secondary-text-color, #666);
+      white-space: nowrap;
+    }
+    .replay-event-entity {
+      color: var(--primary-text-color);
+      font-weight: 600;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .replay-event-change {
+      color: var(--secondary-text-color, #666);
+      white-space: nowrap;
+      text-align: right;
+    }
+    .replay-empty {
+      font-size: 12px;
+      color: var(--secondary-text-color, #666);
     }
     .floor-switcher {
       position: absolute;
