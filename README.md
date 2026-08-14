@@ -493,6 +493,12 @@ with nothing to configure. Windows behave the same way, so an open one spills li
 outside. A cover reporting a partial position opens a proportional gap, and at night the
 clearing a lit room holds against the dark reaches through the same doorways its pool does.
 
+A two-panel slider counts **both** its leaves, so a door with a sensor on each opens a gap
+when either one does. How wide follows what the style actually draws: `biparting` sends its
+leaves into the walls and can clear the whole opening, while `biparting-bypass` and
+`converging` keep theirs inside the frame and so clear at most half of it however wide open
+they are.
+
 Pools are drawn above room fills but below furniture and walls, so light reads as cast onto
 the floor. Furniture under a lit lamp picks up about half the cast, enough to read as lit
 without turning into the color of the light. Pools never intercept clicks.

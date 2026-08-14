@@ -65,6 +65,7 @@ import {
   renderGlowMask,
   renderSunDimMask,
   wallsLightPassesThrough,
+  openingClearFraction,
   polygonCentroid,
   trackerSensorReading,
   entityIsActive,
@@ -644,7 +645,12 @@ export class FloorplanCard extends LitElement {
     // state change the card takes.
     const castsLight = c.sunDimming || active.items.some((it) => it.glow);
     const lightWalls = castsLight
-      ? wallsLightPassesThrough(active.walls, active.openings, (o) => this._openingAmount(o))
+      ? wallsLightPassesThrough(active.walls, active.openings, (o) =>
+          // Both leaves, and the travel each style actually has (issue #145):
+          // asking `entity` alone left a door whose *second* panel was open
+          // still blocking light outright.
+          openingClearFraction(o, this._openingAmount(o), this._openingSecond(o)?.amount)
+        )
       : active.walls;
     // Lit rooms hold back the night (issue #113): without this the flat dim
     // multiplies the lit-vs-unlit contrast too, and a lamp ends up *less*

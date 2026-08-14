@@ -101,6 +101,7 @@ import {
   editorGlowPaint,
   glowReach,
   wallsLightPassesThrough,
+  openingClearFraction,
   renderGlowMask,
   renderOpening,
   renderGlow,
@@ -3394,6 +3395,71 @@ describe("lightBadgePaint (#106)", () => {
 // Issue #143: "doors act as walls and stop the light pool, regardless of
 // open/close status". Walls and openings are stored independently, so the glow
 // sweep saw uncut walls where the plan draws a hole.
+// Issue #145 meets #143: a two-panel slider has two sensors and its leaves do
+// not travel the full width, so neither the amount nor the leaf count could be
+// read off `entity` alone.
+describe("openingClearFraction (#145 / #143)", () => {
+  const slider = (sliderStyle: string): Opening =>
+    ({ id: "o", type: "window", motion: "slide", sliderStyle, x: 300, y: 300, length: 200, angle: 0 }) as Opening;
+
+  it("counts both leaves, so the second panel alone opens a gap", () => {
+    // The bug: a door whose only open leaf was the second one blocked light
+    // outright, because the light asked `entity` and nothing else.
+    for (const s of ["biparting", "biparting-bypass", "converging"]) {
+      expect({ s, clear: openingClearFraction(slider(s), 0, 1) > 0 }).toEqual({ s, clear: true });
+    }
+  });
+
+  it("matches how far each style's leaves actually travel", () => {
+    // Measured against the drawn geometry: biparting sends its leaves into the
+    // walls, the patio styles keep theirs inside the frame at a quarter each.
+    const table = [
+      ["biparting", 1, 1, 1],
+      ["biparting", 1, 0, 0.5],
+      ["biparting-bypass", 1, 1, 0.5],
+      ["biparting-bypass", 1, 0, 0.25],
+      ["converging", 1, 1, 0.5],
+      ["converging", 1, 0, 0.25],
+    ] as Array<[string, number, number, number]>;
+    for (const [s, a1, a2, want] of table) {
+      expect({ s, a1, a2, clear: openingClearFraction(slider(s), a1, a2) }).toEqual({
+        s, a1, a2, clear: want,
+      });
+    }
+  });
+
+  it("never lets a patio slider through more light than it draws", () => {
+    // The ceiling is the point: these two keep their leaves in the frame, so
+    // reading `amount` alone would pass twice the light that is drawn.
+    for (const s of ["biparting-bypass", "converging"]) {
+      expect(openingClearFraction(slider(s), 1, 1)).toBeLessThanOrEqual(0.5);
+    }
+  });
+
+  it("leaves every other opening exactly as it was", () => {
+    const shut = 0;
+    const open = 1;
+    const half = 0.4;
+    for (const o of [
+      { id: "d", type: "door", x: 0, y: 0, length: 90, angle: 0 } as Opening,
+      { id: "r", type: "window", motion: "roll", x: 0, y: 0, length: 90, angle: 0 } as Opening,
+      slider("single"),
+      slider("bypass"),
+    ]) {
+      for (const a of [shut, half, open]) {
+        expect(openingClearFraction(o, a)).toBe(a);
+      }
+    }
+    // …including a single-sensor biparting, where the mean of one amount is itself.
+    expect(openingClearFraction(slider("biparting"), 0.6)).toBeCloseTo(0.6, 10);
+  });
+
+  it("clamps a junk reading rather than cutting a gap wider than the wall", () => {
+    expect(openingClearFraction(slider("biparting"), 5, 5)).toBe(1);
+    expect(openingClearFraction(slider("converging"), -3, -3)).toBe(0);
+  });
+});
+
 describe("wallsLightPassesThrough (#143)", () => {
   const wall = (x1: number, y1: number, x2: number, y2: number, id = "w") => ({ id, x1, y1, x2, y2 });
   // A door centred on a horizontal wall at y=100, spanning x 480..520.

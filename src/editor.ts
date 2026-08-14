@@ -63,6 +63,9 @@ import {
   renderGlow,
   resolveOpeningAmount,
   wallsLightPassesThrough,
+  openingClearFraction,
+  openingHasTwoPanels,
+  secondPanelOf,
   renderGlowMask,
   openingDefaultOpen,
   openingMotion,
@@ -2554,9 +2557,21 @@ export class FloorplanCardEditor extends LitElement {
     // Skipped entirely on a floor with no cast light, which is most of them:
     // this sits on the path of every keystroke and drag in the editor.
     const lightWalls = floor.items.some((it) => it.glow)
-      ? wallsLightPassesThrough(floor.walls, floor.openings, (o) =>
-          resolveOpeningAmount(o, o.entity ? this.hass?.states[o.entity] : undefined)
-        )
+      ? wallsLightPassesThrough(floor.walls, floor.openings, (o) => {
+          const amt = (id?: string) =>
+            resolveOpeningAmount(o, id ? this.hass?.states[id] : undefined);
+          // Same reading as the card, second leaf included (issue #145).
+          return openingClearFraction(
+            o,
+            amt(o.entity),
+            o.secondaryEntity && openingHasTwoPanels(o)
+              ? resolveOpeningAmount(
+                  secondPanelOf(o),
+                  this.hass?.states[o.secondaryEntity]
+                )
+              : undefined
+          );
+        })
       : floor.walls;
     const floorEmpty =
       !floor.walls.length &&

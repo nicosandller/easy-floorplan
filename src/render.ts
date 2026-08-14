@@ -522,6 +522,52 @@ function clipWallToBox(
  * circle with no clip at all.
  */
 /**
+ * How much of an opening's width is actually clear, 0–1 — what {@link
+ * wallsLightPassesThrough} cuts out of the wall for light to pass through.
+ *
+ * Not simply the leaf's `amount`, for two reasons that both arrived with the
+ * two-panel sliders (issue #145):
+ *
+ * **Both panels count.** A door with a sensor per leaf and only its *second*
+ * panel open was drawing that panel open while still blocking light outright,
+ * because the light asked `entity` and nothing else.
+ *
+ * **Travel is not the same as clearance.** `biparting` sends each leaf out into
+ * a wall, so two open leaves clear the whole opening. The patio styles keep
+ * their leaves inside it — each travels a quarter — so even wide open they
+ * clear only half. Reading `amount` alone would have `converging` letting
+ * through twice the light it draws.
+ *
+ *  | style                    | both open | one open |
+ *  | ------------------------ | --------- | -------- |
+ *  | `biparting`              | all of it | half     |
+ *  | `biparting-bypass`       | half      | a quarter|
+ *  | `converging`             | half      | a quarter|
+ *
+ * Every other opening keeps `amount` untouched, so a swing door, a roll-up and
+ * a single-panel slider all behave exactly as they did — as does a
+ * single-sensor `biparting`, where both leaves share one amount and the mean
+ * of it is itself.
+ */
+export function openingClearFraction(o: Opening, amount: number, secondAmount?: number): number {
+  const a1 = Math.max(0, Math.min(1, amount));
+  const a2 = Math.max(0, Math.min(1, secondAmount ?? amount));
+  switch (sliderStyleOf(o)) {
+    case "biparting":
+      // Each leaf recesses into its own wall, so between them they can clear
+      // the opening completely.
+      return (a1 + a2) / 2;
+    case "biparting-bypass":
+    case "converging":
+      // Each leaf is a quarter wide and travels a quarter, and stays in the
+      // frame — so the pair tops out at half the opening however wide open.
+      return (a1 + a2) / 4;
+    default:
+      return a1;
+  }
+}
+
+/**
  * The walls as **light** meets them (issue #143): the plan's walls with a gap
  * cut wherever an opening is currently open.
  *
@@ -539,9 +585,19 @@ function clipWallToBox(
  * A window behaves the same way: shut it blocks, open it spills light outside,
  * which is what an open window does.
  *
- * The gap is `length * amount`, centred. A half-open slider really clears one
- * side rather than the middle, but the pool is a soft radial wash and centring
- * keeps this to one interval per opening instead of a handed special case.
+ * The caller supplies how much of each opening is clear — see
+ * {@link openingClearFraction}, which is where a two-panel slider's two
+ * sensors are reconciled into one number.
+ *
+ * The gap is `length * fraction`, **centred**, and that is an approximation
+ * worth naming. A half-open slider really clears one side rather than the
+ * middle; `converging` is the sharpest case, since its two leaves stack in the
+ * centre and what actually clears is a quarter at each jamb — so the gap is
+ * the right *size* and the wrong *place*. The amount of light through the wall
+ * is right, where it lands is approximate, and the pool is a soft radial wash
+ * that hides most of the difference. Fixing it properly means letting one
+ * opening contribute several intervals rather than one, which is a change to
+ * this function's contract rather than to its arithmetic.
  */
 export function wallsLightPassesThrough(
   walls: readonly Wall[],
