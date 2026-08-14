@@ -3120,6 +3120,17 @@ export function renderTracker(t: Tracker, opts: TrackerRenderOptions): SVGTempla
     // Equilateral-ish triangle pointing up, sized in user units (≈ dotR scale).
     const tri = `0,${-dotR} ${dotR * 0.9},${dotR * 0.7} ${-dotR * 0.9},${dotR * 0.7}`;
     const ringMax = Math.max(dotR * 3.5, Math.min(t.w, t.h) * 0.45);
+    // A label rides in the triangle's place: same class, so it pulses and
+    // glides like the dot it replaces. The paint-order stroke is a halo in
+    // the card's own background color, keeping initials readable over busy
+    // plans without a box around them.
+    const label = t.label?.trim();
+    const dot = label
+      ? svg`<text class="tracker-dot" text-anchor="middle" dominant-baseline="central"
+              font-size=${dotR * 1.6} font-weight="700" fill=${color}
+              stroke="var(--fp-skin-card-bg, #fff)" stroke-width="3"
+              paint-order="stroke" pointer-events="none">${label}</text>`
+      : svg`<polygon class="tracker-dot" points=${tri} fill=${color} />`;
     marker = svg`
       <g class="tracker-marker" style="transform:translate(${mx}px, ${my}px);">
         <circle class="tracker-ring" cx="0" cy="0" r="0"
@@ -3128,7 +3139,7 @@ export function renderTracker(t: Tracker, opts: TrackerRenderOptions): SVGTempla
         <circle class="tracker-ring" cx="0" cy="0" r="0"
                 fill="none" stroke=${color} stroke-width="1.5"
                 style="--fp-tracker-ring-max:${ringMax}px; animation-delay:0.7s;" />
-        <polygon class="tracker-dot" points=${tri} fill=${color} />
+        ${dot}
       </g>`;
   } else if (hasX || hasY) {
     // 1-sensor: faint pulsating line + ripple bands along the unknown axis.
