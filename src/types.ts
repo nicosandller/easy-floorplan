@@ -852,6 +852,15 @@ export const FURNITURE_GLOW_TRANSMISSION = 0.5;
 export const DEFAULT_TRACKER_DOT_SIZE = 14;
 
 export const DEFAULT_ITEM_SIZE = 34;
+/**
+ * Smallest area that answers a press, in screen pixels — for a device whose
+ * only visual is a presence ripple and so has no badge to aim at.
+ *
+ * Screen pixels on purpose, and never scaled by `overlayScale`: this is a
+ * measure of fingers, not of the drawing. A plan shrunk into a narrow card
+ * would otherwise shrink its touch targets with it.
+ */
+export const MIN_TOUCH_TARGET = 34;
 export const DEFAULT_TEXT_SIZE = 16;
 export const DEFAULT_RIPPLE_SIZE = 80;
 /** Neutral gray, so furniture reads differently from the walls. Skinnable (#122). */

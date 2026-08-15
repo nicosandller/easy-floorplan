@@ -19,6 +19,7 @@ import {
   DEFAULT_TEXT_SIZE,
   DEFAULT_RIPPLE_SIZE,
   DEFAULT_AREA_LABEL_SIZE,
+  MIN_TOUCH_TARGET,
   DEFAULT_SUN_MIN,
   DEFAULT_SUN_MAX,
   PRESS_SCALE,
@@ -1272,6 +1273,15 @@ export class FloorplanCard extends LitElement {
       inset: 0;
       pointer-events: none;
     }
+    /* A device's hit area is what you can *see* of it — the badge and its
+       label — not the box its decoration happens to fill.
+
+       A presence ripple is 80–110px of mostly empty air, and the anchor grew
+       to hold it: a 30px motion icon behaved like a 110px square button, which
+       also swallowed taps meant for the plan underneath it. The ring is
+       decoration; it says "presence here", it is not a control. So the anchor
+       stops taking pointer events and the parts that are the device take them
+       back. */
     .item {
       position: absolute;
       /* Counter-scaled against the zoom-to-room transform (--fp-inv-zoom,
@@ -1283,13 +1293,44 @@ export class FloorplanCard extends LitElement {
          every badge is briefly the wrong size mid-transition. */
       transform: translate(-50%, -50%) scale(var(--fp-inv-zoom, 1));
       transition: transform 0.4s ease;
-      pointer-events: auto;
+      pointer-events: none;
       /* Not a hand: a device with nothing bound, or tap_action set to none,
          is not a button (issue #134). Only .interactive gets the pointer. */
       cursor: default;
       display: flex;
       flex-direction: column;
       align-items: center;
+    }
+    .item .badge,
+    .item .label {
+      pointer-events: auto;
+    }
+    /* .stack-icon spans the whole ripple (inset: 0), so it has to stay out of
+       the way too — the badge inside it is the target, not its wrapper. */
+    .stack-icon,
+    .ripple,
+    .press-ink {
+      pointer-events: none;
+    }
+    /* A ripple-only device draws no badge, so its centre has to answer for it,
+       or switching the badge off would leave the device unclickable. The dot
+       is 8px across; this gives it a real touch target without drawing one.
+       Deliberately a fixed size, and not scaled by overlayScale (#148): a
+       minimum touch target is about fingers, which do not shrink with the
+       plan. */
+    .item.interactive .ripple .dot {
+      pointer-events: auto;
+      position: relative;
+    }
+    .item.interactive .ripple .dot::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: ${MIN_TOUCH_TARGET}px;
+      height: ${MIN_TOUCH_TARGET}px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
     }
     .item.interactive {
       cursor: pointer;

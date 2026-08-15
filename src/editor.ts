@@ -32,6 +32,7 @@ import {
   DEFAULT_CUSTOM_PERCENT,
   DEFAULT_GRID,
   DEFAULT_ITEM_SIZE,
+  MIN_TOUCH_TARGET,
   DEFAULT_TEXT_SIZE,
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
@@ -4964,15 +4965,44 @@ export class FloorplanCardEditor extends LitElement {
       --mdc-icon-size: 15px;
       display: flex;
     }
+    /* Grab area = the visible device, matching the card's hit area. A presence
+       ripple is mostly empty air, and while the anchor took pointer events for
+       all of it, a 110px square sat over the plan: the wall or door underneath
+       could not be clicked at all, and neither could a device standing inside
+       the ring. The badge and label answer instead — enough to grab and drag,
+       and it puts back what was buried. */
     .edit-item {
       position: absolute;
       transform: translate(-50%, -50%);
-      pointer-events: auto;
+      pointer-events: none;
       cursor: move;
       display: flex;
       flex-direction: column;
       align-items: center;
       touch-action: none;
+    }
+    .edit-item .badge,
+    .edit-item .ilabel {
+      pointer-events: auto;
+    }
+    .stack-icon,
+    .ripple {
+      pointer-events: none;
+    }
+    /* A ripple-only device has no badge to grab, so its centre answers. */
+    .edit-item .ripple .dot {
+      pointer-events: auto;
+      position: relative;
+    }
+    .edit-item .ripple .dot::after {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: ${MIN_TOUCH_TARGET}px;
+      height: ${MIN_TOUCH_TARGET}px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
     }
     .badge {
       width: 34px;
