@@ -24,7 +24,8 @@ import {
   sliderStyleHasTwoPanels,
   secondPanelOf,
   openingFromDeviceClass,
-  windowSash,
+  openingSash,
+  defaultSash,
   shutterAmount,
   shutterStyleOf,
   imageFitRatio,
@@ -2077,14 +2078,26 @@ describe("badgeValueSize (#106)", () => {
   });
 });
 
-describe("windowSash (issue #73)", () => {
-  it("defaults to double; single only for swing windows", () => {
-    expect(windowSash({ type: "window" } as Opening)).toBe("double");
-    expect(windowSash({ type: "window", sash: "single" } as Opening)).toBe("single");
-    expect(windowSash({ type: "door", sash: "single" } as Opening)).toBe("double");
-    expect(windowSash({ type: "window", motion: "slide", sash: "single" } as Opening)).toBe(
+describe("openingSash (issues #73 / double doors)", () => {
+  it("defaults per type: a window opens with two sashes, a door with one leaf", () => {
+    expect(defaultSash("window")).toBe("double");
+    expect(defaultSash("door")).toBe("single");
+    expect(openingSash({ type: "window" } as Opening)).toBe("double");
+    expect(openingSash({ type: "door" } as Opening)).toBe("single");
+  });
+
+  it("honours an explicit sash on both types", () => {
+    expect(openingSash({ type: "window", sash: "single" } as Opening)).toBe("single");
+    // The whole point: a door with two leaves used to be undrawable, because
+    // `sash` was read for windows only.
+    expect(openingSash({ type: "door", sash: "double" } as Opening)).toBe("double");
+  });
+
+  it("only hinged openings have leaves — a slider or roller reports its default", () => {
+    expect(openingSash({ type: "window", motion: "slide", sash: "single" } as Opening)).toBe(
       "double",
     );
+    expect(openingSash({ type: "door", motion: "roll", sash: "double" } as Opening)).toBe("single");
   });
 });
 

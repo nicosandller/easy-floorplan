@@ -819,17 +819,45 @@ describe("wallForm / projectForm / floorImageForm", () => {
 describe("openingForm — sash and shutter (issues #73 / #74)", () => {
   const win = { id: "w1", type: "window", x: 0, y: 0, length: 90, angle: 0 } as Opening;
 
-  it("swing windows offer Sashes; single sash reveals Hinge", () => {
+  it("every swing opening offers a leaf count; only sliders and rollers don't", () => {
     const names = openingForm(win).fields.map((x) => x.name);
     expect(names).toContain("sash");
-    expect(names).not.toContain("hinge"); // double: no single hinge
-    const single = openingForm({ ...win, sash: "single" } as Opening).fields.map((x) => x.name);
-    expect(single).toContain("hinge");
-    // doors and sliders don't get a sash field
-    expect(openingForm(door).fields.map((x) => x.name)).not.toContain("sash");
+    // Doors too now: a double door is as ordinary as a double casement.
+    expect(openingForm(door).fields.map((x) => x.name)).toContain("sash");
     expect(
       openingForm({ ...win, motion: "slide" } as Opening).fields.map((x) => x.name)
     ).not.toContain("sash");
+    expect(
+      openingForm({ ...win, motion: "roll" } as Opening).fields.map((x) => x.name)
+    ).not.toContain("sash");
+  });
+
+  it("names the leaf count after what it is, and opens on this type's default", () => {
+    const field = (o: Opening) => openingForm(o).fields.find((x) => x.name === "sash")!;
+    expect(field(win).label).toBe("Sashes");
+    expect(field(door).label).toBe("Leaves");
+    expect(openingForm(win).data.sash).toBe("double");
+    expect(openingForm(door).data.sash).toBe("single");
+  });
+
+  it("the hinge is offered only where there is one leaf to hang", () => {
+    // A double is hinged at both jambs, so there is no side left to choose.
+    expect(openingForm(win).fields.map((x) => x.name)).not.toContain("hinge");
+    expect(openingForm(door).fields.map((x) => x.name)).toContain("hinge");
+    expect(
+      openingForm({ ...win, sash: "single" } as Opening).fields.map((x) => x.name)
+    ).toContain("hinge");
+    expect(
+      openingForm({ ...door, sash: "double" } as Opening).fields.map((x) => x.name)
+    ).not.toContain("hinge");
+  });
+
+  it("writes down only the value that isn't this type's default", () => {
+    // The defaults run opposite ways, so the same patch means different things.
+    expect(openingForm(win).toPatch({ sash: "single" })).toEqual({ sash: "single" });
+    expect(openingForm(win).toPatch({ sash: "double" })).toEqual({ sash: undefined });
+    expect(openingForm(door).toPatch({ sash: "double" })).toEqual({ sash: "double" });
+    expect(openingForm(door).toPatch({ sash: "single" })).toEqual({ sash: undefined });
   });
 
   it("every opening offers a Shutter picker taking covers or contact sensors", () => {

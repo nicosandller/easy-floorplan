@@ -48,6 +48,66 @@ describe("renderOpening — swing door", () => {
   });
 });
 
+describe("renderOpening — double door", () => {
+  const dbl = { type: "door", sash: "double" } as Partial<Opening>;
+
+  it("splits the opening into two leaves hinged at opposite jambs", () => {
+    const s = svgOf(dbl, { open: false });
+    // length 90 → two 45-wide leaves, one per jamb, meeting in the middle.
+    expect(s.match(/width=45/g)?.length).toBe(2);
+    expect(s).toContain("fp-door-leaf");
+    expect(s).toContain("fp-leaf-r");
+    expect(s).not.toContain("width=90"); // no full-width leaf left
+  });
+
+  it("swings them apart, each its own way", () => {
+    const open = svgOf(dbl, { open: true });
+    expect(open).toContain("rotate(-90deg)");
+    expect(open).toContain("rotate(90deg)");
+    const half = svgOf(dbl, { amount: 0.5 });
+    expect(half).toContain("rotate(-45deg)");
+    expect(half).toContain("rotate(45deg)");
+  });
+
+  it("gives each leaf its own arc, sized to that leaf", () => {
+    const s = svgOf(dbl, { open: true });
+    expect(s.match(/fp-door-arc/g)?.length).toBe(2);
+    // Radius = half the opening, the distance that leaf's tip actually sweeps.
+    expect(s).toContain("A 45 45");
+    expect(s).not.toContain("A 90 90");
+  });
+
+  it("stays a door: no jambs, unlike the casement window it mirrors", () => {
+    const door = svgOf(dbl, { open: false });
+    const window = svgOf({ type: "window" }, { open: false });
+    expect(door).not.toContain('stroke-width="2"'); // jamb lines
+    expect(window).toContain('stroke-width="2"');
+    // Both draw two leaves and two arcs — the jambs are the whole difference.
+    expect(door.match(/fp-door-arc/g)?.length).toBe(window.match(/fp-door-arc/g)?.length);
+  });
+
+  it("a plain door is untouched — one leaf across the whole opening", () => {
+    const single = svgOf({ type: "door" }, { open: true });
+    expect(single).toContain("width=90");
+    expect(single).not.toContain("fp-leaf-r");
+    expect(single.match(/fp-door-arc/g)?.length).toBe(1);
+    expect(single).toContain("A 90 90"); // arc radius = the full opening
+  });
+
+  it("only swings: a sliding or rolling door ignores the leaf count", () => {
+    const slide = svgOf({ type: "door", motion: "slide", sash: "double" } as Partial<Opening>);
+    expect(slide).toContain("fp-slide-panel");
+    expect(slide).not.toContain("fp-door-arc");
+    const roll = svgOf({ type: "door", motion: "roll", sash: "double" } as Partial<Opening>);
+    expect(roll).toContain("fp-roll-curtain");
+    expect(roll).not.toContain("fp-door-arc");
+  });
+
+  it("mirrors as one piece, so flipV opens both leaves into the other room", () => {
+    expect(svgOf({ ...dbl, flipV: true })).toContain("scale(1 -1)");
+  });
+});
+
 const sliding = (extra: Partial<Opening> = {}) =>
   ({ type: "door", motion: "slide", ...extra }) as Partial<Opening>;
 

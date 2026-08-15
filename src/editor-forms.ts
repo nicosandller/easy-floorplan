@@ -53,7 +53,8 @@ import {
   pressEffectOf,
   sliderStyleOf,
   shutterStyleOf,
-  windowSash,
+  openingSash,
+  defaultSash,
 } from "./render";
 import { defaultItemAction } from "./actions";
 import { DEFAULT_SKIN, SKINS, findSkin, MAX_SKIN_WALL_WIDTH } from "./skins";
@@ -191,16 +192,25 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
     },
     { name: "length", label: "Length", required: true, selector: { number: { min: 1, mode: "box" } } },
   ];
-  if (o.type === "window" && motion === "swing") {
+  // Leaf count, for anything hinged. Offered on doors too: a double door is
+  // as ordinary as a double casement, and was previously undrawable — every
+  // door came out as one leaf spanning the whole opening, however wide.
+  if (motion === "swing") {
+    const door = o.type === "door";
     fields.push({
       name: "sash",
-      label: "Sashes",
-      helper: "Single = one full-width sash (issue #73)",
-      selector: dropdown(opt("double", "Double (two leaves)"), opt("single", "Single sash")),
+      label: door ? "Leaves" : "Sashes",
+      helper: door
+        ? "Double = two leaves meeting in the middle, hinged at each jamb"
+        : "Single = one full-width sash (issue #73)",
+      selector: door
+        ? dropdown(opt("single", "Single (one leaf)"), opt("double", "Double (two leaves)"))
+        : dropdown(opt("double", "Double (two leaves)"), opt("single", "Single sash")),
     });
   }
-  // Hinge applies to anything with ONE hinged leaf: doors, and single-sash windows.
-  if (motion === "swing" && (o.type === "door" || windowSash(o) === "single")) {
+  // Hinge applies to anything with ONE hinged leaf. A double is hinged at both
+  // jambs, so there is no side left to choose.
+  if (motion === "swing" && openingSash(o) === "single") {
     fields.push({
       name: "hinge",
       label: "Hinge",
@@ -367,7 +377,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       opens: o.flipV ? "other" : "this",
       slide: o.flipH ? "right" : "left",
       style,
-      sash: windowSash(o),
+      sash: openingSash(o),
       entity: o.entity ?? "",
       secondaryEntity: o.secondaryEntity ?? "",
       shutterEntity: o.shutterEntity ?? "",
@@ -417,7 +427,12 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
             out.sliderStyle = undefined;
             out.secondaryEntity = undefined;
           }
-        } else if (k === "sash") out.sash = v === "single" ? "single" : undefined;
+        } else if (k === "sash") {
+          // The two types default the other way round — a window opens with
+          // two sashes, a door with one leaf — so only the value that is *not*
+          // this type's default is worth writing down.
+          out.sash = v === defaultSash(o.type) ? undefined : v;
+        }
         else if (k === "hinge" || k === "slide") out.flipH = v === "right" || undefined;
         else if (k === "opens") out.flipV = v === "other" || undefined;
         else if (k === "style") {

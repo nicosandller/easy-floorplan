@@ -10,6 +10,7 @@ import type {
   FloorplanCardConfig,
   Floor,
   Opening,
+  OpeningType,
   SliderStyle,
   ItemKind,
   IconAnimation,
@@ -1758,12 +1759,29 @@ export function secondPanelOf(o: Opening): Opening {
 }
 
 /**
- * Sash count for a swing window (issue #73): `double` (the historic look) or
- * `single`. Only meaningful for `type: "window"` with swing motion — doors
- * and sliding/rolling openings always resolve to `double` (ignored).
+ * How many hinged leaves an opening has, when nothing is stated: a window
+ * opens with two casement sashes, a door with one leaf.
+ *
+ * Two different defaults for one field, because they are the two ordinary
+ * cases. A window drawn with a single sash is the exception (issue #73); a
+ * double door is the exception the other way round, and until now not
+ * expressible at all — every door was drawn as one leaf across the whole
+ * opening, however wide.
  */
-export function windowSash(o: Opening): "single" | "double" {
-  return o.type === "window" && openingMotion(o) === "swing" ? (o.sash ?? "double") : "double";
+export function defaultSash(type: OpeningType): "single" | "double" {
+  return type === "window" ? "double" : "single";
+}
+
+/**
+ * The leaf count the swing symbol draws. Only hinged openings have leaves, so
+ * a slider or a roller reports its type's default and nothing reads it.
+ *
+ * Supersedes `windowSash`, which answered this for windows only and told
+ * doors they were "double" — harmless while the door branch ignored it, and
+ * wrong the moment a door could have two leaves.
+ */
+export function openingSash(o: Opening): "single" | "double" {
+  return openingMotion(o) === "swing" ? (o.sash ?? defaultSash(o.type)) : defaultSash(o.type);
 }
 
 /**
@@ -2303,58 +2321,58 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   const amt = Math.max(0, Math.min(1, style.amount ?? (open ? 1 : 0)));
 
   let body: SVGTemplateResult;
-  if (o.type === "window" && openingMotion(o) === "swing" && windowSash(o) === "single") {
-    // One casement sash hinged at the left jamb (issue #73) — the window
-    // counterpart of the door leaf: full-width sash, quarter-circle arc that
-    // draws on as it opens. flipH (via the mirror wrapper below) moves the
-    // hinge to the other jamb.
-    const arcLen = (Math.PI / 2) * o.length;
-    body = svg`
-        <!-- jambs -->
+  if (openingMotion(o) === "swing") {
+    // One symbol for every hinged opening. A single-sash window (issue #73)
+    // and a plain door draw the same thing; so do a double door and a pair of
+    // casement leaves. The differences are the leaf count and the jambs, so
+    // those are what this branch decides — rather than three near-copies of
+    // the same markup, which is how the door came to have no way of being a
+    // double at all.
+    const two = openingSash(o) === "double";
+    // One leaf spans the opening; two split it. The arc radius follows,
+    // because it is the path the leaf's own tip sweeps.
+    const leafW = two ? half : o.length;
+    const arcLen = (Math.PI / 2) * leafW;
+    // Revealed via stroke-dashoffset so each arc "draws on" as its leaf opens.
+    const arc = (d: string) => svg`<path class="fp-door-arc" d=${d}
+              fill="none" stroke-width="1.5" stroke-dasharray=${arcLen}
+              style="stroke:${tone};stroke-dashoffset:${arcLen * (1 - amt)};" />`;
+    // Jambs are what say "glass": a door is drawn by its leaf and arc alone,
+    // and that is what tells the two symbols apart at a glance.
+    const jambs =
+      o.type === "window"
+        ? svg`
         <line x1=${-half} y1=${-cutH / 2} x2=${-half} y2=${cutH / 2}
               stroke=${color} stroke-width="2" />
         <line x1=${half} y1=${-cutH / 2} x2=${half} y2=${cutH / 2}
-              stroke=${color} stroke-width="2" />
-        <path class="fp-door-arc"
-              d="M ${half} 0 A ${o.length} ${o.length} 0 0 0 ${-half} ${-o.length}"
-              fill="none" stroke-width="1.5" stroke-dasharray=${arcLen}
-              style="stroke:${tone};stroke-dashoffset:${arcLen * (1 - amt)};" />
-        <g transform="translate(${-half} 0)">
-          <g class="fp-door-leaf" style="transform:rotate(${-90 * amt}deg);">
-            <rect x="0" y="-1.25" width=${o.length} height="2.5" style="fill:${tone};" />
-          </g>
-        </g>
-      `;
-  } else if (o.type === "window" && openingMotion(o) === "swing") {
-    // Two casement leaves hinged at each jamb. Closed, they meet in the middle
-    // along the wall; open, they swing outward (up) like double doors, each
-    // tracing a quarter-circle arc (radius = half) that draws on as it opens.
-    const arcLen = (Math.PI / 2) * half;
+              stroke=${color} stroke-width="2" />`
+        : nothing;
     body = svg`
-        <!-- jambs -->
-        <line x1=${-half} y1=${-cutH / 2} x2=${-half} y2=${cutH / 2}
-              stroke=${color} stroke-width="2" />
-        <line x1=${half} y1=${-cutH / 2} x2=${half} y2=${cutH / 2}
-              stroke=${color} stroke-width="2" />
-        <!-- swing arcs, drawn from the middle outward -->
-        <path class="fp-door-arc" d="M 0 0 A ${half} ${half} 0 0 0 ${-half} ${-half}"
-              fill="none" stroke-width="1.5" stroke-dasharray=${arcLen}
-              style="stroke:${tone};stroke-dashoffset:${arcLen * (1 - amt)};" />
-        <path class="fp-door-arc" d="M 0 0 A ${half} ${half} 0 0 1 ${half} ${-half}"
-              fill="none" stroke-width="1.5" stroke-dasharray=${arcLen}
-              style="stroke:${tone};stroke-dashoffset:${arcLen * (1 - amt)};" />
-        <!-- left leaf, hinged at left jamb -->
+        ${jambs}
+        ${
+          two
+            ? // Two leaves hinged at opposite jambs, meeting in the middle when
+              // shut and each tracing its own quarter circle outward.
+              svg`${arc(`M 0 0 A ${half} ${half} 0 0 0 ${-half} ${-half}`)}${arc(
+                `M 0 0 A ${half} ${half} 0 0 1 ${half} ${-half}`
+              )}`
+            : arc(`M ${half} 0 A ${o.length} ${o.length} 0 0 0 ${-half} ${-o.length}`)
+        }
+        <!-- leaf hinged at the left jamb (flipH mirrors it to the right one) -->
         <g transform="translate(${-half} 0)">
           <g class="fp-door-leaf" style="transform:rotate(${-90 * amt}deg);">
-            <rect x="0" y="-1.25" width=${half} height="2.5" style="fill:${tone};" />
+            <rect x="0" y="-1.25" width=${leafW} height="2.5" style="fill:${tone};" />
           </g>
         </g>
-        <!-- right leaf, hinged at right jamb -->
-        <g transform="translate(${half} 0)">
+        ${
+          two
+            ? svg`<g transform="translate(${half} 0)">
           <g class="fp-leaf-r" style="transform:rotate(${90 * amt}deg);">
             <rect x=${-half} y="-1.25" width=${half} height="2.5" style="fill:${tone};" />
           </g>
-        </g>
+        </g>`
+            : nothing
+        }
       `;
   } else if (openingMotion(o) === "roll") {
     // Roll-up cover — garage door, roller shutter (issues #45 / #47). Unlike a
@@ -2372,7 +2390,8 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
         <line x1=${-half} y1="0" x2=${half} y2="0"
               stroke=${color} stroke-width="0.75" opacity="0.6" />
         ${rollCurtain(o.length, tone, amt)}`;
-  } else if (openingMotion(o) === "slide") {
+  } else {
+    // Sliding — the last of the three motions, so the fallback.
     // A sliding door / window: panel(s) sit in the opening and travel *along* the
     // wall. Closed, they fill the gap; open, they slide aside (single), stack
     // (bypass) or part (biparting). No swing arc. A sliding *window*'s panels are
@@ -2500,28 +2519,6 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
           <rect x=${-half} y=${-t / 2} width=${o.length} height=${t} style="fill:${tone};" />
         </g>`;
     }
-  } else {
-    // Door leaf hinged at the left jamb: lies along the wall when closed,
-    // swings up (−90° when fully open) by `amt`. The leaf is drawn closed and
-    // rotated via CSS.
-    const angle = -90 * amt;
-    // Swing arc revealed via stroke-dashoffset so it "draws on" as the door opens.
-    // Path runs from the closed-leaf tip toward the open-leaf tip, so it traces
-    // the door edge. arcLen is the quarter-circle length (radius = o.length).
-    const arcLen = (Math.PI / 2) * o.length;
-    body = svg`
-        <!-- swing arc: hidden when closed, drawn as it opens -->
-        <path class="fp-door-arc"
-              d="M ${half} 0 A ${o.length} ${o.length} 0 0 0 ${-half} ${-o.length}"
-              fill="none" stroke-width="1.5" stroke-dasharray=${arcLen}
-              style="stroke:${tone};stroke-dashoffset:${arcLen * (1 - amt)};" />
-        <!-- door leaf, hinged at left jamb -->
-        <g transform="translate(${-half} 0)">
-          <g class="fp-door-leaf" style="transform:rotate(${angle}deg);">
-            <rect x="0" y="-1.25" width=${o.length} height="2.5" style="fill:${tone};" />
-          </g>
-        </g>
-      `;
   }
   // Orientation mirrors are applied as a single scale wrapper inside the
   // place-into-position transform, so the base symbol (drawn once, centered at
