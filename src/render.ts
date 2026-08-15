@@ -1218,6 +1218,10 @@ const ACTIVE_STATES: Record<string, ReadonlySet<string>> = {
 export function entityIsActive(entityId: string | undefined, state: string | undefined): boolean {
   if (!state || state === "unavailable" || state === "unknown") return false;
   const domain = entityId?.split(".")[0] ?? "";
+  // Climate: anything except "off" is considered active.
+  if (domain === "climate") {
+    return state !== "off";
+  }
   const active = ACTIVE_STATES[domain];
   return active ? active.has(state) : isEntityOn(state);
 }
