@@ -82,6 +82,11 @@ import {
   wallStrokeStyle,
   normalizeOverlayScale,
   overlayLength,
+  renderSunlight,
+  sunLightDirection,
+  sunlightStrengthOf,
+  SUN_LIGHT_COLOR,
+  SUN_SHADE_COLOR,
   hassRenderInputsChanged,
   collectWatchedEntities,
   resolveItemIcon,
@@ -786,6 +791,47 @@ export class FloorplanCard extends LitElement {
                 symbolCatalog(c.symbols)
               )
             )}
+            <!-- Sunlight through the openings. Under the walls on purpose:
+                 light lands on the floor, and the walls stay crisp lines over
+                 it rather than being tinted by the patches they let in. The
+                 sun dimming further down is the whole-sky reading and still
+                 has the last word — at night there is nothing to let in. -->
+            ${
+              c.sunlight
+                ? renderSunlight(
+                    active.walls,
+                    active.openings,
+                    c.width,
+                    c.height,
+                    `${this._wallMaskId}-sun`,
+                    {
+                      // Both halves of the sun come from the same entity while
+                      // the plan follows it: the azimuth says where the light
+                      // comes from, the elevation whether there is any at all.
+                      // A plan that pins its own angle keeps its light on —
+                      // see sunlightStrengthOf.
+                      dir: sunLightDirection(
+                        c,
+                        this.hass?.states["sun.sun"]?.attributes?.azimuth
+                      ),
+                      strength: sunlightStrengthOf(
+                        c,
+                        this.hass?.states["sun.sun"]?.attributes?.elevation
+                      ),
+                      openAmount: (o) => this._openingAmount(o),
+                      // A shutter that is all the way down stops the light, as
+                      // one does. Undefined where none is bound, so an opening
+                      // without a shutter is judged on itself alone.
+                      shutterOpen: (o) =>
+                        o.shutterEntity
+                          ? shutterAmount(this.hass?.states[o.shutterEntity], o.shutterInvert)
+                          : undefined,
+                      light: c.sunlightColor ?? SUN_LIGHT_COLOR,
+                      shade: c.sunShade === false ? null : (c.sunShadeColor ?? SUN_SHADE_COLOR),
+                    }
+                  )
+                : nothing
+            }
             ${renderWallMask(active.openings, c.width, c.height, this._wallMaskId)}
             <g mask=${`url(#${this._wallMaskId})`}>
               ${active.walls.map(
@@ -1140,6 +1186,14 @@ export class FloorplanCard extends LitElement {
       width: 100%;
       height: 100%;
       display: block;
+    }
+    /* Sunlight through the openings. Paint only — the plan underneath stays
+       pressable, which is what pointer-events:none is here for (#108). */
+    .fp-sunlight {
+      pointer-events: none;
+    }
+    .fp-sunbeam {
+      fill: var(--fp-skin-sunlight, #ffd9a0);
     }
     .wall {
       stroke: var(--fp-skin-wall, var(--primary-text-color));

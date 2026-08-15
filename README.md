@@ -332,6 +332,12 @@ The editor writes this config for you; manual editing is optional.
 | `sunDimming` | boolean | `false` | Dim through dusk, brighten through dawn, from the HA instance's sun. See [Follow the sun](#follow-the-sun). |
 | `sunBrightnessMin` | number | `0.45` | Brightness once the sun is fully down, 0–1. |
 | `sunBrightnessMax` | number | `1` | Brightness in full daylight, 0–1. |
+| `sunlight`   | boolean  | `false`            | Let the sun in: light through every window and open door, walls casting the shade behind them. See [Sunlight](#sunlight). |
+| `north`      | number   | `0`                | Where north points on the plan, degrees clockwise from the top of the canvas. What makes the sun angle describe the house rather than the drawing. |
+| `sunBearing` | number   | live sun           | Compass bearing of **where the sun is** (0 = north, 90 = east); the light travels the other way. Absent, the plan follows `sun.sun`'s azimuth and the light swings through the day. |
+| `sunShade`   | boolean  | `true`             | Darken everywhere the light does not reach. Off draws the patches alone, leaving the plan as bright as it was. |
+| `sunlightColor` | string | warm white        | Colour of the light the openings let in. |
+| `sunShadeColor` | string | black             | Colour of that shade — a blue reads as cold north light, a warm grey as dusk. |
 | `skin`       | string   | `default`          | Built-in look for the whole plan: `default`, `odnetnin`, `pastel` or `tron`. See [Skins](#skins). |
 | `pressEffect`| string   | `scale`            | Feedback when a device is pressed: `scale`, `ripple`, `flash` or `none`. Only devices that actually do something respond. See [Press feedback](#press-feedback). |
 | `overlayScale`| string  | `fixed`            | How badges, labels, room names and text are sized: `fixed` = screen pixels, `plan` = canvas units so they scale with the drawing. See [Overlay scale](#overlay-scale). |
@@ -389,6 +395,7 @@ distorted anyway.
 | `id`          | string                      | Unique id.                                             |
 | `type`        | `door` \| `window`          | The kind of opening.                                   |
 | `motion`      | `swing` \| `slide` \| `roll` | How it moves: hinged (default), sliding panels, or a roll-up curtain (garage / roller shutter). |
+| `glazed`      | boolean                     | Lets sunlight through even when shut. Windows are glass by definition; set it on a **patio or French door**, which is drawn as a door because that is how it swings. Only [Sunlight](#sunlight) reads it. |
 | `sash`        | `single` \| `double`        | Swing openings only: how many hinged leaves. The default differs by type, because the ordinary cases do — a window opens with `double` (two casement sashes), a door with `single` (one leaf across the opening). Set it to draw a single-sash window or a **double door**; both leaves then hinge at their own jamb and trace their own arc. Ignored by sliding and rolling openings. |
 | `shutterEntity` | string                     | An external shutter over the same gap (`cover` or contact), with its own open/closed state. With `entity` bound too, the card draws the shutter's own icon beside the opening — open/closed in both glyph and colour — and tapping that icon opens the shutter. |
 | `shutterStyle` | `swing` \| `roll`           | Louvered panels or a roll-up curtain. Defaults from the entity (contact → `swing`, `cover` → `roll`). |
@@ -871,6 +878,61 @@ card_mod:
       --fp-skin-accent: #f2aa4c !important;
     }
 ```
+
+## Sunlight
+
+A floor plan is a section through a house, so it has no depth by construction. Letting the
+sun in gives it some, from where depth actually comes from.
+
+```yaml
+sunlight: true    # light through the windows and open doors
+north: 20         # north points 20° clockwise from the top of the canvas
+sunBearing: 135   # the sun sits in the south-east; omit to follow the real one
+```
+
+**Sunlight** lets the light in through the openings. The sun is far enough away that its
+rays arrive parallel, which makes this exact rather than an impression — a wall's shadow is
+precisely that wall moved along the light, and the patch a window admits is precisely its
+gap moved the same way. So:
+
+- every **window** admits light, open or shut, because glass is transparent; a **door**
+  admits only as far as it is open — unless it is `glazed`, which is what a patio or
+  French door is: drawn as a door because that is how it swings, but a wall of glass;
+- **walls cast the shade behind them**, cutting the patches — and an open door casts none,
+  the same rule the lamps already follow;
+- an opening standing in a wall's shadow lets nothing in, so an interior door on the dark
+  side of the house does not light the room beyond it out of nothing;
+- a **shutter that is all the way down** stops the light whatever the glass says — that is
+  what a shutter is for, and a window behind a closed one is as dark as a wall;
+- everywhere the light never reaches is drawn a shade darker — turn `sunShade` off for the
+  patches alone.
+
+`sunBearing` says where the sun **is**; the light travels the opposite way. With the sun in
+the south-west it comes in through the south-west windows and falls toward the north-east.
+
+**North** is what makes the angle a statement about the *house*. Without it, "the sun is in
+the south-east" would only mean "toward the bottom-left of the drawing", and the same house
+traced at a different angle would be lit from the wrong side. Set it once and every bearing
+turns with it.
+
+**The sun's height** comes from the same entity while the plan follows it: `sun.sun`'s
+`elevation` says whether there is any light at all. Below the horizon nothing is drawn — a
+plan does not keep its beams all night — and over the first degrees above it the light
+fades in, so sunrise and sunset are a ramp rather than a switch. An unreadable `sun.sun`
+leaves the plan lit, never stuck in a night that never ends.
+
+Set `sunBearing` and **the light stays on**, at that angle, around the clock. Stating an
+angle is a decision about the picture rather than a reading of the sky, so the elevation
+stops applying with it: a plan that pins its sun and then goes dark every evening would be
+half-following a sun it had already declined to follow.
+
+**`sunBearing`** pins the light. Leave it out and the plan follows `sun.sun`'s azimuth, so
+the light swings through the day — the better picture, but one that moves while you are
+laying a plan out, and one with no sensible answer at night. It stacks with
+[Follow the sun](#follow-the-sun), which dims the whole plan after dark and has the last
+word: there is nothing to let in at night.
+
+Skins can restyle both through `--fp-skin-sunlight` and `--fp-skin-sunshade`.
 
 ## Overlay scale
 

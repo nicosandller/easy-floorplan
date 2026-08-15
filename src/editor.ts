@@ -149,6 +149,7 @@ import {
   projectPressForm,
   projectSkinForm,
   projectSunForm,
+  projectReliefForm,
   textForm,
   trackerForm,
   wallForm,
@@ -3823,6 +3824,35 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderForm(projectSunForm(this._config), (patch) =>
           this._patchConfig(patch as Partial<FloorplanCardConfig>)
         )}
+        ${this._renderForm(projectReliefForm(this._config), (patch) =>
+          this._patchConfig(patch as Partial<FloorplanCardConfig>)
+        )}
+        ${this._config.sunlight
+          ? // Beside the sliders that aim the light, since they are the same
+            // decision: what the light looks like where it lands, and where it
+            // does not. Colour rows rather than form fields, like every other
+            // colour in this editor.
+            html`${this._renderColorRow({
+              label: "Sun color",
+              title: "Color of the light the openings let in",
+              value: this._config.sunlightColor,
+              swatch: "#ffd9a0",
+              placeholder: "(warm white)",
+              onLive: (sunlightColor) => this._patchConfigLive({ sunlightColor }),
+              onCommit: (sunlightColor) => this._patchConfig({ sunlightColor }),
+            })}
+            ${this._config.sunShade === false
+              ? nothing
+              : this._renderColorRow({
+              label: "Shade color",
+              title: "Color of everywhere the light does not reach",
+              value: this._config.sunShadeColor,
+              swatch: "#000000",
+              placeholder: "(black)",
+              onLive: (sunShadeColor) => this._patchConfigLive({ sunShadeColor }),
+              onCommit: (sunShadeColor) => this._patchConfig({ sunShadeColor }),
+            })}`
+          : nothing}
         ${this._renderForm(projectPressForm(this._config), (patch) =>
           this._patchConfig(patch as Partial<FloorplanCardConfig>)
         )}

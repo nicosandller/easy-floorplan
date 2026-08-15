@@ -14,6 +14,7 @@ import {
   projectPressForm,
   projectSkinForm,
   projectSunForm,
+  projectReliefForm,
   projectDeadSpaceForm,
   floorImageForm,
   areaForm,
@@ -23,6 +24,7 @@ import type { FormField } from "./editor-forms";
 import type { Area, Opening, FloorItem, Floor, FloorplanCardConfig } from "./types";
 import { DEFAULT_GLOW_RADIUS, DEFAULT_PRESS_EFFECT } from "./types";
 import { DEFAULT_SKIN, SKINS, MAX_SKIN_WALL_WIDTH } from "./skins";
+import { DEFAULT_SUN_BEARING } from "./render";
 
 const fields: FormField[] = [
   { name: "name", label: "Name", selector: { text: {} } },
@@ -819,6 +821,17 @@ describe("wallForm / projectForm / floorImageForm", () => {
 describe("openingForm — sash and shutter (issues #73 / #74)", () => {
   const win = { id: "w1", type: "window", x: 0, y: 0, length: 90, angle: 0 } as Opening;
 
+  it("offers glazing on doors only — a window is glass by definition", () => {
+    expect(openingForm(door).fields.map((x) => x.name)).toContain("glazed");
+    expect(openingForm(win).fields.map((x) => x.name)).not.toContain("glazed");
+    expect(openingForm(door).data.glazed).toBe(false);
+    expect(openingForm(win).data.glazed).toBe(true);
+    expect(openingForm({ ...door, glazed: true } as Opening).data.glazed).toBe(true);
+    // Only a door's yes is worth writing down; its no is the default.
+    expect(openingForm(door).toPatch({ glazed: true })).toEqual({ glazed: true });
+    expect(openingForm(door).toPatch({ glazed: false })).toEqual({ glazed: undefined });
+  });
+
   it("every swing opening offers a leaf count; only sliders and rollers don't", () => {
     const names = openingForm(win).fields.map((x) => x.name);
     expect(names).toContain("sash");
@@ -1136,6 +1149,70 @@ describe("projectDeadSpaceForm (issue #88)", () => {
     const { toPatch } = projectDeadSpaceForm(cfg({ showDeadSpaces: true }));
     expect(toPatch({ showDeadSpaces: false })).toEqual({ showDeadSpaces: undefined });
     expect(toPatch({ showDeadSpaces: true })).toEqual({ showDeadSpaces: true });
+  });
+});
+
+describe("projectReliefForm", () => {
+  const cfg = (extra = {}) =>
+    ({ type: "custom:easy-floorplan-card", width: 100, height: 100, ...extra }) as FloorplanCardConfig;
+  const names = (c: FloorplanCardConfig) => projectReliefForm(c).fields.map((f) => f.name);
+
+  it("asks only whether to let the light in, until it is let in", () => {
+    expect(names(cfg())).toEqual(["sunlight"]);
+  });
+
+  it("reveals north and the sun once the light is let in", () => {
+    expect(names(cfg({ sunlight: true }))).toEqual([
+      "sunlight",
+      "north",
+      "sunShade",
+      "sunFollows",
+    ]);
+    // The angle itself only appears once the light is pinned — while it
+    // follows the sun, the angle is not ours to choose.
+    expect(names(cfg({ sunlight: true, sunBearing: 120 }))).toContain("sunBearing");
+    expect(projectReliefForm(cfg({ sunlight: true })).data.sunFollows).toBe(true);
+    expect(projectReliefForm(cfg({ sunlight: true, sunBearing: 120 })).data.sunFollows).toBe(false);
+  });
+
+  it("switching to the real sun is the *absence* of a bearing", () => {
+    const { toPatch } = projectReliefForm(cfg({ sunlight: true, sunBearing: 120 }));
+    expect(toPatch({ sunFollows: true })).toEqual({ sunBearing: undefined });
+    // Turning it back off restores the stated angle rather than inventing one.
+    expect(toPatch({ sunFollows: false })).toEqual({ sunBearing: 120 });
+    expect(projectReliefForm(cfg({ sunlight: true })).toPatch({ sunFollows: false })).toEqual({
+      sunBearing: DEFAULT_SUN_BEARING,
+    });
+  });
+
+  it("shutting the sun out takes the angles with it", () => {
+    // Left behind they would sit in the YAML meaning nothing, and come back
+    // stale the next time the light is let in.
+    expect(
+      projectReliefForm(cfg({ sunlight: true, north: 90, sunBearing: 10 })).toPatch({
+        sunlight: false,
+      })
+    ).toEqual({ sunlight: undefined, north: undefined, sunBearing: undefined });
+  });
+
+  it("says what following the sun costs, since it is what turns the light off", () => {
+    const f = projectReliefForm(cfg({ sunlight: true })).fields.find((x) => x.name === "sunFollows")!;
+    expect(f.helper).toContain("night");
+  });
+
+  it("can draw the light without the shade, and only writes that down", () => {
+    expect(projectReliefForm(cfg({ sunlight: true })).data.sunShade).toBe(true);
+    expect(projectReliefForm(cfg({ sunlight: true, sunShade: false })).data.sunShade).toBe(false);
+    const { toPatch } = projectReliefForm(cfg({ sunlight: true }));
+    expect(toPatch({ sunShade: true })).toEqual({ sunShade: undefined });
+    expect(toPatch({ sunShade: false })).toEqual({ sunShade: false });
+  });
+
+  it("keeps due north out of the YAML, being the default", () => {
+    const { toPatch } = projectReliefForm(cfg({ sunlight: true }));
+    expect(toPatch({ north: 0 })).toEqual({ north: undefined });
+    expect(toPatch({ north: 45 })).toEqual({ north: 45 });
+    expect(toPatch({ wallHeight: 60 })).toEqual({ wallHeight: 60 });
   });
 });
 

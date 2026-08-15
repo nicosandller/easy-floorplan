@@ -1,7 +1,8 @@
 import { describe, it, expect } from "vitest";
-import { renderOpening } from "./render";
+import { renderOpening, renderSunlight } from "./render";
 import type { OpeningStyle } from "./render";
 import type { Opening } from "./types";
+import { nothing } from "lit";
 
 /**
  * Serialize a Lit SVGTemplateResult (and its nested templates/arrays) back into
@@ -24,6 +25,136 @@ function serialize(node: unknown): string {
 const base = { id: "x", x: 100, y: 60, length: 90, angle: 0 } as const;
 const svgOf = (o: Partial<Opening>, style: Partial<OpeningStyle> = {}) =>
   serialize(renderOpening({ ...base, ...o } as Opening, { color: "#000", ...style }));
+
+describe("renderSunlight — the markup, not just the geometry", () => {
+  // The geometry is covered in render.test.ts. This is here because none of
+  // that caught a `<rect …` opened in one lit template and closed in the next:
+  // templates are parsed one at a time, so the tag never closed, both masks
+  // lost their white ground, and the whole layer rendered invisible while
+  // every pure function still returned exactly the right numbers.
+  const wall = { id: "w", x1: 0, y1: 100, x2: 400, y2: 100 };
+  const win = {
+    id: "o",
+    type: "window",
+    x: 200,
+    y: 100,
+    length: 60,
+    angle: 0,
+  } as Opening;
+  const sun = { x: 0, y: 1 };
+  const walls = [wall];
+  const light = (openings: Opening[] = [win], walls = [wall]) =>
+    serialize(renderSunlight(walls, openings, 400, 400, "sun", { dir: sun, openAmount: () => 0, shutterOpen: () => undefined }));
+
+  it("gives both masks a ground to subtract from, in one piece", () => {
+    const s = light();
+    expect(s.match(/<mask /g)?.length).toBe(2);
+    // Three rects — a ground in each mask, and the shade itself — and every
+    // one of them closes. That count is the whole point: a `<rect` with no `>`
+    // is exactly the bug this describe exists for, and it leaves the masks
+    // black, which hides what they were meant to shape.
+    expect(s.match(/<rect[^>]*>/g)?.length).toBe(3);
+    // The white grounds specifically — the shade mask also paints its wall
+    // shadows white, which is a different thing wearing the same colour.
+    expect(s.match(/<rect[^>]*fill=#fff[^>]*>/g)?.length).toBe(2);
+  });
+
+  it("draws a patch per opening that admits light, and a shadow per wall piece", () => {
+    const s = light();
+    // The window splits its wall in two, so two shadow pieces — and they
+    // appear in both masks, while the one beam appears in the shade mask and
+    // again as the warm patch itself.
+    expect(s.match(/<polygon/g)?.length).toBe(6);
+    expect(s).toContain("fp-sunbeam");
+    // Two windows in the same wall: a patch each.
+    const two = light([win, { ...win, id: "o2", x: 320 } as Opening]);
+    expect(two.match(/fp-sunbeam/g)?.length).toBe(2);
+  });
+
+  it("stays away entirely when nothing lets light in", () => {
+    // A shut door is opaque: no patches, so no layer at all rather than a
+    // full-canvas shade sitting over the plan for nothing.
+    const shut = { ...win, type: "door" } as Opening;
+    expect(renderSunlight([wall], [shut], 400, 400, "sun", { dir: sun, openAmount: () => 0, shutterOpen: () => undefined })).toBe(nothing);
+    expect(renderSunlight([wall], [], 400, 400, "sun", { dir: sun, openAmount: () => 0, shutterOpen: () => undefined })).toBe(nothing);
+    // …but the same door, open, does let it in.
+    expect(renderSunlight([wall], [shut], 400, 400, "sun", { dir: sun, openAmount: () => 1, shutterOpen: () => undefined })).not.toBe(nothing);
+  });
+
+  it("an opening standing in a wall's shadow lets nothing in", () => {
+    // Every opening used to be a source in its own right, so an interior door
+    // on the dark side of the house lit the room beyond it out of nothing.
+    // Here a second wall sits upstream of the window, across the light.
+    const upstream = { id: "up", x1: 0, y1: 40, x2: 400, y2: 40 };
+    expect(renderSunlight([wall, upstream], [win], 400, 400, "sun", { dir: sun, openAmount: () => 0, shutterOpen: () => undefined })).toBe(nothing);
+    // Move that wall out of the way (downstream of the window) and the same
+    // window lights the room again.
+    const downstream = { ...upstream, y1: 300, y2: 300 };
+    const s = serialize(renderSunlight([wall, downstream], [win], 400, 400, "sun", { dir: sun, openAmount: () => 0, shutterOpen: () => undefined }));
+    expect(s).toContain("fp-sunbeam");
+  });
+
+  it("paints with the colours it is given", () => {
+    const s = serialize(
+      renderSunlight([wall], [win], 400, 400, "sun", { dir: sun, openAmount: () => 0, shutterOpen: () => undefined, light: "#ff0000", shade: "#0000ff" })
+    );
+    expect(s).toContain("fill:#ff0000");
+    expect(s).toContain("fill:#0000ff");
+    // …and refuses one that isn't a colour (#64), falling back rather than
+    // letting it into a style attribute.
+    const nasty = serialize(
+      renderSunlight([wall], [win], 400, 400, "sun", { dir: sun, openAmount: () => 0, shutterOpen: () => undefined, light: "red;position:fixed", shade: "#000" })
+    );
+    expect(nasty).not.toContain("position:fixed");
+  });
+
+  it("can draw the light without darkening anything else", () => {
+    const s = serialize(
+      renderSunlight([wall], [win], 400, 400, "sun", { dir: sun, openAmount: () => 0, shutterOpen: () => undefined, light: "#ff0", shade: null })
+    );
+    // The patches stay; the shade rect and the mask it needed are simply not
+    // built, rather than emitted at zero opacity.
+    expect(s).toContain("fp-sunbeam");
+    expect(s.match(/<mask /g)?.length).toBe(1);
+    expect(s.match(/<rect /g)?.length).toBe(1); // the surviving mask's ground
+  });
+
+  it("draws nothing once the sun is below the horizon", () => {
+    const night = renderSunlight(walls, [win], 400, 400, "sun", {
+      dir: sun,
+      openAmount: () => 0,
+      shutterOpen: () => undefined,
+      strength: 0,
+    });
+    // Nothing at all, rather than a layer at zero opacity that still costs
+    // every polygon on every render.
+    expect(night).toBe(nothing);
+    // A low sun still lights the room, only more faintly.
+    const dusk = serialize(
+      renderSunlight(walls, [win], 400, 400, "sun", {
+        dir: sun,
+        openAmount: () => 0,
+        shutterOpen: () => undefined,
+        strength: 0.25,
+      })
+    );
+    expect(dusk).toContain("fp-sunbeam");
+    const noon = serialize(
+      renderSunlight(walls, [win], 400, 400, "sun", {
+        dir: sun,
+        openAmount: () => 0,
+        shutterOpen: () => undefined,
+      })
+    );
+    const op = (s: string) => Number(s.match(/opacity=([0-9.]+)/)![1]);
+    expect(op(dusk)).toBeLessThan(op(noon));
+  });
+
+  it("takes no pointer events — the plan underneath stays pressable", () => {
+    // It spans the whole canvas; the lesson from #108.
+    expect(light()).toContain("fp-sunlight");
+  });
+});
 
 describe("renderOpening — orientation mirror", () => {
   it("wraps the body in an identity scale by default (unchanged output)", () => {

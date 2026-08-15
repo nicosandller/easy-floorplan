@@ -1,5 +1,5 @@
 import type { Area, AreaPoint, Floor, Wall } from "./types";
-import { polygonCentroid } from "./render";
+import { polygonCentroid, pointInPolygon } from "./render";
 
 /** Element kinds addressable by the editor's selection model. */
 export type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker" | "area";
@@ -138,23 +138,11 @@ export function nearestAreaSnapPoint(
   return nearestOf([...corners, ...vertices], rawX, rawY, maxDist);
 }
 
-/**
- * Ray-casting point-in-polygon test. Points exactly on an edge may resolve
- * either way (not a documented guarantee) — the caller only needs an
- * approximate "did this land inside the room" answer, not exact edge
- * semantics.
- */
-export function pointInPolygon(points: readonly AreaPoint[], x: number, y: number): boolean {
-  let inside = false;
-  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-    const pi = points[i]!;
-    const pj = points[j]!;
-    const intersects =
-      pi.y > y !== pj.y > y && x < ((pj.x - pi.x) * (y - pi.y)) / (pj.y - pi.y) + pi.x;
-    if (intersects) inside = !inside;
-  }
-  return inside;
-}
+// Lives in render.ts now, because the sunlight needs it too (to ask whether
+// an opening stands in a wall's shadow) and render.ts cannot import from
+// here — this module already imports from it. Re-exported so every existing
+// caller, and the tests, keep working unchanged.
+export { pointInPolygon };
 
 /**
  * The topmost (last-drawn) Area whose polygon contains `(x, y)`, or undefined

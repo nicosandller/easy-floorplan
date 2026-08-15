@@ -2653,6 +2653,387 @@ export function sunBrightness(
   return lo + (hi - lo) * eased;
 }
 
+// ---- where the light comes from ------------------------------------------
+
+/** Where the sun sits when nothing says otherwise — south-east, a low morning. */
+export const DEFAULT_SUN_BEARING = 135;
+
+/**
+ * Elevation at which the light is at full strength. Between the horizon and
+ * here it fades in, so sunrise and sunset are a ramp rather than a switch —
+ * and a sun one degree up does not throw the same light as a midday one.
+ */
+export const SUN_ELEVATION_FULL = 12;
+
+/**
+ * How much sunlight there is, 0..1, from `sun.sun`'s **elevation**.
+ *
+ * The azimuth says where the light comes from; only the elevation says
+ * whether there is any. Without it a plan kept its beams all night, pointing
+ * at a sun that had set hours ago — the picture was of a sun that never moved
+ * below the horizon, only around it.
+ *
+ * Below the horizon: nothing. It reads `sun.sun` whether or not the bearing
+ * was pinned, because pinning an angle says *where* the sun is, not
+ * *whether* it is up.
+ *
+ * A missing or unreadable elevation returns full strength, matching
+ * {@link sunBrightness}: an outage should leave the plan lit and legible, not
+ * stuck in a night that never ends. Same allowlist, for the same reason —
+ * Number(null), Number("") and Number(false) are all 0, and 0 here means
+ * "exactly at the horizon", which would read as a permanent dusk.
+ */
+export function sunlightStrength(elevation: unknown): number {
+  const usable =
+    typeof elevation === "number" || (typeof elevation === "string" && elevation.trim() !== "");
+  if (!usable) return 1;
+  const e = typeof elevation === "number" ? elevation : Number(elevation);
+  if (!Number.isFinite(e)) return 1;
+  if (e <= 0) return 0;
+  if (e >= SUN_ELEVATION_FULL) return 1;
+  const t = e / SUN_ELEVATION_FULL;
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * A compass bearing as a direction vector in **plan** space, given where north
+ * is on this plan.
+ *
+ * Bearings are clockwise from north (0 = N, 90 = E), the convention Home
+ * Assistant's `sun.sun` azimuth already uses. `north` is the plan's own
+ * orientation, also clockwise, so a plan drawn with north to the right sets
+ * `north: 90` and every bearing turns with it. Without that, a sun angle would
+ * be a statement about the drawing rather than about the house, and the same
+ * house drawn sideways would be lit from the wrong side.
+ */
+export function planDirection(bearing: number, north = 0): { x: number; y: number } {
+  const t = ((bearing + north) * Math.PI) / 180;
+  // North is up the canvas (0, −1) before the plan's own rotation.
+  return { x: Math.sin(t), y: -Math.cos(t) };
+}
+
+/**
+ * The sun's compass bearing for the relief: an explicit `sunBearing` when the
+ * plan states one, else `sun.sun`'s live azimuth, else {@link
+ * DEFAULT_SUN_BEARING}.
+ *
+ * Config first, deliberately. A live sun is the better picture — shadows swing
+ * through the day, which is most of the charm — but it is also a picture that
+ * changes while you are trying to lay a plan out, and at night there is no
+ * sensible answer at all. Stating an angle is how you get a plan that looks
+ * the same every time you open it.
+ */
+export function sunBearingOf(cfg: Pick<FloorplanCardConfig, "sunBearing">, azimuth?: unknown): number {
+  if (sunIsPinned(cfg)) return cfg.sunBearing as number;
+  const live = typeof azimuth === "number" ? azimuth : Number(azimuth);
+  return Number.isFinite(live) ? live : DEFAULT_SUN_BEARING;
+}
+
+/** Whether the plan states its own sun angle rather than following the real one. */
+export function sunIsPinned(cfg: Pick<FloorplanCardConfig, "sunBearing">): boolean {
+  return typeof cfg.sunBearing === "number" && Number.isFinite(cfg.sunBearing);
+}
+
+/**
+ * How strong the light is for this plan: the sky's answer while the plan
+ * follows the real sun, and **always full** once it pins its own angle.
+ *
+ * A stated bearing is a decision about the picture rather than a reading of
+ * the sky — it says where the light goes and, by saying so, that it stays.
+ * Fading such a plan out at dusk would half-follow a sun it had already
+ * declined to follow, and leave a plan that is simply dark all evening with
+ * no control on screen that explains why.
+ */
+export function sunlightStrengthOf(
+  cfg: Pick<FloorplanCardConfig, "sunBearing">,
+  elevation: unknown,
+): number {
+  return sunIsPinned(cfg) ? 1 : sunlightStrength(elevation);
+}
+
+// ---- sunlight through the openings ----------------------------------------
+//
+// The sun is far enough away that its rays arrive parallel, which is what
+// makes this exact rather than an impression: a wall's shadow is precisely
+// that wall translated along the light, and the patch a window admits is
+// precisely its gap translated the same way. No ray casting, no per-pixel
+// work — two polygon families and a mask.
+
+/** How far light reaches into the plan, as a fraction of its shorter side. */
+export const SUN_REACH = 0.55;
+/** How dark the plan goes where no sunlight lands. */
+export const SUN_SHADE = 0.16;
+/** How strongly the sunlit patches are tinted. */
+export const SUN_PATCH_OPACITY = 0.3;
+/**
+ * Default colours: the same warm white a lamp with no colour of its own casts
+ * (issue #6), and a plain black for the shade so it darkens whatever is under
+ * it rather than tinting it. Both skinnable, both overridable per plan.
+ */
+export const SUN_LIGHT_COLOR = "var(--fp-skin-sunlight, #ffd9a0)";
+export const SUN_SHADE_COLOR = "var(--fp-skin-sunshade, #000)";
+
+/**
+ * Whether an opening lets sunlight in.
+ *
+ * A window is glass: it admits light shut or open, which is the whole reason
+ * this cannot reuse the lamp rule ({@link wallsLightPassesThrough}'s
+ * `openAmount`) unchanged — that one asks whether there is a *hole*, and a
+ * closed window is not a hole. A door is opaque, so it admits only as far as
+ * it is open.
+ */
+export function openingAdmitsSun(
+  o: Pick<Opening, "type" | "glazed">,
+  amount: number,
+  /**
+   * How far the external shutter is open, or `undefined` when none is bound.
+   * A shutter that is fully down is the one thing that stops light regardless
+   * of everything else — that is what a shutter is for, and a window behind a
+   * closed one is as dark as a wall.
+   */
+  shutter?: number,
+): boolean {
+  if (shutter !== undefined && shutter <= 0) return false;
+  return openingIsGlazed(o) || amount > 0;
+}
+
+/**
+ * Whether an opening is glass. A window is, by definition; a door is not,
+ * unless it says so — which patio and French doors do. They are drawn as
+ * doors because that is how they swing, and treating them as opaque left the
+ * sunniest side of a house dark: every one of them is a wall of glass.
+ */
+export function openingIsGlazed(o: Pick<Opening, "type" | "glazed">): boolean {
+  return o.glazed ?? o.type === "window";
+}
+
+/** The two ends of an opening's gap, in plan coordinates. */
+function openingEnds(o: Opening): [AreaPoint, AreaPoint] {
+  const rad = (o.angle * Math.PI) / 180;
+  const hx = (Math.cos(rad) * o.length) / 2;
+  const hy = (Math.sin(rad) * o.length) / 2;
+  return [
+    { x: o.x - hx, y: o.y - hy },
+    { x: o.x + hx, y: o.y + hy },
+  ];
+}
+
+/**
+ * Ray-casting point-in-polygon test. Points exactly on an edge may resolve
+ * either way (not a documented guarantee) — every caller only needs an
+ * approximate "did this land inside" answer, not exact edge semantics.
+ *
+ * Here rather than in `editor-geometry`, which is where it started and which
+ * still re-exports it: the sunlight has to ask whether an opening stands in a
+ * wall's shadow, and that module imports from this one.
+ */
+export function pointInPolygon(points: readonly AreaPoint[], x: number, y: number): boolean {
+  let inside = false;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const pi = points[i]!;
+    const pj = points[j]!;
+    const intersects =
+      pi.y > y !== pj.y > y && x < ((pj.x - pi.x) * (y - pi.y)) / (pj.y - pi.y) + pi.x;
+    if (intersects) inside = !inside;
+  }
+  return inside;
+}
+
+/**
+ * Which way the light **travels**, as a plan-space vector.
+ *
+ * A bearing says where the sun *is*; the light goes the other way, so this is
+ * the far side of the compass from it. Getting that backwards is not a subtle
+ * error — it lights the house from precisely the wrong side, and it did: with
+ * the sun in the south-west, the beams came in through the north-east windows.
+ */
+export function sunLightDirection(
+  cfg: Pick<FloorplanCardConfig, "north" | "sunBearing">,
+  azimuth?: unknown,
+): { x: number; y: number } {
+  return planDirection(sunBearingOf(cfg, azimuth) + 180, cfg.north ?? 0);
+}
+
+/** A segment swept along the light: the shape both a beam and a shadow are. */
+function sweep(a: AreaPoint, b: AreaPoint, dir: { x: number; y: number }, reach: number): AreaPoint[] {
+  return [
+    a,
+    b,
+    { x: b.x + dir.x * reach, y: b.y + dir.y * reach },
+    { x: a.x + dir.x * reach, y: a.y + dir.y * reach },
+  ];
+}
+
+/**
+ * The patch of light an opening admits: its gap, swept along the sun.
+ *
+ * Swept in one direction only — the way the light travels — so an opening on
+ * the sunlit side of the house throws its patch into the room, and one on the
+ * shaded side throws it out of the house, where it lands on ground that is lit
+ * anyway. That asymmetry is the sun's, not an approximation of it.
+ */
+export function sunBeamPolygon(
+  o: Opening,
+  dir: { x: number; y: number },
+  reach: number,
+): AreaPoint[] {
+  const [a, b] = openingEnds(o);
+  return sweep(a, b, dir, reach);
+}
+
+/**
+ * The shadow a wall casts: the wall, swept along the sun. Exact for parallel
+ * light, which is why the beams can simply be cut by these rather than traced.
+ *
+ * Feed it the walls {@link wallsLightPassesThrough} hands back rather than the
+ * raw ones, and an open doorway stops casting a shadow across the room behind
+ * it — the same treatment a lamp already gets (#143).
+ */
+export function sunShadowPolygon(
+  w: Wall,
+  dir: { x: number; y: number },
+  reach: number,
+): AreaPoint[] {
+  return sweep({ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }, dir, reach);
+}
+
+/** `points` for an SVG polygon. */
+function polyPoints(pts: readonly AreaPoint[]): string {
+  return pts.map((p) => `${p.x},${p.y}`).join(" ");
+}
+
+/**
+ * Sunlight falling through the windows and doors (and the shade everywhere it
+ * does not reach).
+ *
+ * Two layers over one geometry:
+ * - a **shade** across the plan, punched through wherever light lands, so the
+ *   rooms the sun never enters read as the darker ones;
+ * - the **patches** themselves, tinted warm.
+ *
+ * Both are cut by the wall shadows, so a wall standing in the light shades
+ * what is behind it. The wall band is drawn thick, so the shadow polygons are
+ * widened to match — otherwise light would leak along every wall's edge.
+ *
+ * `pointer-events: none` on the group is not optional: this spans the canvas,
+ * and without it every tappable opening underneath stops answering. Same
+ * lesson as the sun-dim rect (#108).
+ */
+/** Everything the sunlight layer needs that isn't the plan's own geometry. */
+export interface SunlightOptions {
+  /** Which way the light travels — see {@link sunLightDirection}. */
+  dir: { x: number; y: number };
+  openAmount: (o: Opening) => number;
+  /** How far each opening's shutter is open, or undefined where none is bound. */
+  shutterOpen: (o: Opening) => number | undefined;
+  /**
+   * How strong the light is, 0..1 — see {@link sunlightStrength}. At 0 there
+   * is no layer at all rather than a transparent one.
+   */
+  strength?: number;
+  light?: string;
+  /**
+   * `null` draws the light without darkening anything else — the patches
+   * alone, on a plan that stays as bright as it was. The shade is the half
+   * that changes how the *whole* plan reads, so it is the half worth being
+   * able to decline.
+   */
+  shade?: string | null;
+}
+
+export function renderSunlight(
+  walls: readonly Wall[],
+  openings: readonly Opening[],
+  width: number,
+  height: number,
+  id: string,
+  opts: SunlightOptions,
+): SVGTemplateResult | typeof nothing {
+  const { dir, openAmount, shutterOpen, strength = 1 } = opts;
+  const paint = {
+    light: opts.light ?? SUN_LIGHT_COLOR,
+    // `?? ` would swallow the explicit null that means "no shade at all".
+    shade: opts.shade === undefined ? SUN_SHADE_COLOR : opts.shade,
+  };
+  // Below the horizon there is nothing to let in, so there is nothing to draw
+  // — not a layer at zero opacity, which would still cost every polygon.
+  if (strength <= 0) return nothing;
+  const reach = Math.min(width, height) * SUN_REACH;
+  // Doorways already subtracted, so an open door casts no shadow across the
+  // room behind it. Windows too — glass casts none whatever its sash is doing.
+  const admits = (o: Opening) => openingAdmitsSun(o, openAmount(o), shutterOpen(o));
+  const blockers = wallsLightPassesThrough(walls, openings, (o) => (admits(o) ? 1 : 0));
+  const shadowPolys = blockers.map((w) => sunShadowPolygon(w, dir, reach));
+  // An opening only lets light in if light reaches it. Without this every
+  // opening was a source in its own right: an interior door on the dark side
+  // of the house lit the room beyond it out of nothing, and a window on the
+  // shaded façade did the same. Standing in a wall's shadow is exactly what
+  // "no light reaches it" means, and the shadows are already to hand.
+  const lit = openings.filter(
+    (o) => admits(o) && !shadowPolys.some((sh) => pointInPolygon(sh, o.x, o.y))
+  );
+  if (!lit.length) return nothing;
+  const beams = lit.map((o) => polyPoints(sunBeamPolygon(o, dir, reach)));
+  const shadows = shadowPolys.map(polyPoints);
+  const pad = WALL_THICKNESS;
+  const shadeId = `${id}-shade`;
+  const shadowId = `${id}-shadow`;
+  const x = -pad;
+  const y = -pad;
+  const w = width + pad * 2;
+  const h = height + pad * 2;
+  // A whole tag per call. Emitting a half-open `<rect …` from one template and
+  // its remaining attributes from another does not concatenate: lit parses
+  // every template on its own, so the tag never closes and the rest lands as
+  // stray text — which is how both masks came to have no white ground at all,
+  // and so hid the very layers they were meant to shape.
+  const cover = (fill: string, extra: SVGTemplateResult | typeof nothing = nothing) =>
+    svg`<rect x=${x} y=${y} width=${w} height=${h} fill=${fill}>${extra}</rect>`;
+  // Widened by a wall's own width: the polygon starts at the centre line, and
+  // without this the light leaks along both edges of every wall it passes.
+  const shadowPoly = (p: string, paint: string) =>
+    svg`<polygon points=${p} fill=${paint} stroke=${paint} stroke-width=${WALL_THICKNESS} />`;
+  // Only built when it is going to be used: the shade mask is the one that
+  // needs every beam *and* every shadow, so declining the shade halves the
+  // shapes this emits rather than hiding them behind an opacity of zero.
+  const shade =
+    paint.shade === null
+      ? nothing
+      : svg`
+      <!-- Where the shade shows: everywhere, minus the patches of light, plus
+           back wherever a wall stands in one. The order is the whole logic. -->
+      <mask id=${shadeId} maskUnits="userSpaceOnUse" x=${x} y=${y} width=${w} height=${h}>
+        ${cover("#fff")}
+        ${beams.map((p) => svg`<polygon points=${p} fill="#000" />`)}
+        ${shadows.map((p) => shadowPoly(p, "#fff"))}
+      </mask>`;
+  return svg`
+    <defs>
+      ${shade}
+      <!-- The wall shadows again, for the warm patches themselves. -->
+      <mask id=${shadowId} maskUnits="userSpaceOnUse" x=${x} y=${y} width=${w} height=${h}>
+        ${cover("#fff")}
+        ${shadows.map((p) => shadowPoly(p, "#000"))}
+      </mask>
+    </defs>
+    <g class="fp-sunlight">
+      ${
+        paint.shade === null
+          ? nothing
+          : svg`<rect x=${x} y=${y} width=${w} height=${h}
+            style=${`fill:${cssColorOr(paint.shade, SUN_SHADE_COLOR)};`}
+            opacity=${SUN_SHADE * strength} mask=${`url(#${shadeId})`} />`
+      }
+      <g mask=${`url(#${shadowId})`} opacity=${SUN_PATCH_OPACITY * strength}>
+        ${beams.map(
+          (p) =>
+            svg`<polygon class="fp-sunbeam" points=${p}
+                        style=${`fill:${cssColorOr(paint.light, SUN_LIGHT_COLOR)};`} />`
+        )}
+      </g>
+    </g>`;
+}
+
 /**
  * `preserveAspectRatio` for a floor's background image (issue #86).
  *

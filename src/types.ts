@@ -129,6 +129,13 @@ export interface Opening {
    * hinged shutter (persiana). `entity` keeps driving the opening itself, so
    * an open window behind a closed shutter renders both truthfully.
    */
+  /**
+   * Lets sunlight through even while shut. Windows are glass by definition and
+   * default to true; a door defaults to false — but a patio or French door is
+   * a door that happens to be glazed, and on a plan it is drawn as a door
+   * because that is how it swings. Only the sunlight reads this.
+   */
+  glazed?: boolean;
   shutterEntity?: string;
   /**
    * How that shutter is drawn (issue #74):
@@ -1017,6 +1024,50 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   sunBrightnessMin?: number;
   /** Plan brightness in full daylight, 0-1. Default {@link DEFAULT_SUN_MAX}. */
   sunBrightnessMax?: number;
+  /**
+   * Let the sun in (issue: sunlight through openings). Light arrives from
+   * {@link sunBearing}, enters through every window and every open door, and
+   * is stopped by the walls — so the rooms it never reaches are drawn a shade
+   * darker, and the patches it lands on are tinted warm.
+   *
+   * Needs {@link north} to mean anything about the actual house.
+   */
+  sunlight?: boolean;
+  /**
+   * Where north is on this plan, in degrees clockwise from the top of the
+   * canvas. Default 0 (north is up).
+   *
+   * What makes a sun angle a statement about the *house*: without it, "the sun
+   * is in the south-east" would only mean "toward the bottom-left of the
+   * drawing", and the same house traced at a different angle would be lit from
+   * the wrong side.
+   */
+  north?: number;
+  /**
+   * The sun's compass bearing for the shadows (0 = north, 90 = east). Absent,
+   * the plan follows `sun.sun`'s live azimuth, so the shadows swing through
+   * the day; set it to pin the light where you want it.
+   */
+  sunBearing?: number;
+  /**
+   * Colour of the light the openings let in. Defaults to the same warm white
+   * a lamp with no colour of its own casts (issue #6). Passes through the
+   * style-injection allowlist (#64), like every other colour here.
+   */
+  sunlightColor?: string;
+  /**
+   * Darken everywhere the light does not reach (default true). Off leaves the
+   * plan as bright as it was and draws the patches alone — the shade is the
+   * half that changes how the *whole* plan reads, so it is the half worth
+   * being able to decline.
+   */
+  sunShade?: boolean;
+  /**
+   * Colour of the shade everywhere the light does not reach. Black by
+   * default, so it darkens what is under it rather than tinting it — a blue
+   * here reads as cold north light, a warm grey as dusk.
+   */
+  sunShadeColor?: string;
   /**
    * What a device does when you press it (issue #134). Tapping used to change
    * nothing on screen until the entity itself came back — which on a cover or

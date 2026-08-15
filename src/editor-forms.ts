@@ -53,8 +53,10 @@ import {
   pressEffectOf,
   sliderStyleOf,
   shutterStyleOf,
+  DEFAULT_SUN_BEARING,
   openingSash,
   defaultSash,
+  openingIsGlazed,
 } from "./render";
 import { defaultItemAction } from "./actions";
 import { DEFAULT_SKIN, SKINS, findSkin, MAX_SKIN_WALL_WIDTH } from "./skins";
@@ -206,6 +208,17 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: door
         ? dropdown(opt("single", "Single (one leaf)"), opt("double", "Double (two leaves)"))
         : dropdown(opt("double", "Double (two leaves)"), opt("single", "Single sash")),
+    });
+  }
+  // Glass, for a door. A window never needs asking, and the only thing that
+  // reads it is the sunlight — a patio door left opaque keeps the sunniest
+  // side of a house dark.
+  if (o.type === "door") {
+    fields.push({
+      name: "glazed",
+      label: "Glazed",
+      helper: "Lets sunlight through even when shut — a patio or French door",
+      selector: { boolean: {} },
     });
   }
   // Hinge applies to anything with ONE hinged leaf. A double is hinged at both
@@ -380,6 +393,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       sash: openingSash(o),
       entity: o.entity ?? "",
       secondaryEntity: o.secondaryEntity ?? "",
+      glazed: openingIsGlazed(o),
       shutterEntity: o.shutterEntity ?? "",
       shutterStyle: shutterStyleOf(o),
       shutterSide: o.shutterFlipV ? "near" : "far",
@@ -413,6 +427,10 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
             out.showShutterIcon = undefined;
             out.shutterIcon = undefined;
           }
+        } else if (k === "glazed") {
+          // A window is glass whatever this says, so only a door's answer is
+          // worth keeping — and only when it differs from its type's default.
+          out.glazed = o.type === "door" && v ? true : undefined;
         } else if (k === "shutterSide") out.shutterFlipV = v === "near" || undefined;
         else if (k === "shutterInvert") out.shutterInvert = v || undefined;
         // The opening is the default, so it stays out of the YAML.
@@ -1211,6 +1229,87 @@ export function projectSunForm(c: FloorplanCardConfig): FormSpec {
       "sunDimming" in p && !p.sunDimming
         ? { ...p, sunDimming: undefined, sunBrightnessMin: undefined, sunBrightnessMax: undefined }
         : p,
+  };
+}
+
+/**
+ * Sunlight: whether it comes in, from where, and what it looks like. Its own
+ * form, like the skin and the sun dimming, because it is a plan-wide drawing
+ * convention rather than a property of anything on the canvas.
+ */
+export function projectReliefForm(c: FloorplanCardConfig): FormSpec {
+  const fields: FormField[] = [
+    {
+      name: "sunlight",
+      label: "Let the sun in",
+      helper:
+        "Light through every window and open door; the rooms it never reaches go a shade darker",
+      selector: { boolean: {} },
+    },
+  ];
+  if (c.sunlight) {
+    fields.push(
+      {
+        name: "north",
+        label: "North",
+        helper: "Which way north points on this plan, so the sun angle describes the house",
+        selector: {
+          number: { min: 0, max: 359, step: 1, mode: "slider", unit_of_measurement: "°" },
+        },
+      },
+      {
+        name: "sunShade",
+        label: "Shade the rest",
+        helper: "Darkens everywhere the light does not reach. Off shows the patches alone",
+        selector: { boolean: {} },
+      },
+      {
+        name: "sunFollows",
+        label: "Follow the real sun",
+        helper: "Swings through the day and goes out at night. Off keeps the light where you put it, always on",
+        selector: { boolean: {} },
+      }
+    );
+    // Only worth asking once the light is pinned; following the sun means the
+    // angle is not ours to choose.
+    if (typeof c.sunBearing === "number") {
+      fields.push({
+        name: "sunBearing",
+        label: "Sun from",
+        helper: "Compass bearing of the light: 0 = north, 90 = east, 180 = south",
+        selector: {
+          number: { min: 0, max: 359, step: 5, mode: "slider", unit_of_measurement: "°" },
+        },
+      });
+    }
+  }
+  return {
+    fields,
+    data: {
+      sunlight: c.sunlight ?? false,
+      sunShade: c.sunShade ?? true,
+      north: c.north ?? 0,
+      sunFollows: typeof c.sunBearing !== "number",
+      sunBearing: c.sunBearing ?? DEFAULT_SUN_BEARING,
+    },
+    toPatch: (p) => {
+      const out = { ...p };
+      // Nothing left to aim, so the angles go with it — otherwise they would
+      // sit in the YAML meaning nothing, and come back stale on re-enable.
+      if ("sunlight" in out && !out.sunlight) {
+        return { ...out, sunlight: undefined, north: undefined, sunBearing: undefined };
+      }
+      // "Follow the sun" is the *absence* of a stated bearing (issue #113's
+      // rule: the live reading wins only when nothing was decided).
+      if ("sunFollows" in out) {
+        out.sunBearing = out.sunFollows ? undefined : (c.sunBearing ?? DEFAULT_SUN_BEARING);
+        delete out.sunFollows;
+      }
+      // The defaults stay out of the YAML — shading is on unless declined.
+      if ("north" in out && !out.north) out.north = undefined;
+      if ("sunShade" in out && out.sunShade) out.sunShade = undefined;
+      return out;
+    },
   };
 }
 
