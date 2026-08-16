@@ -1010,8 +1010,10 @@ thing. The card is loaded the way a user's instance loads it, `hass` arrives ove
 real websocket, and the house is busy enough that there is real recorder history to
 scrub within a couple of minutes of starting it.
 
-Needs Docker. Any runtime works — Docker Desktop, or `brew install colima docker
-docker-compose && colima start` for a CLI-only one.
+Needs Docker, with **Compose v2** — the scripts call `docker compose` (a subcommand), not
+the older standalone `docker-compose` binary. Docker Desktop ships it; for a CLI-only
+setup, `brew install colima docker docker-compose && colima start`. Check with `docker
+compose version`.
 
 ```bash
 npm run ha

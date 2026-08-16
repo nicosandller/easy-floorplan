@@ -17,7 +17,11 @@ services:
     image: ghcr.io/home-assistant/home-assistant:stable
     restart: unless-stopped
     ports:
-      - "8123:8123"
+      # Bound to the loopback address on purpose. A plain "8123:8123" publishes
+      # on every host interface, which would put an instance carrying whatever
+      # password you typed at onboarding on the LAN -- and the docs promise the
+      # opposite. Change it only if you mean to reach this from another device.
+      - "127.0.0.1:8123:8123"
     environment:
       # Anything the container writes to /config (the recorder db, .storage,
       # logs) lands in docker/config on the host, so state survives a restart

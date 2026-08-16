@@ -9,7 +9,7 @@
     "dev": "vite build --watch",
     "ha": "npm run build && docker compose -f docker/docker-compose.yml up",
     "ha:down": "docker compose -f docker/docker-compose.yml down",
-    "ha:reset": "docker compose -f docker/docker-compose.yml down -v && rm -rf docker/config/.storage docker/config/home-assistant_v2.db* docker/config/home-assistant.log*",
+    "ha:reset": "docker compose -f docker/docker-compose.yml down -v && node docker/reset.mjs",
     "ha:logs": "docker compose -f docker/docker-compose.yml logs -f homeassistant",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"

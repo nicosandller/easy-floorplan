@@ -6,6 +6,10 @@ thing rather than a mock.
 
 ## Running it
 
+Needs Docker with **Compose v2**: the scripts call `docker compose` as a
+subcommand, not the older standalone `docker-compose` binary. `docker compose
+version` tells you which you have.
+
 ```bash
 npm run ha
 ```
@@ -15,8 +19,9 @@ That builds the card and starts the container. Home Assistant is at
 
 The first boot takes a minute or two — Home Assistant is unpacking and setting
 itself up — and ends at an onboarding screen. Create an account; any username
-and password will do, and this instance is not reachable from outside your
-machine. It is a one-time step: the account lands in `docker/config/.storage`,
+and password will do. The port is published on `127.0.0.1` only (see
+`docker-compose.yml`), so whatever you type there is not exposed to the rest of
+your network. It is a one-time step: the account lands in `docker/config/.storage`,
 which is gitignored but persists across restarts, so every later `npm run ha`
 goes straight to the dashboard.
 
@@ -59,7 +64,10 @@ npm run ha:reset
 
 `ha:reset` deletes the account, the dashboards you made in the UI and all
 recorded history, putting you back at onboarding. Reach for it when the
-instance gets into a state you do not want to reason about.
+instance gets into a state you do not want to reason about. It works by keeping
+the four yaml files this repo owns and removing everything else under
+`docker/config` ([`reset.mjs`](reset.mjs)), so it stays a full reset even as
+Home Assistant adds new things to write there.
 
 ## The sample data
 
