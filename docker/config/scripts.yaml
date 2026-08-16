@@ -1,0 +1,38 @@
+# Things worth doing on demand rather than on a timer.
+
+burst_activity:
+  alias: "Sample data: burst of activity"
+  description: >-
+    Thirty state changes as fast as the recorder will take them. For when you
+    want a dense couple of seconds to scrub through, or a busy timeline to
+    check that overlapping events are still individually reachable, without
+    waiting for the generators to produce one.
+  sequence:
+    - repeat:
+        count: 30
+        sequence:
+          - service: light.toggle
+            target:
+              entity_id: >-
+                {{ ['light.bed_light', 'light.ceiling_lights',
+                    'light.kitchen_lights', 'light.office_rgbw_lights'] | random }}
+          - delay:
+              milliseconds: 200
+  mode: single
+
+all_lights_off:
+  alias: "Sample data: everything off"
+  description: >-
+    A known starting state. Turns the generator off first, otherwise it
+    undoes this within ten seconds.
+  sequence:
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.history_generator
+    - service: light.turn_off
+      target:
+        entity_id: all
+    - service: cover.close_cover
+      target:
+        entity_id: all
+  mode: single

@@ -1,0 +1,38 @@
+# A real Home Assistant to develop the card against.
+#
+#   npm run build            # or `npm run watch` to keep rebuilding
+#   docker compose -f docker/docker-compose.yml up
+#
+# then http://localhost:8123.
+#
+# The point of this over the vite harness in dev/ is that nothing here is
+# mocked: the recorder really records, `hass` really arrives over the
+# websocket, and the card is really loaded as a Lovelace resource. Anything
+# that only shows up against a live instance -- history request shapes,
+# entities that go `unavailable`, attribute drift between HA versions --
+# shows up here and cannot show up in dev/.
+services:
+  homeassistant:
+    container_name: easy-floorplan-ha
+    image: ghcr.io/home-assistant/home-assistant:stable
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+    environment:
+      # Anything the container writes to /config (the recorder db, .storage,
+      # logs) lands in docker/config on the host, so state survives a restart
+      # and is inspectable from the outside.
+      - TZ=UTC
+    volumes:
+      - ./config:/config
+      # The built card, served at /local/easy-floorplan-card.js. Read-only
+      # because the build writes it and HA has no business touching it: with
+      # `npm run watch` running, a save rebuilds dist/ and the file under
+      # /config/www changes underneath HA the same instant.
+      - ../dist:/config/www:ro
+    # Home Assistant normally wants host networking so discovery (mDNS, SSDP,
+    # DHCP) can see the LAN. This instance has nothing to discover, and host
+    # networking does not behave on macOS the way it does on Linux, so it
+    # stays on a bridge and just publishes 8123. Discovery will find nothing
+    # and log about it; that is expected here.
+    network_mode: bridge

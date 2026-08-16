@@ -1,0 +1,198 @@
+# Home Assistant config for the easy-floorplan development instance.
+#
+# Everything here exists to make the card testable against a real HA. Nothing
+# here is a recommendation for a real home: the recorder settings in
+# particular are tuned for "I just clicked something, is it in history yet"
+# rather than for disk life.
+
+default_config:
+
+homeassistant:
+  name: Floorplan Dev
+  # Somewhere with an unambiguous day/night cycle, so `sunDimming` and the
+  # `sun.sun` reads in render.ts have something real to follow.
+  latitude: 37.7749
+  longitude: -122.4194
+  elevation: 16
+  unit_system: metric
+  currency: USD
+  country: US
+  time_zone: UTC
+
+# Load the built card on every frontend page.
+#
+# Real users register the card under Settings > Dashboards > Resources (the
+# README's install steps), which writes .storage/lovelace_resources. That
+# file is deliberately gitignored
+# here, so a fresh clone would start with no card loaded and a confusing empty
+# dashboard. extra_module_url reaches the same frontend loader from YAML, so
+# the card is present the first time the container boots.
+frontend:
+  extra_module_url:
+    - /local/easy-floorplan-card.js
+
+lovelace:
+  # The default Overview dashboard stays in storage mode, which is what makes
+  # the card's *visual editor* reachable: add a manual card there, pick
+  # easy-floorplan, and src/editor.ts is what opens. A yaml-mode dashboard
+  # cannot do that -- the UI refuses to edit it -- which is why the sample
+  # plan below is a second dashboard rather than the only one.
+  mode: storage
+  dashboards:
+    floorplan-demo:
+      mode: yaml
+      filename: floorplan-demo.yaml
+      title: Floorplan Demo
+      icon: mdi:floor-plan
+      show_in_sidebar: true
+
+recorder:
+  # One second, because the loop here is "click a light, scrub the timeline
+  # back over it". The default 5s commit interval is long enough that a change
+  # you just made is missing from the history you immediately ask for, which
+  # reads as a card bug and is not one.
+  commit_interval: 1
+  purge_keep_days: 2
+
+logger:
+  default: warning
+  logs:
+    # The card logs through the browser, not here, but a 500 out of the
+    # history API is worth seeing in `docker compose logs`.
+    homeassistant.components.recorder: info
+    homeassistant.components.history: info
+
+# The demo integration, for entities the card can actually show something
+# with: lights carrying brightness and rgb_color, covers carrying
+# current_position, device trackers that move. Hand-rolled template entities
+# can't easily reproduce those attributes, and those attributes are most of
+# what render.ts reads.
+#
+# Entity ids come from the integration, so they can drift between HA
+# versions. If the demo dashboard shows "Entity not available", open
+# Developer Tools > States and fix the ids in floorplan-demo.yaml -- they are
+# listed at the top of that file.
+demo:
+
+# Sensor readings the demo integration doesn't provide in the shape the card
+# wants -- a paired temperature/humidity badge, a door contact, a soil
+# moisture for the plant symbol. Backed by input helpers so the generator
+# automations (and you, from Developer Tools) can drive them.
+input_boolean:
+  front_door:
+    name: Front door contact
+    icon: mdi:door
+  history_generator:
+    name: History generator
+    icon: mdi:play-circle
+    # Started by an automation on HA boot, so a fresh container begins
+    # accumulating replayable history without anyone asking it to. Turn it off
+    # to freeze the instance and read a still plan.
+  living_presence:
+    name: Living presence
+    icon: mdi:motion-sensor
+    initial: true
+  flaky_sensor_online:
+    name: Flaky sensor online
+    icon: mdi:lan-disconnect
+    initial: true
+    # Drives the availability template on sensor.flaky_sensor below. Turning
+    # this off makes that sensor genuinely `unavailable` -- not "off", not
+    # empty -- which is the state the card has to survive and the one a fresh
+    # instance otherwise never produces.
+
+input_number:
+  living_temperature:
+    name: Living area temperature
+    min: 14
+    max: 28
+    step: 0.01
+    initial: 17.9
+    mode: box
+  living_humidity:
+    name: Living area humidity
+    min: 20
+    max: 80
+    step: 0.01
+    initial: 49.3
+    mode: box
+  ficus_moisture:
+    name: Ficus soil moisture
+    min: 0
+    max: 100
+    step: 0.1
+    initial: 72
+    mode: box
+  # The two distance readings a tracker maps onto its rectangle. Centimetres
+  # from the near edge, 0-500 across a 5m room.
+  tracker_distance_x:
+    name: Tracker distance X
+    min: 0
+    max: 500
+    step: 1
+    initial: 250
+    mode: box
+  tracker_distance_y:
+    name: Tracker distance Y
+    min: 0
+    max: 500
+    step: 1
+    initial: 250
+    mode: box
+
+template:
+  - sensor:
+      # Stored at two decimals and displayed at one, which is the exact case
+      # the dev harness calls out: the badge should read "17.9 °C · 49.3%",
+      # not the raw stored value.
+      - name: Living area temperature
+        unique_id: living_area_temperature
+        unit_of_measurement: "°C"
+        device_class: temperature
+        state_class: measurement
+        state: "{{ states('input_number.living_temperature') | float(0) | round(2) }}"
+      - name: Living area humidity
+        unique_id: living_area_humidity
+        unit_of_measurement: "%"
+        device_class: humidity
+        state_class: measurement
+        state: "{{ states('input_number.living_humidity') | float(0) | round(2) }}"
+      - name: Ficus soil moisture
+        unique_id: ficus_soil_moisture
+        unit_of_measurement: "%"
+        state_class: measurement
+        state: "{{ states('input_number.ficus_moisture') | float(0) | round(1) }}"
+      # Goes `unavailable` on demand -- see input_boolean.flaky_sensor_online.
+      - name: Flaky sensor
+        unique_id: flaky_sensor
+        unit_of_measurement: "%"
+        state: "{{ states('input_number.living_humidity') | float(0) | round(1) }}"
+        availability: "{{ is_state('input_boolean.flaky_sensor_online', 'on') }}"
+      # A radar's two distance readings, as real sensor entities with a unit --
+      # which is the shape trackers actually bind to.
+      - name: Tracker distance X
+        unique_id: tracker_distance_x
+        unit_of_measurement: cm
+        device_class: distance
+        state_class: measurement
+        state: "{{ states('input_number.tracker_distance_x') | float(0) | round(0) }}"
+      - name: Tracker distance Y
+        unique_id: tracker_distance_y
+        unit_of_measurement: cm
+        device_class: distance
+        state_class: measurement
+        state: "{{ states('input_number.tracker_distance_y') | float(0) | round(0) }}"
+  - binary_sensor:
+      - name: Front door
+        unique_id: front_door
+        device_class: door
+        state: "{{ is_state('input_boolean.front_door', 'on') }}"
+      # The presence gate on the tracker above. Goes clear now and then so the
+      # marker really does have to disappear.
+      - name: Living presence
+        unique_id: living_presence
+        device_class: occupancy
+        state: "{{ is_state('input_boolean.living_presence', 'on') }}"
+
+automation: !include automations.yaml
+script: !include scripts.yaml

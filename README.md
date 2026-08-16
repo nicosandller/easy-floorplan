@@ -1003,6 +1003,23 @@ npm test           # vitest (pure-logic tests; no browser)
 Releases are built and attached automatically by GitHub Actions when a GitHub release
 is published.
 
+### Local Home Assistant
+
+The way to test a change against the real thing:
+
+```bash
+npm run ha         # builds the card, starts Home Assistant at localhost:8123
+```
+
+A throwaway Home Assistant in a container, with a sample plan and entities that keep
+changing so there is real recorder history to work against within a couple of minutes of
+starting it. The card is loaded the way a user's instance loads it, `hass` arrives over
+the real websocket, and entities go `unavailable` on a timer the way they do in the
+field — none of which the mock in `dev/` can reproduce. Needs Docker.
+
+See [`docker/README.md`](docker/README.md) for what is in the sample data and how to
+drive it.
+
 ### Browser dev harness
 
 Iterate on the editor / card without a Home Assistant instance:
