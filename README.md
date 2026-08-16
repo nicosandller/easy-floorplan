@@ -1058,34 +1058,9 @@ is no handing yourself a plan that was busy yesterday.
 [`docker/README.md`](docker/README.md) has the detail: what each generator produces and
 why, which entities come from where, and how to pin a Home Assistant version.
 
-**Which harness to reach for.** `dev/` below starts instantly, needs no account and
-hot-reloads, and stays the right loop for laying out a plan or iterating on the editor.
-What it cannot do is disagree with you, because the `hass` it passes the card is one this
-repo wrote. Use the container whenever the answer depends on Home Assistant itself:
-history and recorder behaviour, `unavailable` entities, attributes that moved between HA
-versions, resource loading, theming.
-
-### Browser dev harness
-
-Iterate on the editor / card without a Home Assistant instance:
-
-```bash
-npm run serve      # opens /dev/ on the Vite dev server with HMR
-```
-
-It mounts the **real** editor and card side-by-side over a minimal `hass` mock, with
-`<ha-card>` / `<ha-icon>` / `<ha-entity-picker>` / `<ha-combo-box>` stubs so the harness
-drives the same code branch a real HA install does. Editor changes round-trip through
-`config-changed` into the live preview, and a **Tracker emulator** panel appears whenever
-the config has a tracker — per-axis sliders write into the mock states, and **Auto-orbit**
-drives them on `requestAnimationFrame`.
-
-The harness lives entirely under `dev/` and is not in the production build. Flip
-`START_WITH_DEMO` in `dev/dev.ts` to start with a sample room instead of a blank floor.
-
-`/dev/symbols.html` on the same server draws every symbol in [`furniture/`](furniture/) on
-one page — the contact sheet to check a new one against. It reads the directory, so a file
-you add appears with no other edit.
+The container is the only harness. There was a mock-`hass` one under `dev/`, faster to
+start but only ever able to agree with itself; it is gone, and `npm run ha` is the way to
+see a change running.
 
 ## License
 

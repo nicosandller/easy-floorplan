@@ -97,9 +97,9 @@ which is a `body` at `0.08` with a dashed outline.
    lands in your card's `symbols:` block and shows up in the picker beside the built-ins.
 3. When it looks right, drop it here as `<id>.json` and open a pull request.
 
-`npm run serve`, then `/dev/symbols.html`, draws every symbol in this directory on one page —
-add a file and it appears. Check it there at its default size *and* stretched: a glyph can be
-right by the numbers and wrong on screen.
+Check it at its default size *and* stretched: a glyph can be right by the numbers and wrong
+on screen. `npm run ha` (see the [main README](../README.md#local-home-assistant)) gets you
+an editor to drop it into and resize.
 
 ## What gets merged
 
