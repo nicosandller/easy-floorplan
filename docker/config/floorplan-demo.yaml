@@ -52,11 +52,21 @@ views:
           - { id: w6, x1: 240, y1: 220, x2: 240, y2: 100 }
 
         openings:
-          - { id: o1, type: window, x: 500, y: 100, length: 140, angle: 0 }
+          # Bound to one of the two demo covers that really report
+          # current_position, so this window sits at partial openings rather
+          # than only fully open or fully shut -- the case a cover replayed as
+          # a boolean gets wrong.
+          - id: o1
+            type: window
+            x: 500
+            y: 100
+            length: 140
+            angle: 0
+            entity: cover.living_room_window
           - { id: o2, type: door, x: 500, y: 500, length: 90, angle: 0 }
-          # Bound to a real cover with a real current_position, so the roll-up
-          # curtain is driven by history rather than by a dev-only slider. The
-          # cover generator walks it to intermediate positions.
+          # The garage door is open/close only -- no position at all -- which
+          # is the other half of the cover story, and it drives the roll-up
+          # curtain from a real entity rather than a dev-only slider.
           - id: o3
             type: door
             motion: roll

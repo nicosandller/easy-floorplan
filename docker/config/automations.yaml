@@ -76,7 +76,11 @@
   description: >-
     Drives covers to intermediate positions, not just open/closed. A cover
     replayed as a boolean looks fine; a cover replayed at 40% is the case that
-    catches a position that was dropped on the way through history.
+    catches a position dropped on the way through history.
+
+    Only hall_window and living_room_window are listed: of the demo covers
+    those are the two that actually implement set_cover_position. The garage
+    door is open/close only and is driven below.
   trigger:
     - platform: time_pattern
       seconds: "/30"
@@ -88,10 +92,28 @@
     - service: cover.set_cover_position
       target:
         entity_id: >-
-          {{ ['cover.living_room_window', 'cover.hall_window',
-              'cover.garage_door'] | random }}
+          {{ ['cover.living_room_window', 'cover.hall_window'] | random }}
       data:
         position: "{{ range(0, 11) | random * 10 }}"
+  mode: single
+
+- id: history_generator_garage
+  alias: "Sample data: garage door"
+  description: >-
+    The garage door has no position, only open and close, which is the other
+    kind of cover the card has to draw -- and the one bound to the roll-up
+    opening on the demo plan.
+  trigger:
+    - platform: time_pattern
+      minutes: "/3"
+  condition:
+    - condition: state
+      entity_id: input_boolean.history_generator
+      state: "on"
+  action:
+    - service: cover.toggle
+      target:
+        entity_id: cover.garage_door
   mode: single
 
 - id: history_generator_sensors
@@ -187,19 +209,33 @@
         value: >-
           {{ [[states('input_number.tracker_distance_y') | float(250)
                + (range(-40, 41) | random), 0] | max, 500] | min | round(0) }}
-    # Roughly one cycle in twenty, the room empties for a while.
-    - choose:
-        - conditions:
-            - condition: template
-              value_template: "{{ range(20) | random == 0 }}"
-          sequence:
-            - service: input_boolean.turn_off
-              target:
-                entity_id: input_boolean.living_presence
-            - delay: "00:00:20"
-            - service: input_boolean.turn_on
-              target:
-                entity_id: input_boolean.living_presence
+  mode: single
+
+- id: history_generator_presence
+  alias: "Sample data: the room empties"
+  description: >-
+    Clears presence for 20s now and then, so the tracker marker has to
+    disappear and come back.
+
+    Kept out of the movement automation above deliberately: a 20s wait inside
+    something that triggers every 5s means `mode: single` drops the triggers
+    that land during the wait, and the movement stalls while the room is
+    empty. Separate automations, so the wait only blocks itself.
+  trigger:
+    - platform: time_pattern
+      minutes: "/4"
+  condition:
+    - condition: state
+      entity_id: input_boolean.history_generator
+      state: "on"
+  action:
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.living_presence
+    - delay: "00:00:20"
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.living_presence
   mode: single
 
 - id: history_generator_unavailable
