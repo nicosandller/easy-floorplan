@@ -1005,20 +1005,65 @@ is published.
 
 ### Local Home Assistant
 
-The way to test a change against the real thing:
+A throwaway Home Assistant in a container: the way to test a change against the real
+thing. The card is loaded the way a user's instance loads it, `hass` arrives over the
+real websocket, and the house is busy enough that there is real recorder history to
+scrub within a couple of minutes of starting it.
+
+Needs Docker. Any runtime works — Docker Desktop, or `brew install colima docker
+docker-compose && colima start` for a CLI-only one.
 
 ```bash
-npm run ha         # builds the card, starts Home Assistant at localhost:8123
+npm run ha
 ```
 
-A throwaway Home Assistant in a container, with a sample plan and entities that keep
-changing so there is real recorder history to work against within a couple of minutes of
-starting it. The card is loaded the way a user's instance loads it, `hass` arrives over
-the real websocket, and entities go `unavailable` on a timer the way they do in the
-field — none of which the mock in `dev/` can reproduce. Needs Docker.
+That builds the card and starts Home Assistant at **<http://localhost:8123>**.
 
-See [`docker/README.md`](docker/README.md) for what is in the sample data and how to
-drive it.
+**First run only**, Home Assistant ends at its onboarding screen. Create an account —
+any username and password; the instance is not reachable from outside your machine —
+then skip through location, analytics and the "found these devices" page. It is a
+one-time step: the account persists in `docker/config/.storage`, so every later
+`npm run ha` goes straight to the dashboard.
+
+Then, in the sidebar:
+
+| Where | What it is for |
+| --- | --- |
+| **Floorplan Demo** | The sample plan, from [`docker/config/floorplan-demo.yaml`](docker/config/floorplan-demo.yaml). Edit that file and refresh the browser — yaml dashboards are re-read on load, so there is no restart in the loop. |
+| **Overview** | An ordinary storage-mode dashboard. Add a manual easy-floorplan card here to work on the **visual editor**, which a yaml dashboard cannot open. |
+| **History** (a view inside Floorplan Demo) | A plain history graph over the same entities, plus switches for the sample-data generators. When the card and Home Assistant disagree about what happened, this is where you find out which of them is wrong. |
+
+While working, run `npm run watch` in a second terminal. It rebuilds `dist/` on save and
+`dist/` is mounted into the container, so the new file is in place immediately — but the
+browser has cached the old one, so a change needs a hard refresh (Cmd/Ctrl-Shift-R). This
+is the one place the container is more friction than `dev/`, which hot-reloads.
+
+```bash
+npm run ha:logs    # follow the Home Assistant log
+npm run ha:down    # stop the container
+npm run ha:reset   # wipe account, dashboards and history, back to onboarding
+```
+
+**The sample data.** A container that has just booted has an empty recorder — nothing to
+replay, nothing on a graph, every entity sitting where it started. So automations keep
+the house busy: lights toggling and recolouring, covers driving to intermediate
+positions, temperature and humidity walking a couple of hundredths at a time, a door open
+for four seconds, a tracker drifting across the room, and one sensor that goes genuinely
+`unavailable` for 45s every five minutes. Switch the lot off with
+`input_boolean.history_generator` when you want to read a still plan.
+
+History only ever builds forward from boot — recorder timestamps are wall-clock, so there
+is no handing yourself a plan that was busy yesterday.
+
+[`docker/README.md`](docker/README.md) has the detail: what each generator produces and
+why, which entities come from where, and how to pin a Home Assistant version.
+
+**Which harness to reach for.** `dev/` below starts instantly, needs no account and
+hot-reloads, and stays the right loop for laying out a plan or iterating on the editor.
+What it cannot do is disagree with you, because the `hass` it passes the card is one this
+repo wrote. Use the container whenever the answer depends on Home Assistant itself:
+history and recorder behaviour, `unavailable` entities, attributes that moved between HA
+versions, resource loading, theming.
 
 ### Browser dev harness
 
