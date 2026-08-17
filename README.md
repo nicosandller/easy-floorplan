@@ -1032,7 +1032,7 @@ Then, in the sidebar:
 | Where | What it is for |
 | --- | --- |
 | **Floorplan Demo** | The sample plan, from [`docker/config/floorplan-demo.yaml`](docker/config/floorplan-demo.yaml). Edit that file and refresh the browser — yaml dashboards are re-read on load, so there is no restart in the loop. |
-| **Overview** | An ordinary storage-mode dashboard. Add a manual easy-floorplan card here to work on the **visual editor**, which a yaml dashboard cannot open. |
+| **Overview** | Where the **visual editor** lives. It is auto-generated, so it is read-only until you click the pencil and choose **⋮ → Take control** — once — after which **+ Add card → Easy Floorplan** opens the editor. Floorplan Demo cannot do this: yaml dashboards are not UI-editable. |
 | **History** (a view inside Floorplan Demo) | A plain history graph over the same entities, plus switches for the sample-data generators. When the card and Home Assistant disagree about what happened, this is where you find out which of them is wrong. |
 
 While working, run `npm run watch` in a second terminal. It rebuilds `dist/` on save and

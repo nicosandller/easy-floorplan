@@ -34,9 +34,15 @@ Then, in the sidebar:
   [`config/floorplan-demo.yaml`](config/floorplan-demo.yaml). Edit that file
   and refresh the browser; yaml dashboards are re-read on load, so there is no
   restart in the loop.
-- **Overview** — an ordinary storage-mode dashboard. Add a manual
-  easy-floorplan card here to work on the **visual editor**, which a yaml
-  dashboard cannot open.
+- **Overview** — where the **visual editor** is reachable. Home Assistant
+  auto-generates this dashboard from your entities, and an auto-generated
+  dashboard is not editable as-is: click the pencil, then **⋮ → Take control**
+  in the dialog that appears. That converts it to a dashboard you own, once,
+  after which **+ Add card → Easy Floorplan** opens `src/editor.ts`. The
+  Floorplan Demo dashboard cannot do this — it is yaml-mode, and Home
+  Assistant refuses to edit yaml dashboards in the UI ("The edit UI is not
+  available when in YAML mode"). That is the trade: the sample plan lives in
+  git, so the editor gets Overview instead.
 - **History** (inside Floorplan Demo) — a plain history graph over the same
   entities, plus switches for the sample-data generators. When the card and
   Home Assistant disagree about what happened, this is where you find out
@@ -140,6 +146,21 @@ Ids from the `demo` integration can drift between Home Assistant versions. If a
 badge reads "Entity not available", check **Developer Tools → States** and
 update the id; the full list used by the sample plan is at the top of
 [`config/floorplan-demo.yaml`](config/floorplan-demo.yaml).
+
+### The four updates that never go away
+
+Settings will show four pending updates on every boot. They are fake: the
+`demo` integration ships six `update` entities that report "update available"
+forever, and demo state is not persisted, so they return on every restart.
+
+They cannot be dismissed. `update.skip` clears two of the six, but the other
+four declare `auto_update: true` and Home Assistant refuses to skip an
+auto-updating entity by design. There is no way to load the demo integration
+without them.
+
+Nothing here is broken, and nothing needs installing — this is the price of
+getting lights that carry real `brightness` and `rgb_color` and covers that
+carry a real `current_position` for free. Ignore that badge on this instance.
 
 ## Pinning a version
 
