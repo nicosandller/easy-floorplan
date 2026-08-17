@@ -7,7 +7,7 @@
     "build": "vite build",
     "watch": "vite build --watch",
     "dev": "vite build --watch",
-    "ha": "npm run build && docker compose -f docker/docker-compose.yml up",
+    "ha": "npm run build && node docker/prepare.mjs && docker compose -f docker/docker-compose.yml up",
     "ha:down": "docker compose -f docker/docker-compose.yml down",
     "ha:reset": "docker compose -f docker/docker-compose.yml down -v && node docker/reset.mjs",
     "ha:logs": "docker compose -f docker/docker-compose.yml logs -f homeassistant",

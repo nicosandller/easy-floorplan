@@ -19,17 +19,11 @@ homeassistant:
   country: US
   time_zone: UTC
 
-# Load the built card on every frontend page.
-#
-# Real users register the card under Settings > Dashboards > Resources (the
-# README's install steps), which writes .storage/lovelace_resources. That
-# file is deliberately gitignored
-# here, so a fresh clone would start with no card loaded and a confusing empty
-# dashboard. extra_module_url reaches the same frontend loader from YAML, so
-# the card is present the first time the container boots.
-frontend:
-  extra_module_url:
-    - /local/easy-floorplan-card.js
+# The card is loaded as a Lovelace *resource*, registered by docker/prepare.mjs
+# before the container starts -- the same way a real install loads it, and the
+# only way that does not race the dashboard render. `frontend.extra_module_url`
+# was the obvious YAML alternative and is the wrong one; prepare.mjs explains
+# why at length.
 
 lovelace:
   # The default Overview dashboard stays in storage mode, which is what makes

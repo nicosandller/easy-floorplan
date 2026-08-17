@@ -68,6 +68,14 @@ npm run ha:down
 npm run ha:reset
 ```
 
+**One instance at a time.** The container name is fixed and Compose names its
+project after this directory, which is called `docker` in every checkout of
+this repo. So a second worktree running `npm run ha` would silently adopt the
+running container — still mounting the first checkout's config and `dist` —
+and you would edit files the instance never reads. `prepare.mjs` checks for
+that and stops with the command to clear it, rather than letting you find out
+an hour later.
+
 `ha:reset` deletes the account, the dashboards you made in the UI and all
 recorded history, putting you back at onboarding. Reach for it when the
 instance gets into a state you do not want to reason about. It works by keeping
@@ -126,9 +134,13 @@ Against a container:
   nothing about the request.
 - **`unavailable` happens.** On a timer here, and constantly on real
   installations. It is neither on nor off and carries no attributes.
-- **The resource loader is real.** The card is loaded the way a user's
-  instance loads it, so a build that produces something the frontend won't
-  accept fails here rather than in an issue report.
+- **The resource loader is real.** The card is registered as a Lovelace
+  resource, exactly as a user's install registers it, so a build that produces
+  something the frontend won't accept fails here rather than in an issue
+  report. ([`prepare.mjs`](prepare.mjs) writes that registration before the
+  container starts, and explains why the obvious YAML shortcut,
+  `frontend.extra_module_url`, races the dashboard render and intermittently
+  produces a bare "Configuration error" card instead of the plan.)
 - **HA's own theming and layout are real** — dark mode, `ha-card` sizing, the
   panel view, a phone-width window.
 
