@@ -10,6 +10,10 @@ Needs Docker with **Compose v2**: the scripts call `docker compose` as a
 subcommand, not the older standalone `docker-compose` binary. `docker compose
 version` tells you which you have.
 
+Run `npm install` first, and again after a pull that changes dependencies —
+the seeding step reads the demo plan with `js-yaml`, and will tell you to if
+it is missing.
+
 ```bash
 npm run ha
 ```

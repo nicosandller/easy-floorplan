@@ -162,7 +162,20 @@ if (!dashboards.data.items.some((item) => item?.id === DASH_ID)) {
 }
 
 if (!existsSync(dashConfigFile) || reseed) {
-  const yaml = (await import("js-yaml")).default ?? (await import("js-yaml"));
+  let yaml;
+  try {
+    const mod = await import("js-yaml");
+    yaml = mod.default ?? mod;
+  } catch {
+    console.error(
+      "\nCannot read the demo plan: js-yaml is not installed.\n\n" +
+        "It is a devDependency of this repo, so this usually just means the\n" +
+        "dependencies are older than the checkout. Run:\n\n" +
+        "  npm install\n\n" +
+        "and then `npm run ha` again.\n",
+    );
+    process.exit(1);
+  }
   const seed = yaml.load(readFileSync(join(here, "config", "floorplan-demo.yaml"), "utf8"));
   mkdirSync(storageDir, { recursive: true });
   writeFileSync(
