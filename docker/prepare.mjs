@@ -40,25 +40,34 @@ const here = dirname(fileURLToPath(import.meta.url));
 // config and dist. Everything appears to work, and you spend an afternoon
 // editing files the instance never reads.
 try {
-  const mounted = execFileSync(
+  // `docker inspect` answers for stopped containers too, and a stopped
+  // container still owns the name -- so both states need clearing, but they
+  // are worth describing accurately.
+  const raw = execFileSync(
     "docker",
-    ["inspect", "easy-floorplan-ha", "--format", "{{range .Mounts}}{{.Source}}\n{{end}}"],
+    ["inspect", "easy-floorplan-ha", "--format", "{{.State.Status}}\n{{range .Mounts}}{{.Source}}\n{{end}}"],
     { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] },
   );
-  const configMount = mounted.split("\n").find((line) => line.trim().endsWith("/config"));
-  if (configMount && resolve(configMount.trim()) !== resolve(join(here, "config"))) {
+  const [state, ...mounts] = raw.split("\n").map((line) => line.trim());
+  const configMount = mounts.find((line) => line.endsWith("/config"));
+  if (configMount && resolve(configMount) !== resolve(join(here, "config"))) {
     console.error(
-      `\nA container named easy-floorplan-ha is already running, and it is mounting\n` +
-        `  ${configMount.trim()}\n` +
+      `\nA container named easy-floorplan-ha already exists (${state}), mounting\n` +
+        `  ${configMount}\n` +
         `which is not this checkout's\n  ${join(here, "config")}\n\n` +
-        `It was started from a different worktree, and because the container name is\n` +
-        `fixed you would be editing files it never reads. Stop that one first:\n\n` +
-        `  docker rm -f easy-floorplan-ha\n`,
+        `It belongs to a different worktree, and the container name is fixed, so\n` +
+        `starting from here would either fail on the name or adopt that instance and\n` +
+        `leave you editing files it never reads. Clear it first:\n\n` +
+        `  docker rm -f easy-floorplan-ha\n\n` +
+        `That removes only the container. Its config and history are on a bind mount\n` +
+        `in the other checkout and survive.\n`,
     );
     process.exit(1);
   }
-} catch {
-  // No docker, or no such container: nothing to collide with.
+} catch (error) {
+  // Re-throw our own exit; anything else means no docker or no such
+  // container, and there is nothing to collide with.
+  if (error?.code === "ERR_INVALID_ARG_TYPE") throw error;
 }
 
 const storageDir = join(here, "config", ".storage");
@@ -94,4 +103,86 @@ if (store.data.items.some((item) => item?.url === URL_PATH)) {
   mkdirSync(storageDir, { recursive: true });
   writeFileSync(resourceFile, JSON.stringify(store, null, 2));
   console.log(`Registered ${URL_PATH} as a Lovelace resource.`);
+}
+
+// ---------------------------------------------------------------------------
+// Seed the Floorplan Demo dashboard, in storage mode so it is editable.
+//
+// The plan wants to be two contradictory things: in git, so it can be
+// reviewed and so a fresh clone gets a real floorplan, and editable in the UI,
+// because a floorplan card whose whole point is a drag-and-drop editor is
+// miserable to develop against through a text file. A yaml-mode dashboard
+// gives the first and refuses the second -- Home Assistant will not edit yaml
+// dashboards, and says so.
+//
+// So git keeps the yaml, and this seeds a *storage* dashboard from it: the
+// same content, written into the two files the UI itself writes. From Home
+// Assistant's side it is an ordinary dashboard, editable, with the card's own
+// editor reachable on it.
+//
+// It seeds only when absent, so your edits survive restarts. `npm run
+// ha:reseed` overwrites it from the yaml again when you want the committed
+// plan back, and `npm run ha:reset` clears it along with everything else.
+
+const DASH_ID = "floorplan_demo";
+const DASH_URL = "floorplan-demo";
+const dashboardsFile = join(storageDir, "lovelace_dashboards");
+const dashConfigFile = join(storageDir, `lovelace.${DASH_ID}`);
+const reseed = process.argv.includes("--reseed");
+
+let dashboards = {
+  version: 1,
+  minor_version: 1,
+  key: "lovelace_dashboards",
+  data: { items: [] },
+};
+if (existsSync(dashboardsFile)) {
+  try {
+    dashboards = JSON.parse(readFileSync(dashboardsFile, "utf8"));
+    dashboards.data ??= { items: [] };
+    dashboards.data.items ??= [];
+  } catch {
+    dashboards.data = { items: [] };
+  }
+}
+
+if (!dashboards.data.items.some((item) => item?.id === DASH_ID)) {
+  dashboards.data.items.push({
+    id: DASH_ID,
+    title: "Floorplan Demo",
+    url_path: DASH_URL,
+    icon: "mdi:floor-plan",
+    mode: "storage",
+    require_admin: false,
+    show_in_sidebar: true,
+  });
+  mkdirSync(storageDir, { recursive: true });
+  writeFileSync(dashboardsFile, JSON.stringify(dashboards, null, 2));
+  console.log("Registered the Floorplan Demo dashboard.");
+}
+
+if (!existsSync(dashConfigFile) || reseed) {
+  const yaml = (await import("js-yaml")).default ?? (await import("js-yaml"));
+  const seed = yaml.load(readFileSync(join(here, "config", "floorplan-demo.yaml"), "utf8"));
+  mkdirSync(storageDir, { recursive: true });
+  writeFileSync(
+    dashConfigFile,
+    JSON.stringify(
+      {
+        version: 1,
+        minor_version: 1,
+        key: `lovelace.${DASH_ID}`,
+        data: { config: { views: seed.views } },
+      },
+      null,
+      2,
+    ),
+  );
+  console.log(
+    reseed
+      ? "Reseeded the Floorplan Demo dashboard from floorplan-demo.yaml (UI edits discarded)."
+      : "Seeded the Floorplan Demo dashboard from floorplan-demo.yaml.",
+  );
+} else {
+  console.log("Floorplan Demo dashboard already exists; keeping your edits (npm run ha:reseed to reset it).");
 }

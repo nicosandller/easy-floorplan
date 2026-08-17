@@ -30,19 +30,16 @@ devices" page) — `configuration.yaml` has already set everything that matters.
 
 Then, in the sidebar:
 
-- **Floorplan Demo** — the sample plan, defined in
-  [`config/floorplan-demo.yaml`](config/floorplan-demo.yaml). Edit that file
-  and refresh the browser; yaml dashboards are re-read on load, so there is no
-  restart in the loop.
-- **Overview** — where the **visual editor** is reachable. Home Assistant
-  auto-generates this dashboard from your entities, and an auto-generated
-  dashboard is not editable as-is: click the pencil, then **⋮ → Take control**
-  in the dialog that appears. That converts it to a dashboard you own, once,
-  after which **+ Add card → Easy Floorplan** opens `src/editor.ts`. The
-  Floorplan Demo dashboard cannot do this — it is yaml-mode, and Home
-  Assistant refuses to edit yaml dashboards in the UI ("The edit UI is not
-  available when in YAML mode"). That is the trade: the sample plan lives in
-  git, so the editor gets Overview instead.
+- **Floorplan Demo** — the sample plan, and **fully editable**: click the
+  pencil and the card's own visual editor opens on it, drag-and-drop and all.
+  Its starting content comes from
+  [`config/floorplan-demo.yaml`](config/floorplan-demo.yaml), which is what
+  lives in git; `prepare.mjs` seeds a storage-mode dashboard from that file so
+  the plan is both reviewable in the repo and editable in the browser.
+- **Overview** — Home Assistant's auto-generated dashboard. Nothing here needs
+  it, but if you want a second surface to drop a card onto, click the pencil
+  and choose **⋮ → Take control** first: auto-generated dashboards are
+  read-only until claimed.
 - **History** (inside Floorplan Demo) — a plain history graph over the same
   entities, plus switches for the sample-data generators. When the card and
   Home Assistant disagree about what happened, this is where you find out
@@ -65,8 +62,23 @@ npm run ha:down
 ```
 
 ```bash
+npm run ha:reseed
+```
+
+```bash
 npm run ha:reset
 ```
+
+`ha:reseed` rewrites the Floorplan Demo dashboard from
+`config/floorplan-demo.yaml`, discarding whatever you did to it in the UI.
+Reach for it when an experiment has wandered somewhere you don't want, or
+after pulling a change to the committed plan — the seed only applies itself to
+a dashboard that does not exist yet, so your edits are never silently
+overwritten by a restart. The browser picks the change up on a refresh.
+
+The reverse direction is manual on purpose: if you build something in the
+editor worth keeping, copy the YAML out of the dashboard's **⋮ → Raw
+configuration editor** into `config/floorplan-demo.yaml` and commit it.
 
 **One instance at a time.** The container name is fixed and Compose names its
 project after this directory, which is called `docker` in every checkout of

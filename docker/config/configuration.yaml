@@ -26,19 +26,13 @@ homeassistant:
 # why at length.
 
 lovelace:
-  # The default Overview dashboard stays in storage mode, which is what makes
-  # the card's *visual editor* reachable: add a manual card there, pick
-  # easy-floorplan, and src/editor.ts is what opens. A yaml-mode dashboard
-  # cannot do that -- the UI refuses to edit it -- which is why the sample
-  # plan below is a second dashboard rather than the only one.
+  # Storage mode throughout, so every dashboard here is editable in the UI --
+  # including the card's own visual editor, which is most of what this project
+  # is. The Floorplan Demo dashboard is not declared here: a dashboard
+  # declared in YAML is a yaml-mode dashboard, and Home Assistant refuses to
+  # edit those. docker/prepare.mjs seeds it as a storage dashboard from
+  # floorplan-demo.yaml instead, so the plan still lives in git.
   mode: storage
-  dashboards:
-    floorplan-demo:
-      mode: yaml
-      filename: floorplan-demo.yaml
-      title: Floorplan Demo
-      icon: mdi:floor-plan
-      show_in_sidebar: true
 
 recorder:
   # One second, because the loop here is "click a light, scrub the timeline
