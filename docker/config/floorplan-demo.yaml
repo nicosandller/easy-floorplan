@@ -1,8 +1,10 @@
-# The sample plan, as a yaml-mode dashboard.
+# The sample plan: the seed for the Floorplan Demo dashboard.
 #
-# This is the dev/ harness's demo floorplan rebuilt on real entities. Edit
-# this file and reload the browser -- yaml dashboards are re-read on refresh,
-# so there is no HA restart in the loop.
+# docker/prepare.mjs writes this into an editable, storage-mode dashboard the
+# first time the instance comes up, so the plan is reviewable here in git and
+# draggable in the browser. Editing this file therefore does *not* change a
+# dashboard that already exists -- `npm run ha:reseed` applies it, discarding
+# whatever the UI has done since.
 #
 # Entity ids used here, if any of them ever need re-checking against
 # Developer Tools > States:
@@ -18,209 +20,218 @@
 #                      sensor.ficus_soil_moisture, sensor.flaky_sensor,
 #                      binary_sensor.front_door
 #
-# To exercise the *visual editor* instead, go to the Overview dashboard and
-# add a manual easy-floorplan card there; Overview is in storage mode, so its
-# cards are editable in the UI. This one is not, by design -- a plan in git is
-# a plan that survives `docker compose down -v`.
+# The visual editor opens on this plan directly: pencil, then the card's own
+# edit button. Anything you build there lives in the instance; to bring it
+# back to git, copy it out of the dashboard's raw configuration editor into
+# this file.
 
 views:
   - title: Plan
     path: plan
-    type: panel
-    cards:
-      - type: custom:easy-floorplan-card
-        title: Dev floorplan
-        width: 1000
-        height: 600
-        grid: 20
-        snap: 0
-        showDeadSpaces: true
-        # On, so the plan visibly follows the real sun.sun of the latitude set
-        # in configuration.yaml. If the plan looks unexpectedly dim, that is
-        # this, and it is working.
-        sunDimming: true
+    # A sections view, not a panel. A panel view draws the card bare and
+    # edge to edge, which looks right and costs you the card chrome the
+    # editor hangs off -- no pencil, no way into the visual editor from the
+    # plan itself. In a grid section it is an ordinary card, spanning the
+    # full width so the plan still gets room.
+    type: sections
+    max_columns: 4
+    sections:
+      - type: grid
+        column_span: 4
+        cards:
+          - type: custom:easy-floorplan-card
+            title: Dev floorplan
+            width: 1000
+            height: 600
+            grid: 20
+            snap: 0
+            showDeadSpaces: true
+            # On, so the plan visibly follows the real sun.sun of the latitude set
+            # in configuration.yaml. If the plan looks unexpectedly dim, that is
+            # this, and it is working.
+            sunDimming: true
 
-        walls:
-          - { id: w1, x1: 100, y1: 100, x2: 900, y2: 100 }
-          - { id: w2, x1: 900, y1: 100, x2: 900, y2: 500 }
-          - { id: w3, x1: 900, y1: 500, x2: 100, y2: 500 }
-          - { id: w4, x1: 100, y1: 500, x2: 100, y2: 100 }
-          # A service shaft boxed into the north-west corner: two partitions
-          # sealing a pocket that no door or window reaches, so `showDeadSpaces`
-          # has something to hatch.
-          - { id: w5, x1: 100, y1: 220, x2: 240, y2: 220 }
-          - { id: w6, x1: 240, y1: 220, x2: 240, y2: 100 }
+            walls:
+              - { id: w1, x1: 100, y1: 100, x2: 900, y2: 100 }
+              - { id: w2, x1: 900, y1: 100, x2: 900, y2: 500 }
+              - { id: w3, x1: 900, y1: 500, x2: 100, y2: 500 }
+              - { id: w4, x1: 100, y1: 500, x2: 100, y2: 100 }
+              # A service shaft boxed into the north-west corner: two partitions
+              # sealing a pocket that no door or window reaches, so `showDeadSpaces`
+              # has something to hatch.
+              - { id: w5, x1: 100, y1: 220, x2: 240, y2: 220 }
+              - { id: w6, x1: 240, y1: 220, x2: 240, y2: 100 }
 
-        openings:
-          # Bound to one of the two demo covers that really report
-          # current_position, so this window sits at partial openings rather
-          # than only fully open or fully shut -- the case a cover replayed as
-          # a boolean gets wrong.
-          - id: o1
-            type: window
-            x: 500
-            y: 100
-            length: 140
-            angle: 0
-            entity: cover.living_room_window
-          - { id: o2, type: door, x: 500, y: 500, length: 90, angle: 0 }
-          # The garage door is open/close only -- no position at all -- which
-          # is the other half of the cover story, and it drives the roll-up
-          # curtain from a real entity rather than a dev-only slider.
-          - id: o3
-            type: door
-            motion: roll
-            x: 900
-            y: 300
-            length: 140
-            angle: 90
-            entity: cover.garage_door
-          # A window whose contact is the door sensor, so there is one opening
-          # driven by a binary_sensor rather than a cover -- the two read
-          # open/closed by different rules.
-          - id: o4
-            type: window
-            x: 300
-            y: 500
-            length: 120
-            angle: 0
-            entity: binary_sensor.front_door
+            openings:
+              # Bound to one of the two demo covers that really report
+              # current_position, so this window sits at partial openings rather
+              # than only fully open or fully shut -- the case a cover replayed as
+              # a boolean gets wrong.
+              - id: o1
+                type: window
+                x: 500
+                y: 100
+                length: 140
+                angle: 0
+                entity: cover.living_room_window
+              - { id: o2, type: door, x: 500, y: 500, length: 90, angle: 0 }
+              # The garage door is open/close only -- no position at all -- which
+              # is the other half of the cover story, and it drives the roll-up
+              # curtain from a real entity rather than a dev-only slider.
+              - id: o3
+                type: door
+                motion: roll
+                x: 900
+                y: 300
+                length: 140
+                angle: 90
+                entity: cover.garage_door
+              # A window whose contact is the door sensor, so there is one opening
+              # driven by a binary_sensor rather than a cover -- the two read
+              # open/closed by different rules.
+              - id: o4
+                type: window
+                x: 300
+                y: 500
+                length: 120
+                angle: 0
+                entity: binary_sensor.front_door
 
-        items:
-          # Paired temperature/humidity: stored at two decimals, displayed at
-          # one. Should read like "17.9 °C · 49.3%".
-          - id: i1
-            entity: sensor.living_area_temperature
-            secondaryEntity: sensor.living_area_humidity
-            x: 500
-            y: 300
-            kind: sensor
-          # Cast light. These two sit 200 apart with 200 radii so their pools
-          # overlap in the middle, and both are colour-capable demo lights, so
-          # the band where they mix changes colour as the generator recolours
-          # them.
-          - id: glow_warm
-            entity: light.bed_light
-            x: 400
-            y: 380
-            kind: light
-            glow: true
-            glowRadius: 200
-          - id: glow_cool
-            entity: light.office_rgbw_lights
-            x: 600
-            y: 380
-            kind: light
-            glow: true
-            glowRadius: 200
-          # Brightness but no colour of its own: casts the warm-white default,
-          # dimmed to match.
-          - id: glow_dim
-            entity: light.ceiling_lights
-            x: 780
-            y: 200
-            kind: light
-            glow: true
-            glowRadius: 120
-          - id: glow_plain
-            entity: light.kitchen_lights
-            x: 780
-            y: 430
-            kind: light
-            glow: true
-            glowRadius: 110
-            glowColor: "#b0ffd0"
-          # Two active devices side by side with different active colours.
-          - id: i3
-            entity: cover.living_room_window
-            x: 380
-            y: 180
-            kind: cover
-            activeColor: "#8e24aa"
-          - id: i4
-            entity: fan.living_room_fan
-            x: 220
-            y: 180
-            kind: fan
-          # The one that goes `unavailable` on a timer. Left as a plain value
-          # badge so it is obvious on the plan when it drops out.
-          - id: i5
-            entity: sensor.flaky_sensor
-            x: 620
-            y: 180
-            kind: sensor
-            badgeContent: value
-            showState: true
+            items:
+              # Paired temperature/humidity: stored at two decimals, displayed at
+              # one. Should read like "17.9 °C · 49.3%".
+              - id: i1
+                entity: sensor.living_area_temperature
+                secondaryEntity: sensor.living_area_humidity
+                x: 500
+                y: 300
+                kind: sensor
+              # Cast light. These two sit 200 apart with 200 radii so their pools
+              # overlap in the middle, and both are colour-capable demo lights, so
+              # the band where they mix changes colour as the generator recolours
+              # them.
+              - id: glow_warm
+                entity: light.bed_light
+                x: 400
+                y: 380
+                kind: light
+                glow: true
+                glowRadius: 200
+              - id: glow_cool
+                entity: light.office_rgbw_lights
+                x: 600
+                y: 380
+                kind: light
+                glow: true
+                glowRadius: 200
+              # Brightness but no colour of its own: casts the warm-white default,
+              # dimmed to match.
+              - id: glow_dim
+                entity: light.ceiling_lights
+                x: 780
+                y: 200
+                kind: light
+                glow: true
+                glowRadius: 120
+              - id: glow_plain
+                entity: light.kitchen_lights
+                x: 780
+                y: 430
+                kind: light
+                glow: true
+                glowRadius: 110
+                glowColor: "#b0ffd0"
+              # Two active devices side by side with different active colours.
+              - id: i3
+                entity: cover.living_room_window
+                x: 380
+                y: 180
+                kind: cover
+                activeColor: "#8e24aa"
+              - id: i4
+                entity: fan.living_room_fan
+                x: 220
+                y: 180
+                kind: fan
+              # The one that goes `unavailable` on a timer. Left as a plain value
+              # badge so it is obvious on the plan when it drops out.
+              - id: i5
+                entity: sensor.flaky_sensor
+                x: 620
+                y: 180
+                kind: sensor
+                badgeContent: value
+                showState: true
 
-        furniture:
-          - id: fu1
-            type: sofa
-            x: 200
-            y: 380
-            w: 120
-            h: 60
-          # Coloured by threshold off the soil sensor, which the generator
-          # walks down and then "waters", so the thresholds actually cross
-          # while you watch instead of sitting on one colour.
-          - id: fu2
-            type: plant
-            x: 700
-            y: 380
-            w: 60
-            h: 60
-            entity: sensor.ficus_soil_moisture
-            stateColor:
-              - { above: 80, color: "#2e7d32" }
-              - { above: 65, color: "#f9a825" }
-              - { color: "#c62828" }
+            furniture:
+              - id: fu1
+                type: sofa
+                x: 200
+                y: 380
+                w: 120
+                h: 60
+              # Coloured by threshold off the soil sensor, which the generator
+              # walks down and then "waters", so the thresholds actually cross
+              # while you watch instead of sitting on one colour.
+              - id: fu2
+                type: plant
+                x: 700
+                y: 380
+                w: 60
+                h: 60
+                entity: sensor.ficus_soil_moisture
+                stateColor:
+                  - { above: 80, color: "#2e7d32" }
+                  - { above: 65, color: "#f9a825" }
+                  - { color: "#c62828" }
 
-        trackers:
-          # A tracker is a rectangle plus two distance sensors that map onto
-          # its span -- the mmWave/radar shape, not a device_tracker. The
-          # generator walks the two distance readings around, and gates them
-          # on a presence binary_sensor that goes clear now and then, so the
-          # "hide the marker when the room is empty" path is exercised too.
-          - id: t1
-            x: 120
-            y: 120
-            w: 360
-            h: 360
-            color: "#26c6da"
-            dotSize: 16
-            xSensor:
-              entity: sensor.tracker_distance_x
-              min: 0
-              max: 500
-              presence:
-                entity: binary_sensor.living_presence
-            ySensor:
-              entity: sensor.tracker_distance_y
-              min: 0
-              max: 500
-              presence:
-                entity: binary_sensor.living_presence
+            trackers:
+              # A tracker is a rectangle plus two distance sensors that map onto
+              # its span -- the mmWave/radar shape, not a device_tracker. The
+              # generator walks the two distance readings around, and gates them
+              # on a presence binary_sensor that goes clear now and then, so the
+              # "hide the marker when the room is empty" path is exercised too.
+              - id: t1
+                x: 120
+                y: 120
+                w: 360
+                h: 360
+                color: "#26c6da"
+                dotSize: 16
+                xSensor:
+                  entity: sensor.tracker_distance_x
+                  min: 0
+                  max: 500
+                  presence:
+                    entity: binary_sensor.living_presence
+                ySensor:
+                  entity: sensor.tracker_distance_y
+                  min: 0
+                  max: 500
+                  presence:
+                    entity: binary_sensor.living_presence
 
-        areas:
-          - id: a1
-            name: Living Room
-            showName: true
-            color: "#26c6da"
-            opacity: 0.15
-            points:
-              - { x: 100, y: 100 }
-              - { x: 500, y: 100 }
-              - { x: 500, y: 500 }
-              - { x: 100, y: 500 }
-          - id: a2
-            name: Kitchen
-            showName: true
-            color: "#ffa726"
-            opacity: 0.15
-            points:
-              - { x: 500, y: 100 }
-              - { x: 900, y: 100 }
-              - { x: 900, y: 500 }
-              - { x: 500, y: 500 }
+            areas:
+              - id: a1
+                name: Living Room
+                showName: true
+                color: "#26c6da"
+                opacity: 0.15
+                points:
+                  - { x: 100, y: 100 }
+                  - { x: 500, y: 100 }
+                  - { x: 500, y: 500 }
+                  - { x: 100, y: 500 }
+              - id: a2
+                name: Kitchen
+                showName: true
+                color: "#ffa726"
+                opacity: 0.15
+                points:
+                  - { x: 500, y: 100 }
+                  - { x: 900, y: 100 }
+                  - { x: 900, y: 500 }
+                  - { x: 500, y: 500 }
 
   # A plain history view, so when the card disagrees with HA about what
   # happened you can see which one is wrong without leaving the dashboard.
