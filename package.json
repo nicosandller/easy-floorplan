@@ -7,7 +7,11 @@
     "build": "vite build",
     "watch": "vite build --watch",
     "dev": "vite build --watch",
-    "serve": "vite --open /dev/",
+    "ha": "npm run build && node docker/prepare.mjs && docker compose -f docker/docker-compose.yml up",
+    "ha:down": "docker compose -f docker/docker-compose.yml down",
+    "ha:reseed": "node docker/prepare.mjs --reseed",
+    "ha:reset": "docker compose -f docker/docker-compose.yml down -v && node docker/reset.mjs",
+    "ha:logs": "docker compose -f docker/docker-compose.yml logs -f homeassistant",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
@@ -33,6 +37,7 @@
     "lit": "^3.1.0"
   },
   "devDependencies": {
+    "js-yaml": "^5.3.0",
     "typescript": "^5.4.0",
     "vite": "^5.2.0",
     "vitest": "^2.1.9"

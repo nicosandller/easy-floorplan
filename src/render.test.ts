@@ -9,6 +9,7 @@ import {
   GLOW_MAX_OPACITY,
   GLOW_MIN_RADIUS,
   DEFAULT_PRESS_EFFECT,
+  DEFAULT_OFFLINE_STYLE,
   BADGE_MIN_LIGHTNESS,
   FURNITURE_GLOW_TRANSMISSION,
   SUN_ELEVATION_NIGHT,
@@ -20,9 +21,9 @@ import {
   openingMotion,
   openingMirror,
   sliderStyleOf,
-  openingHasTwoPanels,
-  sliderStyleHasTwoPanels,
-  secondPanelOf,
+  openingHasTwoLeaves,
+  sliderStyleHasTwoLeaves,
+  secondLeafOf,
   openingFromDeviceClass,
   openingSash,
   defaultSash,
@@ -55,6 +56,10 @@ import {
   openingIsPressable,
   hasShutterMark,
   shutterMarkPoint,
+  hasOpeningMark,
+  openingMarkIcon,
+  openingMarkPoint,
+  openingMarkNormal,
   shutterMarkIcon,
   shutterMarkNormal,
   SHUTTER_MARK_OFFSET,
@@ -92,6 +97,8 @@ import {
   matchStateRule,
   badgeContentOf,
   pressEffectOf,
+  offlineStyleOf,
+  itemIsOffline,
   badgeValue,
   badgeReading,
   badgeValueSize,
@@ -279,22 +286,48 @@ describe("sliderStyleOf", () => {
   });
 });
 
-describe("openingHasTwoPanels / secondPanelOf (issue #145)", () => {
+describe("openingHasTwoLeaves / secondLeafOf (issue #145)", () => {
   const slider = (extra: Partial<Opening> = {}) =>
     ({ type: "door", motion: "slide", ...extra }) as Opening;
 
   it("is true for exactly the styles that move both panels", () => {
     for (const sliderStyle of ["biparting", "biparting-bypass", "converging"] as const) {
-      expect(openingHasTwoPanels(slider({ sliderStyle }))).toBe(true);
-      expect(sliderStyleHasTwoPanels(sliderStyle)).toBe(true);
+      expect(openingHasTwoLeaves(slider({ sliderStyle }))).toBe(true);
+      expect(sliderStyleHasTwoLeaves(sliderStyle)).toBe(true);
     }
     // bypass moves one panel past a fixed one; single moves the only panel.
-    expect(openingHasTwoPanels(slider({ sliderStyle: "bypass" }))).toBe(false);
-    expect(openingHasTwoPanels(slider())).toBe(false);
-    expect(sliderStyleHasTwoPanels("bypass")).toBe(false);
-    expect(sliderStyleHasTwoPanels("single")).toBe(false);
-    // A swing door has leaves, but no sliding panel to bind a second sensor to.
-    expect(openingHasTwoPanels({ type: "door", sliderStyle: "biparting" } as Opening)).toBe(false);
+    expect(openingHasTwoLeaves(slider({ sliderStyle: "bypass" }))).toBe(false);
+    expect(openingHasTwoLeaves(slider())).toBe(false);
+    expect(sliderStyleHasTwoLeaves("bypass")).toBe(false);
+    expect(sliderStyleHasTwoLeaves("single")).toBe(false);
+    // A single-leaf swing door has no second leaf, whatever slider style is
+    // left lying on it from an earlier motion.
+    expect(openingHasTwoLeaves({ type: "door", sliderStyle: "biparting" } as Opening)).toBe(false);
+  });
+
+  it("is true for a hinged double, by each type's own default (issue #159)", () => {
+    const swing = (extra: Partial<Opening> = {}) => ({ type: "window", ...extra }) as Opening;
+    // A window opens with two casement sashes unless told otherwise…
+    expect(openingHasTwoLeaves(swing())).toBe(true);
+    expect(openingHasTwoLeaves(swing({ sash: "double" }))).toBe(true);
+    expect(openingHasTwoLeaves(swing({ sash: "single" }))).toBe(false);
+    // …a door with one leaf, unless it is a double (issue #168).
+    expect(openingHasTwoLeaves(swing({ type: "door" }))).toBe(false);
+    expect(openingHasTwoLeaves(swing({ type: "door", sash: "double" }))).toBe(true);
+  });
+
+  it("is false for a roll-up, whose curtain is one piece", () => {
+    for (const type of ["door", "window"] as const) {
+      expect(
+        openingHasTwoLeaves({ type, motion: "roll", sash: "double" } as Opening)
+      ).toBe(false);
+    }
+  });
+
+  it("swaps in the second entity for a hinged double too", () => {
+    const o = { type: "window", entity: "binary_sensor.left", secondaryEntity: "binary_sensor.right" } as Opening;
+    expect(secondLeafOf(o).entity).toBe("binary_sensor.right");
+    expect(resolveOpeningAmount(secondLeafOf(o), { state: "on" })).toBe(1);
   });
 
   it("swaps in the second entity and keeps everything else", () => {
@@ -305,7 +338,7 @@ describe("openingHasTwoPanels / secondPanelOf (issue #145)", () => {
       invert: true,
       length: 90,
     });
-    expect(secondPanelOf(o)).toEqual({ ...o, entity: "binary_sensor.right" });
+    expect(secondLeafOf(o)).toEqual({ ...o, entity: "binary_sensor.right" });
   });
 
   it("resolves the second panel independently, sharing invert", () => {
@@ -314,7 +347,7 @@ describe("openingHasTwoPanels / secondPanelOf (issue #145)", () => {
       entity: "binary_sensor.left",
       secondaryEntity: "binary_sensor.right",
     });
-    const panel = secondPanelOf(o);
+    const panel = secondLeafOf(o);
     expect(resolveOpeningAmount(panel, { state: "on" })).toBe(1);
     expect(resolveOpeningAmount(panel, { state: "off" })).toBe(0);
     expect(openingIsActive(panel, { state: "on" })).toBe(true);
@@ -324,7 +357,7 @@ describe("openingHasTwoPanels / secondPanelOf (issue #145)", () => {
       resolveOpeningAmount(panel, { state: "open", attributes: { current_position: 40 } }),
     ).toBeCloseTo(0.4);
     expect(
-      resolveOpeningAmount(secondPanelOf({ ...o, invert: true }), {
+      resolveOpeningAmount(secondLeafOf({ ...o, invert: true }), {
         state: "open",
         attributes: { current_position: 40 },
       }),
@@ -1159,6 +1192,31 @@ describe("collectWatchedEntities", () => {
     expect(got.has("sensor.soil")).toBe(true);
     expect(got.size).toBe(1);
   });
+
+  // Miss this and the second panel is not frozen but *intermittent*: it only
+  // catches up when some other watched entity happens to move.
+  it("collects an opening's second leaf and its shutter's (issues #145, #159)", () => {
+    const got = collectWatchedEntities({
+      openings: [
+        {
+          id: "o",
+          type: "window",
+          x: 0,
+          y: 0,
+          entity: "binary_sensor.left",
+          secondaryEntity: "binary_sensor.right",
+          shutterEntity: "binary_sensor.shutter_left",
+          shutterSecondaryEntity: "binary_sensor.shutter_right",
+        },
+      ],
+    } as unknown as FloorplanCardConfig);
+    expect([...got].sort()).toEqual([
+      "binary_sensor.left",
+      "binary_sensor.right",
+      "binary_sensor.shutter_left",
+      "binary_sensor.shutter_right",
+    ]);
+  });
 });
 
 describe("furnitureColor (issue #82)", () => {
@@ -1800,6 +1858,54 @@ describe("pressEffectOf (#134)", () => {
     expect(pressEffectOf({ pressEffect: 42 as never })).toBe("scale");
     // …but an explicit "none" is a real choice and must survive.
     expect(pressEffectOf({ pressEffect: "none" })).toBe("none");
+  });
+});
+
+describe("offlineStyleOf / itemIsOffline (#162)", () => {
+  const light = { entity: "light.ceiling" };
+
+  it("defaults to dimming, and takes every mode the card has a rule for", () => {
+    expect(offlineStyleOf({})).toBe(DEFAULT_OFFLINE_STYLE);
+    expect(offlineStyleOf({})).toBe("dim");
+    for (const v of ["dim", "strike", "none"] as const) {
+      expect(offlineStyleOf({ offlineStyle: v })).toBe(v);
+    }
+  });
+
+  it("falls back to the default rather than to nothing on a junk value", () => {
+    // Same trap as pressEffectOf above: the value becomes a class name.
+    expect(offlineStyleOf({ offlineStyle: "faded" as never })).toBe("dim");
+    expect(offlineStyleOf({ offlineStyle: "" as never })).toBe("dim");
+    expect(offlineStyleOf({ offlineStyle: 0 as never })).toBe("dim");
+    expect(offlineStyleOf({ offlineStyle: "none" })).toBe("none");
+  });
+
+  it("calls a dropped-out entity offline, however it dropped out", () => {
+    expect(itemIsOffline(light, "unavailable")).toBe(true);
+    expect(itemIsOffline(light, "unknown")).toBe(true);
+    // Not in hass at all — renamed, deleted, or an integration that failed to
+    // load. Today that draws an ordinary "off" badge for something gone.
+    expect(itemIsOffline(light, undefined)).toBe(true);
+  });
+
+  it("leaves a device that is merely off alone", () => {
+    for (const state of ["off", "on", "closed", "docked", "locked", "0", "idle"]) {
+      expect({ state, offline: itemIsOffline(light, state) }).toEqual({ state, offline: false });
+    }
+  });
+
+  it("an unbound device is not offline — there is nothing to be wrong", () => {
+    // The plain markers issue #39 added: no entity, so no outage either.
+    expect(itemIsOffline({}, undefined)).toBe(false);
+    expect(itemIsOffline({ entity: "" }, undefined)).toBe(false);
+    expect(itemIsOffline({ entity: "" }, "unavailable")).toBe(false);
+  });
+
+  it("agrees with the active test: an offline device is never active", () => {
+    for (const state of ["unavailable", "unknown"]) {
+      expect(entityIsActive(light.entity, state)).toBe(false);
+      expect(itemIsOffline(light, state)).toBe(true);
+    }
   });
 });
 
@@ -2698,6 +2804,99 @@ describe("the shutter badge (issue #74 follow-up)", () => {
       expect(Math.sign(at.x - o.x) || 0).toBe(Math.sign(Number(n.x.toFixed(6))) || 0);
       expect(Math.sign(at.y - o.y) || 0).toBe(Math.sign(Number(n.y.toFixed(6))) || 0);
     }
+  });
+});
+
+describe("the opening's own badge (issue #154 follow-up)", () => {
+  const win = (extra: Partial<Opening> = {}) =>
+    ({ id: "o", type: "window", x: 500, y: 100, length: 90, angle: 0, ...extra }) as Opening;
+  const garage = (extra: Partial<Opening> = {}) =>
+    ({
+      id: "g",
+      type: "door",
+      motion: "roll",
+      x: 500,
+      y: 100,
+      length: 140,
+      angle: 0,
+      ...extra,
+    }) as Opening;
+
+  it("is opt-in, unlike the shutter's — most symbols say it themselves", () => {
+    expect(hasOpeningMark(garage({ entity: "cover.garage" }))).toBe(false);
+    expect(hasOpeningMark(garage({ entity: "cover.garage", showIcon: true }))).toBe(true);
+    // Nothing to badge without an entity, however loudly the config asks.
+    expect(hasOpeningMark(garage({ showIcon: true }))).toBe(false);
+  });
+
+  it("sits on the far side of the wall from the shutter's, so the two never stack", () => {
+    // The whole point of the placement: an opening drawing both badges puts
+    // one on each face, at any angle and under any flipV.
+    const both = win({ entity: "binary_sensor.win", shutterEntity: "cover.t", showIcon: true });
+    expect(openingMarkPoint(both)).toEqual({ x: 500, y: 100 - SHUTTER_MARK_OFFSET });
+    expect(shutterMarkPoint(both)).toEqual({ x: 500, y: 100 + SHUTTER_MARK_OFFSET });
+    for (const o of [
+      both,
+      win({ ...both, flipV: true }),
+      win({ ...both, angle: -90 }),
+      win({ ...both, angle: 37, flipV: true }),
+    ]) {
+      const a = openingMarkPoint(o);
+      const b = shutterMarkPoint(o);
+      // Two badge-widths apart is the test that matters: they are circles.
+      expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeCloseTo(SHUTTER_MARK_OFFSET * 2);
+    }
+  });
+
+  it("pushes its pixel offset the same way its anchor went", () => {
+    for (const o of [win(), win({ flipV: true }), win({ angle: -90 }), win({ angle: 37 })]) {
+      const at = openingMarkPoint(o);
+      const n = openingMarkNormal(o);
+      expect(Math.sign(at.x - o.x) || 0).toBe(Math.sign(Number(n.x.toFixed(6))) || 0);
+      expect(Math.sign(at.y - o.y) || 0).toBe(Math.sign(Number(n.y.toFixed(6))) || 0);
+    }
+    // …and away from the shutter's, in screen space as well as plan space.
+    const n = openingMarkNormal(win());
+    const s = shutterMarkNormal(win());
+    expect(n.x).toBeCloseTo(-s.x);
+    expect(n.y).toBeCloseTo(-s.y);
+    // Rotating the plan turns both together (issue #33).
+    expect(openingMarkNormal(win(), 90).x).toBeCloseTo(1);
+  });
+
+  it("shows the entity's own icon, state-aware, on the shutter badge's terms", () => {
+    const g = { type: "door", entity: "cover.garage" } as Pick<Opening, "type" | "entity" | "icon">;
+    const st = (state: string) => ({ state, attributes: { device_class: "garage" } });
+    expect(openingMarkIcon(g, st("open"), true)).toBe("mdi:garage-open");
+    expect(openingMarkIcon(g, st("closed"), false)).toBe("mdi:garage");
+    // Override, registry, then the icon on the state — same order as always.
+    expect(openingMarkIcon({ ...g, icon: "mdi:mine" }, st("open"), true, "mdi:reg")).toBe("mdi:mine");
+    expect(openingMarkIcon(g, st("open"), true, "mdi:reg")).toBe("mdi:reg");
+  });
+
+  it("falls back to a door or a window when the entity declares no class", () => {
+    // A bare contact has no pair of its own, and the symbol it decorates does.
+    expect(openingMarkIcon({ type: "door", entity: "binary_sensor.d" }, undefined, true)).toBe(
+      "mdi:door-open"
+    );
+    expect(openingMarkIcon({ type: "door", entity: "binary_sensor.d" }, undefined, false)).toBe(
+      "mdi:door-closed"
+    );
+    expect(openingMarkIcon({ type: "window", entity: "binary_sensor.w" }, undefined, true)).toBe(
+      "mdi:window-open"
+    );
+    expect(openingMarkIcon({ type: "window", entity: "binary_sensor.w" }, undefined, false)).toBe(
+      "mdi:window-closed"
+    );
+  });
+
+  it("refuses an icon string that isn't one, at every level", () => {
+    const nasty = { state: "open", attributes: { icon: "mdi:x;background:url(//evil)" } };
+    const o = { type: "window", entity: "cover.w", icon: "mdi:evil;}" } as Pick<
+      Opening,
+      "type" | "entity" | "icon"
+    >;
+    expect(openingMarkIcon(o, nasty, true, "mdi:y;}")).toBe("mdi:window-open");
   });
 });
 
@@ -3773,6 +3972,23 @@ describe("openingClearFraction (#145 / #143)", () => {
   it("clamps a junk reading rather than cutting a gap wider than the wall", () => {
     expect(openingClearFraction(slider("biparting"), 5, 5)).toBe(1);
     expect(openingClearFraction(slider("converging"), -3, -3)).toBe(0);
+  });
+
+  it("a hinged double clears half per open sash (issue #159)", () => {
+    const casement = (extra: Partial<Opening> = {}) =>
+      ({ id: "w", type: "window", x: 0, y: 0, length: 90, angle: 0, ...extra }) as Opening;
+    // Each sash covers its own half, and clears it completely when open.
+    expect(openingClearFraction(casement(), 1, 1)).toBe(1);
+    expect(openingClearFraction(casement(), 1, 0)).toBe(0.5);
+    expect(openingClearFraction(casement(), 0, 1)).toBe(0.5);
+    expect(openingClearFraction(casement(), 0, 0)).toBe(0);
+    // A double door reads the same way (issue #168).
+    expect(openingClearFraction(casement({ type: "door", sash: "double" }), 1, 0)).toBe(0.5);
+    // One sash means one amount, exactly as before.
+    expect(openingClearFraction(casement({ sash: "single" }), 0.4, 1)).toBe(0.4);
+    expect(openingClearFraction(casement({ type: "door" }), 0.4, 1)).toBe(0.4);
+    // …as does a double with a single sensor: the mean of one amount is itself.
+    expect(openingClearFraction(casement(), 0.6)).toBeCloseTo(0.6, 10);
   });
 });
 

@@ -124,6 +124,16 @@ describe("openingForm", () => {
     expect(bi.fields.map((x) => x.name)).not.toContain("slide");
   });
 
+  it("names the roll-up motion after the door, not the shutter it isn't", () => {
+    // "Roll up (garage / shutter)" read as the place to set up an external
+    // shutter, which is the Shutter field further down and works on any motion.
+    const motionField = openingForm(door).fields.find((x) => x.name === "motion")!;
+    const labels = (
+      motionField.selector as { select: { options: { label: string; value: string }[] } }
+    ).select.options.map((o) => o.label);
+    expect(labels).toEqual(["Swing", "Slide", "Roll up (garage)"]);
+  });
+
   it("roll-up opening hides swing and slide fields (issue #45)", () => {
     const motionField = openingForm(door).fields.find((x) => x.name === "motion")!;
     const opts = (motionField.selector as { select: { options: { value: string }[] } }).select
@@ -237,6 +247,115 @@ describe("openingForm — two-panel sliders (issue #145)", () => {
     expect(form.toPatch({ secondaryEntity: "binary_sensor.c" })).toEqual({
       secondaryEntity: "binary_sensor.c",
     });
+  });
+});
+
+describe("openingForm — a hinged double's second leaf (issue #159)", () => {
+  const names = (o: Opening) => openingForm(o).fields.map((x) => x.name);
+  const bound = { entity: "binary_sensor.a" };
+  // The two shapes with two hinged leaves, each by its own type's default.
+  const casement = { ...door, type: "window", ...bound } as Opening;
+  const doubleDoor = { ...door, sash: "double", ...bound } as Opening;
+
+  it("offers the second leaf on a bound hinged double", () => {
+    expect(names(casement)).toContain("secondaryEntity");
+    expect(names(doubleDoor)).toContain("secondaryEntity");
+  });
+
+  it("does not offer it where there is only one leaf", () => {
+    expect(names({ ...door, ...bound } as Opening)).not.toContain("secondaryEntity");
+    expect(names({ ...casement, sash: "single" } as Opening)).not.toContain("secondaryEntity");
+    // A roll-up curtain is one piece, whatever sash is left lying on it.
+    expect(names({ ...casement, motion: "roll" } as Opening)).not.toContain("secondaryEntity");
+  });
+
+  it("waits for the first leaf to be bound, as the slider does", () => {
+    expect(names({ ...door, type: "window" } as Opening)).not.toContain("secondaryEntity");
+  });
+
+  it("talks about leaves, not panels — a sash is not a panel", () => {
+    const field = openingForm(casement).fields.find((x) => x.name === "secondaryEntity")!;
+    expect(field.label).toBe("Second leaf");
+    expect(field.helper).toContain("other leaf");
+    expect(openingForm(casement).fields.find((x) => x.name === "entity")!.helper).toContain(
+      "first leaf"
+    );
+  });
+
+  it("drops the second entity when the double becomes a single", () => {
+    const form = openingForm({ ...casement, secondaryEntity: "binary_sensor.b" } as Opening);
+    expect(form.toPatch({ sash: "single" }).secondaryEntity).toBeUndefined();
+    // …and keeps it while there are still two.
+    expect("secondaryEntity" in form.toPatch({ sash: "double" })).toBe(false);
+    // Rolling up leaves one curtain, so the binding goes with it.
+    expect(form.toPatch({ motion: "roll" }).secondaryEntity).toBeUndefined();
+  });
+
+  it("carries the binding across a change that keeps two leaves", () => {
+    // A two-sensor biparting slider turned into a casement pair keeps both
+    // contacts — the point of asking the *result*, not the motion.
+    const form = openingForm({
+      ...door,
+      type: "window",
+      motion: "slide",
+      sliderStyle: "biparting",
+      entity: "binary_sensor.a",
+      secondaryEntity: "binary_sensor.b",
+    } as Opening);
+    expect("secondaryEntity" in form.toPatch({ motion: "swing" })).toBe(false);
+    // A door has one leaf by default, so the same switch does drop it there.
+    const doorForm = openingForm({
+      ...door,
+      motion: "slide",
+      sliderStyle: "biparting",
+      entity: "binary_sensor.a",
+      secondaryEntity: "binary_sensor.b",
+    } as Opening);
+    expect(doorForm.toPatch({ motion: "swing" }).secondaryEntity).toBeUndefined();
+  });
+});
+
+describe("openingForm — a hinged shutter's second panel (issue #159)", () => {
+  const names = (o: Opening) => openingForm(o).fields.map((x) => x.name);
+  const hinged = {
+    ...door,
+    shutterEntity: "binary_sensor.persiana",
+    shutterStyle: "swing",
+  } as Opening;
+
+  it("offers it for a hinged shutter only", () => {
+    expect(names(hinged)).toContain("shutterSecondaryEntity");
+    expect(names({ ...hinged, shutterStyle: "roll" } as Opening)).not.toContain(
+      "shutterSecondaryEntity"
+    );
+    expect(names(door)).not.toContain("shutterSecondaryEntity");
+  });
+
+  it("is its own key, not the opening's second leaf", () => {
+    // A double casement behind a pair of shutters has four leaves; both
+    // fields appear at once and neither stands in for the other.
+    const both = { ...hinged, type: "window", entity: "binary_sensor.win" } as Opening;
+    expect(names(both)).toContain("secondaryEntity");
+    expect(names(both)).toContain("shutterSecondaryEntity");
+  });
+
+  it("carries the binding in data", () => {
+    expect(openingForm(hinged).data.shutterSecondaryEntity).toBe("");
+    expect(
+      openingForm({ ...hinged, shutterSecondaryEntity: "binary_sensor.b" } as Opening).data
+        .shutterSecondaryEntity
+    ).toBe("binary_sensor.b");
+  });
+
+  it("drops it with the shutter, and when the shutter starts rolling", () => {
+    const form = openingForm({
+      ...hinged,
+      shutterSecondaryEntity: "binary_sensor.b",
+    } as Opening);
+    expect(form.toPatch({ shutterEntity: "" }).shutterSecondaryEntity).toBeUndefined();
+    expect(form.toPatch({ shutterStyle: "roll" }).shutterSecondaryEntity).toBeUndefined();
+    // Staying hinged keeps it.
+    expect("shutterSecondaryEntity" in form.toPatch({ shutterStyle: "swing" })).toBe(false);
   });
 });
 
@@ -703,7 +822,12 @@ describe("wallForm / projectForm / floorImageForm", () => {
 
   it("rotation lives in the bottom-row display form, defaults to 0°, and patches as a number", () => {
     const form = projectDisplayForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
-    expect(form.fields.map((x) => x.name)).toEqual(["rotation", "overlayScale"]);
+    expect(form.fields.map((x) => x.name)).toEqual([
+      "rotation",
+      "overlayScale",
+      "compactHeader",
+      "offlineStyle",
+    ]);
     expect(form.data.rotation).toBe("0");
     // 0 comes back as undefined so an unrotated plan stays out of the YAML.
     expect(form.toPatch({ rotation: "0" })).toEqual({ rotation: undefined });
@@ -715,6 +839,41 @@ describe("wallForm / projectForm / floorImageForm", () => {
       rotation: 270,
     } as FloorplanCardConfig);
     expect(rotated.data.rotation).toBe("270");
+  });
+
+  it("compact header is off by default and stays out of the YAML (issue #152)", () => {
+    const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+    expect(projectDisplayForm(base).data.compactHeader).toBe(false);
+    expect(
+      projectDisplayForm({ ...base, compactHeader: true } as FloorplanCardConfig).data
+        .compactHeader
+    ).toBe(true);
+    expect(projectDisplayForm(base).toPatch({ compactHeader: false })).toEqual({
+      compactHeader: undefined,
+    });
+    expect(projectDisplayForm(base).toPatch({ compactHeader: true })).toEqual({
+      compactHeader: true,
+    });
+  });
+
+  it("offline devices default to dimmed, which stays out of the YAML (issue #162)", () => {
+    const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+    const form = projectDisplayForm(base);
+    expect(form.data.offlineStyle).toBe("dim");
+    // Every mode the reporter's two mock-ups asked for, plus the way out.
+    const field = form.fields.find((x) => x.name === "offlineStyle")!;
+    const opts = (field.selector as { select: { options: { value: string }[] } }).select.options.map(
+      (o) => o.value
+    );
+    expect(opts).toEqual(["dim", "strike", "none"]);
+    expect(form.toPatch({ offlineStyle: "dim" })).toEqual({ offlineStyle: undefined });
+    expect(form.toPatch({ offlineStyle: "strike" })).toEqual({ offlineStyle: "strike" });
+    expect(form.toPatch({ offlineStyle: "none" })).toEqual({ offlineStyle: "none" });
+    // A hand-edited junk value reads back as the default it renders as.
+    expect(
+      projectDisplayForm({ ...base, offlineStyle: "sparkle" } as unknown as FloorplanCardConfig).data
+        .offlineStyle
+    ).toBe("dim");
   });
 
   it("skin offers every built-in and keeps the default out of the YAML", () => {
@@ -928,6 +1087,46 @@ describe("openingForm — shutter invert and side (issue #74 follow-up)", () => 
     expect(names(both)).toContain("shutterInvert");
     expect(openingForm({ ...both, shutterInvert: true, invert: false } as Opening).data)
       .toMatchObject({ shutterInvert: true, invert: false });
+  });
+
+  it("says which animation each invert flips, so the pair can be told apart", () => {
+    // Stacked one above the other, "Invert" and "Invert shutter" left you
+    // guessing which switch drove which layer.
+    const both = { ...hinged, entity: "binary_sensor.win" } as Opening;
+    const labels = new Map(openingForm(both).fields.map((f) => [f.name, f.label]));
+    expect(labels.get("invert")).toBe("Invert window animation");
+    expect(labels.get("shutterInvert")).toBe("Invert shutter animation");
+    // …and the opening's own switch is named after what it actually moves.
+    const door = { ...both, type: "door" } as Opening;
+    expect(new Map(openingForm(door).fields.map((f) => [f.name, f.label])).get("invert")).toBe(
+      "Invert door animation"
+    );
+  });
+
+  it("offers the opening's own badge, opt-in and only once bound", () => {
+    const bound = { ...win, entity: "cover.garage" } as Opening;
+    expect(names(win)).not.toContain("showIcon");
+    expect(names(bound)).toContain("showIcon");
+    // The glyph override is only worth asking once the badge is drawn.
+    expect(names(bound)).not.toContain("icon");
+    expect(names({ ...bound, showIcon: true } as Opening)).toContain("icon");
+    // Off is the default, so only "on" is worth writing down — the mirror of
+    // the shutter badge, which defaults the other way.
+    const { toPatch, data } = openingForm(bound);
+    expect(data.showIcon).toBe(false);
+    expect(toPatch({ showIcon: true })).toEqual({ showIcon: true });
+    expect(toPatch({ showIcon: false })).toEqual({ showIcon: undefined, icon: undefined });
+  });
+
+  it("drops the badge with the entity it was badging", () => {
+    const { toPatch } = openingForm({ ...win, entity: "cover.garage", showIcon: true } as Opening);
+    expect(toPatch({ entity: "" })).toEqual({
+      entity: "",
+      showIcon: undefined,
+      icon: undefined,
+    });
+    // Binding a different entity keeps it: the badge is still wanted.
+    expect(toPatch({ entity: "cover.other" })).toEqual({ entity: "cover.other" });
   });
 
   it("asks which side only for hinged panels", () => {

@@ -1,0 +1,264 @@
+# Sample data.
+#
+# A container that has just booted has an empty recorder, so there is nothing
+# to replay, nothing to scrub and nothing on a history graph. These
+# automations keep the house busy: within a couple of minutes of `up` there is
+# a dense, real, recorder-backed window to test against, and it keeps growing
+# for as long as the container runs.
+#
+# Recorder timestamps are wall-clock, so this can only ever build history
+# *forward* from boot. There is no way to fake a plan that was busy yesterday
+# short of writing rows into the recorder database by hand, which is not worth
+# doing -- the schema changes between HA versions and you would end up
+# debugging the fixture instead of the card.
+#
+# Switch it all off with input_boolean.history_generator when you want to read
+# a still plan, or when a state you set by hand keeps getting overwritten
+# under you.
+
+- id: history_generator_boot
+  alias: "Sample data: start generating on boot"
+  description: >-
+    So a fresh `docker compose up` accumulates replayable history without
+    anyone having to remember to start it.
+  trigger:
+    - platform: homeassistant
+      event: start
+  action:
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.history_generator
+  mode: single
+
+- id: history_generator_lights
+  alias: "Sample data: lights"
+  description: >-
+    Flips a light every 10s and sometimes re-colours or re-dims it, so the
+    replay timeline has both plain on/off transitions and attribute-only
+    changes -- the second kind is the one that is easy to drop.
+  trigger:
+    - platform: time_pattern
+      seconds: "/10"
+  condition:
+    - condition: state
+      entity_id: input_boolean.history_generator
+      state: "on"
+  action:
+    - variables:
+        target: >-
+          {{ ['light.bed_light', 'light.ceiling_lights', 'light.kitchen_lights',
+              'light.office_rgbw_lights'] | random }}
+    - choose:
+        # Two thirds of the time, toggle. The rest of the time, leave it on but
+        # change how it looks, so brightness and colour move independently of
+        # the on/off edges.
+        - conditions:
+            - condition: template
+              value_template: "{{ range(3) | random > 0 }}"
+          sequence:
+            - service: light.toggle
+              target:
+                entity_id: "{{ target }}"
+      default:
+        - service: light.turn_on
+          target:
+            entity_id: "{{ target }}"
+          data:
+            brightness: "{{ range(40, 255) | random }}"
+            rgb_color:
+              - "{{ range(0, 255) | random }}"
+              - "{{ range(0, 255) | random }}"
+              - "{{ range(0, 255) | random }}"
+  mode: single
+
+- id: history_generator_covers
+  alias: "Sample data: covers"
+  description: >-
+    Drives covers to intermediate positions, not just open/closed. A cover
+    replayed as a boolean looks fine; a cover replayed at 40% is the case that
+    catches a position dropped on the way through history.
+
+    Only hall_window and living_room_window are listed: of the demo covers
+    those are the two that actually implement set_cover_position. The garage
+    door is open/close only and is driven below.
+  trigger:
+    - platform: time_pattern
+      seconds: "/30"
+  condition:
+    - condition: state
+      entity_id: input_boolean.history_generator
+      state: "on"
+  action:
+    - service: cover.set_cover_position
+      target:
+        entity_id: >-
+          {{ ['cover.living_room_window', 'cover.hall_window'] | random }}
+      data:
+        position: "{{ range(0, 11) | random * 10 }}"
+  mode: single
+
+- id: history_generator_garage
+  alias: "Sample data: garage door"
+  description: >-
+    The garage door has no position, only open and close, which is the other
+    kind of cover the card has to draw -- and the one bound to the roll-up
+    opening on the demo plan.
+  trigger:
+    - platform: time_pattern
+      minutes: "/3"
+  condition:
+    - condition: state
+      entity_id: input_boolean.history_generator
+      state: "on"
+  action:
+    - service: cover.toggle
+      target:
+        entity_id: cover.garage_door
+  mode: single
+
+- id: history_generator_sensors
+  alias: "Sample data: sensor readings"
+  description: >-
+    Walks the temperature, humidity and soil numbers rather than jumping them,
+    so a scrubbed timeline shows a curve instead of noise, and so the two
+    decimal places the badge is supposed to round actually vary.
+  trigger:
+    - platform: time_pattern
+      seconds: "/15"
+  condition:
+    - condition: state
+      entity_id: input_boolean.history_generator
+      state: "on"
+  action:
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.living_temperature
+      data:
+        value: >-
+          {{ [[states('input_number.living_temperature') | float(18)
+               + (range(-40, 41) | random / 100), 14] | max, 28] | min | round(2) }}
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.living_humidity
+      data:
+        value: >-
+          {{ [[states('input_number.living_humidity') | float(50)
+               + (range(-80, 81) | random / 100), 20] | max, 80] | min | round(2) }}
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.ficus_moisture
+      data:
+        # Drifts down like soil drying out, then gets watered when it hits the
+        # bottom -- which is what makes the plant symbol's stateColor
+        # thresholds visibly cross during a replay rather than sitting on one
+        # colour forever.
+        value: >-
+          {{ 100 if states('input_number.ficus_moisture') | float(70) < 35
+             else (states('input_number.ficus_moisture') | float(70) - 0.4) | round(1) }}
+  mode: single
+
+- id: history_generator_door
+  alias: "Sample data: front door"
+  description: >-
+    Opens the door contact briefly and closes it again, so there are short
+    events in history -- the ones a timeline with a coarse pixel-per-second
+    scale can swallow entirely.
+  trigger:
+    - platform: time_pattern
+      minutes: "/2"
+  condition:
+    - condition: state
+      entity_id: input_boolean.history_generator
+      state: "on"
+  action:
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.front_door
+    - delay: "00:00:04"
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.front_door
+  mode: single
+
+- id: history_generator_tracker
+  alias: "Sample data: tracker movement"
+  description: >-
+    Walks the two distance readings in small steps so the marker drifts across
+    the room instead of teleporting, and clears presence every so often so the
+    marker has to vanish. Fires every 5s -- a tracker that moves once a minute
+    tells you nothing about whether the animation is smooth.
+  trigger:
+    - platform: time_pattern
+      seconds: "/5"
+  condition:
+    - condition: state
+      entity_id: input_boolean.history_generator
+      state: "on"
+  action:
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.tracker_distance_x
+      data:
+        value: >-
+          {{ [[states('input_number.tracker_distance_x') | float(250)
+               + (range(-40, 41) | random), 0] | max, 500] | min | round(0) }}
+    - service: input_number.set_value
+      target:
+        entity_id: input_number.tracker_distance_y
+      data:
+        value: >-
+          {{ [[states('input_number.tracker_distance_y') | float(250)
+               + (range(-40, 41) | random), 0] | max, 500] | min | round(0) }}
+  mode: single
+
+- id: history_generator_presence
+  alias: "Sample data: the room empties"
+  description: >-
+    Clears presence for 20s now and then, so the tracker marker has to
+    disappear and come back.
+
+    Kept out of the movement automation above deliberately: a 20s wait inside
+    something that triggers every 5s means `mode: single` drops the triggers
+    that land during the wait, and the movement stalls while the room is
+    empty. Separate automations, so the wait only blocks itself.
+  trigger:
+    - platform: time_pattern
+      minutes: "/4"
+  condition:
+    - condition: state
+      entity_id: input_boolean.history_generator
+      state: "on"
+  action:
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.living_presence
+    - delay: "00:00:20"
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.living_presence
+  mode: single
+
+- id: history_generator_unavailable
+  alias: "Sample data: an entity that drops out"
+  description: >-
+    Takes sensor.flaky_sensor genuinely `unavailable` for 45s every few
+    minutes, via the availability template it is defined with. Real history is
+    full of these gaps -- an integration reloading, a device losing power --
+    and they are the states a replay is most likely to get wrong, because
+    `unavailable` is neither on nor off and has no attributes to read.
+  trigger:
+    - platform: time_pattern
+      minutes: "/5"
+  condition:
+    - condition: state
+      entity_id: input_boolean.history_generator
+      state: "on"
+  action:
+    - service: input_boolean.turn_off
+      target:
+        entity_id: input_boolean.flaky_sensor_online
+    - delay: "00:00:45"
+    - service: input_boolean.turn_on
+      target:
+        entity_id: input_boolean.flaky_sensor_online
+  mode: single

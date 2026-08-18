@@ -18,6 +18,7 @@ import type {
   BadgeContent,
   BadgeEntity,
   PressEffect,
+  OfflineStyle,
   Furniture,
   Tracker,
   Area,
@@ -47,6 +48,7 @@ import {
   GLOW_MAX_OPACITY,
   GLOW_MIN_RADIUS,
   DEFAULT_PRESS_EFFECT,
+  DEFAULT_OFFLINE_STYLE,
   BADGE_MIN_LIGHTNESS,
   FURNITURE_GLOW_TRANSMISSION,
   getFloors,
@@ -123,11 +125,12 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
     for (const o of f.openings) {
       if (o.entity) ids.add(o.entity);
       if (o.shutterEntity) ids.add(o.shutterEntity);
-      // The second panel of a two-panel slider (issue #145). Exactly the trap
-      // named above, and the worst version of it: the panel is not frozen, it
-      // catches up whenever some *other* watched entity moves, so it reads as
+      // The opening's second leaf (issues #145, #159). Exactly the trap named
+      // above, and the worst version of it: the leaf is not frozen, it catches
+      // up whenever some *other* watched entity moves, so it reads as
       // intermittent rather than broken.
       if (o.secondaryEntity) ids.add(o.secondaryEntity);
+      if (o.shutterSecondaryEntity) ids.add(o.shutterSecondaryEntity);
     }
     for (const it of f.items) {
       if (it.entity) ids.add(it.entity);
@@ -552,15 +555,23 @@ function clipWallToBox(
  *  | `biparting`              | all of it | half     |
  *  | `biparting-bypass`       | half      | a quarter|
  *  | `converging`             | half      | a quarter|
+ *  | hinged double            | all of it | half     |
  *
- * Every other opening keeps `amount` untouched, so a swing door, a roll-up and
- * a single-panel slider all behave exactly as they did — as does a
- * single-sensor `biparting`, where both leaves share one amount and the mean
- * of it is itself.
+ * The hinged double joined the table with issue #159, and swings the same way
+ * `biparting` slides: each leaf covers its own half of the opening and clears
+ * it completely when open, so one open sash of a casement pair lets through
+ * half the light.
+ *
+ * Every other opening keeps `amount` untouched, so a single-leaf swing door, a
+ * roll-up and a single-panel slider all behave exactly as they did — as does a
+ * single-sensor `biparting` or double sash, where both leaves share one amount
+ * and the mean of it is itself.
  */
 export function openingClearFraction(o: Opening, amount: number, secondAmount?: number): number {
   const a1 = Math.max(0, Math.min(1, amount));
   const a2 = Math.max(0, Math.min(1, secondAmount ?? amount));
+  if (openingMotion(o) === "swing")
+    return openingSash(o) === "double" ? (a1 + a2) / 2 : a1;
   switch (sliderStyleOf(o)) {
     case "biparting":
       // Each leaf recesses into its own wall, so between them they can clear
@@ -1442,6 +1453,43 @@ export function pressEffectOf(c: { pressEffect?: PressEffect }): PressEffect {
 }
 
 /**
+ * Which offline treatment a plan uses (issue #162), resolving anything
+ * unrecognised to the default — the value becomes a class name, exactly as
+ * {@link pressEffectOf}'s does, so an unchecked string would silently mean
+ * "no treatment".
+ */
+export function offlineStyleOf(c: { offlineStyle?: OfflineStyle }): OfflineStyle {
+  const v = c.offlineStyle;
+  return v === "dim" || v === "strike" || v === "none" ? v : DEFAULT_OFFLINE_STYLE;
+}
+
+/**
+ * Whether a device's entity has dropped out (issue #162) — the reporter's
+ * "offline" ceiling light. Three things count, because on the plan they are
+ * the same thing:
+ *
+ * - `unavailable` — the integration says the device is not answering;
+ * - `unknown` — it is answering but has no reading, which is Home Assistant's
+ *   other half of the same story (`isSensorOutage`, and the rule every other
+ *   fail-closed reader in this file already follows);
+ * - **no state at all** — the entity id is not in `hass`. Renamed, deleted, or
+ *   from an integration that failed to load. Today that draws a perfectly
+ *   ordinary "off" badge for something that does not exist.
+ *
+ * A device with no entity bound at all is *not* offline: those are the plain
+ * markers issue #39 added, and there is nothing about them to be wrong.
+ *
+ * The caller passes the state string it already looked up, so this stays pure
+ * and the card does not resolve the same entity twice. A card with no `hass`
+ * yet must not call this — before the first state arrives everything would
+ * read as offline, and the plan would flash grey on load.
+ */
+export function itemIsOffline(item: { entity?: string }, state: string | undefined): boolean {
+  if (!item.entity) return false;
+  return state === undefined || isSensorOutage(state);
+}
+
+/**
  * The reading a domain shows in its badge when the config does not name one,
  * with the compact unit that goes with it (issue #106). A thermostat's *state*
  * is its mode — "heat" — so without this the one device the issue was opened
@@ -1745,24 +1793,41 @@ export function sliderStyleOf(o: Opening): SliderStyle {
  * Takes the style rather than the opening because the editor asks about a style
  * the user has just picked, before it is on any opening.
  */
-export function sliderStyleHasTwoPanels(style: SliderStyle): boolean {
+export function sliderStyleHasTwoLeaves(style: SliderStyle): boolean {
   return style === "biparting" || style === "biparting-bypass" || style === "converging";
 }
 
-/** {@link sliderStyleHasTwoPanels} for an opening as configured. */
-export function openingHasTwoPanels(o: Opening): boolean {
-  return sliderStyleHasTwoPanels(sliderStyleOf(o));
+/**
+ * Whether an opening has **two** moving leaves, and so a second one for
+ * `secondaryEntity` to drive. The single predicate everything downstream keys
+ * off — the editor's field, the card's resolver, which drawing reads the
+ * second amount — so widening it is what gives a new shape per-leaf sensors
+ * (issue #159).
+ *
+ * Two shapes qualify, for the same reason:
+ *
+ * - a **hinged double** — a casement window's two sashes, or the double door
+ *   #168 added — each leaf on its own jamb, each with its own contact;
+ * - a **two-panel slider** (issue #145), by {@link sliderStyleHasTwoLeaves}.
+ *
+ * A single-leaf swing door does not: there is nothing to split. Nor does a
+ * roll-up, whose curtain is one piece.
+ */
+export function openingHasTwoLeaves(o: Opening): boolean {
+  return openingMotion(o) === "swing"
+    ? openingSash(o) === "double"
+    : sliderStyleHasTwoLeaves(sliderStyleOf(o));
 }
 
 /**
- * The second moving panel as an opening in its own right, so it can go through
+ * The second leaf as an opening in its own right, so it can go through
  * {@link resolveOpeningAmount} / {@link openingIsActive} unchanged rather than
- * threading a "which panel" argument down the whole resolver chain (issue #145).
+ * threading a "which leaf" argument down the whole resolver chain (issue #145).
  * Shares the geometry and `invert`; only the bound entity differs. Callers must
- * check {@link openingHasTwoPanels} and a set `secondaryEntity` first — with no
- * entity this resolves to the type default, not to the first panel's state.
+ * check {@link openingHasTwoLeaves} and a set `secondaryEntity` first — with no
+ * entity this resolves to the type default, not to the first leaf's state.
  */
-export function secondPanelOf(o: Opening): Opening {
+export function secondLeafOf(o: Opening): Opening {
   return { ...o, entity: o.secondaryEntity };
 }
 
@@ -2096,13 +2161,19 @@ function rollCurtain(length: number, tone: string, amt: number): SVGTemplateResu
  * side from the sashes, `-1` the sash's own side, for a window whose outside
  * is the near side of the wall. It flips both the offset and the fold
  * direction, so the panels still swing *away* from the wall either way.
+ *
+ * `tone2` / `amt2` are the right-hand panel's, for a shutter with a contact on
+ * each panel (issue #159). They default to the left's, so a single-sensor
+ * shutter folds symmetrically exactly as it always has.
  */
 function swingShutter(
   length: number,
   cutH: number,
   tone: string,
   amt: number,
-  side: 1 | -1 = 1
+  side: 1 | -1 = 1,
+  tone2: string = tone,
+  amt2: number = amt
 ): SVGTemplateResult {
   const half = length / 2;
   const t = 3;
@@ -2131,8 +2202,8 @@ function swingShutter(
         </g>
       </g>
       <g transform="translate(${half} ${y0})">
-        <g class="fp-leaf-r" style="transform:rotate(${-side * 90 * amt}deg);">
-          <rect x=${-half} y=${-t / 2} width=${half} height=${t} style="fill:${tone};" />
+        <g class="fp-leaf-r" style="transform:rotate(${-side * 90 * amt2}deg);">
+          <rect x=${-half} y=${-t / 2} width=${half} height=${t} style="fill:${tone2};" />
           ${louvers(-half, half)}
         </g>
       </g>`;
@@ -2232,6 +2303,45 @@ export function hasShutterMark(
 /** Last-resort shutter glyphs, for an entity with no device class of its own. */
 const SHUTTER_FALLBACK_ICON = { on: "mdi:window-shutter-open", off: "mdi:window-shutter" };
 
+/** The same, for an opening's own badge — a door reads as a door, glass as glass. */
+const OPENING_FALLBACK_ICON: Record<OpeningType, { on: string; off: string }> = {
+  door: { on: "mdi:door-open", off: "mdi:door-closed" },
+  window: { on: "mdi:window-open", off: "mdi:window-closed" },
+};
+
+/**
+ * The badge glyph for one bound entity: the author's override first, then the
+ * entity's **own** icon resolved exactly as Home Assistant resolves it —
+ * registry override, then the icon on the state, then the domain/device-class
+ * default — and a state-aware pair as the last resort.
+ *
+ * Shared by both badges an opening can draw, because "show whatever this
+ * entity shows everywhere else in HA" is the same promise either time. `open`
+ * is the already-inverted reading, so a sensor wired the other way round still
+ * picks the right half of every pair.
+ */
+function markIcon(
+  entityId: string,
+  configured: string | undefined,
+  st: { state: string; attributes?: Record<string, unknown> } | undefined,
+  open: boolean,
+  fallback: { on: string; off: string },
+  registryIcon?: string,
+): string {
+  // The author's own choice first, as it is for a device (issue #106) — the
+  // one candidate that is a decision rather than a default.
+  const chosen = cssIcon(configured);
+  if (chosen) return chosen;
+  const registry = cssIcon(registryIcon);
+  if (registry) return registry;
+  const attr = cssIcon(st?.attributes?.icon);
+  if (attr) return attr;
+  return (
+    entityDefaultIcon(entityId, st?.attributes?.device_class as string | undefined, open) ??
+    (open ? fallback.on : fallback.off)
+  );
+}
+
 /**
  * The glyph for an opening's shutter badge — the shutter entity's **own**
  * icon, resolved exactly as Home Assistant resolves it, so the badge shows
@@ -2250,19 +2360,72 @@ export function shutterMarkIcon(
   open: boolean,
   registryIcon?: string,
 ): string {
-  const entityId = o.shutterEntity ?? "";
-  // The author's own choice first, as it is for a device (issue #106) — the
-  // one candidate that is a decision rather than a default.
-  const configured = cssIcon(o.shutterIcon);
-  if (configured) return configured;
-  const registry = cssIcon(registryIcon);
-  if (registry) return registry;
-  const attr = cssIcon(st?.attributes?.icon);
-  if (attr) return attr;
-  return (
-    entityDefaultIcon(entityId, st?.attributes?.device_class as string | undefined, open) ??
-    (open ? SHUTTER_FALLBACK_ICON.on : SHUTTER_FALLBACK_ICON.off)
+  return markIcon(
+    o.shutterEntity ?? "",
+    o.shutterIcon,
+    st,
+    open,
+    SHUTTER_FALLBACK_ICON,
+    registryIcon,
   );
+}
+
+/**
+ * Whether an opening draws a badge for its **own** entity (issue #154
+ * follow-up).
+ *
+ * Off unless asked for, unlike the shutter's: the symbol already carries the
+ * state for anything that stays on screen while it moves. A roll-up is the
+ * case that doesn't — its curtain leaves the floor plane, so wide open there
+ * is only a coloured track line left, which is a lot to read across a room.
+ */
+export function hasOpeningMark(o: Pick<Opening, "entity" | "showIcon">): boolean {
+  return !!o.entity && (o.showIcon ?? false);
+}
+
+/**
+ * The glyph for that badge — the opening entity's own icon, on the same terms
+ * as the shutter's, falling back to a door/window pair for an entity with no
+ * device class to speak for it.
+ */
+export function openingMarkIcon(
+  o: Pick<Opening, "type" | "entity" | "icon">,
+  st: { state: string; attributes?: Record<string, unknown> } | undefined,
+  open: boolean,
+  registryIcon?: string,
+): string {
+  return markIcon(
+    o.entity ?? "",
+    o.icon,
+    st,
+    open,
+    OPENING_FALLBACK_ICON[o.type] ?? OPENING_FALLBACK_ICON.door,
+    registryIcon,
+  );
+}
+
+/**
+ * Where that badge sits, and which way it is pushed: the mirror image of the
+ * shutter's, on the other face of the wall.
+ *
+ * Not a style choice — it is what keeps the two badges apart. A shutter hangs
+ * outside, so its badge follows it there; the opening belongs to the room, so
+ * its own badge sits inside. An opening drawing both then has one on each
+ * side, at any angle and under any `flipV`, without either having to know the
+ * other exists.
+ */
+export function openingMarkPoint(
+  o: Pick<Opening, "x" | "y" | "angle" | "flipV">,
+): { x: number; y: number } {
+  return shutterMarkPoint(o, -SHUTTER_MARK_OFFSET);
+}
+
+export function openingMarkNormal(
+  o: Pick<Opening, "angle" | "flipV">,
+  rot: PlanRotation = 0,
+): { x: number; y: number } {
+  const n = shutterMarkNormal(o, rot);
+  return { x: -n.x, y: -n.y };
 }
 
 /** Style options for {@link renderOpening}. */
@@ -2300,12 +2463,21 @@ export interface OpeningStyle {
     style?: "roll" | "swing";
     accent?: string;
     flip?: boolean;
+    /**
+     * The hinged shutter's **other** panel, when it has a contact of its own
+     * (issue #159) — the second half of a pair of persiane, one folded back
+     * and one still across the glass. Omitted, both panels share `amount` and
+     * `active`, which is what a single-sensor shutter has always drawn. The
+     * roll curtain ignores it: a rolling slat band is one piece.
+     */
+    second?: { amount: number; active?: boolean };
   };
   /**
-   * The second moving panel of a biparting slider (issue #145), when it has a
-   * sensor of its own. Omitted — the only case before that issue — leaves both
-   * panels sharing `amount` and `active`, so a single-entity slider parts
-   * symmetrically exactly as it always has. Ignored by every other style.
+   * The opening's second leaf, when it has a sensor of its own — a biparting
+   * slider's other panel (issue #145), or the other sash of a hinged double
+   * (issue #159). Omitted — the only case before those issues — leaves both
+   * leaves sharing `amount` and `active`, so a single-entity opening moves
+   * symmetrically exactly as it always has. Ignored by anything with one leaf.
    */
   second?: { amount: number; active?: boolean };
 }
@@ -2327,6 +2499,15 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   // Fraction open (0..1) drives partial swing/slide. Defaults to the binary
   // `open` so callers that don't pass `amount` render exactly as before.
   const amt = Math.max(0, Math.min(1, style.amount ?? (open ? 1 : 0)));
+  // The second leaf's own state, when it has a sensor of its own (issues #145,
+  // #159). Omitted it mirrors the first, which is what every opening drew
+  // before there was a second sensor to read. Resolved here rather than inside
+  // a branch because two shapes now have two leaves — sliding panels and a
+  // hinged double — and both read the same pair.
+  const amt2 = style.second ? Math.max(0, Math.min(1, style.second.amount)) : amt;
+  const tone2 = style.second
+    ? cssColorOr(style.second.active ? accent : color, SKIN_ACCENT)
+    : tone;
 
   let body: SVGTemplateResult;
   if (openingMotion(o) === "swing") {
@@ -2342,9 +2523,11 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
     const leafW = two ? half : o.length;
     const arcLen = (Math.PI / 2) * leafW;
     // Revealed via stroke-dashoffset so each arc "draws on" as its leaf opens.
-    const arc = (d: string) => svg`<path class="fp-door-arc" d=${d}
+    // Each arc is drawn from its own leaf's state, so a pair of casement sashes
+    // with a contact each traces two different arcs (issue #159).
+    const arc = (d: string, tn: string, a: number) => svg`<path class="fp-door-arc" d=${d}
               fill="none" stroke-width="1.5" stroke-dasharray=${arcLen}
-              style="stroke:${tone};stroke-dashoffset:${arcLen * (1 - amt)};" />`;
+              style="stroke:${tn};stroke-dashoffset:${arcLen * (1 - a)};" />`;
     // Jambs are what say "glass": a door is drawn by its leaf and arc alone,
     // and that is what tells the two symbols apart at a glance.
     const jambs =
@@ -2361,10 +2544,12 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
           two
             ? // Two leaves hinged at opposite jambs, meeting in the middle when
               // shut and each tracing its own quarter circle outward.
-              svg`${arc(`M 0 0 A ${half} ${half} 0 0 0 ${-half} ${-half}`)}${arc(
-                `M 0 0 A ${half} ${half} 0 0 1 ${half} ${-half}`
+              svg`${arc(`M 0 0 A ${half} ${half} 0 0 0 ${-half} ${-half}`, tone, amt)}${arc(
+                `M 0 0 A ${half} ${half} 0 0 1 ${half} ${-half}`,
+                tone2,
+                amt2
               )}`
-            : arc(`M ${half} 0 A ${o.length} ${o.length} 0 0 0 ${-half} ${-o.length}`)
+            : arc(`M ${half} 0 A ${o.length} ${o.length} 0 0 0 ${-half} ${-o.length}`, tone, amt)
         }
         <!-- leaf hinged at the left jamb (flipH mirrors it to the right one) -->
         <g transform="translate(${-half} 0)">
@@ -2374,9 +2559,12 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
         </g>
         ${
           two
-            ? svg`<g transform="translate(${half} 0)">
-          <g class="fp-leaf-r" style="transform:rotate(${90 * amt}deg);">
-            <rect x=${-half} y="-1.25" width=${half} height="2.5" style="fill:${tone};" />
+            ? // The other leaf, on its own sensor when it has one (issue #159):
+              // a casement pair with a contact per sash draws left-open /
+              // right-shut, exactly as a two-sensor slider parts unevenly.
+              svg`<g transform="translate(${half} 0)">
+          <g class="fp-leaf-r" style="transform:rotate(${90 * amt2}deg);">
+            <rect x=${-half} y="-1.25" width=${half} height="2.5" style="fill:${tone2};" />
           </g>
         </g>`
             : nothing
@@ -2394,9 +2582,15 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
               stroke=${color} stroke-width="2" />
         <line x1=${half} y1=${-cutH / 2} x2=${half} y2=${cutH / 2}
               stroke=${color} stroke-width="2" />
-        <!-- track: stays when the curtain is up so the gap still reads as an opening -->
+        <!-- Track: stays when the curtain is up so the gap still reads as an
+             opening — and wears the accent while the cover is open or moving
+             (issue #154). Wide open the curtain has scaled away to nothing, so
+             this line is the *only* mark left: drawn in the base colour it read
+             exactly like a shut garage, which is the one thing it must not do.
+             Full strength when accented, since a 0.6 tint of the accent reads
+             as neither colour. -->
         <line x1=${-half} y1="0" x2=${half} y2="0"
-              stroke=${color} stroke-width="0.75" opacity="0.6" />
+              stroke=${tone} stroke-width="0.75" opacity=${active ? 1 : 0.6} />
         ${rollCurtain(o.length, tone, amt)}`;
   } else {
     // Sliding — the last of the three motions, so the fallback.
@@ -2411,15 +2605,6 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
         <line x1=${half} y1=${-cutH / 2} x2=${half} y2=${cutH / 2}
               stroke=${color} stroke-width="2" />`;
     const sliderStyle = sliderStyleOf(o);
-    // The second moving panel of a biparting slider (issue #145). With a sensor
-    // of its own it opens and accents independently; without one it mirrors the
-    // first panel, which is what a single-entity slider has always drawn.
-    const amt2 = style.second
-      ? Math.max(0, Math.min(1, style.second.amount))
-      : amt;
-    const tone2 = style.second
-      ? cssColorOr(style.second.active ? accent : color, SKIN_ACCENT)
-      : tone;
     if (sliderStyle === "bypass") {
       // Double bypass: two half-width panels on parallel tracks. The moving
       // (back) panel slides left to stack behind the fixed (front) panel.
@@ -2539,11 +2724,29 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
       style.shutter.active ? (style.shutter.accent ?? accent) : color,
       SKIN_ACCENT
     );
-    const amt2 = Math.max(0, Math.min(1, style.shutter.amount));
+    const shutterAmt = Math.max(0, Math.min(1, style.shutter.amount));
+    // The hinged pair's other panel, on its own contact when it has one
+    // (issue #159); without one it folds with the first, as before.
+    const second = style.shutter.second;
+    const shutterTone2 = second
+      ? cssColorOr(
+          second.active ? (style.shutter.accent ?? accent) : color,
+          SKIN_ACCENT
+        )
+      : shutterTone;
+    const shutterAmt2 = second ? Math.max(0, Math.min(1, second.amount)) : shutterAmt;
     body = svg`${body}${
       style.shutter.style === "swing"
-        ? swingShutter(o.length, cutH, shutterTone, amt2, style.shutter.flip ? -1 : 1)
-        : rollCurtain(o.length, shutterTone, amt2)
+        ? swingShutter(
+            o.length,
+            cutH,
+            shutterTone,
+            shutterAmt,
+            style.shutter.flip ? -1 : 1,
+            shutterTone2,
+            shutterAmt2
+          )
+        : rollCurtain(o.length, shutterTone, shutterAmt)
     }`;
   }
   const { sx, sy } = openingMirror(o);
