@@ -1190,9 +1190,13 @@ export class FloorplanCard extends LitElement {
       flex-direction: row;
       flex-wrap: wrap;
       justify-content: flex-end;
-      /* Room for the title chip on the left. Without it a long floor name and
-         a long title meet in the middle — the chip's own max-width leaves the
-         same margin from the other side. */
+    }
+    /* Room for the title chip on the left, so a long floor name and a long
+       title don't meet in the middle — the chip's own max-width leaves the
+       same margin from the other side. Only when there *is* a chip: a compact
+       card with no title has the whole strip, and reserving 44% of it would
+       wrap the buttons for nothing. */
+    .stage.compact-title .floor-switcher.row {
       left: 44%;
     }
     .floor-switcher button {
