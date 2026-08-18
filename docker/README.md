@@ -55,6 +55,13 @@ immediately — but the browser has already cached the old one, so a change need
 a hard refresh (<kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>). This is the
 one place the container is more friction than the vite harness, which hot-reloads.
 
+Home Assistant serves `/local/` with a month-long `Cache-Control`, so a plain
+reload will happily keep running a card you built last week — which looks like
+your change never compiled. `npm run ha` sidesteps that by registering the
+resource as `/local/easy-floorplan-card.js?v=<hash of the bundle>`: every build
+gets a URL no browser has seen. Only a full `npm run ha` re-registers, which is
+why the `npm run watch` loop above still needs the hard refresh.
+
 Other commands:
 
 ```bash

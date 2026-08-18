@@ -25,6 +25,7 @@
 // being committed -- including right after `npm run ha:reset` has removed it.
 
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -74,6 +75,22 @@ const storageDir = join(here, "config", ".storage");
 const resourceFile = join(storageDir, "lovelace_resources");
 const URL_PATH = "/local/easy-floorplan-card.js";
 
+// The URL carries a hash of the bundle, because Home Assistant serves /local/
+// with `Cache-Control: public, max-age=2678400` -- a month. At a fixed URL the
+// browser never asks again: you rebuild, restart the container, reload the
+// page, and Home Assistant still runs the card you built last week. It is a
+// convincing failure, because everything else about the instance is new.
+//
+// So every build gets a URL no browser has seen. This is what HACS does with
+// its own `?hacstag=`, and it is why a real install picks up an update on a
+// plain reload. `npm run watch` still rebuilds behind a URL that was already
+// registered, so that loop keeps needing a hard refresh (see docker/README).
+const bundle = resolve(here, "..", "dist", "easy-floorplan-card.js");
+const version = existsSync(bundle)
+  ? createHash("sha256").update(readFileSync(bundle)).digest("hex").slice(0, 12)
+  : null;
+const resourceUrl = version ? `${URL_PATH}?v=${version}` : URL_PATH;
+
 let store = {
   version: 1,
   minor_version: 1,
@@ -92,17 +109,24 @@ if (existsSync(resourceFile)) {
   }
 }
 
-if (store.data.items.some((item) => item?.url === URL_PATH)) {
-  console.log("Resource already registered; leaving it alone.");
+// Match on the path, not the whole URL: the point is to *replace* the entry
+// this script wrote last time, whatever version it pointed at. Appending a
+// second one would leave the frontend loading both, and two modules defining
+// <easy-floorplan-card> means the second registration throws.
+const existing = store.data.items.find((item) => item?.url?.split("?")[0] === URL_PATH);
+if (existing?.url === resourceUrl) {
+  console.log("Resource already registered at this build; leaving it alone.");
 } else {
-  store.data.items.push({
-    id: "easyfloorplandevresource01",
-    type: "module",
-    url: URL_PATH,
-  });
+  if (existing) existing.url = resourceUrl;
+  else
+    store.data.items.push({
+      id: "easyfloorplandevresource01",
+      type: "module",
+      url: resourceUrl,
+    });
   mkdirSync(storageDir, { recursive: true });
   writeFileSync(resourceFile, JSON.stringify(store, null, 2));
-  console.log(`Registered ${URL_PATH} as a Lovelace resource.`);
+  console.log(`Registered ${resourceUrl} as a Lovelace resource.`);
 }
 
 // ---------------------------------------------------------------------------
