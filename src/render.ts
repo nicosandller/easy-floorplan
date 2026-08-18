@@ -2386,9 +2386,15 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
               stroke=${color} stroke-width="2" />
         <line x1=${half} y1=${-cutH / 2} x2=${half} y2=${cutH / 2}
               stroke=${color} stroke-width="2" />
-        <!-- track: stays when the curtain is up so the gap still reads as an opening -->
+        <!-- Track: stays when the curtain is up so the gap still reads as an
+             opening — and wears the accent while the cover is open or moving
+             (issue #154). Wide open the curtain has scaled away to nothing, so
+             this line is the *only* mark left: drawn in the base colour it read
+             exactly like a shut garage, which is the one thing it must not do.
+             Full strength when accented, since a 0.6 tint of the accent reads
+             as neither colour. -->
         <line x1=${-half} y1="0" x2=${half} y2="0"
-              stroke=${color} stroke-width="0.75" opacity="0.6" />
+              stroke=${tone} stroke-width="0.75" opacity=${active ? 1 : 0.6} />
         ${rollCurtain(o.length, tone, amt)}`;
   } else {
     // Sliding — the last of the three motions, so the fallback.

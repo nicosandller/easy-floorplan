@@ -3401,7 +3401,7 @@ export class FloorplanCardEditor extends LitElement {
       <section class="edit-area">
         <div class="edit-head">
           <ha-icon icon=${icon}></ha-icon>
-          <span class="edit-title">${summary}</span>
+          <span class="edit-title" title=${summary}>${summary}</span>
           <span class="head-spacer"></span>
           <button aria-label="Duplicate" title="Duplicate (Ctrl/Cmd+D)" @click=${this._duplicate}>
             <ha-icon icon="mdi:content-duplicate"></ha-icon>
@@ -5382,7 +5382,12 @@ export class FloorplanCardEditor extends LitElement {
       letter-spacing: 0.06em;
       color: var(--secondary-text-color);
     }
-    /* Element header: kind icon + summary + the selection's actions. */
+    /* Element header: kind icon + summary + the selection's actions.
+       The actions are the fixed part and the summary is the elastic one: a
+       device named after a long entity id used to push Duplicate and Delete
+       off the panel entirely (issue #163), which is unreachable rather than
+       merely ugly. So everything but the title refuses to shrink, and the
+       title truncates instead — its full text stays available on hover. */
     .edit-head {
       display: flex;
       align-items: center;
@@ -5392,18 +5397,28 @@ export class FloorplanCardEditor extends LitElement {
     .edit-head ha-icon {
       --mdc-icon-size: 18px;
       color: var(--secondary-text-color);
+      flex: none;
     }
     .edit-head .edit-title {
       font-size: 13px;
       font-weight: 600;
+      /* min-width:0 is what lets a flex item shrink below its content. */
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .edit-head .head-spacer {
-      flex: 1;
+      /* Grows to push the actions right, but never shrinks the title away
+         while there is still slack of its own to give back. */
+      flex: 1 1 0;
+      min-width: 0;
     }
     .edit-head button {
       display: inline-flex;
       align-items: center;
       padding: 4px 8px;
+      flex: none;
     }
     .edit-head button ha-icon {
       --mdc-icon-size: 16px;

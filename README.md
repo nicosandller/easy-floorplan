@@ -401,7 +401,7 @@ distorted anyway.
 | `entity`      | string                      | Contact `binary_sensor` / `cover` driving open/closed (or `current_position` for partial). |
 | `secondaryEntity` | string                  | Two-panel sliders (`biparting`, `biparting-bypass`, `converging`): a second contact / `cover` for the other panel, so each leaf moves on its own state. Unset = both follow `entity`. |
 | `invert`      | boolean                     | Flip the open/closed interpretation.                   |
-| `activeColor` | string                      | Leaf/arc color while actively open (default primary).  |
+| `activeColor` | string                      | Leaf/arc color while actively open (default primary). On a roll-up it colours the curtain and the track it leaves behind, so a fully raised shutter still reads as open. |
 | `flipH`       | boolean                     | Mirror left↔right. Swing door: hinge jamb. Sliding: slide direction. |
 | `flipV`       | boolean                     | Mirror across the wall so a swing opening faces the other room. |
 | `showShutterIcon` | boolean                 | Draw that icon (default `true` whenever both are bound). Editor: **Shutter icon**. Turning it off changes nothing about the gestures — for a plan where every window has a shutter and the icons start to shout. |

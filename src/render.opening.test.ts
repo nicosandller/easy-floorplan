@@ -329,6 +329,36 @@ describe("renderOpening — roll-up cover (issue #45)", () => {
   });
 });
 
+describe("renderOpening — an open roll-up reads as open (issue #154)", () => {
+  const roll = { type: "door", motion: "roll" } as Partial<Opening>;
+
+  it("accents the track, the only mark a wide-open garage leaves behind", () => {
+    // The curtain has scaled to nothing at amount 1, so a base-coloured track
+    // is indistinguishable from a shut garage — the bug this fixes.
+    const open = svgOf(roll, { open: true, active: true, accent: "#ff0000" });
+    expect(open).toContain('stroke=#ff0000 stroke-width="0.75"');
+    expect(open).toContain('opacity=1'); // full strength: a 0.6 accent reads as neither colour
+  });
+
+  it("still accents it half-open, where curtain and track are both on screen", () => {
+    const half = svgOf(roll, { amount: 0.5, active: true, accent: "#ff0000" });
+    expect(half).toContain('stroke=#ff0000 stroke-width="0.75"');
+    expect(half).toContain("scaleY(0.5)");
+  });
+
+  it("leaves a shut garage exactly as it was — dimmed track in the base colour", () => {
+    const shut = svgOf(roll, { open: false, accent: "#ff0000" });
+    expect(shut).toContain('stroke=#000 stroke-width="0.75"');
+    expect(shut).toContain('opacity=0.6');
+    expect(shut).not.toContain("#ff0000");
+  });
+
+  it("keeps the jambs structural: they are wall, not cover, so they never accent", () => {
+    const open = svgOf(roll, { open: true, active: true, accent: "#ff0000" });
+    expect(open.match(/stroke=#000 stroke-width="2"/g)?.length).toBe(2);
+  });
+});
+
 describe("renderOpening — single-sash window (issue #73)", () => {
   const single = { type: "window", sash: "single" } as Partial<Opening>;
 
