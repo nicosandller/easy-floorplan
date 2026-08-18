@@ -187,7 +187,10 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: dropdown(
         opt("swing", "Swing"),
         opt("slide", "Slide"),
-        opt("roll", "Roll up (garage / shutter)")
+        // Not "garage / shutter": an external shutter is the Shutter field
+        // below, a layer over any opening, and naming it here read as the
+        // place to set one up.
+        opt("roll", "Roll up (garage)")
       ),
     },
     { name: "length", label: "Length", required: true, selector: { number: { min: 1, mode: "box" } } },
@@ -294,10 +297,23 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
     }
     // Its own switch, not the opening's: a reed contact on a hinged shutter
     // routinely reads `on` when the panels are shut, while the window behind
-    // it reads the other way round.
-    fields.push({ name: "shutterInvert", label: "Invert shutter", selector: { boolean: {} } });
+    // it reads the other way round. Both switches say which animation they
+    // invert, because with a shutter bound they sit one above the other and
+    // "Invert" / "Invert shutter" left you guessing which was which.
+    fields.push({
+      name: "shutterInvert",
+      label: "Invert shutter animation",
+      selector: { boolean: {} },
+    });
   }
-  if (o.entity) fields.push({ name: "invert", label: "Invert", selector: { boolean: {} } });
+  // Named after what it flips — the opening's own leaf, which is a door or a
+  // sash depending on what this is, the same way Leaves / Sashes above.
+  if (o.entity)
+    fields.push({
+      name: "invert",
+      label: o.type === "door" ? "Invert door animation" : "Invert window animation",
+      selector: { boolean: {} },
+    });
   fields.push(angleField());
   // With both bound, which one a press leads with. Only a real question when
   // there are two entities to choose between — and the reason it exists: the

@@ -200,7 +200,8 @@ window, a `blind` → a slider, a `garage` or `shutter` → a roll-up); adjust a
 - **One sensor per panel** — a two-panel slider with a contact on each leaf takes a
   **Second panel** entity, and then each panel opens and accents on its own state: left
   open and right shut draws exactly that. Leave it empty and both panels follow the first
-  entity, as they always have. **Invert** covers both, and a tap still acts on the first.
+  entity, as they always have. The opening's own invert switch covers both, and a tap
+  still acts on the first.
 - **Orientation** — **Hinge** (left / right) and **Opens** (this side / other side) face a
   swing door any of four ways; they're pure mirrors (`flipH` / `flipV`), so the animation
   follows.
@@ -210,8 +211,10 @@ window, a `blind` → a slider, a `garage` or `shutter` → a roll-up); adjust a
   against the façade) or *Roll-up*, defaulting from the entity.
 - **Active color** — the leaf, sash and arc take an accent color while open. Defaults to
   the primary color.
-- **Invert** — flip the open/closed interpretation (and the percentage) for sensors wired
-  the other way.
+- **Invert door animation** (**Invert window animation** on a window) — flip the
+  open/closed interpretation (and the percentage) for sensors wired the other way. A bound
+  shutter gets its own **Invert shutter animation**, since a reed contact on the panels
+  routinely disagrees with the sensor behind them about which way round `on` means open.
 - **Tap to control** — a controllable `cover` toggles (`cover.toggle`); read-only sensors
   and position-only covers open the more-info dialog.
 

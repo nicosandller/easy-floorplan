@@ -122,6 +122,16 @@ describe("openingForm", () => {
     expect(bi.fields.map((x) => x.name)).not.toContain("slide");
   });
 
+  it("names the roll-up motion after the door, not the shutter it isn't", () => {
+    // "Roll up (garage / shutter)" read as the place to set up an external
+    // shutter, which is the Shutter field further down and works on any motion.
+    const motionField = openingForm(door).fields.find((x) => x.name === "motion")!;
+    const labels = (
+      motionField.selector as { select: { options: { label: string; value: string }[] } }
+    ).select.options.map((o) => o.label);
+    expect(labels).toEqual(["Swing", "Slide", "Roll up (garage)"]);
+  });
+
   it("roll-up opening hides swing and slide fields (issue #45)", () => {
     const motionField = openingForm(door).fields.find((x) => x.name === "motion")!;
     const opts = (motionField.selector as { select: { options: { value: string }[] } }).select
@@ -915,6 +925,20 @@ describe("openingForm — shutter invert and side (issue #74 follow-up)", () => 
     expect(names(both)).toContain("shutterInvert");
     expect(openingForm({ ...both, shutterInvert: true, invert: false } as Opening).data)
       .toMatchObject({ shutterInvert: true, invert: false });
+  });
+
+  it("says which animation each invert flips, so the pair can be told apart", () => {
+    // Stacked one above the other, "Invert" and "Invert shutter" left you
+    // guessing which switch drove which layer.
+    const both = { ...hinged, entity: "binary_sensor.win" } as Opening;
+    const labels = new Map(openingForm(both).fields.map((f) => [f.name, f.label]));
+    expect(labels.get("invert")).toBe("Invert window animation");
+    expect(labels.get("shutterInvert")).toBe("Invert shutter animation");
+    // …and the opening's own switch is named after what it actually moves.
+    const door = { ...both, type: "door" } as Opening;
+    expect(new Map(openingForm(door).fields.map((f) => [f.name, f.label])).get("invert")).toBe(
+      "Invert door animation"
+    );
   });
 
   it("asks which side only for hinged panels", () => {
