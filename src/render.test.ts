@@ -30,6 +30,7 @@ import {
   planDirection,
   sunBearingOf,
   openingAdmitsSun,
+  openingSunFraction,
   openingIsGlazed,
   sunBeamPolygon,
   sunLightDirection,
@@ -2272,6 +2273,47 @@ describe("sunlight through the openings", () => {
     expect(openingAdmitsSun({ type: "door" }, 0.4)).toBe(true);
   });
 
+  it("admits a fraction of its gap, not a yes or a no", () => {
+    // A door open a crack is not a door standing open. Read as a boolean it
+    // was: both the wall gap and the beam were then taken at full width, so
+    // the crack threw the patch of a doorway wide open.
+    expect(openingSunFraction({ type: "door" }, 0.25)).toBeCloseTo(0.25);
+    expect(openingSunFraction({ type: "door" }, 1)).toBe(1);
+    expect(openingSunFraction({ type: "door" }, 0)).toBe(0);
+    // Glass admits its whole gap whatever its sash is doing — that is the one
+    // rule that ignores the amount rather than scaling by it.
+    expect(openingSunFraction({ type: "window" }, 0)).toBe(1);
+    expect(openingSunFraction({ type: "window" }, 0.3)).toBe(1);
+    expect(openingSunFraction({ type: "door", glazed: true }, 0)).toBe(1);
+    // An opaque window is scaled like any other opaque thing (a glass brick,
+    // a hatch).
+    expect(openingSunFraction({ type: "window", glazed: false }, 0.4)).toBeCloseTo(0.4);
+    // A shutter all the way down beats both.
+    expect(openingSunFraction({ type: "window" }, 1, 0)).toBe(0);
+    expect(openingSunFraction({ type: "door" }, 1, 0)).toBe(0);
+    // …and out-of-range input cannot widen a gap past its own opening.
+    expect(openingSunFraction({ type: "door" }, 4)).toBe(1);
+    expect(openingSunFraction({ type: "door" }, -2)).toBe(0);
+  });
+
+  it("counts the gap a sliding style clears, not the distance a leaf travels", () => {
+    // The composition the card performs: openingClearFraction first (both
+    // leaves, per-style travel), then the glazing and shutter rules on top.
+    // Without the first half a door whose *second* panel was open read as
+    // shut and let nothing in — the #145 bug, in the sunlight this time.
+    const conv = {
+      id: "o", type: "door", x: 0, y: 0, length: 200, angle: 0,
+      motion: "slide", sliderStyle: "converging",
+    } as Opening;
+    const sun = (a: number, b?: number) => openingSunFraction(conv, openingClearFraction(conv, a, b));
+    expect(sun(0, 0)).toBe(0);
+    expect(sun(0, 1)).toBeGreaterThan(0); // only the second leaf open: still light
+    expect(sun(1, 0)).toBeCloseTo(sun(0, 1)); // and the two leaves are worth the same
+    expect(sun(1, 1)).toBeCloseTo(0.5); // both leaves stack in the middle: half the gap
+    // A raw amount would have called that same door shut.
+    expect(openingSunFraction(conv, 0)).toBe(0);
+  });
+
   it("a shutter that is all the way down stops the light, whatever the glass says", () => {
     // What a shutter is for. A window behind a closed one is as dark as a wall.
     expect(openingAdmitsSun({ type: "window" }, 0, 0)).toBe(false);
@@ -2334,6 +2376,20 @@ describe("sunlight through the openings", () => {
     // …then 200 further along the light, never against it.
     expect(p[2]).toEqual({ x: 120, y: 300 });
     expect(p[3]).toEqual({ x: 80, y: 300 });
+  });
+
+  it("narrows the patch to the part of the gap that is actually clear", () => {
+    const o = win();
+    const full = sunBeamPolygon(o, down, 200);
+    const ajar = sunBeamPolygon(o, down, 200, 0.25);
+    // Same centre, a quarter of the width: the gap is 40, so 10 across.
+    expect(ajar[1].x - ajar[0].x).toBeCloseTo((full[1].x - full[0].x) * 0.25);
+    expect((ajar[0].x + ajar[1].x) / 2).toBeCloseTo((full[0].x + full[1].x) / 2);
+    // It still reaches just as far — a crack is narrower, not shorter.
+    expect(ajar[3].y - ajar[0].y).toBeCloseTo(full[3].y - full[0].y);
+    // The default is the whole gap, so every existing caller is unchanged.
+    expect(sunBeamPolygon(o, down, 200, 1)).toEqual(full);
+    expect(sunBeamPolygon(o, down, 200)).toEqual(full);
   });
 
   it("turns the patch with the opening it comes through", () => {

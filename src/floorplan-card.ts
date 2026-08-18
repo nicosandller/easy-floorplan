@@ -914,7 +914,19 @@ export class FloorplanCard extends LitElement {
                         c,
                         this.hass?.states["sun.sun"]?.attributes?.elevation
                       ),
-                      openAmount: (o) => this._openingAmount(o),
+                      // The gap each style actually clears, both leaves
+                      // included — the same reading the lamps get above, and
+                      // for the same reason (#145): `entity` alone leaves a
+                      // door whose *second* panel is open reading as shut,
+                      // and a converging pair reading as twice as clear as it
+                      // draws. Glazing and shutters are applied on top of
+                      // this, inside openingSunFraction.
+                      openAmount: (o) =>
+                        openingClearFraction(
+                          o,
+                          this._openingAmount(o),
+                          this._openingSecond(o)?.amount
+                        ),
                       // A shutter that is all the way down stops the light, as
                       // one does. Undefined where none is bound, so an opening
                       // without a shutter is judged on itself alone.

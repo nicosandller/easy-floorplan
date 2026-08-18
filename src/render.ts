@@ -3002,27 +3002,48 @@ export const SUN_LIGHT_COLOR = "var(--fp-skin-sunlight, #ffd9a0)";
 export const SUN_SHADE_COLOR = "var(--fp-skin-sunshade, #000)";
 
 /**
- * Whether an opening lets sunlight in.
+ * **How much** of an opening lets sunlight in, 0..1 of its gap.
  *
- * A window is glass: it admits light shut or open, which is the whole reason
- * this cannot reuse the lamp rule ({@link wallsLightPassesThrough}'s
- * `openAmount`) unchanged — that one asks whether there is a *hole*, and a
- * closed window is not a hole. A door is opaque, so it admits only as far as
- * it is open.
+ * A fraction rather than a yes/no, because a door open a crack is not a door
+ * standing open: read as a boolean it flooded the room exactly as if it were,
+ * since both the wall gap and the beam were then taken at full width. The
+ * three rules, in the order they override each other:
+ *
+ * - a **shutter** that is all the way down stops everything, whatever the
+ *   glass says — that is what a shutter is for, and a window behind a closed
+ *   one is as dark as a wall;
+ * - **glass** admits its whole gap however its sash is sitting, which is the
+ *   reason this cannot reuse the lamp rule ({@link wallsLightPassesThrough}'s
+ *   `openAmount`) unchanged: that one asks whether there is a *hole*, and a
+ *   closed window is not a hole;
+ * - anything **opaque** admits exactly as far as it is open.
+ *
+ * Feed it a clear fraction rather than a raw `amount` ({@link
+ * openingClearFraction}) and the sliding styles come out right too — the
+ * travel a leaf has is not the gap it clears.
+ */
+export function openingSunFraction(
+  o: Pick<Opening, "type" | "glazed">,
+  amount: number,
+  /** How far the external shutter is open, or `undefined` when none is bound. */
+  shutter?: number,
+): number {
+  if (shutter !== undefined && shutter <= 0) return 0;
+  if (openingIsGlazed(o)) return 1;
+  return Math.max(0, Math.min(1, amount));
+}
+
+/**
+ * Whether an opening lets any sunlight in at all — {@link
+ * openingSunFraction} above zero. Kept as its own name because "does this let
+ * light in" is the question most callers are actually asking.
  */
 export function openingAdmitsSun(
   o: Pick<Opening, "type" | "glazed">,
   amount: number,
-  /**
-   * How far the external shutter is open, or `undefined` when none is bound.
-   * A shutter that is fully down is the one thing that stops light regardless
-   * of everything else — that is what a shutter is for, and a window behind a
-   * closed one is as dark as a wall.
-   */
   shutter?: number,
 ): boolean {
-  if (shutter !== undefined && shutter <= 0) return false;
-  return openingIsGlazed(o) || amount > 0;
+  return openingSunFraction(o, amount, shutter) > 0;
 }
 
 /**
@@ -3104,9 +3125,21 @@ export function sunBeamPolygon(
   o: Opening,
   dir: { x: number; y: number },
   reach: number,
+  /**
+   * How much of the gap is clear, 0..1 — see {@link openingSunFraction}. The
+   * patch narrows about the opening's centre, matching the gap {@link
+   * wallsLightPassesThrough} leaves in the wall for the same fraction, so the
+   * beam and the shade it sits in line up exactly instead of leaking.
+   */
+  clear = 1,
 ): AreaPoint[] {
   const [a, b] = openingEnds(o);
-  return sweep(a, b, dir, reach);
+  const f = Math.max(0, Math.min(1, clear));
+  if (f >= 1) return sweep(a, b, dir, reach);
+  const mx = (a.x + b.x) / 2;
+  const my = (a.y + b.y) / 2;
+  const lerp = (p: AreaPoint) => ({ x: mx + (p.x - mx) * f, y: my + (p.y - my) * f });
+  return sweep(lerp(a), lerp(b), dir, reach);
 }
 
 /**
@@ -3189,8 +3222,13 @@ export function renderSunlight(
   const reach = Math.min(width, height) * SUN_REACH;
   // Doorways already subtracted, so an open door casts no shadow across the
   // room behind it. Windows too — glass casts none whatever its sash is doing.
-  const admits = (o: Opening) => openingAdmitsSun(o, openAmount(o), shutterOpen(o));
-  const blockers = wallsLightPassesThrough(walls, openings, (o) => (admits(o) ? 1 : 0));
+  // How much of each gap is clear, asked once and used for both families —
+  // the wall keeps whatever the opening does not clear, and the beam is
+  // exactly what it does. Read as a yes/no this let a door open a crack pass
+  // the light of one standing wide open, since both the gap and the patch
+  // were then taken at full width.
+  const clear = (o: Opening) => openingSunFraction(o, openAmount(o), shutterOpen(o));
+  const blockers = wallsLightPassesThrough(walls, openings, clear);
   const shadowPolys = blockers.map((w) => sunShadowPolygon(w, dir, reach));
   // An opening only lets light in if light reaches it. Without this every
   // opening was a source in its own right: an interior door on the dark side
@@ -3198,10 +3236,10 @@ export function renderSunlight(
   // shaded façade did the same. Standing in a wall's shadow is exactly what
   // "no light reaches it" means, and the shadows are already to hand.
   const lit = openings.filter(
-    (o) => admits(o) && !shadowPolys.some((sh) => pointInPolygon(sh, o.x, o.y))
+    (o) => clear(o) > 0 && !shadowPolys.some((sh) => pointInPolygon(sh, o.x, o.y))
   );
   if (!lit.length) return nothing;
-  const beams = lit.map((o) => polyPoints(sunBeamPolygon(o, dir, reach)));
+  const beams = lit.map((o) => polyPoints(sunBeamPolygon(o, dir, reach, clear(o))));
   const shadows = shadowPolys.map(polyPoints);
   const pad = WALL_THICKNESS;
   const shadeId = `${id}-shade`;

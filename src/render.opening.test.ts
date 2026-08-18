@@ -71,6 +71,31 @@ describe("renderSunlight — the markup, not just the geometry", () => {
     expect(two.match(/fp-sunbeam/g)?.length).toBe(2);
   });
 
+  it("a door ajar throws a narrower patch than one standing open", () => {
+    // The end of the boolean, seen in the markup: the width of the polygon is
+    // the width of the gap that is actually clear, and the wall keeps the
+    // rest — so the two never overlap and the light cannot leak past the leaf.
+    const door = { ...win, type: "door" } as Opening;
+    const at = (amount: number) =>
+      serialize(
+        renderSunlight([wall], [door], 400, 400, "sun", {
+          dir: sun,
+          openAmount: () => amount,
+          shutterOpen: () => undefined,
+        })
+      );
+    const spanOf = (markup: string) => {
+      const pts = markup.match(/class="fp-sunbeam" points=([^ ]+ [^ ]+)/)![1];
+      const xs = pts.split(" ").map((p) => Number(p.split(",")[0]));
+      return Math.abs(xs[1]! - xs[0]!);
+    };
+    const open = spanOf(at(1));
+    const ajar = spanOf(at(0.25));
+    expect(open).toBeCloseTo(60); // the whole gap
+    expect(ajar).toBeCloseTo(15); // a quarter of it
+    expect(ajar).toBeLessThan(open);
+  });
+
   it("stays away entirely when nothing lets light in", () => {
     // A shut door is opaque: no patches, so no layer at all rather than a
     // full-canvas shade sitting over the plan for nothing.

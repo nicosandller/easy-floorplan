@@ -131,10 +131,18 @@ export interface Opening {
    */
   sash?: "single" | "double";
   /**
-   * Lets sunlight through even while shut. Windows are glass by definition and
-   * default to true; a door defaults to false — but a patio or French door is
-   * a door that happens to be glazed, and on a plan it is drawn as a door
-   * because that is how it swings. Only the sunlight reads this.
+   * Lets sunlight through even while shut. Defaults per type rather than to a
+   * fixed value: a window is glass, a door is not.
+   *
+   * Both defaults are worth overriding, in opposite directions. `true` on a
+   * **door** is what a patio or French door is — drawn as a door because that
+   * is how it swings, but a wall of glass, and left opaque it kept the
+   * sunniest side of a house dark. `false` on a **window** is the opaque
+   * exception: a glass-brick panel, a hatch, a serving window with a solid
+   * flap, all of which admit light only as far as they are open.
+   *
+   * Only the sunlight reads this — it changes nothing about how the opening
+   * is drawn. See {@link openingIsGlazed}.
    */
   glazed?: boolean;
   /**

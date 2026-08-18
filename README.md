@@ -415,7 +415,7 @@ distorted anyway.
 | `id`          | string                      | Unique id.                                             |
 | `type`        | `door` \| `window`          | The kind of opening.                                   |
 | `motion`      | `swing` \| `slide` \| `roll` | How it moves: hinged (default), sliding panels, or a roll-up curtain (garage / roller shutter). |
-| `glazed`      | boolean                     | Lets sunlight through even when shut. Windows are glass by definition; set it on a **patio or French door**, which is drawn as a door because that is how it swings. Only [Sunlight](#sunlight) reads it. |
+| `glazed`      | boolean                     | Lets sunlight through even when shut. Defaults per type — a window is glass, a door is not. Set `true` on a **patio or French door**, which is drawn as a door because that is how it swings but is a wall of glass; set `false` on an opaque window like a glass-brick panel or a hatch, which then admits light only as far as it is open. Only [Sunlight](#sunlight) reads it. |
 | `sash`        | `single` \| `double`        | Swing openings only: how many hinged leaves. The default differs by type, because the ordinary cases do — a window opens with `double` (two casement sashes), a door with `single` (one leaf across the opening). Set it to draw a single-sash window or a **double door**; both leaves then hinge at their own jamb and trace their own arc. Ignored by sliding and rolling openings. |
 | `shutterEntity` | string                     | An external shutter over the same gap (`cover` or contact), with its own open/closed state. With `entity` bound too, the card draws the shutter's own icon beside the opening — open/closed in both glyph and colour — and tapping that icon opens the shutter. |
 | `shutterStyle` | `swing` \| `roll`           | Louvered panels or a roll-up curtain. Defaults from the entity (contact → `swing`, `cover` → `roll`). |
@@ -918,10 +918,15 @@ rays arrive parallel, which makes this exact rather than an impression — a wal
 precisely that wall moved along the light, and the patch a window admits is precisely its
 gap moved the same way. So:
 
-- every **window** admits light, open or shut, because glass is transparent; a **door**
-  admits only as far as it is open — unless it is `glazed`, which is what a patio or
-  French door is: drawn as a door because that is how it swings, but a wall of glass;
-- **walls cast the shade behind them**, cutting the patches — and an open door casts none,
+- every **window** admits its whole gap, open or shut, because glass is transparent — and
+  so does anything `glazed`, which is what a patio or French door is: drawn as a door
+  because that is how it swings, but a wall of glass;
+- anything **opaque** admits exactly as far as it is open, and no further: a door ajar
+  throws a narrow patch, not the one it would throw standing wide open. Sliding styles
+  count the gap they actually clear rather than the distance a leaf travels, so a
+  converging pair reads the same here as it draws;
+- **walls cast the shade behind them**, cutting the patches — and the part of a door that
+  is still shut casts shade like the wall it stands in, while an open doorway casts none,
   the same rule the lamps already follow;
 - an opening standing in a wall's shadow lets nothing in, so an interior door on the dark
   side of the house does not light the room beyond it out of nothing;
