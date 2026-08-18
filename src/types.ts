@@ -93,12 +93,16 @@ export interface Opening {
    */
   entity?: string;
   /**
-   * Two-panel sliders only: a second contact / `cover` driving the **other**
-   * moving panel (issue #145), for a two-panel door with a sensor on each leaf.
-   * `entity` keeps the first panel — the one at the −x jamb in the opening's own
-   * frame, so `flipH` swaps which panel each sensor draws, exactly as it mirrors
-   * everything else. Unset (the default) leaves both panels on `entity`, which
-   * is what a single-sensor slider has always drawn. `invert` covers both.
+   * A second contact / `cover` driving the opening's **other** leaf, for
+   * anything two-leaved with a sensor on each: a two-panel slider (issue
+   * #145), or a hinged double — a casement window's two sashes, a double door
+   * (issue #159). See {@link openingHasTwoLeaves} for which shapes qualify;
+   * anything with one leaf ignores this.
+   *
+   * `entity` keeps the first leaf — the one at the −x jamb in the opening's own
+   * frame, so `flipH` swaps which leaf each sensor draws, exactly as it mirrors
+   * everything else. Unset (the default) leaves both on `entity`, which is what
+   * a single-sensor opening has always drawn. `invert` covers both.
    */
   secondaryEntity?: string;
   /** Flip the open/closed interpretation of `entity` (for inverted sensors). */
@@ -117,10 +121,13 @@ export interface Opening {
    */
   flipV?: boolean;
   /**
-   * Swing windows only: how many sashes. `double` (the default, today's look)
-   * draws two casement leaves meeting in the middle; `single` draws one sash
-   * hinged at a jamb (issue #73) — `flipH` picks which jamb. Ignored for
-   * doors and for sliding / rolling openings.
+   * Swing openings only: how many hinged leaves. The two types default the
+   * other way round, because the ordinary cases do — a window opens with
+   * `double` (two casement sashes), a door with `single` (one leaf across the
+   * opening). Set it for a single-sash window (issue #73) or a double door
+   * (issue #168); either way both leaves hinge at their own jamb and trace
+   * their own arc, and `flipH` picks the jamb for a single. Ignored by sliding
+   * and rolling openings. See {@link defaultSash} / {@link openingSash}.
    */
   sash?: "single" | "double";
   /**
@@ -151,6 +158,18 @@ export interface Opening {
    * both.
    */
   shutterInvert?: boolean;
+  /**
+   * A second contact driving the hinged shutter's **other** panel (issue
+   * #159) — the pair of persiane with a reed switch on each, one folded back
+   * and one still across the glass.
+   *
+   * Its own key rather than reusing {@link secondaryEntity}, because the
+   * shutter is a layer over the opening rather than part of it: a double
+   * casement behind a pair of shutters has four leaves and can want four
+   * contacts. Read only by a `swing` shutter — a roll curtain is one piece —
+   * and {@link shutterInvert} covers it, as {@link invert} covers both sashes.
+   */
+  shutterSecondaryEntity?: string;
   /**
    * Colour of the shutter while it is (partly) open. Falls back to
    * {@link activeColor}, then the skin accent — so a plan that only wants one
@@ -797,6 +816,26 @@ export type PressEffect = "scale" | "ripple" | "flash" | "none";
 export const DEFAULT_PRESS_EFFECT: PressEffect = "scale";
 
 /**
+ * How a device whose entity has dropped out is drawn (issue #162):
+ *
+ * - `dim` — the badge, its icon and its label all fade back.
+ * - `strike` — the same fade, with a diagonal mark through the badge, for a
+ *   plan that has to say it from across the room.
+ * - `none` — the pre-#162 behaviour: an offline device looks like any other.
+ */
+export type OfflineStyle = "dim" | "strike" | "none";
+
+/**
+ * Dimmed by default, and this one *is* a change on upgrade — deliberately.
+ *
+ * Until now an unavailable device was drawn exactly like a device that is
+ * simply off: a dead bulb and a bulb someone switched off were the same
+ * picture. That is not a neutral default, it is a wrong answer, and the plan
+ * was giving it confidently. `none` keeps it for anyone who wants it.
+ */
+export const DEFAULT_OFFLINE_STYLE: OfflineStyle = "dim";
+
+/**
  * How far a pressed device shrinks. Deep enough to read at a 34px badge,
  * shallow enough not to look like the icon is falling over.
  */
@@ -1001,6 +1040,22 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   /** Canvas background color (CSS / hex). Falls back to the skin's paper, then the card background. */
   background?: string;
   /**
+   * Draw the card's own chrome *inside* the plan instead of above it (issue
+   * #152), for a dashboard where the top of the card is mostly empty:
+   *
+   * - the **title** becomes a small chip in the plan's top-left corner rather
+   *   than an `ha-card` header. That header is a fixed ~76px whatever it says
+   *   — 48px of line-height plus its padding — and none of it can be reached
+   *   from outside `ha-card`'s shadow root, so the only way to stop spending
+   *   it is not to use it;
+   * - the **floor buttons** lay out as a row rather than a column, so they
+   *   share that one strip with the title instead of running down the side.
+   *
+   * Off by default: the title then sits over the drawing, which is the right
+   * trade only when there is room for it — and it is the author who knows.
+   */
+  compactHeader?: boolean;
+  /**
    * Hatch the plan's dead spaces (issue #88): every region the walls close off
    * completely that no door or window opens onto — the void behind a boxed-in
    * stairwell, a service shaft, the pocket left between two rooms.
@@ -1052,6 +1107,17 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * worse than none.
    */
   pressEffect?: PressEffect;
+  /**
+   * How a device whose entity is **offline** is drawn (issue #162) —
+   * `unavailable`, `unknown`, or an entity id that is not in Home Assistant at
+   * all (renamed, or the integration is down).
+   *
+   * Plan-wide, for the same reason `pressEffect` is: it is a drawing
+   * convention, and a plan where half the dead devices announced themselves
+   * would read as broken rather than as configured. Default
+   * {@link DEFAULT_OFFLINE_STYLE}.
+   */
+  offlineStyle?: OfflineStyle;
   /**
    * Multi-floor data. When present and non-empty this is the source of truth.
    * When absent, the legacy flat arrays below describe a single implicit floor

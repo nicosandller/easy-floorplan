@@ -289,6 +289,82 @@ describe("renderOpening — a two-panel slider's second panel (issue #145)", () 
   });
 });
 
+describe("renderOpening — a hinged double's second leaf (issue #159)", () => {
+  // Both shapes with two hinged leaves: a window's casement pair (the type's
+  // own default) and the double door #168 added.
+  const DOUBLES = [
+    { what: "casement window", o: { type: "window" } as Partial<Opening> },
+    { what: "double door", o: { type: "door", sash: "double" } as Partial<Opening> },
+  ] as const;
+
+  for (const { what, o } of DOUBLES) {
+    describe(what, () => {
+      it("swings both leaves together when no second state is given", () => {
+        const open = svgOf(o, { amount: 1 });
+        expect(open).toContain("rotate(-90deg)"); // left leaf
+        expect(open).toContain("rotate(90deg)"); // right leaf
+      });
+
+      it("opens one leaf while the other stays shut", () => {
+        const s = svgOf(o, { amount: 1, second: { amount: 0 } });
+        expect(s).toContain("rotate(-90deg)"); // the left one swung
+        expect(s).toContain("rotate(0deg)"); // the right one still shut
+        expect(s).not.toContain("rotate(90deg)");
+      });
+
+      it("opens the second leaf while the first stays shut", () => {
+        const s = svgOf(o, { amount: 0, second: { amount: 1 } });
+        expect(s).toContain("rotate(90deg)");
+        expect(s).toContain("rotate(0deg)");
+        expect(s).not.toContain("rotate(-90deg)");
+      });
+
+      it("gives each leaf its own travel for two position-aware covers", () => {
+        const s = svgOf(o, { amount: 0.5, second: { amount: 1 } });
+        expect(s).toContain("rotate(-45deg)");
+        expect(s).toContain("rotate(90deg)");
+      });
+
+      it("clamps a second leaf's out-of-range amount", () => {
+        expect(svgOf(o, { amount: 0, second: { amount: 4 } })).toContain("rotate(90deg)");
+        expect(svgOf(o, { amount: 0, second: { amount: -2 } })).not.toContain("rotate(90deg)");
+      });
+
+      it("draws each arc from its own leaf's state", () => {
+        // arcLen = (pi/2) * 45; the shut leaf's arc is fully offset, the open
+        // one's not at all — so a half-open pair shows two different offsets.
+        const arcLen = (Math.PI / 2) * 45;
+        const s = svgOf(o, { amount: 1, second: { amount: 0 } });
+        expect(s).toContain(`stroke-dashoffset:0;`); // the open leaf's arc, drawn on
+        expect(s).toContain(`stroke-dashoffset:${arcLen};`); // the shut one's, hidden
+      });
+
+      it("accents only the leaf whose own sensor reads open", () => {
+        const s = svgOf(o, {
+          amount: 1,
+          active: true,
+          accent: "#f00",
+          second: { amount: 0, active: false },
+        });
+        // The open leaf and its arc take the accent; the shut leaf and arc
+        // keep the base colour.
+        expect(s.match(/#f00/g)?.length).toBe(2);
+        expect(s).toContain("fill:#000");
+      });
+    });
+  }
+
+  it("is ignored where there is only one leaf", () => {
+    for (const o of [
+      { type: "door" } as Partial<Opening>, // a plain swing door
+      { type: "window", sash: "single" } as Partial<Opening>, // a single sash (issue #73)
+      { type: "door", motion: "roll" } as Partial<Opening>, // a roll-up curtain
+    ]) {
+      expect(svgOf(o, { amount: 1, second: { amount: 0 } })).toBe(svgOf(o, { amount: 1 }));
+    }
+  });
+});
+
 describe("renderOpening — sliding window", () => {
   it("slides like a slider but with thin glass panels (thickness 1.5)", () => {
     const win = svgOf({ type: "window", motion: "slide" }, { open: true });
@@ -488,6 +564,73 @@ describe("renderOpening — which side the shutter hangs on (issue #74 follow-up
     const plain = svgOf(win, { open: false, shutter: { amount: 0.4, style: "roll" } });
     const flipped = svgOf(win, { open: false, shutter: { amount: 0.4, style: "roll", flip: true } });
     expect(flipped).toBe(plain);
+  });
+});
+
+describe("renderOpening — a hinged shutter's second panel (issue #159)", () => {
+  // A window with a single sash, so the only leaves in the markup are the
+  // shutter's own pair — the sash's own second-leaf plumbing is tested above,
+  // and this keeps the two from being confused for each other.
+  const win = { type: "window", sash: "single" } as Partial<Opening>;
+  const shut = { amount: 0, style: "swing" } as const;
+
+  it("folds both panels together when no second state is given", () => {
+    const s = svgOf(win, { open: false, shutter: { ...shut, amount: 1 } });
+    expect(s).toContain("rotate(90deg)");
+    expect(s).toContain("rotate(-90deg)");
+  });
+
+  it("folds one panel back while the other stays across the glass", () => {
+    const s = svgOf(win, {
+      open: false,
+      shutter: { ...shut, amount: 1, second: { amount: 0 } },
+    });
+    expect(s).toContain("rotate(90deg)"); // the folded panel
+    expect(s).toContain("rotate(0deg)"); // the one still shut
+    expect(s).not.toContain("rotate(-90deg)");
+  });
+
+  it("folds the second panel while the first stays shut", () => {
+    const s = svgOf(win, { open: false, shutter: { ...shut, second: { amount: 1 } } });
+    expect(s).toContain("rotate(-90deg)");
+    expect(s).toContain("rotate(0deg)");
+    expect(s).not.toContain("rotate(90deg)");
+  });
+
+  it("gives each panel its own travel, and clamps a junk reading", () => {
+    expect(
+      svgOf(win, { open: false, shutter: { ...shut, amount: 0.5, second: { amount: 1 } } })
+    ).toContain("rotate(45deg)");
+    expect(svgOf(win, { open: false, shutter: { ...shut, second: { amount: 9 } } })).toContain(
+      "rotate(-90deg)"
+    );
+  });
+
+  it("still swings away from the wall on the near side", () => {
+    // flip mirrors both panels, so the second one's angle flips with it.
+    const s = svgOf(win, {
+      open: false,
+      shutter: { ...shut, flip: true, second: { amount: 1 } },
+    });
+    expect(s).toMatch(/fp-leaf-r" style="transform:rotate\(90deg\)/);
+  });
+
+  it("accents only the panel whose own contact reads open", () => {
+    const s = svgOf(win, {
+      open: false,
+      shutter: { ...shut, amount: 1, active: true, accent: "#0f0", second: { amount: 0 } },
+    });
+    expect(s.match(/fill:#0f0/g)?.length).toBe(1); // the folded panel only
+    expect(s).toContain("fill:#000"); // the shut one keeps the base colour
+  });
+
+  it("the roll curtain ignores it — a slat band is one piece", () => {
+    const plain = svgOf(win, { open: false, shutter: { amount: 0.4, style: "roll" } });
+    const withSecond = svgOf(win, {
+      open: false,
+      shutter: { amount: 0.4, style: "roll", second: { amount: 1 } },
+    });
+    expect(withSecond).toBe(plain);
   });
 });
 

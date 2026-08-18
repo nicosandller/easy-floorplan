@@ -37,8 +37,8 @@ import {
   openingIsActive,
   openingActionForGesture,
   openingIsPressable,
-  openingHasTwoPanels,
-  secondPanelOf,
+  openingHasTwoLeaves,
+  secondLeafOf,
   shutterAmount,
   shutterStyleOf,
   shutterActive,
@@ -80,6 +80,8 @@ import {
   badgeValue,
   badgeValueSize,
   pressEffectOf,
+  offlineStyleOf,
+  itemIsOffline,
   itemHiddenWhenInactive,
   itemLabelSize,
   areaLabelFontSize,
@@ -254,16 +256,31 @@ export class FloorplanCard extends LitElement {
   }
 
   /**
-   * The second panel's own state for a biparting slider with a sensor on each
-   * leaf (issue #145). `undefined` — no second sensor, or a style with only one
-   * moving panel — leaves both panels on the first entity, so nothing about a
-   * single-sensor slider changes.
+   * The second leaf's own state for an opening with a sensor on each — a
+   * two-panel slider (issue #145) or a hinged double (issue #159).
+   * `undefined` — no second sensor, or a shape with only one leaf — leaves both
+   * on the first entity, so nothing about a single-sensor opening changes.
    */
   private _openingSecond(o: Opening): { amount: number; active: boolean } | undefined {
-    if (!o.secondaryEntity || !openingHasTwoPanels(o)) return undefined;
-    const panel = secondPanelOf(o);
+    if (!o.secondaryEntity || !openingHasTwoLeaves(o)) return undefined;
+    const leaf = secondLeafOf(o);
     const state = this.hass?.states[o.secondaryEntity];
-    return { amount: resolveOpeningAmount(panel, state), active: openingIsActive(panel, state) };
+    return { amount: resolveOpeningAmount(leaf, state), active: openingIsActive(leaf, state) };
+  }
+
+  /**
+   * The same for a hinged shutter's other panel (issue #159). Read from its
+   * own key and its own resolvers — the shutter answers to `shutterInvert` and
+   * is drawn from `shutterAmount` / `shutterActive`, not the sash's — and only
+   * for a `swing` shutter, since a roll curtain has no second panel to drive.
+   */
+  private _shutterSecond(o: Opening): { amount: number; active: boolean } | undefined {
+    if (!o.shutterSecondaryEntity || shutterStyleOf(o) !== "swing") return undefined;
+    const state = this.hass?.states[o.shutterSecondaryEntity];
+    return {
+      amount: shutterAmount(state, o.shutterInvert),
+      active: shutterActive(state, o.shutterInvert),
+    };
   }
 
   private _itemIcon(item: FloorItem): string {
@@ -525,6 +542,11 @@ export class FloorplanCard extends LitElement {
     // devices they were written for.
     const stateColor = cssColor(resolveStateColor(item.stateColor, rawValue));
     const labelColor = stateColor;
+    // Offline (issue #162): the entity is unavailable, unknown, or gone from
+    // Home Assistant altogether. Guarded on `hass` — before the first states
+    // arrive every device would answer "offline" and the plan would flash
+    // grey on load.
+    const offline = !!this.hass && itemIsOffline(item, st?.state);
     // "none" is the old `showIcon: false` — no badge, label only (issue #106).
     const showIcon = badgeContentOf(item) !== "none";
     const display = item.display ?? "badge";
@@ -575,9 +597,9 @@ export class FloorplanCard extends LitElement {
     const interactive = itemIsInteractive(item);
     return html`
       <div
-        class="item fp-item ${on ? "on" : "off"} ${stateColor ? "state-colored" : ""} ${interactive
-          ? "interactive"
-          : ""}"
+        class="item fp-item ${on ? "on" : "off"} ${offline ? "offline" : ""} ${stateColor
+          ? "state-colored"
+          : ""} ${interactive ? "interactive" : ""}"
         data-id=${cssIdent(item.id) ?? nothing}
         data-entity=${cssEntityId(item.entity) ?? nothing}
         data-kind=${cssIdent(item.kind) ?? nothing}
@@ -733,6 +755,11 @@ export class FloorplanCard extends LitElement {
     // reframe identically instead of drifting apart under zoom.
     const zoomedArea = active.areas?.find((a) => a.id === this._zoomedAreaId);
     const zoom = zoomedArea ? areaZoomTransform(zoomedArea.points, c.width, c.height, rot) : IDENTITY_ZOOM;
+    // Chrome drawn inside the plan rather than above it (issue #152). The
+    // flag is what the floor buttons follow; the chip needs a title as well,
+    // and a compact card with no title has nothing to draw there.
+    const compact = c.compactHeader === true;
+    const compactTitle = compact && !!c.title;
     return html`
       <!-- The skin (issue #122) rides on the card rather than on .plan, so the
            floor switcher and the card's own background follow it too — a Tron
@@ -740,9 +767,16 @@ export class FloorplanCard extends LitElement {
            card draws with is declared on :host, so this only ever overrides. -->
       <!-- No skin style here: the palette comes from data-skin on the host, so
            a card-mod rule on this element still wins (issue #155). -->
-      <ha-card .header=${c.title ?? nothing}>
+      <!-- The card header is a fixed ~76px whether the title is "U8" or a
+           sentence, and every part of it lives inside ha-card's shadow root
+           where no rule of ours reaches. compactHeader therefore does not
+           shrink it — it declines it, and draws the title inside the stage
+           instead, where it costs no layout height at all (issue #152). -->
+      <ha-card .header=${compact ? nothing : (c.title ?? nothing)}>
         <div
-          class="stage press-${pressEffectOf(c)}"
+          class="stage press-${pressEffectOf(c)} offline-${offlineStyleOf(c)} ${compactTitle
+            ? "compact-title"
+            : ""}"
           style="aspect-ratio: ${dims.w} / ${dims.h};"
         >
           <!-- The plan box: exactly the canvas ratio, fitted inside whatever
@@ -904,6 +938,9 @@ export class FloorplanCard extends LitElement {
                       // opening's and then to the skin's.
                       accent: o.shutterActiveColor ?? o.activeColor ?? SKIN_ACCENT,
                       flip: o.shutterFlipV,
+                      // Per-panel state for a two-contact hinged shutter
+                      // (issue #159).
+                      second: this._shutterSecond(o),
                     }
                   : undefined,
               });
@@ -1007,15 +1044,16 @@ export class FloorplanCard extends LitElement {
                 <ha-icon icon="mdi:magnify-minus-outline"></ha-icon>
               </button>`
             : nothing}
-          ${floors.length > 1 ? this._renderFloorSwitcher(floors, active) : nothing}
+          ${compactTitle ? html`<div class="plan-title">${c.title}</div>` : nothing}
+          ${floors.length > 1 ? this._renderFloorSwitcher(floors, active, compact) : nothing}
         </div>
       </ha-card>
     `;
   }
 
-  private _renderFloorSwitcher(floors: Floor[], active: Floor): TemplateResult {
+  private _renderFloorSwitcher(floors: Floor[], active: Floor, compact = false): TemplateResult {
     return html`
-      <div class="floor-switcher">
+      <div class="floor-switcher ${compact ? "row" : ""}">
         ${floors.map((f) => {
           // Per-floor accent (issue #67): applied only while active so the
           // resting buttons stay theme-neutral. cssColor gates the config
@@ -1142,6 +1180,21 @@ export class FloorplanCard extends LitElement {
       pointer-events: auto;
       z-index: 1;
     }
+    /* Compact chrome (issue #152): the buttons run across the top strip
+       instead of down the side, so they share it with the title chip rather
+       than each claiming their own band. Wrapped, because a plan with eight
+       floors is exactly the case a row is worst at — better a second short
+       row than buttons off the edge of the card. Right-aligned so the row
+       grows back toward the title rather than through it. */
+    .floor-switcher.row {
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      /* Room for the title chip on the left. Without it a long floor name and
+         a long title meet in the middle — the chip's own max-width leaves the
+         same margin from the other side. */
+      left: 44%;
+    }
     .floor-switcher button {
       cursor: pointer;
       border: 1px solid var(--fp-skin-badge-border, var(--divider-color, #ccc));
@@ -1165,6 +1218,31 @@ export class FloorplanCard extends LitElement {
          Tron print near-white on a pale blue and a bright cyan. */
       color: var(--fp-skin-accent-ink, var(--text-primary-color, #fff));
       border-color: var(--fp-skin-accent, var(--primary-color, #03a9f4));
+    }
+    /* The title, drawn inside the plan (issue #152). Styled as a chip rather
+       than as a heading: it is sitting *on* the drawing, and 24px of bare text
+       over a wall reads as part of the plan. Same tokens as the floor buttons
+       beside it, so a skin carries both. */
+    .plan-title {
+      position: absolute;
+      top: 8px;
+      left: 8px;
+      z-index: 1;
+      /* Stops short of the floor row's own edge, so a long title ellipsises
+         rather than running under the buttons. */
+      max-width: 40%;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      border: 1px solid var(--fp-skin-badge-border, var(--divider-color, #ccc));
+      background: var(--fp-skin-badge-bg, var(--card-background-color, #fff));
+      color: var(--fp-skin-text, var(--primary-text-color));
+      border-radius: 6px;
+      padding: 4px 8px;
+      font-size: 13px;
+      font-weight: 500;
+      line-height: 1;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
     }
     /* Zoom-to-room (tap an area). One wrapper around both the SVG and the
        HTML overlay so a transform here reframes both layers identically —
@@ -1196,6 +1274,12 @@ export class FloorplanCard extends LitElement {
       padding: 4px;
       line-height: 0;
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    /* The compact title has that corner. The zoom-out button is the transient
+       one — it exists only while a room is zoomed — so it is the one that
+       moves, dropping below the chip rather than landing on top of it. */
+    .stage.compact-title .zoom-out {
+      top: 38px;
     }
     .area-tap-target {
       cursor: pointer;
@@ -1473,6 +1557,7 @@ export class FloorplanCard extends LitElement {
       transform: none;
     }
     .badge {
+      position: relative; /* anchors the offline mark (issue #162) */
       width: 34px;
       height: 34px;
       border-radius: var(--fp-skin-badge-radius, 50%);
@@ -1516,6 +1601,48 @@ export class FloorplanCard extends LitElement {
       background: var(--fp-state);
       border-color: var(--fp-state);
       color: var(--fp-ink, var(--text-primary-color, #212121));
+    }
+
+    /* ---- Offline devices (issue #162) ------------------------------------
+       Until now a device whose entity had dropped out was drawn exactly like
+       one that is simply switched off — a dead bulb and a bulb someone turned
+       off were the same picture, and the plan gave that answer confidently.
+       Chosen plan-wide, so the stage carries offline-dim / offline-strike /
+       offline-none, exactly as it carries the press effect.
+
+       Nothing here recolours the badge, and nothing needs to: an offline
+       entity is never entityIsActive, so it has already fallen back to the
+       resting badge. What is added is the *fading*, which says "we have no
+       reading" rather than "the reading is off".
+
+       offline-none declares nothing at all, which is the point of it. */
+    .offline-dim .item.offline {
+      opacity: 0.45;
+    }
+    /* Strike sits a little brighter than a plain dim, so that the mark drawn
+       across it still reads as red rather than as pink: the whole device is
+       one composited group, so the mark fades with everything else. */
+    .offline-strike .item.offline {
+      opacity: 0.6;
+    }
+    /* The diagonal, drawn across the badge itself rather than the item, so it
+       crosses out the icon and not the label hanging underneath. A little
+       wider than the badge at each end, the way the "no" symbol overhangs. A
+       device drawn as a bare ripple, or as a label with no badge at all, has
+       nothing to cross and keeps the fade alone. */
+    .offline-strike .item.offline .badge::after {
+      content: "";
+      position: absolute;
+      left: -12%;
+      right: -12%;
+      top: 50%;
+      height: 2px;
+      margin-top: -1px;
+      border-radius: 1px;
+      /* Down to the right, the way every mdi "-off" glyph and the reporter's
+         own mock-up draw it. */
+      transform: rotate(45deg);
+      background: var(--fp-offline-mark, var(--error-color, #db4437));
     }
     ha-icon {
       --mdc-icon-size: 22px;

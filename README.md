@@ -26,6 +26,8 @@ screen size.
 <img width="240" height="358" alt="conditionals" src="https://github.com/user-attachments/assets/11d359b6-de8c-483c-8763-105ddf7d915b" />
 
 - **Animated doors & windows** — bind a contact `binary_sensor` or `cover` and openings swing, slide or roll with their real state, partial positions included.
+  - (${\color{red}NEW!}$) **A sensor per leaf** — anything with two leaves takes a second contact and draws them independently: a casement window with one sash open and one shut, a double door ajar on one side, a pair of shutters with one folded back.
+- (${\color{red}NEW!}$) **Offline devices read as offline** — an entity that is unavailable, unknown, or gone from Home Assistant is dimmed (or crossed out), instead of looking exactly like a device someone switched off.
 - (${\color{red}NEW!}$) **Furniture** — 26 gray line-art diagrams (table, sofa, bed, stove, stairs, tv…), each bindable to an entity, in a searchable picker. Every one is a plain JSON file of numbers you can copy: draw your own in the editor's paste box, use it straight away, and open a PR when it's good. No SVG, so nothing you paste can run anything.
 - **Areas** — trace room polygons that color live from an entity, and link them to Home Assistant areas to scope entity pickers and bulk-add devices.
 - **Live position trackers** — map one or two distance sensors (mmWave / radar) onto a marker that moves across the plan in real time.
@@ -197,18 +199,22 @@ window, a `blind` → a slider, a `garage` or `shutter` → a roll-up); adjust a
   fixed panels)* if the outer quarters of your door are fixed glass, and *converging* if
   every leaf slides. **Slide** sets the direction; a style that moves both panels has
   none.
-- **One sensor per panel** — a two-panel slider with a contact on each leaf takes a
-  **Second panel** entity, and then each panel opens and accents on its own state: left
-  open and right shut draws exactly that. Leave it empty and both panels follow the first
-  entity, as they always have. The opening's own invert switch covers both, and a tap
-  still acts on the first.
+- **One sensor per leaf** — anything with two leaves takes a **Second leaf** entity, and
+  then each leaf opens and accents on its own state: left open and right shut draws
+  exactly that. That means the two-panel sliders above, and any hinged double — a
+  casement window (`sash: double`, the window default) or a double door. Leave it empty
+  and both leaves follow the first entity, as they always have. The opening's own invert
+  switch covers both, and a tap still acts on the first.
 - **Orientation** — **Hinge** (left / right) and **Opens** (this side / other side) face a
   swing door any of four ways; they're pure mirrors (`flipH` / `flipV`), so the animation
   follows.
 - **External shutters** — bind a second `cover` or contact as **Shutter** and it shares
   the wall gap with the opening, rendering independently — so an open window behind a
   closed shutter shows both. **Shutter type** picks *Hinged* (louvered panels folding back
-  against the façade) or *Roll-up*, defaulting from the entity.
+  against the façade) or *Roll-up*, defaulting from the entity. A hinged pair has a
+  **Second shutter panel** of its own, on the same terms as the leaf above — a shutter is
+  a layer *over* the opening, so a double casement behind a pair of shutters has four
+  leaves and can carry four contacts.
 - **Active color** — the leaf, sash and arc take an accent color while open. Defaults to
   the primary color.
 - **Show icon** — an optional badge beside the opening carrying its own entity's icon,
@@ -232,6 +238,10 @@ openings:
   - { id: bay, type: window, motion: slide, sliderStyle: biparting-bypass, x: 300, y: 500, length: 200, angle: 0, entity: binary_sensor.sliding_door_left, secondaryEntity: binary_sensor.sliding_door_right }
   # the same door with no fixed glass: both leaves slide and stack in the middle
   - { id: terrace, type: window, motion: slide, sliderStyle: converging, x: 300, y: 700, length: 200, angle: 0, entity: binary_sensor.terrace_left, secondaryEntity: binary_sensor.terrace_right }
+  # a casement window with a contact on each sash: one open, one shut
+  - { id: study, type: window, x: 820, y: 100, length: 120, angle: 0, entity: binary_sensor.study_left, secondaryEntity: binary_sensor.study_right }
+  # a single-sash window behind a pair of shutters, one contact per panel
+  - { id: kitchen, type: window, sash: single, x: 500, y: 100, length: 120, angle: 0, shutterEntity: binary_sensor.persiana_left, shutterStyle: swing, shutterSecondaryEntity: binary_sensor.persiana_right }
   # a swing door hinged on the right, opening into the other room
   - { id: hall, type: door, x: 300, y: 100, length: 80, angle: 0, flipH: true, flipV: true }
 ```
@@ -342,6 +352,8 @@ The editor writes this config for you; manual editing is optional.
 | `sunBrightnessMax` | number | `1` | Brightness in full daylight, 0–1. |
 | `skin`       | string   | `default`          | Built-in look for the whole plan: `default`, `odnetnin`, `pastel` or `tron`. See [Skins](#skins). |
 | `pressEffect`| string   | `scale`            | Feedback when a device is pressed: `scale`, `ripple`, `flash` or `none`. Only devices that actually do something respond. See [Press feedback](#press-feedback). |
+| `offlineStyle`| string  | `dim`              | How a device whose entity is **offline** is drawn: `dim`, `strike` (dimmed with a diagonal through the badge) or `none`. See [Offline devices](#offline-devices). |
+| `compactHeader`| boolean | `false`           | Draw the title inside the plan and the floor buttons in a row, instead of spending a card header row on them. See [Compact header](#compact-header). |
 | `overlayScale`| string  | `fixed`            | How badges, labels, room names and text are sized: `fixed` = screen pixels, `plan` = canvas units so they scale with the drawing. See [Overlay scale](#overlay-scale). |
 | `background` | string   | skin / card bg     | Canvas background color (CSS / hex). Overrides the skin's paper. |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see [Floor](#floor)).   |
@@ -401,13 +413,14 @@ distorted anyway.
 | `shutterEntity` | string                     | An external shutter over the same gap (`cover` or contact), with its own open/closed state. With `entity` bound too, the card draws the shutter's own icon beside the opening — open/closed in both glyph and colour — and tapping that icon opens the shutter. |
 | `shutterStyle` | `swing` \| `roll`           | Louvered panels or a roll-up curtain. Defaults from the entity (contact → `swing`, `cover` → `roll`). |
 | `shutterInvert` | boolean                   | Flip the shutter's open/closed reading — a reed contact on hinged panels often reads `on` when they are shut. Separate from `invert`. |
+| `shutterSecondaryEntity` | string            | Hinged shutters only: a second contact for the shutter's other panel, so one can be folded back while the other is still across the glass. Its own key rather than `secondaryEntity` — a double casement behind a pair of shutters has four leaves. `shutterInvert` covers both panels; the roll curtain ignores it. |
 | `shutterActiveColor` | string               | Shutter color while open. Falls back to `activeColor`, then the accent. |
 | `shutterFlipV` | boolean                    | Hang hinged panels on the sash's own side of the wall instead of the far side. Ignored by the roll curtain. |
 | `x`, `y`      | number                      | Center position.                                       |
 | `length`      | number                      | Length along the wall.                                 |
 | `angle`       | number                      | Rotation in degrees.                                   |
 | `entity`      | string                      | Contact `binary_sensor` / `cover` driving open/closed (or `current_position` for partial). |
-| `secondaryEntity` | string                  | Two-panel sliders (`biparting`, `biparting-bypass`, `converging`): a second contact / `cover` for the other panel, so each leaf moves on its own state. Unset = both follow `entity`. |
+| `secondaryEntity` | string                  | Anything with **two leaves**: a second contact / `cover` for the other leaf, so each moves on its own state. That means the two-panel sliders (`biparting`, `biparting-bypass`, `converging`) and any hinged double — a casement window, or a `sash: double` door. `entity` drives the leaf at the −x jamb, so `flipH` swaps which sensor draws which. Unset = both follow `entity`; ignored where there is only one leaf. |
 | `invert`      | boolean                     | Flip the open/closed interpretation.                   |
 | `activeColor` | string                      | Leaf/arc color while actively open (default primary). On a roll-up it colours the curtain and the track it leaves behind, so a fully raised shutter still reads as open. |
 | `flipH`       | boolean                     | Mirror left↔right. Swing door: hinge jamb. Sliding: slide direction. |
@@ -503,11 +516,11 @@ with nothing to configure. Windows behave the same way, so an open one spills li
 outside. A cover reporting a partial position opens a proportional gap, and at night the
 clearing a lit room holds against the dark reaches through the same doorways its pool does.
 
-A two-panel slider counts **both** its leaves, so a door with a sensor on each opens a gap
-when either one does. How wide follows what the style actually draws: `biparting` sends its
-leaves into the walls and can clear the whole opening, while `biparting-bypass` and
-`converging` keep theirs inside the frame and so clear at most half of it however wide open
-they are.
+An opening with two leaves counts **both** of them, so one with a sensor on each opens a
+gap when either one does. How wide follows what the symbol actually draws: `biparting`
+sends its leaves into the walls and can clear the whole opening, as does a hinged double
+— each sash swings clear of its own half — while `biparting-bypass` and `converging` keep
+theirs inside the frame and so clear at most half of it however wide open they are.
 
 Pools are drawn above room fills but below furniture and walls, so light reads as cast onto
 the floor. Furniture under a lit lamp picks up about half the cast, enough to read as lit
@@ -939,6 +952,56 @@ plan at full size, where fixed px is what keeps text legible from across the roo
 for a card so small that scaled text would disappear. The default stays `fixed`, so an
 existing card looks exactly as it did.
 
+## Offline devices
+
+An entity that has dropped out no longer looks like one that is simply switched off.
+
+```yaml
+type: custom:easy-floorplan-card
+offlineStyle: dim      # dim (default) | strike | none
+```
+
+A device counts as **offline** when its entity reads `unavailable` or `unknown`, or when
+the entity id is not in Home Assistant at all — renamed, deleted, or from an integration
+that failed to load. A device with no entity bound is not offline: those are plain
+markers, and there is nothing about them to be wrong.
+
+| `offlineStyle` | What it draws |
+| --- | --- |
+| `dim` *(default)* | The badge, its icon and its label fade back. |
+| `strike` | The same fade, with a diagonal through the badge. Reads from further away. |
+| `none` | The pre-#162 behaviour — an offline device looks like any other. |
+
+The default is `dim`, and that **is** a change on upgrade: until now a dead bulb and a
+bulb someone turned off were the same picture, and the plan gave that answer confidently.
+`none` keeps it for anyone who wants it. Set it in the editor under **Project → Offline
+devices**.
+
+The mark's colour is `--fp-offline-mark`, falling back to the theme's `--error-color`, so
+card-mod can recolour it without touching anything else. A device drawn as a bare ripple,
+or as a label with no badge, has nothing to cross out and takes the fade alone.
+
+## Compact header
+
+For a dashboard where the top of the card is mostly empty:
+
+```yaml
+type: custom:easy-floorplan-card
+title: Ground floor
+compactHeader: true
+```
+
+- The **title** becomes a small chip in the plan's top-left corner instead of an
+  `ha-card` header. That header is a fixed ~76px whatever it says — 48px of line-height
+  plus its padding — and none of it is reachable from outside `ha-card`, so the only way
+  to stop spending it is not to use it.
+- The **floor buttons** lay out as a row rather than a column, sharing that one strip
+  with the title instead of running down the side.
+
+Off by default, because the title then sits over the drawing — the right trade only when
+there is room for it, which is the author's call. Set it in the editor under
+**Project → Compact header**.
+
 ## Styling hooks (card-mod)
 
 Every rendered element carries its config `id` as `data-id`, plus a type class, so
@@ -953,12 +1016,17 @@ it by something stable.
 | Furniture | `fp-furniture`, `fp-furniture-<type>` | `data-id`, `data-entity` |
 | Door / window | `fp-opening`, `fp-opening-door` \| `fp-opening-window` | `data-id`, `data-entity` |
 | Wall | `wall`, `fp-wall` | `data-id` |
-| Device | `item`, `fp-item` | `data-id`, `data-entity`, `data-kind` |
+| Device | `item`, `fp-item` (plus `offline` while its entity has dropped out) | `data-id`, `data-entity`, `data-kind` |
 | Text | `text`, `fp-text` | `data-id` |
 | Room name | `area-label` | — |
 | Tracker | `tracker`, `fp-tracker` | `data-id` |
 
 Ids come from the editor (`area_a5r5nwl`, `furn_3j66s50`, …) and are stable across edits.
+
+The stage carries the plan-wide modes as classes too — `press-scale` … `press-none`, and
+`offline-dim` / `offline-strike` / `offline-none` — so a rule can be scoped to one of
+them. The offline mark's own colour is `--fp-offline-mark` (see
+[Offline devices](#offline-devices)).
 
 A dead space has no `data-id`, and cannot: it's derived from the walls rather than placed,
 so there's nothing for an id to be stable against. Style them as a group —

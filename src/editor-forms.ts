@@ -37,6 +37,7 @@ import {
   DEFAULT_SUN_MIN,
   DEFAULT_SUN_MAX,
   DEFAULT_PRESS_EFFECT,
+  DEFAULT_OFFLINE_STYLE,
 } from "./types";
 import {
   DEFAULT_LABEL_SIZE,
@@ -48,9 +49,10 @@ import {
   normalizePlanRotation,
   openingActionForGesture,
   openingMotion,
-  openingHasTwoPanels,
-  sliderStyleHasTwoPanels,
+  openingHasTwoLeaves,
+  sliderStyleHasTwoLeaves,
   pressEffectOf,
+  offlineStyleOf,
   sliderStyleOf,
   shutterStyleOf,
   openingSash,
@@ -178,7 +180,7 @@ export function furnitureLabel(type: string, catalog: SymbolCatalog = BUILTIN_SY
 export function openingForm(o: Opening, featuresOf: (entityId: string) => number = () => 0): FormSpec {
   const motion = openingMotion(o);
   const style = sliderStyleOf(o);
-  const twoPanels = openingHasTwoPanels(o);
+  const twoLeaves = openingHasTwoLeaves(o);
   const fields: FormField[] = [
     { name: "type", label: "Type", selector: dropdown(opt("door", "Door"), opt("window", "Window")) },
     {
@@ -230,7 +232,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
   if (motion === "slide") {
     // A two-panel slider moves both ways at once, so there is no direction to
     // pick — `flipH` only swaps which panel each sensor drives (issue #145).
-    if (!twoPanels) {
+    if (!twoLeaves) {
       fields.push({
         name: "slide",
         label: "Slide",
@@ -252,19 +254,20 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
   fields.push({
     name: "entity",
     label: "Entity",
-    helper: twoPanels
-      ? "Drives the first panel; type and motion follow its device class"
+    helper: twoLeaves
+      ? "Drives the first leaf; type and motion follow its device class"
       : "Type and motion follow the entity's device class",
     selector: { entity: { filter: [{ domain: ["binary_sensor", "cover"] }] } },
   });
-  // One sensor per leaf (issue #145). Only a two-panel style has a second
-  // moving panel to drive, and only once the first is bound — a slider whose
-  // *second* panel alone has a sensor would be more confusing than useful.
-  if (twoPanels && o.entity) {
+  // One sensor per leaf (issues #145, #159). Only a two-leaved opening has a
+  // second leaf to drive — a two-panel slider, or a hinged double — and only
+  // once the first is bound: an opening whose *second* leaf alone has a sensor
+  // would be more confusing than useful.
+  if (twoLeaves && o.entity) {
     fields.push({
       name: "secondaryEntity",
-      label: "Second panel",
-      helper: "Its own sensor for the other panel — leave empty to move both together",
+      label: "Second leaf",
+      helper: "Its own sensor for the other leaf — leave empty to move both together",
       selector: { entity: { filter: [{ domain: ["binary_sensor", "cover"] }] } },
     });
   }
@@ -293,6 +296,17 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         label: "Shutter side",
         helper: "Which side of the wall the panels hang on",
         selector: dropdown(opt("far", "Away from the sash"), opt("near", "Same side as the sash")),
+      });
+    }
+    // One contact per shutter panel (issue #159), on the same terms as the
+    // opening's own second leaf above: only a hinged pair *has* a second panel
+    // — a roll curtain is one piece — and only once the first is bound.
+    if (shutterStyleOf(o) === "swing") {
+      fields.push({
+        name: "shutterSecondaryEntity",
+        label: "Second shutter panel",
+        helper: "Its own contact for the other panel — leave empty to fold both together",
+        selector: { entity: { filter: [{ domain: ["binary_sensor", "cover"] }] } },
       });
     }
     // Its own switch, not the opening's: a reed contact on a hinged shutter
@@ -422,6 +436,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       entity: o.entity ?? "",
       secondaryEntity: o.secondaryEntity ?? "",
       shutterEntity: o.shutterEntity ?? "",
+      shutterSecondaryEntity: o.shutterSecondaryEntity ?? "",
       shutterStyle: shutterStyleOf(o),
       shutterSide: o.shutterFlipV ? "near" : "far",
       shutterInvert: o.shutterInvert ?? false,
@@ -449,6 +464,9 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
             out.shutterFlipV = undefined;
             out.shutterInvert = undefined;
             out.shutterActiveColor = undefined;
+            // Including the other panel's contact (issue #159): a shutter that
+            // isn't there has no second panel.
+            out.shutterSecondaryEntity = undefined;
             // Nothing left to lead with, so the choice goes too — otherwise it
             // would silently point the tap at the next shutter bound here.
             out.tapTarget = undefined;
@@ -479,18 +497,35 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           if (!v) out.icon = undefined;
         }
         else if (k === "motion") {
-          out.motion = v === "slide" || v === "roll" ? v : undefined;
+          const motion = v === "slide" || v === "roll" ? (v as "slide" | "roll") : undefined;
+          out.motion = motion;
           // sliderStyle only applies while sliding — drop it when switching
-          // away, and with it the second panel's sensor (issue #145).
-          if (v !== "slide") {
-            out.sliderStyle = undefined;
+          // away (issue #145).
+          if (v !== "slide") out.sliderStyle = undefined;
+          // The second leaf's sensor goes only if the opening this *becomes*
+          // has no second leaf. Asked of the result rather than of the motion,
+          // because since issue #159 a hinged double has one too: a two-sensor
+          // slider turned into a casement pair keeps both contacts.
+          if (!openingHasTwoLeaves({
+            ...o,
+            motion,
+            sliderStyle: v === "slide" ? o.sliderStyle : undefined,
+          } as Opening))
             out.secondaryEntity = undefined;
-          }
         } else if (k === "sash") {
           // The two types default the other way round — a window opens with
           // two sashes, a door with one leaf — so only the value that is *not*
           // this type's default is worth writing down.
           out.sash = v === defaultSash(o.type) ? undefined : v;
+          // Dropping to one leaf leaves nothing for the second sensor to
+          // drive (issue #159).
+          if (!openingHasTwoLeaves({ ...o, sash: v as "single" | "double" } as Opening))
+            out.secondaryEntity = undefined;
+        } else if (k === "shutterStyle") {
+          out.shutterStyle = v;
+          // Only a hinged pair has a second panel — a roll curtain is one
+          // piece — so switching to slats drops its contact (issue #159).
+          if (v !== "swing") out.shutterSecondaryEntity = undefined;
         }
         else if (k === "hinge" || k === "slide") out.flipH = v === "right" || undefined;
         else if (k === "opens") out.flipV = v === "other" || undefined;
@@ -498,7 +533,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           out.sliderStyle = v === "single" ? undefined : v;
           // Only a two-panel style has a second moving panel to bind. Asked of
           // the style itself, so a style added later can't be forgotten here.
-          if (!sliderStyleHasTwoPanels(v as SliderStyle)) out.secondaryEntity = undefined;
+          if (!sliderStyleHasTwoLeaves(v as SliderStyle)) out.secondaryEntity = undefined;
         }
         else if (k === "invert") out.invert = v || undefined;
         else out[k] = v;
@@ -1188,10 +1223,31 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
         helper: `Canvas units scale badges and labels with the drawing — use it when the card renders smaller than its ${c.width}-wide canvas`,
         selector: dropdown(opt("fixed", "Fixed pixels"), opt("plan", "Canvas units")),
       },
+      {
+        name: "compactHeader",
+        label: "Compact header",
+        // Says what it costs as well as what it saves — the title lands on the
+        // drawing, and on a plan that fills the card that is a real trade.
+        helper:
+          "Draws the title inside the plan and the floor buttons in a row, instead of spending a header row on them",
+        selector: { boolean: {} },
+      },
+      {
+        name: "offlineStyle",
+        label: "Offline devices",
+        helper: "How a device is drawn when its entity is unavailable or missing",
+        selector: dropdown(
+          opt("dim", "Dimmed"),
+          opt("strike", "Dimmed and crossed out"),
+          opt("none", "No different")
+        ),
+      },
     ],
     data: {
       rotation: String(normalizePlanRotation(c.rotation)),
       overlayScale: normalizeOverlayScale(c.overlayScale),
+      compactHeader: c.compactHeader ?? false,
+      offlineStyle: offlineStyleOf(c),
     },
     toPatch: (p) => {
       let out = p;
@@ -1201,6 +1257,13 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
       // "fixed" is the default, so keep it out of the YAML too.
       if ("overlayScale" in out && out.overlayScale === "fixed")
         out = { ...out, overlayScale: undefined };
+      // As are the ordinary header and the dimmed offline device — every
+      // default here stays out of the YAML, so a config only ever records the
+      // choices someone actually made.
+      if ("compactHeader" in out && !out.compactHeader)
+        out = { ...out, compactHeader: undefined };
+      if ("offlineStyle" in out && out.offlineStyle === DEFAULT_OFFLINE_STYLE)
+        out = { ...out, offlineStyle: undefined };
       return out;
     },
   };
