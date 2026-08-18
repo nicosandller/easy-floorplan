@@ -88,6 +88,18 @@ input_boolean:
     # this off makes that sensor genuinely `unavailable` -- not "off", not
     # empty -- which is the state the card has to survive and the one a fresh
     # instance otherwise never produces.
+  # One contact per leaf (issue #159). Two switches rather than six: the same
+  # pair drives every two-leaved opening on the plan -- a casement window's
+  # sashes, a double door's leaves, and a pair of hinged shutters -- so one
+  # flip shows all three symbols splitting the same way, which is the whole
+  # point of the feature. Nothing else can produce that state: an opening with
+  # one sensor moves both leaves together by definition.
+  left_leaf:
+    name: Left leaf contact
+    icon: mdi:door-open
+  right_leaf:
+    name: Right leaf contact
+    icon: mdi:door-open
 
 input_number:
   living_temperature:
@@ -181,6 +193,17 @@ template:
         unique_id: living_presence
         device_class: occupancy
         state: "{{ is_state('input_boolean.living_presence', 'on') }}"
+      # The per-leaf pair. device_class `window` only sets what the editor
+      # would *default* a new opening to; the plan states its own type, so
+      # these read the same bound to a door.
+      - name: Left leaf
+        unique_id: left_leaf
+        device_class: window
+        state: "{{ is_state('input_boolean.left_leaf', 'on') }}"
+      - name: Right leaf
+        unique_id: right_leaf
+        device_class: window
+        state: "{{ is_state('input_boolean.right_leaf', 'on') }}"
 
 automation: !include automations.yaml
 script: !include scripts.yaml

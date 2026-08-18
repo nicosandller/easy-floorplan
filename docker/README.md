@@ -126,7 +126,21 @@ there are attribute-only transitions; the door events are short enough that a
 coarse timeline can swallow them. Those are the cases worth having in front of
 you.
 
-Switch the lot off with `input_boolean.history_generator` (on the History view)
+Two of the controls on that view are yours to flip rather than the generator's:
+**Left leaf** and **Right leaf**. They drive one contact pair that every
+two-leaved opening on the plan shares — a casement window's sashes, a double
+door's leaves, and a pair of hinged shutters — so flipping one of them swings
+half of three different symbols at once. That half-open state is the point:
+an opening with a single sensor moves both leaves together by definition, so
+there is no other way to see a sash open beside a sash that is shut.
+
+The plan also carries one device bound to `light.deleted_by_accident`, which is
+not an entity and never will be. It is what a renamed or deleted binding looks
+like, and the reason it is hard-coded rather than switchable is that no live
+entity can produce "not in Home Assistant at all". It is the second flavour of
+offline; `sensor.flaky_sensor` above is the first.
+
+Switch the generators off with `input_boolean.history_generator` (on the History view)
 when you want to read a still plan, or when a state you set by hand keeps
 getting overwritten under you. `script.burst_activity` fires thirty changes in
 six seconds when you want a busy stretch on demand, and `script.all_lights_off`
