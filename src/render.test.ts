@@ -2814,6 +2814,94 @@ describe("collectWatchedEntities includes a slider's second panel (issue #145)",
   });
 });
 
+describe("collectWatchedEntities watches the sun the sunlight actually reads", () => {
+  const plan = (extra: Record<string, unknown>) =>
+    ({
+      type: "t", width: 1000, height: 600,
+      floors: [{ id: "f", name: "F", walls: [], items: [], texts: [], furniture: [],
+        trackers: [], openings: [] }],
+      ...extra,
+    }) as unknown as FloorplanCardConfig;
+
+  it("subscribes when the sunlight follows the real sun", () => {
+    // The whole feature reads sun.sun — azimuth for the direction, elevation
+    // for whether there is any light — and sunDimming is a separate opt-in,
+    // so this is the ordinary case rather than an exotic one.
+    expect(collectWatchedEntities(plan({ sunlight: true })).has("sun.sun")).toBe(true);
+  });
+
+  it("does not subscribe for a pinned bearing, which reads neither attribute", () => {
+    // sunBearingOf short-circuits on the config and sunlightStrengthOf returns
+    // 1, so there is nothing on sun.sun left to watch.
+    expect(
+      collectWatchedEntities(plan({ sunlight: true, sunBearing: 135 })).has("sun.sun")
+    ).toBe(false);
+    // …unless the dimming is also on, which reads the elevation regardless.
+    expect(
+      collectWatchedEntities(plan({ sunlight: true, sunBearing: 135, sunDimming: true })).has("sun.sun")
+    ).toBe(true);
+  });
+
+  it("leaves a plan without sunlight exactly as it was", () => {
+    expect(collectWatchedEntities(plan({})).has("sun.sun")).toBe(false);
+    expect(collectWatchedEntities(plan({ sunDimming: true })).has("sun.sun")).toBe(true);
+  });
+
+  // The assertion that pins the bug, in the same shape as #145's above: HA
+  // carries unchanged entities across by identity, so the beams only move if
+  // sun.sun is in the watched set. Without it the plan is painted once and
+  // then frozen at whatever the sun was doing when the card loaded.
+  it("re-renders as the sun moves across the sky", () => {
+    const watched = collectWatchedEntities(plan({ sunlight: true }));
+    const lamp = { state: "on" };
+    const morning = {
+      states: {
+        "sun.sun": { state: "above_horizon", attributes: { azimuth: 100, elevation: 30 } },
+        "light.a": lamp,
+      },
+    } as unknown as RenderHass;
+    const noon = {
+      states: {
+        // Same object for the lamp — only the sun moved.
+        "sun.sun": { state: "above_horizon", attributes: { azimuth: 180, elevation: 60 } },
+        "light.a": lamp,
+      },
+    } as unknown as RenderHass;
+    expect(hassRenderInputsChanged(morning, noon, watched)).toBe(true);
+    // And the picture really would have changed, so the re-render is earned.
+    expect(sunLightDirection({ sunlight: true } as FloorplanCardConfig, 100)).not.toEqual(
+      sunLightDirection({ sunlight: true } as FloorplanCardConfig, 180)
+    );
+  });
+});
+
+describe("a dead sun.sun falls back rather than pointing north", () => {
+  const cfg = (extra = {}) =>
+    ({ type: "t", width: 1000, height: 1000, ...extra }) as FloorplanCardConfig;
+  // The elevation had this guard from the start; the azimuth did not, and its
+  // failure is the quieter one: Number(null) is 0, 0 is due north, and a plan
+  // lit from the wrong side looks entirely deliberate.
+  it("takes the default bearing for anything that is not a reading", () => {
+    for (const dead of [undefined, null, "", "   ", false, "unavailable", "unknown", NaN, {}]) {
+      expect(sunBearingOf(cfg(), dead)).toBe(DEFAULT_SUN_BEARING);
+    }
+  });
+
+  it("still takes a real reading, including the ones that look falsy", () => {
+    expect(sunBearingOf(cfg(), 0)).toBe(0); // due north, an actual bearing
+    expect(sunBearingOf(cfg(), "0")).toBe(0);
+    expect(sunBearingOf(cfg(), 212.5)).toBe(212.5);
+    expect(sunBearingOf(cfg(), "212.5")).toBe(212.5);
+  });
+
+  it("and the two attributes now fail the same way as each other", () => {
+    for (const dead of [null, "", false, "unavailable"]) {
+      expect(sunBearingOf(cfg(), dead)).toBe(DEFAULT_SUN_BEARING);
+      expect(sunlightStrength(dead)).toBe(1);
+    }
+  });
+});
+
 describe("polygonCentroid", () => {
   it("averages the vertices", () => {
     const square = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];

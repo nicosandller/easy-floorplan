@@ -105,12 +105,20 @@ export function hassRenderInputsChanged(
 /** Every entity id whose state can change what a plan draws (all floors). */
 export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
   const ids = new Set<string>();
-  // Sun dimming (issue #113) reads sun.sun's elevation. Miss this and the
-  // plan is lit once and then frozen at whatever the sun was doing when the
-  // card loaded — the same trap entity-bound furniture (#82) and areas (#6)
-  // each fell into. HA replaces the state object when the attribute moves,
-  // so identity comparison in hassRenderInputsChanged catches it.
-  if (c.sunDimming) ids.add("sun.sun");
+  // Anything that reads the real sun has to watch it. Miss this and the plan
+  // is drawn once and then frozen at whatever the sun was doing when the card
+  // loaded — the same trap entity-bound furniture (#82) and areas (#6) each
+  // fell into, and in its worst form (#145) it is not even frozen: it lurches
+  // forward whenever some *other* watched entity moves, so it reads as
+  // intermittent rather than broken. HA replaces the state object when an
+  // attribute moves, so identity comparison in hassRenderInputsChanged
+  // catches it.
+  //
+  // Sun dimming (#113) reads the elevation. Sunlight reads both halves — the
+  // azimuth for the direction, the elevation for whether there is any light —
+  // but only while it follows the real sun: a pinned sunBearing reads neither
+  // (see sunBearingOf and sunlightStrengthOf), so it needs no subscription.
+  if (c.sunDimming || (c.sunlight && !sunIsPinned(c))) ids.add("sun.sun");
   for (const f of getFloors(c)) {
     for (const o of f.openings) {
       if (o.entity) ids.add(o.entity);
@@ -2666,6 +2674,24 @@ export const DEFAULT_SUN_BEARING = 135;
 export const SUN_ELEVATION_FULL = 12;
 
 /**
+ * A live `sun.sun` attribute as a number, or `undefined` when it is not a
+ * reading at all.
+ *
+ * The allowlist is the whole point, and it is why this is one function rather
+ * than two: `Number(null)`, `Number("")` and `Number(false)` are all **0**,
+ * and 0 is a meaningful value for both attributes an outage can hand us — the
+ * horizon exactly for the elevation, due north for the azimuth. Coercing
+ * blindly turns "we do not know" into a confident wrong answer, so each
+ * caller gets `undefined` and applies its own fail-bright default.
+ */
+function liveSunAttribute(value: unknown): number | undefined {
+  const usable = typeof value === "number" || (typeof value === "string" && value.trim() !== "");
+  if (!usable) return undefined;
+  const n = typeof value === "number" ? value : Number(value);
+  return Number.isFinite(n) ? n : undefined;
+}
+
+/**
  * How much sunlight there is, 0..1, from `sun.sun`'s **elevation**.
  *
  * The azimuth says where the light comes from; only the elevation says
@@ -2679,16 +2705,12 @@ export const SUN_ELEVATION_FULL = 12;
  *
  * A missing or unreadable elevation returns full strength, matching
  * {@link sunBrightness}: an outage should leave the plan lit and legible, not
- * stuck in a night that never ends. Same allowlist, for the same reason —
- * Number(null), Number("") and Number(false) are all 0, and 0 here means
- * "exactly at the horizon", which would read as a permanent dusk.
+ * stuck in a night that never ends. {@link liveSunAttribute} is what keeps 0
+ * — the horizon exactly — from being confused with a reading that never came.
  */
 export function sunlightStrength(elevation: unknown): number {
-  const usable =
-    typeof elevation === "number" || (typeof elevation === "string" && elevation.trim() !== "");
-  if (!usable) return 1;
-  const e = typeof elevation === "number" ? elevation : Number(elevation);
-  if (!Number.isFinite(e)) return 1;
+  const e = liveSunAttribute(elevation);
+  if (e === undefined) return 1;
   if (e <= 0) return 0;
   if (e >= SUN_ELEVATION_FULL) return 1;
   const t = e / SUN_ELEVATION_FULL;
@@ -2725,8 +2747,11 @@ export function planDirection(bearing: number, north = 0): { x: number; y: numbe
  */
 export function sunBearingOf(cfg: Pick<FloorplanCardConfig, "sunBearing">, azimuth?: unknown): number {
   if (sunIsPinned(cfg)) return cfg.sunBearing as number;
-  const live = typeof azimuth === "number" ? azimuth : Number(azimuth);
-  return Number.isFinite(live) ? live : DEFAULT_SUN_BEARING;
+  // Through the same allowlist as the elevation, and for a sharper reason:
+  // Number(null) is 0, and 0 is due north — a real bearing. Coerced blindly,
+  // a dead sun.sun does not fall back, it lights the house from the north
+  // and looks entirely deliberate while doing it.
+  return liveSunAttribute(azimuth) ?? DEFAULT_SUN_BEARING;
 }
 
 /** Whether the plan states its own sun angle rather than following the real one. */

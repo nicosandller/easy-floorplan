@@ -1185,14 +1185,34 @@ describe("projectReliefForm", () => {
     });
   });
 
-  it("shutting the sun out takes the angles with it", () => {
+  it("shutting the sun out takes everything it aimed and painted with it", () => {
     // Left behind they would sit in the YAML meaning nothing, and come back
-    // stale the next time the light is let in.
+    // stale the next time the light is let in. The colours are the ones worth
+    // pinning: they are set by their own rows rather than by this form, so
+    // nothing else is watching this switch on their behalf.
     expect(
-      projectReliefForm(cfg({ sunlight: true, north: 90, sunBearing: 10 })).toPatch({
-        sunlight: false,
-      })
-    ).toEqual({ sunlight: undefined, north: undefined, sunBearing: undefined });
+      projectReliefForm(
+        cfg({
+          sunlight: true,
+          north: 90,
+          sunBearing: 10,
+          sunShade: false,
+          sunlightColor: "#ff0",
+          sunShadeColor: "#00f",
+        })
+      ).toPatch({ sunlight: false })
+      // toStrictEqual, not toEqual: toEqual treats a key whose value is
+      // undefined as absent, so it cannot tell "cleared" from "never
+      // mentioned" — which is the only thing this test is about, and it
+      // passed against the unfixed code until it was written this way.
+    ).toStrictEqual({
+      sunlight: undefined,
+      north: undefined,
+      sunBearing: undefined,
+      sunShade: undefined,
+      sunlightColor: undefined,
+      sunShadeColor: undefined,
+    });
   });
 
   it("says what following the sun costs, since it is what turns the light off", () => {

@@ -1294,10 +1294,22 @@ export function projectReliefForm(c: FloorplanCardConfig): FormSpec {
     },
     toPatch: (p) => {
       const out = { ...p };
-      // Nothing left to aim, so the angles go with it — otherwise they would
-      // sit in the YAML meaning nothing, and come back stale on re-enable.
+      // Nothing left to aim or to paint, so all of it goes — every one of
+      // these keys is read only while the light is on, and left behind they
+      // would sit in the YAML meaning nothing and come back stale on
+      // re-enable. The colours are set by their own rows rather than by this
+      // form, which is exactly why they have to be named here: nothing else
+      // is watching this switch.
       if ("sunlight" in out && !out.sunlight) {
-        return { ...out, sunlight: undefined, north: undefined, sunBearing: undefined };
+        return {
+          ...out,
+          sunlight: undefined,
+          north: undefined,
+          sunBearing: undefined,
+          sunShade: undefined,
+          sunlightColor: undefined,
+          sunShadeColor: undefined,
+        };
       }
       // "Follow the sun" is the *absence* of a stated bearing (issue #113's
       // rule: the live reading wins only when nothing was decided).

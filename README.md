@@ -919,7 +919,9 @@ turns with it.
 `elevation` says whether there is any light at all. Below the horizon nothing is drawn — a
 plan does not keep its beams all night — and over the first degrees above it the light
 fades in, so sunrise and sunset are a ramp rather than a switch. An unreadable `sun.sun`
-leaves the plan lit, never stuck in a night that never ends.
+leaves the plan lit, never stuck in a night that never ends — and unaimed rather than
+aimed wrongly: the bearing falls back to south-east instead of reading a missing azimuth
+as due north.
 
 Set `sunBearing` and **the light stays on**, at that angle, around the clock. Stating an
 angle is a decision about the picture rather than a reading of the sky, so the elevation

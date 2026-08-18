@@ -124,18 +124,18 @@ export interface Opening {
    */
   sash?: "single" | "double";
   /**
-   * An external shutter sharing this opening's wall gap (issue #74): a
-   * `cover` (roller shutter / tapparella) or a `binary_sensor` contact on a
-   * hinged shutter (persiana). `entity` keeps driving the opening itself, so
-   * an open window behind a closed shutter renders both truthfully.
-   */
-  /**
    * Lets sunlight through even while shut. Windows are glass by definition and
    * default to true; a door defaults to false — but a patio or French door is
    * a door that happens to be glazed, and on a plan it is drawn as a door
    * because that is how it swings. Only the sunlight reads this.
    */
   glazed?: boolean;
+  /**
+   * An external shutter sharing this opening's wall gap (issue #74): a
+   * `cover` (roller shutter / tapparella) or a `binary_sensor` contact on a
+   * hinged shutter (persiana). `entity` keeps driving the opening itself, so
+   * an open window behind a closed shutter renders both truthfully.
+   */
   shutterEntity?: string;
   /**
    * How that shutter is drawn (issue #74):
