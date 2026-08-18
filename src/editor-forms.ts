@@ -315,6 +315,31 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: { boolean: {} },
     });
   fields.push(angleField());
+  // The opening's own badge (issue #154 follow-up). Offered for any bound
+  // opening, but sold on the case that needs it: a raised roll-up has nothing
+  // left on the plan but a coloured line.
+  if (o.entity) {
+    fields.push({
+      name: "showIcon",
+      label: "Show icon",
+      helper:
+        openingMotion(o) === "roll"
+          ? "A raised roll-up leaves only a line — this puts its state beside it, and opens its dialog when tapped"
+          : "Shows this opening's state beside it, and opens its dialog when tapped",
+      selector: { boolean: {} },
+    });
+    // Same bargain as the shutter's: only worth asking once the badge is
+    // drawn, and an override trades the entity's open/closed pair for one
+    // glyph, so it is not the default.
+    if (o.showIcon) {
+      fields.push({
+        name: "icon",
+        label: "Icon",
+        helper: "Overrides the entity's own icon, which changes with its state",
+        selector: { icon: {} },
+      });
+    }
+  }
   // With both bound, which one a press leads with. Only a real question when
   // there are two entities to choose between — and the reason it exists: the
   // shutter used to be reachable by hold alone, which is not discoverable and
@@ -402,6 +427,8 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       shutterInvert: o.shutterInvert ?? false,
       showShutterIcon: o.showShutterIcon ?? true,
       shutterIcon: o.shutterIcon ?? "",
+      showIcon: o.showIcon ?? false,
+      icon: o.icon ?? "",
       tapTarget: o.tapTarget ?? "opening",
       invert: o.invert ?? false,
       angle: o.angle,
@@ -429,12 +456,28 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
             out.showShutterIcon = undefined;
             out.shutterIcon = undefined;
           }
+        } else if (k === "entity") {
+          out.entity = v;
+          // The badge and its glyph only mean something with an entity to
+          // badge, exactly as the shutter's pair above. Left behind, they
+          // would reappear on whatever gets bound here next.
+          if (!v) {
+            out.showIcon = undefined;
+            out.icon = undefined;
+          }
         } else if (k === "shutterSide") out.shutterFlipV = v === "near" || undefined;
         else if (k === "shutterInvert") out.shutterInvert = v || undefined;
         // The opening is the default, so it stays out of the YAML.
         else if (k === "tapTarget") out.tapTarget = v === "shutter" ? "shutter" : undefined;
         // Shown is the default: only "off" is worth writing down.
         else if (k === "showShutterIcon") out.showShutterIcon = v ? undefined : false;
+        // The opening's badge defaults the other way round, so only "on" is.
+        // Switching it off takes the glyph with it: kept, it would silently
+        // reapply the next time someone turned the badge back on.
+        else if (k === "showIcon") {
+          out.showIcon = v ? true : undefined;
+          if (!v) out.icon = undefined;
+        }
         else if (k === "motion") {
           out.motion = v === "slide" || v === "roll" ? v : undefined;
           // sliderStyle only applies while sliding — drop it when switching

@@ -42,6 +42,10 @@ import {
   openingIsPressable,
   hasShutterMark,
   shutterMarkPoint,
+  hasOpeningMark,
+  openingMarkIcon,
+  openingMarkPoint,
+  openingMarkNormal,
   shutterMarkIcon,
   shutterMarkNormal,
   SHUTTER_MARK_OFFSET,
@@ -2483,6 +2487,99 @@ describe("the shutter badge (issue #74 follow-up)", () => {
       expect(Math.sign(at.x - o.x) || 0).toBe(Math.sign(Number(n.x.toFixed(6))) || 0);
       expect(Math.sign(at.y - o.y) || 0).toBe(Math.sign(Number(n.y.toFixed(6))) || 0);
     }
+  });
+});
+
+describe("the opening's own badge (issue #154 follow-up)", () => {
+  const win = (extra: Partial<Opening> = {}) =>
+    ({ id: "o", type: "window", x: 500, y: 100, length: 90, angle: 0, ...extra }) as Opening;
+  const garage = (extra: Partial<Opening> = {}) =>
+    ({
+      id: "g",
+      type: "door",
+      motion: "roll",
+      x: 500,
+      y: 100,
+      length: 140,
+      angle: 0,
+      ...extra,
+    }) as Opening;
+
+  it("is opt-in, unlike the shutter's — most symbols say it themselves", () => {
+    expect(hasOpeningMark(garage({ entity: "cover.garage" }))).toBe(false);
+    expect(hasOpeningMark(garage({ entity: "cover.garage", showIcon: true }))).toBe(true);
+    // Nothing to badge without an entity, however loudly the config asks.
+    expect(hasOpeningMark(garage({ showIcon: true }))).toBe(false);
+  });
+
+  it("sits on the far side of the wall from the shutter's, so the two never stack", () => {
+    // The whole point of the placement: an opening drawing both badges puts
+    // one on each face, at any angle and under any flipV.
+    const both = win({ entity: "binary_sensor.win", shutterEntity: "cover.t", showIcon: true });
+    expect(openingMarkPoint(both)).toEqual({ x: 500, y: 100 - SHUTTER_MARK_OFFSET });
+    expect(shutterMarkPoint(both)).toEqual({ x: 500, y: 100 + SHUTTER_MARK_OFFSET });
+    for (const o of [
+      both,
+      win({ ...both, flipV: true }),
+      win({ ...both, angle: -90 }),
+      win({ ...both, angle: 37, flipV: true }),
+    ]) {
+      const a = openingMarkPoint(o);
+      const b = shutterMarkPoint(o);
+      // Two badge-widths apart is the test that matters: they are circles.
+      expect(Math.hypot(a.x - b.x, a.y - b.y)).toBeCloseTo(SHUTTER_MARK_OFFSET * 2);
+    }
+  });
+
+  it("pushes its pixel offset the same way its anchor went", () => {
+    for (const o of [win(), win({ flipV: true }), win({ angle: -90 }), win({ angle: 37 })]) {
+      const at = openingMarkPoint(o);
+      const n = openingMarkNormal(o);
+      expect(Math.sign(at.x - o.x) || 0).toBe(Math.sign(Number(n.x.toFixed(6))) || 0);
+      expect(Math.sign(at.y - o.y) || 0).toBe(Math.sign(Number(n.y.toFixed(6))) || 0);
+    }
+    // …and away from the shutter's, in screen space as well as plan space.
+    const n = openingMarkNormal(win());
+    const s = shutterMarkNormal(win());
+    expect(n.x).toBeCloseTo(-s.x);
+    expect(n.y).toBeCloseTo(-s.y);
+    // Rotating the plan turns both together (issue #33).
+    expect(openingMarkNormal(win(), 90).x).toBeCloseTo(1);
+  });
+
+  it("shows the entity's own icon, state-aware, on the shutter badge's terms", () => {
+    const g = { type: "door", entity: "cover.garage" } as Pick<Opening, "type" | "entity" | "icon">;
+    const st = (state: string) => ({ state, attributes: { device_class: "garage" } });
+    expect(openingMarkIcon(g, st("open"), true)).toBe("mdi:garage-open");
+    expect(openingMarkIcon(g, st("closed"), false)).toBe("mdi:garage");
+    // Override, registry, then the icon on the state — same order as always.
+    expect(openingMarkIcon({ ...g, icon: "mdi:mine" }, st("open"), true, "mdi:reg")).toBe("mdi:mine");
+    expect(openingMarkIcon(g, st("open"), true, "mdi:reg")).toBe("mdi:reg");
+  });
+
+  it("falls back to a door or a window when the entity declares no class", () => {
+    // A bare contact has no pair of its own, and the symbol it decorates does.
+    expect(openingMarkIcon({ type: "door", entity: "binary_sensor.d" }, undefined, true)).toBe(
+      "mdi:door-open"
+    );
+    expect(openingMarkIcon({ type: "door", entity: "binary_sensor.d" }, undefined, false)).toBe(
+      "mdi:door-closed"
+    );
+    expect(openingMarkIcon({ type: "window", entity: "binary_sensor.w" }, undefined, true)).toBe(
+      "mdi:window-open"
+    );
+    expect(openingMarkIcon({ type: "window", entity: "binary_sensor.w" }, undefined, false)).toBe(
+      "mdi:window-closed"
+    );
+  });
+
+  it("refuses an icon string that isn't one, at every level", () => {
+    const nasty = { state: "open", attributes: { icon: "mdi:x;background:url(//evil)" } };
+    const o = { type: "window", entity: "cover.w", icon: "mdi:evil;}" } as Pick<
+      Opening,
+      "type" | "entity" | "icon"
+    >;
+    expect(openingMarkIcon(o, nasty, true, "mdi:y;}")).toBe("mdi:window-open");
   });
 });
 

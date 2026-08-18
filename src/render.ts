@@ -2224,6 +2224,45 @@ export function hasShutterMark(
 /** Last-resort shutter glyphs, for an entity with no device class of its own. */
 const SHUTTER_FALLBACK_ICON = { on: "mdi:window-shutter-open", off: "mdi:window-shutter" };
 
+/** The same, for an opening's own badge — a door reads as a door, glass as glass. */
+const OPENING_FALLBACK_ICON: Record<OpeningType, { on: string; off: string }> = {
+  door: { on: "mdi:door-open", off: "mdi:door-closed" },
+  window: { on: "mdi:window-open", off: "mdi:window-closed" },
+};
+
+/**
+ * The badge glyph for one bound entity: the author's override first, then the
+ * entity's **own** icon resolved exactly as Home Assistant resolves it —
+ * registry override, then the icon on the state, then the domain/device-class
+ * default — and a state-aware pair as the last resort.
+ *
+ * Shared by both badges an opening can draw, because "show whatever this
+ * entity shows everywhere else in HA" is the same promise either time. `open`
+ * is the already-inverted reading, so a sensor wired the other way round still
+ * picks the right half of every pair.
+ */
+function markIcon(
+  entityId: string,
+  configured: string | undefined,
+  st: { state: string; attributes?: Record<string, unknown> } | undefined,
+  open: boolean,
+  fallback: { on: string; off: string },
+  registryIcon?: string,
+): string {
+  // The author's own choice first, as it is for a device (issue #106) — the
+  // one candidate that is a decision rather than a default.
+  const chosen = cssIcon(configured);
+  if (chosen) return chosen;
+  const registry = cssIcon(registryIcon);
+  if (registry) return registry;
+  const attr = cssIcon(st?.attributes?.icon);
+  if (attr) return attr;
+  return (
+    entityDefaultIcon(entityId, st?.attributes?.device_class as string | undefined, open) ??
+    (open ? fallback.on : fallback.off)
+  );
+}
+
 /**
  * The glyph for an opening's shutter badge — the shutter entity's **own**
  * icon, resolved exactly as Home Assistant resolves it, so the badge shows
@@ -2242,19 +2281,72 @@ export function shutterMarkIcon(
   open: boolean,
   registryIcon?: string,
 ): string {
-  const entityId = o.shutterEntity ?? "";
-  // The author's own choice first, as it is for a device (issue #106) — the
-  // one candidate that is a decision rather than a default.
-  const configured = cssIcon(o.shutterIcon);
-  if (configured) return configured;
-  const registry = cssIcon(registryIcon);
-  if (registry) return registry;
-  const attr = cssIcon(st?.attributes?.icon);
-  if (attr) return attr;
-  return (
-    entityDefaultIcon(entityId, st?.attributes?.device_class as string | undefined, open) ??
-    (open ? SHUTTER_FALLBACK_ICON.on : SHUTTER_FALLBACK_ICON.off)
+  return markIcon(
+    o.shutterEntity ?? "",
+    o.shutterIcon,
+    st,
+    open,
+    SHUTTER_FALLBACK_ICON,
+    registryIcon,
   );
+}
+
+/**
+ * Whether an opening draws a badge for its **own** entity (issue #154
+ * follow-up).
+ *
+ * Off unless asked for, unlike the shutter's: the symbol already carries the
+ * state for anything that stays on screen while it moves. A roll-up is the
+ * case that doesn't — its curtain leaves the floor plane, so wide open there
+ * is only a coloured track line left, which is a lot to read across a room.
+ */
+export function hasOpeningMark(o: Pick<Opening, "entity" | "showIcon">): boolean {
+  return !!o.entity && (o.showIcon ?? false);
+}
+
+/**
+ * The glyph for that badge — the opening entity's own icon, on the same terms
+ * as the shutter's, falling back to a door/window pair for an entity with no
+ * device class to speak for it.
+ */
+export function openingMarkIcon(
+  o: Pick<Opening, "type" | "entity" | "icon">,
+  st: { state: string; attributes?: Record<string, unknown> } | undefined,
+  open: boolean,
+  registryIcon?: string,
+): string {
+  return markIcon(
+    o.entity ?? "",
+    o.icon,
+    st,
+    open,
+    OPENING_FALLBACK_ICON[o.type] ?? OPENING_FALLBACK_ICON.door,
+    registryIcon,
+  );
+}
+
+/**
+ * Where that badge sits, and which way it is pushed: the mirror image of the
+ * shutter's, on the other face of the wall.
+ *
+ * Not a style choice — it is what keeps the two badges apart. A shutter hangs
+ * outside, so its badge follows it there; the opening belongs to the room, so
+ * its own badge sits inside. An opening drawing both then has one on each
+ * side, at any angle and under any `flipV`, without either having to know the
+ * other exists.
+ */
+export function openingMarkPoint(
+  o: Pick<Opening, "x" | "y" | "angle" | "flipV">,
+): { x: number; y: number } {
+  return shutterMarkPoint(o, -SHUTTER_MARK_OFFSET);
+}
+
+export function openingMarkNormal(
+  o: Pick<Opening, "angle" | "flipV">,
+  rot: PlanRotation = 0,
+): { x: number; y: number } {
+  const n = shutterMarkNormal(o, rot);
+  return { x: -n.x, y: -n.y };
 }
 
 /** Style options for {@link renderOpening}. */

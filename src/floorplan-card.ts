@@ -45,6 +45,10 @@ import {
   shutterMarkPoint,
   shutterMarkIcon,
   shutterMarkNormal,
+  openingMarkPoint,
+  openingMarkIcon,
+  openingMarkNormal,
+  hasOpeningMark,
   SHUTTER_MARK_PIXEL_OFFSET,
   SHUTTER_MARK_SIZE,
   SHUTTER_MARK_ICON_SIZE,
@@ -351,6 +355,63 @@ export class FloorplanCard extends LitElement {
     // badge's own unit: fixed pixels never shrink with the plan, and would
     // otherwise cover the opening on a large canvas in a narrow card.
     const n = shutterMarkNormal(o, rot);
+    const step = overlayLength(SHUTTER_MARK_PIXEL_OFFSET, scale);
+    const push = `translate(calc(${n.x} * ${step}), calc(${n.y} * ${step}))`;
+    const box = overlayLength(SHUTTER_MARK_SIZE, scale);
+    const name =
+      (this.hass?.states[id]?.attributes?.friendly_name as string | undefined) ?? id;
+    return html`
+      <div
+        class="shutter-mark ${active ? "on" : "off"}"
+        data-entity=${cssEntityId(id) ?? nothing}
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
+               width:${box};height:${box};
+               transform:translate(-50%,-50%) ${push};--fp-active:${accent};"
+        title="${name} · ${entityStateText(this.hass, id)}"
+        role="button"
+        tabindex="0"
+        @action=${() => {
+          if (this.hass) executeAction(this, this.hass, { entity: id }, { action: "more-info" });
+        }}
+        .actionHandler=${actionHandler({})}
+      >
+        <ha-icon
+          icon=${icon}
+          style="--mdc-icon-size:${overlayLength(SHUTTER_MARK_ICON_SIZE, scale)};"
+        ></ha-icon>
+      </div>
+    `;
+  }
+
+  /**
+   * The opening's own badge (issue #154 follow-up) — the same circle as the
+   * shutter's, for the entity the opening symbol itself draws.
+   *
+   * Opt-in, because most symbols need no help: a leaf that has swung and a
+   * panel that has slid are both still on screen, in the accent, saying so. A
+   * roll-up is the one that isn't — its curtain leaves the floor plane, and
+   * wide open the gap holds a single coloured line. That line is honest and
+   * easy to miss, so this puts the entity's own open/closed glyph beside it.
+   *
+   * It sits on the far side of the wall from the shutter's badge, which is
+   * what keeps the two from stacking on an opening that draws both.
+   */
+  private _renderOpeningMark(
+    o: Opening,
+    c: FloorplanCardConfig,
+    rot: PlanRotation,
+    scale: OverlayScale
+  ): TemplateResult {
+    const id = o.entity!;
+    const st = this.hass?.states[id];
+    const open = this._openingAmount(o) > 0;
+    const active = this._openingActive(o);
+    const icon = openingMarkIcon(o, st, open, this.hass?.entities?.[id]?.icon);
+    const accent = cssColor(o.activeColor) ?? SKIN_ACCENT;
+    const at = openingMarkPoint(o);
+    const p = rotatePlanPoint(at.x, at.y, c.width, c.height, rot);
+    const d = rotatedCanvasSize(c.width, c.height, rot);
+    const n = openingMarkNormal(o, rot);
     const step = overlayLength(SHUTTER_MARK_PIXEL_OFFSET, scale);
     const push = `translate(calc(${n.x} * ${step}), calc(${n.y} * ${step}))`;
     const box = overlayLength(SHUTTER_MARK_SIZE, scale);
@@ -912,6 +973,11 @@ export class FloorplanCard extends LitElement {
               active.openings.filter((o) => hasShutterMark(o)),
               (o, i) => `${o.id || i}-shutter`,
               (o) => this._renderShutterMark(o, c, rot, scale)
+            )}
+            ${repeat(
+              active.openings.filter((o) => hasOpeningMark(o)),
+              (o, i) => `${o.id || i}-opening`,
+              (o) => this._renderOpeningMark(o, c, rot, scale)
             )}
             ${repeat(
               // No entity filter: devices that exist physically but have no HA

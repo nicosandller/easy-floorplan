@@ -62,6 +62,7 @@ import {
   editorGlowPaint,
   renderGlow,
   resolveOpeningAmount,
+  openingIsActive,
   wallsLightPassesThrough,
   openingClearFraction,
   openingHasTwoPanels,
@@ -75,6 +76,10 @@ import {
   shutterMarkIcon,
   shutterMarkPoint,
   shutterMarkNormal,
+  openingMarkIcon,
+  openingMarkPoint,
+  openingMarkNormal,
+  hasOpeningMark,
   SHUTTER_MARK_PIXEL_OFFSET,
   SHUTTER_MARK_SIZE,
   hasShutterMark,
@@ -2983,6 +2988,9 @@ export class FloorplanCardEditor extends LitElement {
               ${floor.openings
                 .filter((o) => hasShutterMark(o))
                 .map((o) => this._renderShutterMarkOverlay(o, c))}
+              ${floor.openings
+                .filter((o) => hasOpeningMark(o))
+                .map((o) => this._renderOpeningMarkOverlay(o, c))}
               ${floor.items.map((it) => this._renderItemOverlay(it, c))}
             </div>
           </div>
@@ -3638,6 +3646,32 @@ export class FloorplanCardEditor extends LitElement {
                n.y * SHUTTER_MARK_PIXEL_OFFSET
              }px);--fp-active:${accent};"
       title=${`${(st?.attributes?.friendly_name as string | undefined) ?? id} — shown on the card, tap it there to open the shutter`}
+    >
+      <ha-icon icon=${icon}></ha-icon>
+    </div>`;
+  }
+
+  /**
+   * The card's opening badge, previewed (issue #154 follow-up). Same reason as
+   * the shutter's preview above: turning **Show icon** on and finding out where
+   * the badge lands is the whole point of having a canvas. Inert here too.
+   */
+  private _renderOpeningMarkOverlay(o: Opening, c: FloorplanCardConfig): TemplateResult {
+    const id = o.entity!;
+    const st = this.hass?.states[id];
+    const open = resolveOpeningAmount(o, st) > 0;
+    const icon = openingMarkIcon(o, st, open, this.hass?.entities?.[id]?.icon);
+    const accent = cssColor(o.activeColor) ?? SKIN_ACCENT;
+    const at = openingMarkPoint(o);
+    const n = openingMarkNormal(o);
+    return html`<div
+      class="shutter-mark ${openingIsActive(o, st) ? "on" : "off"}"
+      style="left:${(at.x / c.width) * 100}%; top:${(at.y / c.height) * 100}%;
+             width:${SHUTTER_MARK_SIZE}px;height:${SHUTTER_MARK_SIZE}px;
+             transform:translate(-50%,-50%) translate(${n.x * SHUTTER_MARK_PIXEL_OFFSET}px, ${
+               n.y * SHUTTER_MARK_PIXEL_OFFSET
+             }px);--fp-active:${accent};"
+      title=${`${(st?.attributes?.friendly_name as string | undefined) ?? id} — shown on the card, tap it there to open its dialog`}
     >
       <ha-icon icon=${icon}></ha-icon>
     </div>`;

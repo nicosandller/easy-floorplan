@@ -941,6 +941,32 @@ describe("openingForm — shutter invert and side (issue #74 follow-up)", () => 
     );
   });
 
+  it("offers the opening's own badge, opt-in and only once bound", () => {
+    const bound = { ...win, entity: "cover.garage" } as Opening;
+    expect(names(win)).not.toContain("showIcon");
+    expect(names(bound)).toContain("showIcon");
+    // The glyph override is only worth asking once the badge is drawn.
+    expect(names(bound)).not.toContain("icon");
+    expect(names({ ...bound, showIcon: true } as Opening)).toContain("icon");
+    // Off is the default, so only "on" is worth writing down — the mirror of
+    // the shutter badge, which defaults the other way.
+    const { toPatch, data } = openingForm(bound);
+    expect(data.showIcon).toBe(false);
+    expect(toPatch({ showIcon: true })).toEqual({ showIcon: true });
+    expect(toPatch({ showIcon: false })).toEqual({ showIcon: undefined, icon: undefined });
+  });
+
+  it("drops the badge with the entity it was badging", () => {
+    const { toPatch } = openingForm({ ...win, entity: "cover.garage", showIcon: true } as Opening);
+    expect(toPatch({ entity: "" })).toEqual({
+      entity: "",
+      showIcon: undefined,
+      icon: undefined,
+    });
+    // Binding a different entity keeps it: the badge is still wanted.
+    expect(toPatch({ entity: "cover.other" })).toEqual({ entity: "cover.other" });
+  });
+
   it("asks which side only for hinged panels", () => {
     // The roll curtain is symmetric about the wall line, so the answer would
     // change nothing on screen.

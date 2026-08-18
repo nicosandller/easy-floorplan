@@ -183,6 +183,27 @@ export interface Opening {
    */
   tapTarget?: OpeningTapTarget;
   /**
+   * Draw the opening's **own** icon beside it (default false).
+   *
+   * The symbol usually says everything: a leaf swings, a panel slides. A
+   * roll-up is the exception — its curtain leaves the floor plane, so wide
+   * open there is nothing left but a coloured line, and a garage door across
+   * the room is a state you want to read at a glance rather than infer from a
+   * hairline (issue #154 follow-up). Off by default because a plan of swing
+   * doors does not need a badge on every one of them.
+   *
+   * Sits on the opposite side of the wall from {@link showShutterIcon}'s
+   * badge, so an opening that draws both never stacks them.
+   */
+  showIcon?: boolean;
+  /**
+   * Override that icon. Absent, it is the opening entity's own, resolved the
+   * way {@link shutterIcon} describes — a **pair**, so the glyph carries
+   * open/closed by itself. An override is one glyph for both states; colour
+   * still reports the state.
+   */
+  icon?: string;
+  /**
    * Draw the shutter's icon beside the opening (default true, whenever both
    * entities are bound). It is what makes the second entity visible at all —
    * and a control of its own, since tapping it opens the shutter — but on a
