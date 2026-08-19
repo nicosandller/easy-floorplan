@@ -3023,11 +3023,15 @@ export const SUN_SHADE_COLOR = "var(--fp-skin-sunshade, #000)";
  * travel a leaf has is not the gap it clears.
  */
 export function openingSunFraction(
-  o: Pick<Opening, "type" | "glazed">,
+  o: Pick<Opening, "type" | "glazed" | "sunlight">,
   amount: number,
   /** How far the external shutter is open, or `undefined` when none is bound. */
   shutter?: number,
 ): number {
+  // Above every other rule, because it is the one that is a decision rather
+  // than a reading: an opening switched out of the sunlight is wall to it,
+  // however open, however glazed (issue #177).
+  if (o.sunlight === false) return 0;
   if (shutter !== undefined && shutter <= 0) return 0;
   if (openingIsGlazed(o)) return 1;
   return Math.max(0, Math.min(1, amount));
@@ -3039,7 +3043,7 @@ export function openingSunFraction(
  * light in" is the question most callers are actually asking.
  */
 export function openingAdmitsSun(
-  o: Pick<Opening, "type" | "glazed">,
+  o: Pick<Opening, "type" | "glazed" | "sunlight">,
   amount: number,
   shutter?: number,
 ): boolean {
@@ -3073,8 +3077,9 @@ function openingEnds(o: Opening): [AreaPoint, AreaPoint] {
  * approximate "did this land inside" answer, not exact edge semantics.
  *
  * Here rather than in `editor-geometry`, which is where it started and which
- * still re-exports it: the sunlight has to ask whether an opening stands in a
- * wall's shadow, and that module imports from this one.
+ * still re-exports it: it moved when the sunlight needed it, and while the
+ * sunlight has since stopped asking (see {@link sunReachesOpening}), moving it
+ * back would only churn that module's imports for nothing.
  */
 export function pointInPolygon(points: readonly AreaPoint[], x: number, y: number): boolean {
   let inside = false;
@@ -3086,6 +3091,39 @@ export function pointInPolygon(points: readonly AreaPoint[], x: number, y: numbe
     if (intersects) inside = !inside;
   }
   return inside;
+}
+
+/**
+ * Whether the sun reaches this opening's outside face at all — the test that
+ * decides whether it is a *source* (issues #177 / #178).
+ *
+ * The sun is outside the building, so the only openings that admit it are the
+ * ones it shines on directly: trace back along the light from the opening's
+ * centre and if that ray meets a wall, this opening is standing behind
+ * something. Interior doors are, always — there is a façade between them and
+ * the sky. So are the openings on the shaded side of the house.
+ *
+ * Deliberately against the **uncut** walls, not the ones {@link
+ * wallsLightPassesThrough} has opened up: a doorway lined up with a window is
+ * not a second sun. Light does reach it, and it does go through — the beam
+ * from the window carries on through the gap, because that wall's shadow has
+ * the same gap cut in it. What must not happen is the doorway *re-emitting* at
+ * its own full width, which is how a 20-wide sliver came out the other side of
+ * a 120-wide door as a 120-wide flood, and how a window on the dark façade
+ * came to throw a patch of sunlight out into the garden.
+ *
+ * The opening's own wall is skipped, since the ray starts on its centre line.
+ */
+export function sunReachesOpening(
+  o: Pick<Opening, "x" | "y">,
+  walls: readonly Wall[],
+  dir: { x: number; y: number },
+): boolean {
+  for (const w of walls) {
+    if (pointWallDist(o.x, o.y, w) <= OPENING_ON_WALL_EPS) continue;
+    if (rayWallHit(o.x, o.y, -dir.x, -dir.y, w) !== undefined) return false;
+  }
+  return true;
 }
 
 /**
@@ -3230,14 +3268,13 @@ export function renderSunlight(
   const clear = (o: Opening) => openingSunFraction(o, openAmount(o), shutterOpen(o));
   const blockers = wallsLightPassesThrough(walls, openings, clear);
   const shadowPolys = blockers.map((w) => sunShadowPolygon(w, dir, reach));
-  // An opening only lets light in if light reaches it. Without this every
-  // opening was a source in its own right: an interior door on the dark side
-  // of the house lit the room beyond it out of nothing, and a window on the
-  // shaded façade did the same. Standing in a wall's shadow is exactly what
-  // "no light reaches it" means, and the shadows are already to hand.
-  const lit = openings.filter(
-    (o) => clear(o) > 0 && !shadowPolys.some((sh) => pointInPolygon(sh, o.x, o.y))
-  );
+  // Only the openings the sun actually shines on are sources — see
+  // {@link sunReachesOpening}, which asks it of the *uncut* walls. Testing the
+  // cut ones (which is what standing in a shadow polygon amounts to) made a
+  // second sun of every opening that happened to line up with a window: the
+  // doorway behind it re-emitted at its own full width, and a window on the
+  // shaded façade threw a patch out of the house (issues #177 / #178).
+  const lit = openings.filter((o) => clear(o) > 0 && sunReachesOpening(o, walls, dir));
   if (!lit.length) return nothing;
   const beams = lit.map((o) => polyPoints(sunBeamPolygon(o, dir, reach, clear(o))));
   const shadows = shadowPolys.map(polyPoints);

@@ -146,6 +146,22 @@ export interface Opening {
    */
   glazed?: boolean;
   /**
+   * Whether this opening takes part in the sunlight at all (default `true`).
+   *
+   * `false` makes it wall as far as the sun is concerned: no patch of its own,
+   * and it stops a beam crossing it like any other stretch of wall. Nothing
+   * else changes — it is still drawn, still tappable, still lets a lamp's pool
+   * through if it is open.
+   *
+   * The case it exists for (issue #177): a **solid front door with no sensor
+   * bound**. The plan draws such a door open, because that is the floor-plan
+   * convention and what makes an unwired door useful, and the light believes
+   * the drawing — so a corridor behind the front door filled with sunshine
+   * that the door has never let in. This is how you say "drawn open, but shut
+   * to the sun".
+   */
+  sunlight?: boolean;
+  /**
    * An external shutter sharing this opening's wall gap (issue #74): a
    * `cover` (roller shutter / tapparella) or a `binary_sensor` contact on a
    * hinged shutter (persiana). `entity` keeps driving the opening itself, so

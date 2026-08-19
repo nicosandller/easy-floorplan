@@ -30,6 +30,7 @@ import {
   planDirection,
   sunBearingOf,
   openingAdmitsSun,
+  sunReachesOpening,
   openingSunFraction,
   openingIsGlazed,
   sunBeamPolygon,
@@ -2470,6 +2471,54 @@ describe("sunlight through the openings", () => {
     // Following the real sun still follows it all the way down.
     expect(sunlightStrengthOf({}, -40)).toBe(0);
     expect(sunlightStrengthOf({}, 50)).toBe(1);
+  });
+
+  it("only the openings the sun actually shines on are sources (#177 / #178)", () => {
+    // The rule the two reports share. Trace back along the light: anything
+    // with a wall between it and the sky is standing behind something, and a
+    // thing standing behind something is not a second sun.
+    const north = { id: "n", x1: 0, y1: 0, x2: 400, y2: 0 };
+    const mid = { id: "m", x1: 0, y1: 150, x2: 400, y2: 150 };
+    const onNorth = win({ x: 200, y: 0 });
+    const inside = win({ x: 200, y: 150 });
+    expect(sunReachesOpening(onNorth, [north, mid], down)).toBe(true);
+    expect(sunReachesOpening(inside, [north, mid], down)).toBe(false);
+    // Its own wall never shades it — the ray starts on that wall's centreline.
+    expect(sunReachesOpening(onNorth, [north], down)).toBe(true);
+    // Turn the sun around and the two swap places, which is the whole point:
+    // the far side of the house is the shaded side.
+    const up = { x: 0, y: -1 };
+    expect(sunReachesOpening(onNorth, [north, mid], up)).toBe(false);
+    expect(sunReachesOpening(inside, [north, mid], up)).toBe(true);
+  });
+
+  it("judges that on the uncut walls, so a lined-up doorway is not a second sun", () => {
+    // The distinction the fix turns on. Light *does* reach a door lined up
+    // with a window, and it does go through — the beam carries on, because
+    // that wall's shadow has the same gap cut in it. What it must not do is
+    // re-emit at its own width: a 20-wide sliver came out of a 120-wide door
+    // as a 120-wide flood (#178).
+    const north = { id: "n", x1: 0, y1: 0, x2: 400, y2: 0 };
+    const mid = { id: "m", x1: 0, y1: 150, x2: 400, y2: 150 };
+    const window = win({ x: 200, y: 0, length: 20 });
+    const door = win({ id: "d", type: "door", x: 200, y: 150, length: 120 });
+    // The gap really is there once the doorway is open…
+    const cut = wallsLightPassesThrough([north, mid], [window, door], () => 1);
+    expect(cut.some((w) => w.id.startsWith("m#"))).toBe(true);
+    // …and the door still is not a source.
+    expect(sunReachesOpening(door, [north, mid], down)).toBe(false);
+  });
+
+  it("an opening can be switched out of the sunlight entirely (#177)", () => {
+    // For the solid front door the plan draws open because nothing is bound to
+    // it. Beats every other rule, including the glass a window is by default.
+    expect(openingSunFraction({ type: "door", sunlight: false }, 1)).toBe(0);
+    expect(openingSunFraction({ type: "window", sunlight: false }, 1)).toBe(0);
+    expect(openingSunFraction({ type: "door", glazed: true, sunlight: false }, 1)).toBe(0);
+    expect(openingAdmitsSun({ type: "door", sunlight: false }, 1)).toBe(false);
+    // Absent and true both mean what they always meant, so nothing existing moves.
+    expect(openingSunFraction({ type: "door", sunlight: true }, 1)).toBe(1);
+    expect(openingSunFraction({ type: "door" }, 1)).toBe(1);
   });
 
   it("reaches across a fair part of the plan, but not forever", () => {

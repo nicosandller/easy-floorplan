@@ -422,6 +422,7 @@ distorted anyway.
 | `id`          | string                      | Unique id.                                             |
 | `type`        | `door` \| `window`          | The kind of opening.                                   |
 | `motion`      | `swing` \| `slide` \| `roll` | How it moves: hinged (default), sliding panels, or a roll-up curtain (garage / roller shutter). |
+| `sunlight`    | boolean                     | `false` takes this opening out of [Sunlight](#sunlight) entirely — it admits no light and blocks it like wall, however open it is drawn. Editor: **Lets sunlight in**. For the solid door with no sensor, which the plan draws open. |
 | `glazed`      | boolean                     | Lets sunlight through even when shut. Defaults per type — a window is glass, a door is not. Set `true` on a **patio or French door**, which is drawn as a door because that is how it swings but is a wall of glass; set `false` on an opaque window like a glass-brick panel or a hatch, which then admits light only as far as it is open. Only [Sunlight](#sunlight) reads it. |
 | `sash`        | `single` \| `double`        | Swing openings only: how many hinged leaves. The default differs by type, because the ordinary cases do — a window opens with `double` (two casement sashes), a door with `single` (one leaf across the opening). Set it to draw a single-sash window or a **double door**; both leaves then hinge at their own jamb and trace their own arc. Ignored by sliding and rolling openings. |
 | `shutterEntity` | string                     | An external shutter over the same gap (`cover` or contact), with its own open/closed state. With `entity` bound too, the card draws the shutter's own icon beside the opening — open/closed in both glyph and colour — and tapping that icon opens the shutter. |
@@ -935,10 +936,18 @@ gap moved the same way. So:
 - **walls cast the shade behind them**, cutting the patches — and the part of a door that
   is still shut casts shade like the wall it stands in, while an open doorway casts none,
   the same rule the lamps already follow;
-- an opening standing in a wall's shadow lets nothing in, so an interior door on the dark
-  side of the house does not light the room beyond it out of nothing;
+- **only the openings the sun shines on are sources.** Trace back along the light: if a
+  wall stands between an opening and the sky, that opening is not letting the sun in. So
+  the shaded façade stays dark, and an interior door is never a second sun. Light still
+  travels *through* an interior doorway — the beam from the window upstream carries on,
+  because that wall's shade has the same gap cut in it — it simply does not start there
+  and widen to the doorway's own width (issues #177 / #178);
 - a **shutter that is all the way down** stops the light whatever the glass says — that is
   what a shutter is for, and a window behind a closed one is as dark as a wall;
+- an opening with `sunlight: false` is **wall to the sun**: no patch of its own, and it
+  stops a beam crossing it. That is the answer for a solid front door with no sensor bound
+  — the plan draws such a door open, the light believes the drawing, and the corridor
+  behind it filled with sunshine the door has never let in;
 - everywhere the light never reaches is drawn a shade darker — turn `sunShade` off for the
   patches alone.
 

@@ -991,6 +991,19 @@ describe("openingForm — sash and shutter (issues #73 / #74)", () => {
     expect(openingForm(door).toPatch({ glazed: false })).toEqual({ glazed: undefined });
   });
 
+  it("offers the sunlight switch on every opening, defaulting to letting it in", () => {
+    // Unlike glazing, this one is not a fact about the material — it is the
+    // author overruling the drawing, so both types can want it (#177).
+    for (const o of [win, door]) {
+      expect(openingForm(o).fields.map((x) => x.name)).toContain("sunlight");
+      expect(openingForm(o).data.sunlight).toBe(true);
+    }
+    expect(openingForm({ ...door, sunlight: false } as Opening).data.sunlight).toBe(false);
+    // On is the default, so only "off" reaches the YAML.
+    expect(openingForm(door).toPatch({ sunlight: false })).toEqual({ sunlight: false });
+    expect(openingForm(door).toPatch({ sunlight: true })).toEqual({ sunlight: undefined });
+  });
+
   it("every swing opening offers a leaf count; only sliders and rollers don't", () => {
     const names = openingForm(win).fields.map((x) => x.name);
     expect(names).toContain("sash");

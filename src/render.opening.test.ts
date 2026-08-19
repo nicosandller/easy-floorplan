@@ -119,6 +119,75 @@ describe("renderSunlight — the markup, not just the geometry", () => {
     expect(s).toContain("fp-sunbeam");
   });
 
+  it("a window on the shaded façade does not throw sunlight out of the house (#177)", () => {
+    // Two windows facing each other across a room, which is as ordinary as a
+    // plan gets. The far one used to line up with the near one's gap, escape
+    // every shadow, and emit a patch of its own — sweeping *away* from the
+    // building, so the reporter watched sunlight pour out of their apartment.
+    const north = { id: "n", x1: 0, y1: 0, x2: 400, y2: 0 };
+    const south = { id: "s", x1: 0, y1: 300, x2: 400, y2: 300 };
+    const facing = [
+      { ...win, id: "north", y: 0 },
+      { ...win, id: "south", y: 300 },
+    ] as Opening[];
+    const s = light(facing, [north, south]);
+    const beams = s.match(/class="fp-sunbeam"/g) ?? [];
+    expect(beams.length).toBe(1);
+    // …and it is the one on the sunlit side: the patch starts at y=0.
+    expect(s).toContain('points=170,0 230,0');
+    expect(s).not.toContain("230,300");
+  });
+
+  it("an interior door does not re-emit the light that reaches it (#178)", () => {
+    // A 20-wide window upstream of a 120-wide doorway. The doorway used to
+    // become a source in its own right and flood the room behind it six times
+    // wider than the light that arrived — "sunlight spawns at open doors".
+    const mid = { id: "m", x1: 0, y1: 250, x2: 400, y2: 250 };
+    const plan = [
+      { ...win, id: "w", length: 20 },
+      { ...win, id: "d", type: "door", y: 250, length: 120 },
+    ] as Opening[];
+    const s = serialize(
+      renderSunlight([wall, mid], plan, 400, 400, "sun", {
+        dir: sun,
+        openAmount: () => 1,
+        shutterOpen: () => undefined,
+      })
+    );
+    expect(s.match(/class="fp-sunbeam"/g)?.length).toBe(1);
+    // The one beam is the window's, 20 across — not the door's 120.
+    expect(s).toContain("points=190,100 210,100");
+    // The light still gets *through* the doorway: the interior wall is cut
+    // there, so its two shadow pieces stop either side of the beam and none
+    // of them covers it. That is what makes re-emitting unnecessary.
+    const shadows = [...s.matchAll(/<polygon points=([\d.,\- ]+) fill=#fff/g)].map((m) => m[1]!);
+    const spans = shadows.map((p) => p.split(" ").map((q) => Number(q.split(",")[0]!)));
+    expect(spans.some((xs) => xs[0]! <= 190 && xs[1]! >= 210)).toBe(false);
+  });
+
+  it("an opening switched out of the sunlight is wall to it (#177)", () => {
+    // The solid front door the plan draws open because nothing is bound to it.
+    const shut = { ...win, type: "door", sunlight: false } as Opening;
+    expect(
+      renderSunlight([wall], [shut], 400, 400, "sun", {
+        dir: sun,
+        openAmount: () => 1,
+        shutterOpen: () => undefined,
+      })
+    ).toBe(nothing);
+    // Its wall keeps its full shadow too — it stops a beam like any wall does.
+    const other = { ...win, id: "o2", x: 60 } as Opening;
+    const s = serialize(
+      renderSunlight([wall], [shut, other], 400, 400, "sun", {
+        dir: sun,
+        openAmount: () => 1,
+        shutterOpen: () => undefined,
+      })
+    );
+    expect(s.match(/class="fp-sunbeam"/g)?.length).toBe(1);
+    expect(s).toContain("points=30,100 90,100");
+  });
+
   it("paints with the colours it is given", () => {
     const s = serialize(
       renderSunlight([wall], [win], 400, 400, "sun", { dir: sun, openAmount: () => 0, shutterOpen: () => undefined, light: "#ff0000", shade: "#0000ff" })

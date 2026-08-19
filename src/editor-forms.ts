@@ -226,6 +226,15 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: { boolean: {} },
     });
   }
+  // The way out of "the plan draws it open, so the sun comes in" (issue #177).
+  // Offered on every opening rather than only the unbound ones: a sensor can
+  // say a door is open without the author wanting daylight through it.
+  fields.push({
+    name: "sunlight",
+    label: "Lets sunlight in",
+    helper: "Off makes it wall to the sun — for a solid door the plan draws open",
+    selector: { boolean: {} },
+  });
   // Hinge applies to anything with ONE hinged leaf. A double is hinged at both
   // jambs, so there is no side left to choose.
   if (motion === "swing" && openingSash(o) === "single") {
@@ -449,6 +458,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       entity: o.entity ?? "",
       secondaryEntity: o.secondaryEntity ?? "",
       glazed: openingIsGlazed(o),
+      sunlight: o.sunlight ?? true,
       shutterEntity: o.shutterEntity ?? "",
       shutterSecondaryEntity: o.shutterSecondaryEntity ?? "",
       shutterStyle: shutterStyleOf(o),
@@ -488,6 +498,9 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
             out.showShutterIcon = undefined;
             out.shutterIcon = undefined;
           }
+        } else if (k === "sunlight") {
+          // On is the default, so only "off" is worth writing down.
+          out.sunlight = v ? undefined : false;
         } else if (k === "glazed") {
           // A window is glass whatever this says, so only a door's answer is
           // worth keeping — and only when it differs from its type's default.
