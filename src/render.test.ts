@@ -2485,6 +2485,17 @@ describe("sunlight through the openings", () => {
     expect(sunReachesOpening(inside, [north, mid], down)).toBe(false);
     // Its own wall never shades it — the ray starts on that wall's centreline.
     expect(sunReachesOpening(onNorth, [north], down)).toBe(true);
+    // …but only its own. A wall meeting that one at a corner passes within a
+    // wall's thickness of an opening set close to it, and exempting it by
+    // distance alone let that opening answer "the sun reaches me" to a sun the
+    // return wall stood squarely in front of — the leeward leak again, in the
+    // one place the shortcut applied.
+    const west = { id: "we", x1: 0, y1: 0, x2: 0, y2: 300 };
+    const byCorner = win({ x: 6, y: 0, length: 12 });
+    expect(sunReachesOpening(byCorner, [north, west], { x: 0.6, y: -0.8 })).toBe(false);
+    // Turn the sun around and the same opening is lit again: the corner wall
+    // blocks it or it doesn't, on the geometry rather than on how near it is.
+    expect(sunReachesOpening(byCorner, [north, west], { x: 0.6, y: 0.8 })).toBe(true);
     // Turn the sun around and the two swap places, which is the whole point:
     // the far side of the house is the shaded side.
     const up = { x: 0, y: -1 };

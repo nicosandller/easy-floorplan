@@ -3112,7 +3112,14 @@ export function pointInPolygon(points: readonly AreaPoint[], x: number, y: numbe
  * a 120-wide door as a 120-wide flood, and how a window on the dark façade
  * came to throw a patch of sunlight out into the garden.
  *
- * The opening's own wall is skipped, since the ray starts on its centre line.
+ * The one wall that must not count is the opening's **own**, since the ray
+ * starts on that wall's centre line and so meets it at zero distance. That is
+ * the test — a hit right at the ray's origin, on a wall this opening lies on —
+ * and not merely "a wall within a wall's thickness", which would also wave
+ * through the wall meeting it at a corner. An opening a few units from a
+ * corner then answered "the sun reaches me" to a sun the return wall was
+ * squarely in front of, and threw its beam back out of the house: the very
+ * bug above, in the one place the shortcut applied.
  */
 export function sunReachesOpening(
   o: Pick<Opening, "x" | "y">,
@@ -3120,8 +3127,11 @@ export function sunReachesOpening(
   dir: { x: number; y: number },
 ): boolean {
   for (const w of walls) {
-    if (pointWallDist(o.x, o.y, w) <= OPENING_ON_WALL_EPS) continue;
-    if (rayWallHit(o.x, o.y, -dir.x, -dir.y, w) !== undefined) return false;
+    // `dir` is a unit vector, so the hit distance is in plan units.
+    const hit = rayWallHit(o.x, o.y, -dir.x, -dir.y, w);
+    if (hit === undefined) continue;
+    const own = hit <= OPENING_ON_WALL_EPS && pointWallDist(o.x, o.y, w) <= OPENING_ON_WALL_EPS;
+    if (!own) return false;
   }
   return true;
 }
