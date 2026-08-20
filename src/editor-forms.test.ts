@@ -1649,7 +1649,7 @@ describe("areaForm — actions on rooms (issue #181)", () => {
 
   it("says what tap costs — the zoom — and how to keep it", () => {
     const tap = areaForm(area()).fields.find((x) => x.name === "tap_action")!;
-    expect(tap.helper).toContain("zoom");
+    expect(tap.helper).toContain("tap-to-zoom");
     expect(tap.helper).toContain("hold");
   });
 

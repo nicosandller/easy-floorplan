@@ -664,7 +664,7 @@ animated inside a rectangular tracked area:
   width seen on the room's own side and defaults to `4` here; widen it and the band runs
   past the wall onto the floor.
 - `tap_action` / `hold_action` / `double_tap_action` — standard Lovelace actions on the
-  room itself. **Tap already does something** — it zooms the plan to the room — so setting
+  area itself. **Tap already does something** — it zooms the plan to the area — so setting
   `tap_action` *replaces* that zoom; leaving it unset keeps it. Put the action on hold or
   double-tap to have both. An action's `entity` falls back to the area's own, so a room
   bound to a presence sensor needs no second mention of it. `tap_action: { action: none }`
@@ -1205,10 +1205,10 @@ same rule that keeps a tap off a shutter motor: unlocking a front door by brushi
 plan is the worst version of an accidental hardware move. `tap_action: { action: toggle }`
 opts in, explicitly.
 
-## Actions on rooms
+## Actions on areas
 
-Rooms answer gestures (issue #181) — tap the floor of a room to run a scene, toggle its
-lights, or open a dashboard for it:
+An **area** — the named polygon you trace over a room — can answer gestures (issue #181):
+tap its floor to run a scene, toggle its lights, or open a dashboard for it.
 
 ```yaml
 areas:
@@ -1218,9 +1218,10 @@ areas:
     hold_action: { action: toggle }
 ```
 
-**Tap already does something**: it zooms the plan to that room, and has since zooming
+**Tap already does something**: it zooms the plan to that area, and has since zooming
 existed. So `tap_action` *replaces* the zoom rather than joining it, and leaving it unset
-keeps the zoom exactly as it was — every plan drawn before this behaves identically.
+keeps the zoom exactly as it was — every plan drawn before this behaves identically, and
+tap-to-zoom is still what an untouched area does.
 
 That gives three arrangements:
 
@@ -1235,7 +1236,7 @@ example above toggles `light.kitchen_lights` without naming it twice. With no en
 anywhere, only the actions that need none — `navigate`, `url`, `call-service` — do
 anything.
 
-A room with an action bound announces itself as a button and takes a tab stop; a room that
+An area with an action bound announces itself as a button and takes a tab stop; one that
 only zooms does not, exactly as before.
 
 ## Offline devices

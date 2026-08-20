@@ -1283,7 +1283,7 @@ export function areaForm(a: Area): FormSpec {
       {
         name: "tap_action",
         label: "Tap action",
-        helper: "Replaces the zoom. Put an action on hold or double-tap to keep both",
+        helper: "Replaces tap-to-zoom. Put the action on hold or double-tap to keep both",
         selector: { ui_action: { default_action: "none" } },
       },
       { name: "hold_action", label: "Hold action", selector: { ui_action: { default_action: "none" } } },
