@@ -52,6 +52,8 @@ import {
   openingHasTwoLeaves,
   sliderStyleHasTwoLeaves,
   pressEffectOf,
+  labelPositionOf,
+  itemHasLabel,
   offlineStyleOf,
   sliderStyleOf,
   shutterStyleOf,
@@ -815,13 +817,24 @@ export function itemForm(
       selector: { boolean: {} },
     }
   );
-  // Label size only matters while a label line renders.
-  if (it.showName || (it.showState ?? it.kind === "sensor")) {
-    fields.push({
-      name: "labelSize",
-      label: "Label size",
-      selector: { number: { min: 8, max: 40, step: 1, mode: "slider", unit_of_measurement: "px" } },
-    });
+  // Label size and placement only matter while a label line renders — and
+  // since issue #180 a device can have one from its extra readings alone, with
+  // both toggles above switched off. That is the plug case: on/off read from
+  // the badge colour, Power - LQI - Last seen as the only text.
+  if (itemHasLabel(it)) {
+    fields.push(
+      {
+        name: "labelSize",
+        label: "Label size",
+        selector: { number: { min: 8, max: 40, step: 1, mode: "slider", unit_of_measurement: "px" } },
+      },
+      {
+        name: "labelPosition",
+        label: "Label position",
+        helper: "Beside the badge instead of under it — a long reading then grows one way only",
+        selector: dropdown(opt("below", "Below"), opt("left", "Left"), opt("right", "Right")),
+      }
+    );
   }
   fields.push(
     {
@@ -860,6 +873,7 @@ export function itemForm(
       showState: it.showState ?? false,
       showName: it.showName ?? false,
       labelSize: it.labelSize ?? DEFAULT_LABEL_SIZE,
+      labelPosition: labelPositionOf(it),
       tap_action: it.tap_action,
       hold_action: it.hold_action,
       double_tap_action: it.double_tap_action,
@@ -868,8 +882,12 @@ export function itemForm(
     // keys (issue #127) — expand them back. Either control alone is a complete
     // statement about both, so the untouched one is read off the item.
     toPatch: (patch) => {
-      if (!("badgeMode" in patch) && !("ripple" in patch)) return patch;
-      const { badgeMode, ripple: ring, ...rest } = patch;
+      let out = patch;
+      // Below is the default, so it stays out of the YAML.
+      if ("labelPosition" in out && out.labelPosition === "below")
+        out = { ...out, labelPosition: undefined };
+      if (!("badgeMode" in out) && !("ripple" in out)) return out;
+      const { badgeMode, ripple: ring, ...rest } = out;
       return {
         ...rest,
         ...badgeModePatch(

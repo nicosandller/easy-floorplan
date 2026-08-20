@@ -17,6 +17,8 @@ import type {
   StateColorRule,
   BadgeContent,
   BadgeEntity,
+  ItemReading,
+  LabelPosition,
   PressEffect,
   OfflineStyle,
   Furniture,
@@ -127,6 +129,10 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
     for (const it of f.items) {
       if (it.entity) ids.add(it.entity);
       if (it.secondaryEntity) ids.add(it.secondaryEntity);
+      // Every further reading (issue #180). Same trap as the opening's second
+      // leaf above: miss one and that line of the label is not frozen but
+      // *intermittent*, catching up only when some other watched entity moves.
+      for (const r of it.readings ?? []) if (r.entity) ids.add(r.entity);
     }
     // Entity-bound furniture (issue #82) — without this the card never
     // re-renders when the soil sensor moves, and the plant stays its
@@ -171,10 +177,39 @@ export function entityAttributeText(
 }
 
 /**
+ * One {@link ItemReading}'s text (issue #180), or `""` when the row says
+ * nothing yet.
+ *
+ * The empty answer is load-bearing: the editor adds a reading as a blank row
+ * for you to fill in, and a blank row that rendered `entityStateText`'s "—"
+ * would put a dash on the plan the moment you clicked "+". So a row with
+ * neither an entity nor an attribute draws nothing at all, and only a row that
+ * names *something* gets to fail visibly.
+ */
+export function itemReadingText(
+  hass: RenderHass | undefined,
+  item: { entity?: string },
+  reading: ItemReading,
+): string {
+  // An attribute with no entity of its own means "this device's own entity",
+  // which is what lets one climate show four of its attributes (issue #70's
+  // trick, generalised).
+  const entity = reading.entity || (reading.attribute ? item.entity : undefined);
+  if (!entity) return "";
+  return reading.attribute
+    ? entityAttributeText(hass, entity, reading.attribute)
+    : entityStateText(hass, entity);
+}
+
+/**
  * State text for an item: primary reading (state, or `attribute` of the
  * entity — issue #70), plus a secondary one when configured. The secondary
  * reading comes from `secondaryEntity` when set, else from the same entity —
  * so one climate device can show `21.5 °C · 45%` from two attributes.
+ *
+ * This is the *state line* only. Further readings (issue #180) are appended by
+ * {@link itemBadgeLabel}, not here, because they are shown independently of
+ * `showState` and this function is what `showState` gates.
  */
 export function itemStateText(
   hass: RenderHass | undefined,
@@ -955,6 +990,7 @@ export function itemBadgeLabel(
     kind: ItemKind;
     showName?: boolean;
     showState?: boolean;
+    readings?: ItemReading[];
   },
 ): string {
   const parts: string[] = [];
@@ -965,7 +1001,54 @@ export function itemBadgeLabel(
   }
   if (!!item.entity && (item.showState ?? item.kind === "sensor"))
     parts.push(itemStateText(hass, item));
+  // Further readings (issue #180), deliberately *not* gated on `showState`:
+  // the case they were asked for is a plug that says on/off through its badge
+  // colour and wants "1.2 kW · 84 · 5 min ago" without the word "on" in front
+  // of it. Each is added only if it resolves to something, so the blank row
+  // the editor's "+" creates stays invisible until it is filled in.
+  for (const reading of item.readings ?? []) {
+    const text = itemReadingText(hass, item, reading);
+    if (text) parts.push(text);
+  }
   return parts.join(" · ");
+}
+
+/**
+ * Whether a device draws a label line at all.
+ *
+ * Was `showName || (showState ?? kind === "sensor")` written out at each call
+ * site, which stopped being the whole truth with issue #180: a device can now
+ * have a label from its extra readings alone, both toggles off. The editor
+ * offers the label's size and position off this, so getting it wrong hides the
+ * controls for a label that is on screen.
+ *
+ * Deliberately *not* "would `itemBadgeLabel` return something": that depends
+ * on live state, and a control that vanishes when a sensor drops out is worse
+ * than one that is occasionally offered for an empty line.
+ */
+export function itemHasLabel(item: {
+  kind: ItemKind;
+  showName?: boolean;
+  showState?: boolean;
+  readings?: ItemReading[];
+}): boolean {
+  if (item.showName) return true;
+  if (item.showState ?? item.kind === "sensor") return true;
+  return (item.readings ?? []).some((r) => r.entity || r.attribute);
+}
+
+/**
+ * Where a device's label sits (issue #180), resolving anything unrecognised to
+ * the historic `below`.
+ *
+ * Checked rather than trusted for the same reason {@link pressEffectOf} is: the
+ * value becomes a class name, so a hand-edited typo would otherwise land as
+ * `label-blow`, match no rule, and leave the label in whatever position the
+ * base stylesheet happens to give it.
+ */
+export function labelPositionOf(item: { labelPosition?: LabelPosition }): LabelPosition {
+  const v = item.labelPosition;
+  return v === "left" || v === "right" ? v : "below";
 }
 
 /**

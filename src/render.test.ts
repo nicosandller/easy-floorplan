@@ -66,6 +66,9 @@ import {
   entityStateText,
   itemStateText,
   itemBadgeLabel,
+  itemReadingText,
+  itemHasLabel,
+  labelPositionOf,
   editorItemLabel,
   itemHiddenWhenInactive,
   resolveStateColor,
@@ -787,6 +790,142 @@ describe("itemBadgeLabel (issues #61, #59)", () => {
     expect(
       itemBadgeLabel(named(), { entity: "", kind: "sensor", showName: true, name: "Detector" }),
     ).toBe("Detector");
+  });
+});
+
+describe("more readings per device (issue #180)", () => {
+  const named = () => {
+    const h = livingArea();
+    (h.states[TEMP]!.attributes as Record<string, unknown>).friendly_name = "Living Temp";
+    return h;
+  };
+
+  it("appends each reading to the label line", () => {
+    expect(
+      itemBadgeLabel(named(), {
+        entity: TEMP,
+        kind: "sensor",
+        readings: [{ entity: HUMIDITY }],
+      }),
+    ).toBe("17.9 °C · 49.3%");
+  });
+
+  it("takes as many as are configured, in order", () => {
+    const h = named();
+    expect(
+      itemBadgeLabel(h, {
+        entity: TEMP,
+        kind: "sensor",
+        showName: true,
+        readings: [{ entity: HUMIDITY }, { entity: TEMP }],
+      }),
+    ).toBe("Living Temp · 17.9 °C · 49.3% · 17.9 °C");
+  });
+
+  it("shows readings even with the device's own state hidden", () => {
+    // I-G-1-1's plug in discussion #173: on/off is already in the badge
+    // colour, so the label is to carry the *other* numbers and not "on".
+    expect(
+      itemBadgeLabel(named(), {
+        entity: TEMP,
+        kind: "sensor",
+        showState: false,
+        readings: [{ entity: HUMIDITY }],
+      }),
+    ).toBe("49.3%");
+    // …and with the name back on, the state is still the only thing missing.
+    expect(
+      itemBadgeLabel(named(), {
+        entity: TEMP,
+        kind: "sensor",
+        showState: false,
+        showName: true,
+        readings: [{ entity: HUMIDITY }],
+      }),
+    ).toBe("Living Temp · 49.3%");
+  });
+
+  it("reads an attribute of the device's own entity when the row names none", () => {
+    const h = named();
+    (h.states[TEMP]!.attributes as Record<string, unknown>).battery = 84;
+    expect(
+      itemBadgeLabel(h, { entity: TEMP, kind: "sensor", readings: [{ attribute: "battery" }] }),
+    ).toBe("17.9 °C · 84");
+  });
+
+  it("draws nothing for a row that names nothing — the editor's fresh row", () => {
+    // "+" adds {} and the picker is filled in afterwards; a dash appearing on
+    // the plan the moment you click it would be its own bug report.
+    expect(itemBadgeLabel(named(), { entity: TEMP, kind: "sensor", readings: [{}] })).toBe(
+      "17.9 °C",
+    );
+    expect(itemReadingText(named(), { entity: TEMP }, {})).toBe("");
+  });
+
+  it("a device with no entity of its own still shows a reading that names one", () => {
+    expect(
+      itemBadgeLabel(named(), { entity: "", kind: "light", readings: [{ entity: HUMIDITY }] }),
+    ).toBe("49.3%");
+    // …but an attribute row with nothing to read it off stays silent.
+    expect(
+      itemBadgeLabel(named(), { entity: "", kind: "light", readings: [{ attribute: "battery" }] }),
+    ).toBe("");
+  });
+
+  it("leaves a device with no readings exactly as it was", () => {
+    for (const readings of [undefined, []]) {
+      expect(itemBadgeLabel(named(), { entity: TEMP, kind: "sensor", readings })).toBe("17.9 °C");
+    }
+  });
+
+  it("still watches every reading's entity, or the line goes intermittent", () => {
+    const got = collectWatchedEntities({
+      items: [
+        {
+          id: "i",
+          kind: "sensor",
+          x: 0,
+          y: 0,
+          entity: TEMP,
+          readings: [{ entity: HUMIDITY }, { attribute: "battery" }, {}],
+        },
+      ],
+    } as unknown as FloorplanCardConfig);
+    expect([...got].sort()).toEqual([TEMP, HUMIDITY].sort());
+  });
+});
+
+describe("itemHasLabel / labelPositionOf (issue #180)", () => {
+  it("knows a device labels itself from its readings alone", () => {
+    // Both toggles off, so the historic test would have said "no label" and
+    // hidden the size and position controls for a label that is on screen.
+    expect(itemHasLabel({ kind: "light", readings: [{ entity: HUMIDITY }] })).toBe(true);
+    expect(itemHasLabel({ kind: "light", showState: false, readings: [{ attribute: "b" }] })).toBe(
+      true,
+    );
+    // A row that names nothing is not a label.
+    expect(itemHasLabel({ kind: "light", readings: [{}] })).toBe(false);
+    expect(itemHasLabel({ kind: "light" })).toBe(false);
+  });
+
+  it("keeps the historic answers for everything else", () => {
+    expect(itemHasLabel({ kind: "sensor" })).toBe(true); // sensors show state
+    expect(itemHasLabel({ kind: "sensor", showState: false })).toBe(false);
+    expect(itemHasLabel({ kind: "light", showName: true })).toBe(true);
+    expect(itemHasLabel({ kind: "light", showState: true })).toBe(true);
+  });
+
+  it("resolves the label position, defaulting to below", () => {
+    expect(labelPositionOf({})).toBe("below");
+    expect(labelPositionOf({ labelPosition: "below" })).toBe("below");
+    expect(labelPositionOf({ labelPosition: "left" })).toBe("left");
+    expect(labelPositionOf({ labelPosition: "right" })).toBe("right");
+  });
+
+  it("falls back to below on a junk value — it becomes a class name", () => {
+    expect(labelPositionOf({ labelPosition: "above" as never })).toBe("below");
+    expect(labelPositionOf({ labelPosition: "" as never })).toBe("below");
+    expect(labelPositionOf({ labelPosition: 3 as never })).toBe("below");
   });
 });
 

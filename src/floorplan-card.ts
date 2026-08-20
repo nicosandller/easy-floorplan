@@ -80,6 +80,7 @@ import {
   badgeValue,
   badgeValueSize,
   pressEffectOf,
+  labelPositionOf,
   offlineStyleOf,
   itemIsOffline,
   itemHiddenWhenInactive,
@@ -630,7 +631,7 @@ export class FloorplanCard extends LitElement {
           : nothing}
         ${labelText
           ? html`<span
-              class="label ${visual === nothing ? "inflow" : ""}"
+              class="label ${visual === nothing ? "inflow" : ""} label-${labelPositionOf(item)}"
               style="font-size:${overlayLength(itemLabelSize(item.labelSize), scale)};${labelColor
                 ? `color:${labelColor};`
                 : ""}"
@@ -1170,6 +1171,19 @@ export class FloorplanCard extends LitElement {
     .plan.scale-plan .item > .label {
       top: calc(100% + 0.17em);
     }
+    /* The side positions measure their gap in em too, so it tracks the label
+       with the plan exactly as the below position's does. Restating top
+       because the rule above sets it for every label. */
+    .plan.scale-plan .item > .label.label-left,
+    .plan.scale-plan .item > .label.label-right {
+      top: 50%;
+    }
+    .plan.scale-plan .item > .label.label-left {
+      right: calc(100% + 0.33em);
+    }
+    .plan.scale-plan .item > .label.label-right {
+      left: calc(100% + 0.33em);
+    }
     .floor-switcher {
       position: absolute;
       top: 8px;
@@ -1552,6 +1566,27 @@ export class FloorplanCard extends LitElement {
       left: 50%;
       transform: translateX(-50%);
       white-space: nowrap;
+    }
+    /* Label beside the badge instead of under it (issue #180). A reading under
+       a badge grows in both directions at once and meets whatever is next to
+       it; hung off one side it grows one way, which is what a row of devices
+       along a wall needs.
+
+       Vertically centred on the badge rather than baseline-aligned with it:
+       the label is one line and the badge is a circle, so centres are what the
+       eye actually pairs up. .inflow (a label-only device) ignores all of
+       this — with no badge there is no side to sit on. */
+    .item > .label.label-left,
+    .item > .label.label-right {
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    .item > .label.label-left {
+      left: auto;
+      right: calc(100% + 4px);
+    }
+    .item > .label.label-right {
+      left: calc(100% + 4px);
     }
     /* Label-only items (showIcon: false) have no badge to hang under, so the
        absolute label would drop to y + 2px on a zero-height item. Put it back

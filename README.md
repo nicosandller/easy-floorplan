@@ -25,6 +25,7 @@ screen size.
 <img width="195" height="278" alt="light blend" src="https://github.com/user-attachments/assets/23104587-687b-4c9a-83e8-e83c3d5eb6eb" />
 <img width="240" height="358" alt="conditionals" src="https://github.com/user-attachments/assets/11d359b6-de8c-483c-8763-105ddf7d915b" />
 
+- (${\color{red}NEW!}$) **Many readings, one device** — a sensor that reports temperature, humidity and pressure needs one badge, not three. Add readings one at a time; they show whether or not the device's own state does, so a smart plug can label itself `1.2 kW · 84 · 5 min ago` while the badge colour carries the on/off. The label can sit below, left or right of the badge.
 - **Animated doors & windows** — bind a contact `binary_sensor` or `cover` and openings swing, slide or roll with their real state, partial positions included.
   - (${\color{red}NEW!}$) **A sensor per leaf** — anything with two leaves takes a second contact and draws them independently: a casement window with one sash open and one shut, a double door ajar on one side, a pair of shutters with one folded back.
 - (${\color{red}NEW!}$) **Offline devices read as offline** — an entity that is unavailable, unknown, or gone from Home Assistant is dimmed (or crossed out), instead of looking exactly like a device someone switched off.
@@ -98,6 +99,11 @@ then pick the entity in the **Element** section below the canvas.
 - **Two readings in one** — add a **Second entity** to render e.g. `21.5 °C · 45%`. Or set
   **Attribute** / **2nd attribute** to read attributes instead of states, so a single
   climate entity shows its temperature and humidity.
+- **More readings** — beyond those two, **+ Add reading** appends as many as you like.
+  See [More readings per device](#more-readings-per-device).
+- **Label position** — **Below** the badge (the default), or hung off its **left** or
+  **right**. A reading under a badge grows in both directions and meets whatever sits
+  beside it; hung off one side it grows one way only.
 - **Badge shows** — one dropdown for what the device draws: *Icon* — **still**,
   **spinning** or **pulsing** — its *Value*, or *Nothing* (label only). **Value** draws
   the reading inside the badge — a thermostat reads `21°` in the circle your state rules
@@ -462,8 +468,10 @@ distorted anyway.
 | `badgeEntity` | `primary` \| `secondary`               | automatic    | Which entity a `value` badge reads. Unset picks the first with a number to show; set, only that entity is read. |
 | `showIcon`    | boolean                                | `true`       | **Deprecated** — use `badgeContent`. Honoured only when it is unset (`false` = `none`). |
 | `hideWhenInactive` | boolean                           | `false`      | Hide on the card while the entity is inactive. Always shown, dimmed, in the editor. |
-| `showState`   | boolean                                | sensors only | Show the entity state in the label line.               |
+| `showState`   | boolean                                | sensors only | Show the entity state in the label line. Governs this device's **own** state only — `readings` show regardless. |
 | `showName`    | boolean                                | `false`      | Show the device's name in the label line (`Name · state` when combined). |
+| `readings`    | `{ entity?, attribute? }[]`            | —            | Further readings appended to the label — a sensor's humidity and pressure, a plug's power, link quality and battery. Shown whether or not `showState` is. See [More readings per device](#more-readings-per-device). |
+| `labelPosition` | `below` \| `left` \| `right`         | `below`      | Where the label sits relative to the badge. |
 | `labelSize`   | number                                 | `12`         | Label line font size (px).                             |
 | `tap_action`  | ActionConfig                           | per domain   | Standard Lovelace action. By default `light`, `switch`, `fan` and `input_boolean` toggle and everything else — covers included — opens more-info. |
 | `hold_action` / `double_tap_action` | ActionConfig         | —            | Optional extra gestures.                               |
@@ -926,6 +934,20 @@ Sizes are read in canvas units under `plan`, so the numbers mean the same thing 
 everything else in the config: `labelSize: 14` is 14 units on a `980`-unit-wide canvas,
 about 1.4 % of the card's width whatever that turns out to be.
 
+### It also keeps a cluster together
+
+A group of badges placed close together — three sensors of the same physical device, say —
+is the case this is most visibly *for*. Under the default `fixed`, their positions scale
+with the plan while their size does not, so a cluster that is neatly spaced on a wide card
+collides on a narrow one: the badges stay 34px while the gaps between them shrink. Under
+`plan` the whole cluster shrinks as one and the spacing you set is the spacing you keep, at
+every card width.
+
+That is the answer to "my grouped icons drift apart when the card resizes". It is
+plan-wide and it costs legibility at small sizes (see below), so the other answer — often
+the better one — is not to have a cluster at all: put the readings on **one** device with
+[`readings`](#more-readings-per-device) and there is no relative position left to preserve.
+
 ### Where it helps, and where it costs
 
 Scaling with the drawing cuts both ways: it stops text overflowing its room, and it also
@@ -951,6 +973,70 @@ dashboard tile, a sidebar, a desktop widget. Leave it off for a wall tablet show
 plan at full size, where fixed px is what keeps text legible from across the room, and
 for a card so small that scaled text would disappear. The default stays `fixed`, so an
 existing card looks exactly as it did.
+
+## More readings per device
+
+One device, as many readings as it has. A sensor that reports temperature,
+humidity and pressure needs one badge, not three:
+
+```yaml
+items:
+  - id: study
+    entity: sensor.study_temperature
+    kind: sensor
+    showName: true
+    showState: true
+    readings:
+      - { entity: sensor.study_humidity }
+      - { entity: sensor.study_pressure }
+```
+
+→ `Study · 21.5 °C · 48% · 1013 hPa`, on one line, in the order written.
+
+Each row is `{ entity?, attribute? }`, and between them they say where the number comes
+from:
+
+| `entity` | `attribute` | reads |
+| --- | --- | --- |
+| set | — | that entity's state |
+| set | set | that attribute of that entity |
+| — | set | that attribute of **this device's own** entity |
+| — | — | nothing — a blank row draws no text |
+
+The third row is what lets one climate entity show four of its own attributes without
+naming itself four times. The fourth is why the editor's **+ Add reading** can hand you an
+empty row without a `—` appearing on the plan.
+
+### Readings ignore "Show state"
+
+That is the point of them. A smart plug already says on/off through its badge colour, so
+its label should carry the *other* numbers and not the word "on":
+
+```yaml
+  - id: desk_plug
+    entity: switch.desk_plug
+    kind: switch
+    showName: true
+    showState: false          # the badge colour already says on/off
+    readings:
+      - { entity: sensor.desk_plug_power }
+      - { entity: sensor.desk_plug_lqi }
+      - { attribute: battery }
+```
+
+→ `Desk plug · 1.2 kW · 84 · 84`. `showState` governs the device's **own** state line;
+`readings` are their own statement. A plan with no `readings` therefore gains nothing on
+upgrade.
+
+### Why not more entity boxes
+
+`readings` is additive rather than a replacement for `secondaryEntity`. That key is the
+*paired* reading — joined with the same separator, and offered to the badge itself through
+`badgeEntity` (see **Badge reads**) — so folding it into `readings[0]` would have broken
+both. The order on the label is `entity`, then `secondaryEntity`, then these.
+
+In the editor they are added one at a time with **+ Add reading**, rather than by putting
+four entity dropdowns on every device that will never use them.
 
 ## Offline devices
 

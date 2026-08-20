@@ -411,6 +411,39 @@ describe("itemForm", () => {
     ).toBe(20);
   });
 
+  it("reveals the label controls for a device labelled by its readings alone (#180)", () => {
+    const names = (it: FloorItem) => itemForm(it).fields.map((x) => x.name);
+    // Both toggles off, so before #180 this device had no label — and now it
+    // has one made of nothing but extra readings.
+    const byReadings = { ...item, readings: [{ entity: "sensor.power" }] } as FloorItem;
+    expect(names(byReadings)).toContain("labelSize");
+    expect(names(byReadings)).toContain("labelPosition");
+    // A row that names nothing is not a label, so the controls stay away.
+    expect(names({ ...item, readings: [{}] } as FloorItem)).not.toContain("labelPosition");
+    expect(names(item)).not.toContain("labelPosition");
+  });
+
+  it("offers the three label positions, keeping the default out of the YAML (#180)", () => {
+    const labelled = { ...item, showName: true } as FloorItem;
+    const form = itemForm(labelled);
+    const field = form.fields.find((x) => x.name === "labelPosition")!;
+    const opts = (field.selector as { select: { options: { value: string }[] } }).select.options.map(
+      (o) => o.value
+    );
+    expect(opts).toEqual(["below", "left", "right"]);
+    expect(form.data.labelPosition).toBe("below");
+    expect(
+      itemForm({ ...labelled, labelPosition: "left" } as FloorItem).data.labelPosition
+    ).toBe("left");
+    // Below is the default, so it is not worth writing down.
+    expect(form.toPatch({ labelPosition: "below" }).labelPosition).toBeUndefined();
+    expect(form.toPatch({ labelPosition: "right" }).labelPosition).toBe("right");
+    // A hand-edited junk value reads back as what it renders as.
+    expect(
+      itemForm({ ...labelled, labelPosition: "above" } as unknown as FloorItem).data.labelPosition
+    ).toBe("below");
+  });
+
   it("offers the three action fields with behavior-preserving defaults", () => {
     const fs = itemForm(item).fields;
     expect(fs.find((x) => x.name === "tap_action")!.selector).toEqual({

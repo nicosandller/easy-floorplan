@@ -13,6 +13,7 @@ import type {
   FloorText,
   Furniture,
   ItemKind,
+  ItemReading,
   Tracker,
   TrackerSensor,
   Area,
@@ -108,6 +109,7 @@ import {
   resolveIconAnimation,
   itemIconSize,
   itemLabelSize,
+  labelPositionOf,
   snapToWall,
   collectWatchedEntities,
   hassRenderInputsChanged,
@@ -1962,6 +1964,78 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
+   * Extra readings on a device (issue #180): the third, fourth, fifth line of
+   * text, added one at a time with a "+" rather than by putting four entity
+   * dropdowns on every device that will never use them — which is what the
+   * issue asked for and what the panel could not afford.
+   *
+   * Plain rows for the same reason the state rules below are: the list is
+   * repeatable and `ha-form` has no selector for that.
+   *
+   * The attribute box is offered on every row, not only once an entity is
+   * picked, because a row with an attribute and *no* entity is a real and
+   * useful configuration — it reads that attribute off the device's own
+   * entity, which is how one climate shows four of its own numbers.
+   */
+  private _renderItemReadings(it: FloorItem): TemplateResult {
+    const list = it.readings ?? [];
+    const commit = (next: ItemReading[]): void =>
+      this._updateItem(it.id, { readings: next.length ? next : undefined });
+    const patch = (i: number, part: Partial<ItemReading>): void =>
+      commit(list.map((r, j) => (j === i ? { ...r, ...part } : r)));
+    return html`
+      <div class="row wide">
+        <label title="Extra entities whose readings join this device's label line"
+          >More readings</label
+        >
+      </div>
+      ${list.map(
+        (reading, i) => html`
+          <div class="row wide item-reading">
+            ${this._renderEntityPicker(
+              reading.entity ?? "",
+              (entity) => patch(i, { entity: entity || undefined }),
+              undefined,
+              // Scoped to the room the device sits in, exactly as its own
+              // entity picker is — an extra reading is as likely to come from
+              // the same room as the first one.
+              this._areaEntitiesAt(it.x, it.y)?.entities
+            )}
+            <input
+              type="text"
+              class="reading-attr"
+              placeholder="attribute"
+              title="Read this attribute instead of the state — with no entity above, from this device's own entity"
+              .value=${reading.attribute ?? ""}
+              @change=${(e: Event) =>
+                patch(i, { attribute: (e.target as HTMLInputElement).value || undefined })}
+            />
+            <button
+              class="rule-remove"
+              aria-label="Remove reading"
+              title="Remove this reading"
+              @click=${() => commit(list.filter((_, j) => j !== i))}
+            >
+              <ha-icon icon="mdi:close"></ha-icon>
+            </button>
+          </div>
+        `
+      )}
+      <div class="row wide state-color-add">
+        <button @click=${() => commit([...list, {}])}>
+          <ha-icon icon="mdi:plus"></ha-icon>Add reading
+        </button>
+      </div>
+      ${list.length
+        ? html`<p class="hint rule-note">
+            Shown whether or not "Show state" is on, so a device can label itself
+            with these alone.
+          </p>`
+        : nothing}
+    `;
+  }
+
+  /**
    * The "Color by state" block (issues #68, #79, #82): a list of rules, each
    * one a condition and a colour, plus an "Add rule" button.
    *
@@ -3769,7 +3843,7 @@ export class FloorplanCardEditor extends LitElement {
         ${this._hideLabels
           ? nothing
           : html`<span
-              class="ilabel ${cardLabel ? "live" : ""}"
+              class="ilabel ${cardLabel ? "live" : ""} ilabel-${labelPositionOf(it)}"
               style="font-size:${cardLabel || it.labelSize != null
                 ? itemLabelSize(it.labelSize)
                 : 11}px;${cardLabel && stateColor ? `color:${stateColor};` : ""}"
@@ -4071,6 +4145,7 @@ export class FloorplanCardEditor extends LitElement {
               onCommit: (rippleColor) => this._updateItem(it.id, { rippleColor }),
             })
           : nothing}
+        ${this._renderItemReadings(it)}
         ${this._renderItemIconRow(it)}
         ${this._renderStateColorRules(
           it.stateColor,
@@ -5390,6 +5465,21 @@ export class FloorplanCardEditor extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
     }
+    /* Label beside the badge (issue #180), mirroring the card's own rule so
+       moving it here shows what the card will do rather than only what the
+       config now says. */
+    .ilabel-left,
+    .ilabel-right {
+      top: 50%;
+      transform: translateY(-50%);
+    }
+    .ilabel-left {
+      left: auto;
+      right: calc(100% + 4px);
+    }
+    .ilabel-right {
+      left: calc(100% + 4px);
+    }
     /* The card's own label line, drawn as the card draws it (issue #135):
        full-strength ink, and no width clamp — the card has none, and clipping
        is exactly what would make a long label look right here and wrong live.
@@ -5399,6 +5489,18 @@ export class FloorplanCardEditor extends LitElement {
       color: var(--fp-skin-text, var(--primary-text-color));
       max-width: none;
       overflow: visible;
+    }
+    /* An extra-reading row (issue #180): the entity picker takes the space and
+       the attribute box stays narrow beside it, the same proportions the
+       state-rule rows use for their condition and colour. */
+    .item-reading ha-entity-picker,
+    .item-reading input[type="text"]:not(.reading-attr) {
+      flex: 1 1 auto;
+      min-width: 0;
+    }
+    .reading-attr {
+      flex: 0 0 90px;
+      min-width: 0;
     }
     /* The panel ("Project" config) and the new element-edit area share the
        same boxed look so the two sections below the canvas read as siblings. */

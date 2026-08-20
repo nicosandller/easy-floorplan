@@ -292,6 +292,43 @@ export type ItemKind =
   | "vacuum"
   | "generic";
 
+/**
+ * One **extra** reading on a device (issue #180) — the third, fourth, fifth
+ * line of text after `entity` and `secondaryEntity` have had their turn.
+ *
+ * Both fields are optional, and between them they say where the number comes
+ * from:
+ *
+ * | `entity` | `attribute` | reads                                    |
+ * | -------- | ----------- | ---------------------------------------- |
+ * | set      | unset       | that entity's state                      |
+ * | set      | set         | that attribute of that entity            |
+ * | unset    | set         | that attribute of the **device's own** entity |
+ * | unset    | unset       | nothing — a blank row draws no text      |
+ *
+ * The third row is what makes one climate device able to show four of its own
+ * attributes without naming itself four times; the fourth is what keeps a row
+ * the editor has just added from printing "—" before anything is picked.
+ */
+export interface ItemReading {
+  /** Entity to read. Omitted, the device's own {@link FloorItem.entity}. */
+  entity?: string;
+  /** Attribute to read instead of the state. */
+  attribute?: string;
+}
+
+/**
+ * Where a device's label sits relative to its badge (issue #180, and the
+ * discussion behind it). `below` is the historic centre-under-the-icon
+ * position and stays the default.
+ *
+ * `left` / `right` exist because a long reading under a badge grows in both
+ * directions and collides with whatever is beside it, while a label hung off
+ * one side grows only one way — which is what a row of devices along a wall
+ * needs.
+ */
+export type LabelPosition = "below" | "left" | "right";
+
 /** An entity icon placed on the plan. */
 export interface FloorItem {
   id: string;
@@ -356,6 +393,27 @@ export interface FloorItem {
    * "Name · state". Default false.
    */
   showName?: boolean;
+  /**
+   * Further readings appended to the label (issue #180) — a temperature
+   * sensor that also reports humidity and pressure, or a plug that reports
+   * power, link quality and last-seen.
+   *
+   * Additive rather than a replacement for {@link secondaryEntity}: that key
+   * is the *paired* reading, joined to the primary with the same separator and
+   * offered to the badge itself through `badgeEntity`, and rewriting it as
+   * `readings[0]` would have broken both. So `entity`, then `secondaryEntity`,
+   * then these, in order.
+   *
+   * **Shown whether or not `showState` is** — which is the point of them. A
+   * plug says on/off through its badge colour, so its owner wants Power · LQI
+   * · Last seen and *not* the word "on" (I-G-1-1's case in discussion #173).
+   * `showState` therefore governs the device's own state line only, and these
+   * are their own statement. An existing plan gains nothing it did not ask
+   * for, because a plan with no `readings` has no extra rows to show.
+   */
+  readings?: ItemReading[];
+  /** Where the label sits relative to the badge (issue #180). Default `below`. */
+  labelPosition?: LabelPosition;
   /** Label line font size in pixels (issue #59). Default 12. */
   labelSize?: number;
   /**

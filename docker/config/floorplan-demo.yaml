@@ -147,9 +147,15 @@ views:
             items:
               # Paired temperature/humidity: stored at two decimals, displayed at
               # one. Should read like "17.9 °C · 49.3%".
+              # Many readings on one device (issue #180). The first two are the
+              # old pair (`entity` + `secondaryEntity`); `readings` stacks on
+              # top of them rather than replacing them, which is the ordering
+              # this is here to prove: entity, then secondary, then these.
               - id: i1
                 entity: sensor.living_area_temperature
                 secondaryEntity: sensor.living_area_humidity
+                readings:
+                  - { entity: sensor.ficus_soil_moisture }
                 x: 500
                 y: 300
                 kind: sensor
@@ -195,8 +201,21 @@ views:
                 y: 180
                 kind: cover
                 activeColor: "#8e24aa"
+              # Readings without the device's own state (issue #180) -- the
+              # smart-plug pattern from discussion #173, with the demo's fan
+              # standing in for the plug. Its badge colour already says on or
+              # off, so the label carries the speed instead of the word "on".
+              # `showState: false` silences the state line; the reading is not
+              # gated on it, which is the whole point.
+              #
+              # Also the one device with its label beside the badge rather than
+              # under it, so both label positions are on the plan at once.
               - id: i4
                 entity: fan.living_room_fan
+                showState: false
+                readings:
+                  - { attribute: percentage }
+                labelPosition: left
                 x: 220
                 y: 180
                 kind: fan
