@@ -966,20 +966,28 @@ describe("wallForm / projectForm / floorImageForm", () => {
     expect(form.fields[0].helper).toBe(tron.description);
   });
 
-  it("overlay scale shares that form, defaults to fixed, and stays out of the YAML when default", () => {
+  it("overlay scale shares that form, defaults to plan, and stays out of the YAML when default", () => {
     const form = projectDisplayForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
-    expect(form.data.overlayScale).toBe("fixed");
-    expect(form.toPatch({ overlayScale: "fixed" })).toEqual({ overlayScale: undefined });
-    expect(form.toPatch({ overlayScale: "plan" })).toEqual({ overlayScale: "plan" });
+    expect(form.data.overlayScale).toBe("plan");
+    // Canvas units are the default, so they are what stays unwritten; "fixed"
+    // is the choice that has to be recorded.
+    expect(form.toPatch({ overlayScale: "plan" })).toEqual({ overlayScale: undefined });
+    expect(form.toPatch({ overlayScale: "fixed" })).toEqual({ overlayScale: "fixed" });
     // Patching one field must not invent a value for the other.
     expect(form.toPatch({ rotation: "90" })).toEqual({ rotation: 90 });
-    const scaled = projectDisplayForm({
+    const pinned = projectDisplayForm({
       type: "t",
       width: 1000,
       height: 600,
-      overlayScale: "plan",
+      overlayScale: "fixed",
     } as FloorplanCardConfig);
-    expect(scaled.data.overlayScale).toBe("plan");
+    expect(pinned.data.overlayScale).toBe("fixed");
+    // The default leads the dropdown, so the list opens on what a plan wants.
+    const field = form.fields.find((x) => x.name === "overlayScale")!;
+    const opts = (field.selector as { select: { options: { value: string }[] } }).select.options.map(
+      (o) => o.value
+    );
+    expect(opts).toEqual(["plan", "fixed"]);
   });
 
   it("image opacity appears only when an image is set", () => {

@@ -360,7 +360,7 @@ The editor writes this config for you; manual editing is optional.
 | `pressEffect`| string   | `scale`            | Feedback when a device is pressed: `scale`, `ripple`, `flash` or `none`. Only devices that actually do something respond. See [Press feedback](#press-feedback). |
 | `offlineStyle`| string  | `dim`              | How a device whose entity is **offline** is drawn: `dim`, `strike` (dimmed with a diagonal through the badge) or `none`. See [Offline devices](#offline-devices). |
 | `compactHeader`| boolean | `false`           | Draw the title inside the plan and the floor buttons in a row, instead of spending a card header row on them. See [Compact header](#compact-header). |
-| `overlayScale`| string  | `fixed`            | How badges, labels, room names and text are sized: `fixed` = screen pixels, `plan` = canvas units so they scale with the drawing. See [Overlay scale](#overlay-scale). |
+| `overlayScale`| string  | `plan`             | How badges, labels, room names and text are sized: `plan` = canvas units so they scale with the drawing, `fixed` = screen pixels. See [Overlay scale](#overlay-scale). |
 | `background` | string   | skin / card bg     | Canvas background color (CSS / hex). Overrides the skin's paper. |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see [Floor](#floor)).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
@@ -624,7 +624,8 @@ animated inside a rectangular tracked area:
 - `points` — `{ x, y }` vertices in drawing order, implicitly closed last-to-first.
 - `name` / `showName` — label centered on the polygon (`showName` defaults `true`).
   Mirrors the linked HA area's name when `haArea` is set.
-- `labelSize` — that label's size, `8`–`40`, default `14`. Px under `overlayScale: fixed`,
+- `labelSize` — that label's size, `8`–`40`, default `14`. Canvas units under the default
+  `overlayScale: plan`, px under `fixed`,
   canvas units under `plan`. Small rooms want a smaller number than the big ones beside them.
   Left unset on a `fixed` card the size stays in the stylesheet, so a card-mod rule on
   `.area-label` still wins; set it, or switch to `plan`, and it moves inline and takes over.
@@ -907,46 +908,55 @@ card_mod:
 
 The card draws in two layers. Walls, doors, furniture and room fills are SVG, scaled from
 the canvas to whatever width the card gets — draw at any size, they always fit. Badges,
-labels, room names and text are HTML on top of that, so they stay upright under
-`rotation` and can take clicks, and by default they are sized in **screen pixels**.
+labels, room names and text are HTML on top of that, so they stay upright under `rotation`
+and can take clicks.
 
-Those two agree while the card renders at roughly its canvas size. Below that they drift
-apart: a `980`-wide plan shown `500` wide draws every wall at half size while a 14px room
-name stays 14px, so names spill past their rooms and collide with the badges under them.
-Nothing in the config can fix that, because a label's px size doesn't know what scale the
-plan ended up at.
+**By default the overlay is sized in canvas units too** (`overlayScale: plan`), so both
+layers shrink together and the card looks the same at every size — a scale drawing rather
+than a drawing with fixed-size furniture on it. Every measure follows: `size` and
+`labelSize` on a device, the reading drawn inside a badge, `size` on text, an area's
+`labelSize`, and `rippleSize`. Hairlines deliberately don't — a badge border and a label's
+drop shadow are about a pixel either way, and scaling them down is how you lose them.
 
-`overlayScale: plan` sizes the overlay in **canvas units** instead, so both layers shrink
-together and the card looks the same at every size — a scale drawing rather than a drawing
-with fixed-size furniture on it. Every measure follows: `size` and `labelSize` on a
-device, the reading drawn inside a badge, `size` on text, an area's `labelSize`, and
-`rippleSize`. Hairlines deliberately don't — a badge border and a label's drop shadow
-are about a pixel either way, and scaling them down is how you lose them.
+Sizes then mean the same thing as everything else in the config: `labelSize: 14` is 14
+units on a `980`-unit-wide canvas, about 1.4 % of the card's width whatever that turns out
+to be.
+
+### `fixed`, and why it isn't the default
+
+`overlayScale: fixed` pins the overlay to **screen pixels** instead:
 
 ```yaml
 type: custom:easy-floorplan-card
 width: 980
 height: 700
-overlayScale: plan
+overlayScale: fixed
 ```
 
-Sizes are read in canvas units under `plan`, so the numbers mean the same thing as
-everything else in the config: `labelSize: 14` is 14 units on a `980`-unit-wide canvas,
-about 1.4 % of the card's width whatever that turns out to be.
+That was the original behaviour, and the original default. It agrees with the drawing only
+while the card renders at roughly its canvas size — which is not something a plan gets to
+decide, because the dashboard hands it whatever width it has. Below that the two come
+apart: a `980`-wide plan shown `500` wide draws every wall at half size while a 14px room
+name stays 14px, so names spill past their rooms and collide with the badges under them.
+Nothing in the config fixes it, because a label's px size doesn't know what scale the plan
+ended up at.
 
-### It also keeps a cluster together
+It also loses a **cluster**. A group of badges placed close together — three sensors of the
+same physical device, say — has positions that scale with the plan and sizes that do not,
+so a cluster neatly spaced on a wide card collides on a narrow one: the badges stay 34px
+while the gaps between them shrink. Under `plan` the whole cluster shrinks as one and the
+spacing you set is the spacing you keep. (That is the answer to "my grouped icons drift
+apart when the card resizes" — though the better answer is often to have no cluster at
+all: put the readings on **one** device with [`readings`](#more-readings-per-device) and
+there is no relative position left to preserve.)
 
-A group of badges placed close together — three sensors of the same physical device, say —
-is the case this is most visibly *for*. Under the default `fixed`, their positions scale
-with the plan while their size does not, so a cluster that is neatly spaced on a wide card
-collides on a narrow one: the badges stay 34px while the gaps between them shrink. Under
-`plan` the whole cluster shrinks as one and the spacing you set is the spacing you keep, at
-every card width.
+Reach for `fixed` when the card renders **larger** than its canvas, or on a wall tablet
+where a px floor under the text is what keeps it readable from across the room.
 
-That is the answer to "my grouped icons drift apart when the card resizes". It is
-plan-wide and it costs legibility at small sizes (see below), so the other answer — often
-the better one — is not to have a cluster at all: put the readings on **one** device with
-[`readings`](#more-readings-per-device) and there is no relative position left to preserve.
+> **Upgrading?** The default changed, so a plan that never set `overlayScale` now scales
+> its overlay with the drawing. If your card renders at about its canvas width you will
+> barely see it; if it renders much smaller, labels get smaller (which is the point) and if
+> much larger, bigger. Setting `overlayScale: fixed` restores the old behaviour exactly.
 
 ### Where it helps, and where it costs
 
@@ -968,11 +978,13 @@ to compensate — a `labelSize` of `20`–`24` on a card at half its canvas widt
 where the default was. That is a real trade, not a free win: sizes are relative, and
 nothing puts a floor under them.
 
-Use it whenever the card renders smaller than its canvas but not drastically so — a
-dashboard tile, a sidebar, a desktop widget. Leave it off for a wall tablet showing the
-plan at full size, where fixed px is what keeps text legible from across the room, and
-for a card so small that scaled text would disappear. The default stays `fixed`, so an
-existing card looks exactly as it did.
+So the escape hatch runs both ways. On a card **much** smaller than its canvas, raise the
+sizes rather than switching to `fixed` — the geometry is still right, only the numbers are
+too small. Switch to `fixed` when the card is rendered **larger** than its canvas, or on a
+wall tablet showing the plan at full size where a px floor is what keeps text legible from
+across the room.
+
+The rule of thumb: `plan` is what a plan wants, and the size numbers are yours to set.
 
 ## More readings per device
 

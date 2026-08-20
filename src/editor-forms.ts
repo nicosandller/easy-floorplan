@@ -1238,8 +1238,11 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
       {
         name: "overlayScale",
         label: "Badge & label size",
-        helper: `Canvas units scale badges and labels with the drawing — use it when the card renders smaller than its ${c.width}-wide canvas`,
-        selector: dropdown(opt("fixed", "Fixed pixels"), opt("plan", "Canvas units")),
+        // The default first, and the helper describes the *exception* now:
+        // canvas units are what a plan wants unless it is being shown bigger
+        // than it was drawn.
+        helper: `Canvas units scale badges and labels with the drawing. Fixed pixels suit a card rendered larger than its ${c.width}-wide canvas, or a wall tablet`,
+        selector: dropdown(opt("plan", "Canvas units"), opt("fixed", "Fixed pixels")),
       },
       {
         name: "compactHeader",
@@ -1272,8 +1275,9 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
       if ("rotation" in out)
         // Stored as a number; 0 means "not rotated", so keep it out of the YAML.
         out = { ...out, rotation: out.rotation === "0" ? undefined : Number(out.rotation) };
-      // "fixed" is the default, so keep it out of the YAML too.
-      if ("overlayScale" in out && out.overlayScale === "fixed")
+      // Canvas units are the default now, so they are what stays out of the
+      // YAML — and "fixed" is what has to be written down.
+      if ("overlayScale" in out && out.overlayScale === "plan")
         out = { ...out, overlayScale: undefined };
       // As are the ordinary header and the dimmed offline device — every
       // default here stays out of the YAML, so a config only ever records the

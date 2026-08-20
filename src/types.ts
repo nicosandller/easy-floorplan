@@ -1083,16 +1083,25 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   /**
    * How the HTML overlay (badges, labels, room names, text) is sized.
    *
-   * - **`fixed`** (default) — screen pixels, whatever size the card renders at.
-   * - **`plan`** — canvas units, so the overlay scales with the drawing exactly
-   *   as the SVG does.
+   * - **`plan`** (default) — canvas units, so the overlay scales with the
+   *   drawing exactly as the SVG does.
+   * - **`fixed`** — screen pixels, whatever size the card renders at.
    *
-   * `fixed` is the historic behaviour and is right when the card renders at
-   * roughly its canvas size. It falls apart below that: a plan drawn at 980
-   * wide and rendered 510 wide draws every wall at half size while a 14px room
-   * name stays 14px, so labels collide with the badges and each other. `plan`
-   * makes the two layers shrink together. Default stays `fixed` so no existing
-   * card changes appearance on upgrade.
+   * `fixed` was the historic behaviour and the historic default, and it is
+   * right only when the card renders at roughly its canvas size — which is not
+   * something a plan gets to decide, since the dashboard hands it whatever
+   * width it has. Below that it comes apart: a plan drawn at 980 wide and
+   * rendered 510 wide draws every wall at half size while a 14px room name
+   * stays 14px, so labels collide with the badges and each other, and a
+   * carefully spaced cluster of badges overlaps (issue #179).
+   *
+   * `plan` makes the two layers shrink together, which is what makes the thing
+   * a drawing rather than a drawing with fixed-size furniture on it. It is now
+   * the default, and that **does** change how an existing card looks: an
+   * overlay that was pinned to px now tracks the plan. The trade runs the other
+   * way at the extremes — see the README's "Where it helps, and where it
+   * costs" — so `fixed` stays a real choice for a card rendered much larger
+   * than its canvas, or a wall tablet that wants a px floor under its text.
    */
   overlayScale?: OverlayScale;
   /** Canvas background color (CSS / hex). Falls back to the skin's paper, then the card background. */

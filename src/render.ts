@@ -1137,9 +1137,25 @@ export function wallStrokeStyle(thickness: unknown): string {
 // inside it, see the card's stylesheet) is one canvas unit as a length, so
 // `calc(14 * var(--fp-u))` is 14 canvas units however large the card ends up.
 
-/** Coerce a config `overlayScale`; anything unrecognised means the default. */
+/**
+ * Coerce a config `overlayScale`; anything unrecognised means the default,
+ * which is `plan`.
+ *
+ * The default flipped here, and it is the one change in this file that every
+ * existing plan sees. `fixed` was the historic behaviour and the wrong default:
+ * it only agrees with the drawing when the card renders at roughly its canvas
+ * size, and a plan is shown at whatever width the dashboard gives it. Sizing
+ * the overlay in canvas units is what makes a plan a *drawing* — it looks the
+ * same at every width, and a cluster of badges keeps the spacing it was given
+ * (issue #179).
+ *
+ * `fixed` remains a real choice, and the one to make for a card rendered much
+ * *larger* than its canvas, or a wall tablet where a fixed px floor is what
+ * keeps text readable from across the room. See the README's "Where it helps,
+ * and where it costs".
+ */
 export function normalizeOverlayScale(v: unknown): OverlayScale {
-  return v === "plan" ? "plan" : "fixed";
+  return v === "fixed" ? "fixed" : "plan";
 }
 
 /**
