@@ -982,16 +982,44 @@ export function renderGlowMask(
 }
 
 /**
- * Whether a device should be omitted from the **live card** right now
- * (issue #55): it asked to appear only while active, and it isn't. An item
- * with no entity can never be active, so a hide-when-inactive item without
- * one stays hidden rather than becoming permanently invisible furniture the
- * user forgot about — the editor still shows it, dimmed.
+ * Whether a device should be omitted from the **live card** right now.
+ * Handles both the legacy 'hideWhenInactive' and the new conditional
+ * hide logic (enableHideByEntity).
  */
 export function itemHiddenWhenInactive(
-  item: { entity?: string; hideWhenInactive?: boolean },
+  item: Pick<FloorItem, "entity" | "hideWhenInactive" | "enableHideByEntity" | "hideEntity" | "hideMode" | "hideState" | "hideOperator" | "hideThreshold" | "hideInvert">,
   state: string | undefined,
+  hass?: RenderHass
 ): boolean {
+  // 1. NEUE LOGIK: Bedingtes Ausblenden
+  if (item.enableHideByEntity) {
+    // Wenn eine spezifische hideEntity gesetzt ist, versuche deren Status zu laden. 
+    // Andernfalls nutze den Status der Haupt-Entität.
+    const evalState = item.hideEntity && hass 
+      ? hass.states[item.hideEntity]?.state 
+      : state;
+
+    let conditionMet = false;
+
+    if (item.hideMode === "threshold" && item.hideThreshold !== undefined && evalState !== undefined) {
+      const numValue = Number(evalState);
+      if (!isNaN(numValue)) {
+        switch (item.hideOperator) {
+          case "<": conditionMet = numValue < item.hideThreshold; break;
+          case "<=": conditionMet = numValue <= item.hideThreshold; break;
+          case "==": conditionMet = numValue === item.hideThreshold; break;
+          case ">=": conditionMet = numValue >= item.hideThreshold; break;
+          case ">": conditionMet = numValue > item.hideThreshold; break;
+        }
+      }
+    } else if (item.hideState !== undefined && evalState !== undefined) {
+      conditionMet = String(evalState).toLowerCase() === String(item.hideState).toLowerCase();
+    }
+
+    return item.hideInvert ? !conditionMet : conditionMet;
+  }
+
+  // 2. ALTE LOGIK: hideWhenInactive (Fallback)
   if (!item.hideWhenInactive) return false;
   // No entity, nothing that can be active — hide, and don't let a stray state
   // string argue otherwise (entityIsActive would read a bare "on" as active).
