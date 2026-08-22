@@ -78,6 +78,7 @@ import {
   furnitureColor,
   entityDefaultIcon,
   trackerSensorReading,
+  renderTracker,
   openingInMotion,
   openingIsActive,
   areaActionForGesture,
@@ -139,7 +140,7 @@ import {
   renderGlow,
   renderRipple,
 } from "./render";
-import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
+import type { FloorplanCardConfig, Opening, RenderHass, Tracker } from "./types";
 import { symbolCatalog, symbolSize } from "./symbols";
 
 /**
@@ -570,6 +571,40 @@ describe("trackerSensorReading", () => {
     expect(trackerSensorReading(states, "sensor.missing")).toBeNull();
     expect(trackerSensorReading(states, "sensor.bad")).toBeNull();
     expect(trackerSensorReading(states, "sensor.text")).toBeNull();
+  });
+});
+
+describe("renderTracker label", () => {
+  const base: Tracker = {
+    id: "t1",
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+    xSensor: { entity: "sensor.x", min: 0, max: 100 },
+    ySensor: { entity: "sensor.y", min: 0, max: 100 },
+  };
+  const opts = { editing: false, xReading: 50, yReading: 50 };
+
+  it("renders the classic triangle without a label", () => {
+    const out = flattenMarkup(renderTracker(base, opts));
+    expect(out).toContain('<polygon class="tracker-dot"');
+    expect(out).not.toContain("<text");
+  });
+
+  it("renders initials in the triangle's place when a label is set", () => {
+    const out = flattenMarkup(renderTracker({ ...base, label: "FR" }, opts));
+    expect(out).toContain('<text class="tracker-dot"');
+    expect(out).toContain("FR");
+    expect(out).not.toContain("<polygon");
+    // Still a marker in the same group, so pulse / glide CSS keeps applying.
+    expect(out).toContain('class="tracker-marker"');
+  });
+
+  it("treats a whitespace-only label as unset", () => {
+    const out = flattenMarkup(renderTracker({ ...base, label: "  " }, opts));
+    expect(out).toContain('<polygon class="tracker-dot"');
+    expect(out).not.toContain("<text");
   });
 });
 

@@ -1175,6 +1175,8 @@ export function trackerForm(tr: Tracker): FormSpec {
         label: "Dot size",
         selector: { number: { min: 6, max: 80, mode: "slider", unit_of_measurement: "px" } },
       },
+      // Initials in place of the triangle — see Tracker.label.
+      { name: "label", label: "Label", selector: { text: {} } },
     ],
     data: {
       w: tr.w,
@@ -1183,6 +1185,7 @@ export function trackerForm(tr: Tracker): FormSpec {
       y: Math.round(tr.y),
       angle: tr.angle ?? 0,
       dotSize: tr.dotSize ?? DEFAULT_TRACKER_DOT_SIZE,
+      label: tr.label ?? "",
     },
     toPatch: identity,
   };

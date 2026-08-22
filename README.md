@@ -312,8 +312,10 @@ rings; readings outside `[min, max]` clamp to the rectangle's edge. With one, a 
 pulsating line spans the unknown axis — honest about knowing only one coordinate. With
 neither reporting, nothing renders.
 
-The rectangle itself is editor-only; the card shows just the marker. **Color** and **dot
-size** are per tracker.
+The rectangle itself is editor-only; the card shows just the marker. **Color**, **dot
+size** and **label** are per tracker — a label (initials like `FR`) rides in the
+triangle's place with the same pulse and glide, so several people on one floor stay
+tellable apart when color alone isn't enough.
 
 #### Presence ripples
 
@@ -620,7 +622,7 @@ A live (x, y) position estimate driven by one or two orthogonal distance sensors
 animated inside a rectangular tracked area:
 
 ```yaml
-{ id, x, y, w, h, angle?, color?, dotSize?,
+{ id, x, y, w, h, angle?, color?, dotSize?, label?,
   xSensor?: { entity, min, max, invert?, presence?: { entity, invert? } },
   ySensor?: { entity, min, max, invert?, presence?: { entity, invert? } } }
 ```
@@ -630,6 +632,8 @@ animated inside a rectangular tracked area:
   `[min, max]` onto the rectangle's edges along that axis; `invert` flips the mapping.
 - `presence` — a binary gate per axis; if either reports clear (or `unavailable` /
   `unknown`) the marker hides. `invert` flips on/off, never the unavailable case.
+- `label` — short text (initials) drawn in place of the triangle, keeping its pulse,
+  ripples and glide. Empty / unset keeps the classic triangle.
 - Both sensors → a pulsating triangle with ripple rings. One → a faint pulsating line
   across the unknown axis. The rectangle is editor-only.
 
