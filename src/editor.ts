@@ -115,6 +115,9 @@ import {
   labelPositionOf,
   itemReadings,
   itemHasLabel,
+  showsFloorSwitcher,
+  floorSwitcherPlaced,
+  floorSwitcherButton,
   snapToWall,
   collectWatchedEntities,
   hassRenderInputsChanged,
@@ -166,6 +169,7 @@ import {
   openingForm,
   projectForm,
   projectDeadSpaceForm,
+  projectFloorSwitcherForm,
   projectDisplayForm,
   projectPressForm,
   projectSkinForm,
@@ -2991,6 +2995,19 @@ export class FloorplanCardEditor extends LitElement {
                     />
                   </div>
                   <div class="pop-row">
+                    <label>Icon</label>
+                    <input
+                      type="text"
+                      placeholder="mdi:stairs-up"
+                      title="Icon for this floor's switcher button, instead of its short label"
+                      .value=${floor?.icon ?? ""}
+                      @change=${(e: Event) =>
+                        this._commitFloor({
+                          icon: (e.target as HTMLInputElement).value.trim() || undefined,
+                        })}
+                    />
+                  </div>
+                  <div class="pop-row">
                     <label>Color</label>
                     <input
                       type="color"
@@ -3213,6 +3230,7 @@ export class FloorplanCardEditor extends LitElement {
                 .filter((o) => hasOpeningMark(o))
                 .map((o) => this._renderOpeningMarkOverlay(o, c, overlay))}
               ${floor.items.map((it) => this._renderItemOverlay(it, c, overlay))}
+              ${this._renderSwitcherPreview(c, this._config.floors ?? [])}
             </div>
           </div>
         </div>
@@ -3958,6 +3976,96 @@ export class FloorplanCardEditor extends LitElement {
     </div>`;
   }
 
+  /**
+   * The floor switcher, previewed on the editor canvas and draggable (issue
+   * #121) — how you get it off the corner and onto the staircase.
+   *
+   * Drawn wherever the card would draw it: at its placed coordinates, or at
+   * the canvas corner that stands in for the card's corner while it is
+   * unplaced. Dragging from there is what places it, so there is no separate
+   * "enable" step to find.
+   *
+   * Its own pointer handling rather than the shared `_startDrag` path, because
+   * it is not a `Sel`: it is card-level rather than one of the floor's arrays,
+   * so it is never multi-selected, marquee'd, copied or deleted, and threading
+   * it through those switches would add a case to each of them for a control
+   * that can only ever be moved. The drag still snaps like everything else,
+   * and still commits once at the end so it is one undo step.
+   */
+  private _renderSwitcherPreview(c: FloorplanCardConfig, floors: Floor[]): TemplateResult {
+    if (!showsFloorSwitcher(c, floors.length)) return html`${nothing}`;
+    const fs = c.floorSwitcher ?? {};
+    const at = floorSwitcherPlaced(c) ?? this._switcherCorner(c);
+    const active = floors.find((f) => f.id === this._activeFloorId) ?? floors[0];
+    const px = (v: number | undefined) => (Number.isFinite(v as number) ? `${v}px` : "");
+    return html`
+      <div
+        class="switcher-preview ${fs.direction === "row" ? "row" : ""} ${floorSwitcherPlaced(c)
+          ? "placed"
+          : "unplaced"}"
+        style="left:${(at.x / c.width) * 100}%; top:${(at.y / c.height) * 100}%;"
+        title=${floorSwitcherPlaced(c)
+          ? "Drag to move the floor switcher"
+          : "Drag onto the plan to place the floor switcher"}
+        @pointerdown=${(e: PointerEvent) => this._startSwitcherDrag(e)}
+      >
+        ${floors.map((f) => {
+          const { icon, text } = floorSwitcherButton(f);
+          return html`<span
+            class=${f.id === active?.id ? "active" : ""}
+            style=${`${px(fs.width) ? `width:${px(fs.width)};` : ""}${
+              px(fs.height) ? `height:${px(fs.height)};` : ""
+            }`}
+            >${icon ? html`<ha-icon icon=${icon}></ha-icon>` : text}</span
+          >`;
+        })}
+      </div>
+    `;
+  }
+
+  /**
+   * Where an unplaced switcher is previewed: the canvas's own top-right,
+   * inset by roughly the margin the card uses. Not the card's corner — the
+   * editor canvas is not the card — but the same *place*, so dragging it
+   * starts from where you last saw it.
+   */
+  private _switcherCorner(c: FloorplanCardConfig): { x: number; y: number } {
+    const inset = Math.max(c.width, c.height) * 0.04;
+    return { x: c.width - inset, y: inset };
+  }
+
+  private _startSwitcherDrag(ev: PointerEvent): void {
+    if (this._tool !== "select") return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    const el = ev.currentTarget as HTMLElement;
+    const at = floorSwitcherPlaced(this._config) ?? this._switcherCorner(this._config);
+    const from = this._toVirtual(ev, false);
+    const offset = { x: at.x - from.x, y: at.y - from.y };
+    el.setPointerCapture(ev.pointerId);
+    const move = (e: PointerEvent): void => {
+      const p = this._toVirtual(e, false);
+      this._patchConfigLive({
+        floorSwitcher: {
+          ...this._config.floorSwitcher,
+          x: this._snap(p.x + offset.x),
+          y: this._snap(p.y + offset.y),
+        },
+      });
+    };
+    const end = (): void => {
+      el.releasePointerCapture?.(ev.pointerId);
+      el.removeEventListener("pointermove", move);
+      el.removeEventListener("pointerup", end);
+      el.removeEventListener("pointercancel", end);
+      // One commit for the whole drag, so it is one undo step.
+      this._patchConfig({ floorSwitcher: this._config.floorSwitcher });
+    };
+    el.addEventListener("pointermove", move);
+    el.addEventListener("pointerup", end);
+    el.addEventListener("pointercancel", end);
+  }
+
   private _renderItemOverlay(
     it: FloorItem,
     c: FloorplanCardConfig,
@@ -4225,6 +4333,18 @@ export class FloorplanCardEditor extends LitElement {
           this._renderForm(formSlice(display, ["offlineStyle"]), patch),
           this._renderForm(projectPressForm(c), patch)
         )}
+        ${(c.floors ?? []).length > 1
+          ? this._renderGroup(
+              // Only on a plan that has floors to switch between; on a
+              // single-floor plan every control here would be inert.
+              "Floor switcher",
+              this._renderForm(projectFloorSwitcherForm(c), patch),
+              html`<p class="hint rule-note">
+                Drag it on the canvas to place it — on the stairs, say — or leave
+                it in the card's corner.
+              </p>`
+            )
+          : nothing}
         ${this._renderGroup("Symbols", this._renderSymbolsPanel())}
       </div>
     `;
@@ -5941,6 +6061,57 @@ export class FloorplanCardEditor extends LitElement {
       color: var(--fp-skin-text, var(--primary-text-color));
       max-width: none;
       overflow: visible;
+    }
+    /* The floor switcher previewed on the canvas (issue #121). Centred on its
+       point like a device badge, so dropping it puts its middle where the
+       pointer is. Not a real switcher: the buttons are spans, because clicking
+       one here should grab it for dragging rather than change floor. */
+    .switcher-preview {
+      position: absolute;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      cursor: grab;
+      z-index: 3;
+      pointer-events: auto;
+      touch-action: none;
+    }
+    .switcher-preview.row {
+      flex-direction: row;
+    }
+    .switcher-preview:active {
+      cursor: grabbing;
+    }
+    /* Unplaced, it is standing in for the card's corner rather than marking a
+       spot on the plan — dashed, so it reads as "drag me somewhere" instead of
+       as something already positioned here. */
+    .switcher-preview.unplaced span {
+      border-style: dashed;
+      opacity: 0.75;
+    }
+    .switcher-preview span {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      border: 1px solid var(--divider-color, #ccc);
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+      border-radius: 6px;
+      padding: 3px 7px;
+      font-size: 11px;
+      line-height: 1;
+      white-space: nowrap;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+    }
+    .switcher-preview span.active {
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      border-color: var(--primary-color, #03a9f4);
+    }
+    .switcher-preview ha-icon {
+      --mdc-icon-size: 14px;
+      display: flex;
     }
     /* An extra-reading row (issue #180): the entity picker takes the space and
        the attribute box stays narrow beside it, the same proportions the

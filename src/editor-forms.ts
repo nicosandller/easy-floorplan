@@ -55,6 +55,7 @@ import {
   itemReadings,
   badgeEntityIndex,
   offlineStyleOf,
+  floorSwitcherPlaced,
   sliderStyleOf,
   shutterStyleOf,
   DEFAULT_SUN_BEARING,
@@ -1495,6 +1496,72 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
       if ("offlineStyle" in out && out.offlineStyle === DEFAULT_OFFLINE_STYLE)
         out = { ...out, offlineStyle: undefined };
       return out;
+    },
+  };
+}
+
+/**
+ * The floor switcher's own settings (issue #121). Only worth showing on a plan
+ * that has more than one floor — on a single-floor plan there is no switcher
+ * to place, and every control here would be inert.
+ *
+ * Position is not here: it is a *place on the drawing*, so it is set by
+ * dragging the switcher on the canvas, the way everything else placed on the
+ * plan is. What is left is the shape of it, and whether it exists at all.
+ */
+export function projectFloorSwitcherForm(c: FloorplanCardConfig): FormSpec {
+  const fs = c.floorSwitcher ?? {};
+  const placed = floorSwitcherPlaced(c);
+  const fields: FormField[] = [
+    {
+      name: "hidden",
+      label: "Hide switcher",
+      helper: "For a plan that changes floor its own way — a device, a dashboard button",
+      selector: { boolean: {} },
+    },
+  ];
+  if (!fs.hidden) {
+    fields.push({
+      name: "direction",
+      label: "Direction",
+      selector: dropdown(opt("column", "Stacked"), opt("row", "Side by side")),
+    });
+    // Size is only worth offering once it is on the plan: in the corner the
+    // buttons size to their labels, which is what a corner control should do.
+    if (placed) {
+      fields.push(
+        {
+          name: "width",
+          label: "Button width",
+          helper: "Canvas units. Empty lets each button size to its own label",
+          selector: { number: { min: 8, max: 200, mode: "box" } },
+        },
+        {
+          name: "height",
+          label: "Button height",
+          selector: { number: { min: 8, max: 200, mode: "box" } },
+        }
+      );
+    }
+  }
+  return {
+    fields,
+    data: {
+      hidden: fs.hidden ?? false,
+      direction: fs.direction ?? "column",
+      width: fs.width,
+      height: fs.height,
+    },
+    // One nested object in the config, so every field here folds back into it
+    // rather than becoming a top-level key.
+    toPatch: (p) => {
+      const next: Record<string, unknown> = { ...c.floorSwitcher };
+      for (const [k, v] of Object.entries(p)) {
+        // Defaults and empties stay out of the YAML.
+        next[k] = v === "" || v === false || (k === "direction" && v === "column") ? undefined : v;
+      }
+      const kept = Object.entries(next).filter(([, v]) => v !== undefined);
+      return { floorSwitcher: kept.length ? Object.fromEntries(kept) : undefined };
     },
   };
 }

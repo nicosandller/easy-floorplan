@@ -1100,6 +1100,16 @@ export interface Floor {
    */
   short?: string;
   /**
+   * An mdi icon for this floor's switcher button instead of its text (issue
+   * #121) — `mdi:stairs-up`, `mdi:home-floor-1`. What makes a switcher small
+   * enough to sit on a drawn staircase, which is the whole point of being able
+   * to place it there.
+   *
+   * The text is not lost: it becomes the button's tooltip, so the floor is
+   * still nameable to a pointer and to a screen reader.
+   */
+  icon?: string;
+  /**
    * Accent color for this floor's switcher button while active (issue #67).
    * Passes through the style-injection allowlist (#64). Falls back to the
    * theme primary color.
@@ -1136,6 +1146,43 @@ export interface Floor {
   furniture: Furniture[];
   trackers: Tracker[];
   areas: Area[];
+}
+
+/**
+ * Where and how the card's floor switcher is drawn (issue #121).
+ *
+ * Unplaced — no `x`/`y` — it is the fixed corner control it has always been,
+ * pinned to the top-right of the card and unaffected by pan or zoom. Give it a
+ * position and it becomes part of the drawing instead: canvas coordinates like
+ * everything else, so it sits where you put it and travels with the plan.
+ *
+ * That is what closes issue #121. The ask was to tap the stairs to change
+ * floor; a switcher you can drop *onto* the staircase, shrink, and label with
+ * `mdi:stairs-up` is that, without inventing an action type for it.
+ */
+export interface FloorSwitcherConfig {
+  /**
+   * Position in canvas units. Both or neither — a switcher with one
+   * coordinate is not placed, and falls back to the corner rather than to a
+   * guess about the other axis.
+   */
+  x?: number;
+  y?: number;
+  /** Buttons stacked (default) or side by side. */
+  direction?: "column" | "row";
+  /**
+   * Button size in canvas units. Unset, each button sizes to its own label as
+   * it always has. Set, every button is this size — which is what makes a row
+   * of icon buttons line up.
+   */
+  width?: number;
+  height?: number;
+  /**
+   * Draw no switcher at all. For a plan that changes floor some other way —
+   * its own devices, a dashboard button — and does not want the automatic one
+   * in the corner.
+   */
+  hidden?: boolean;
 }
 
 /** Sizing mode for the HTML overlay layer. See {@link FloorplanCardConfig.overlayScale}. */
@@ -1357,6 +1404,8 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   floors?: Floor[];
   /** Id of the floor shown first. Falls back to the first floor. */
   defaultFloor?: string;
+  /** Where and how the floor switcher is drawn (issue #121). */
+  floorSwitcher?: FloorSwitcherConfig;
   walls?: Wall[];
   openings?: Opening[];
   items?: FloorItem[];

@@ -82,6 +82,9 @@ import {
   openingIsActive,
   areaActionForGesture,
   areaHasActions,
+  floorSwitcherPlaced,
+  showsFloorSwitcher,
+  floorSwitcherButton,
   entityStateText,
   itemStateText,
   itemBadgeLabel,
@@ -5136,5 +5139,58 @@ describe("a reading can be bound without being printed", () => {
       ],
     } as unknown as FloorplanCardConfig);
     expect([...got].sort()).toEqual([TEMP, HUMIDITY].sort());
+  });
+});
+
+describe("the floor switcher can be placed (issue #121)", () => {
+  const cfg = (floorSwitcher?: Record<string, unknown>) =>
+    ({ type: "t", width: 1000, height: 600, floorSwitcher }) as unknown as FloorplanCardConfig;
+
+  it("is placed only with both coordinates", () => {
+    expect(floorSwitcherPlaced(cfg())).toBeUndefined();
+    expect(floorSwitcherPlaced(cfg({}))).toBeUndefined();
+    expect(floorSwitcherPlaced(cfg({ x: 100, y: 200 }))).toEqual({ x: 100, y: 200 });
+    // Half a position is not a position — guessing the other axis would drop
+    // it somewhere nobody chose, so it falls back to the corner.
+    expect(floorSwitcherPlaced(cfg({ x: 100 }))).toBeUndefined();
+    expect(floorSwitcherPlaced(cfg({ y: 200 }))).toBeUndefined();
+    // 0 is a real coordinate.
+    expect(floorSwitcherPlaced(cfg({ x: 0, y: 0 }))).toEqual({ x: 0, y: 0 });
+  });
+
+  it("rejects a hand-edited non-position rather than positioning at NaN", () => {
+    for (const bad of [null, "middle", NaN, Infinity, undefined]) {
+      expect(floorSwitcherPlaced(cfg({ x: bad, y: bad }))).toBeUndefined();
+      expect(floorSwitcherPlaced(cfg({ x: 10, y: bad }))).toBeUndefined();
+    }
+  });
+
+  it("is drawn only for more than one floor, and only when not hidden", () => {
+    expect(showsFloorSwitcher(cfg(), 2)).toBe(true);
+    expect(showsFloorSwitcher(cfg(), 1)).toBe(false);
+    expect(showsFloorSwitcher(cfg(), 0)).toBe(false);
+    expect(showsFloorSwitcher(cfg({ hidden: true }), 2)).toBe(false);
+    expect(showsFloorSwitcher(cfg({ hidden: false }), 2)).toBe(true);
+  });
+
+  it("an icon replaces the button's text, and the name becomes its tooltip", () => {
+    // Replaces rather than joins: the button has to be small enough to sit on
+    // a drawn staircase, and a glyph beside a word is not.
+    expect(floorSwitcherButton({ name: "Ground floor", short: "GF" })).toEqual({
+      icon: undefined,
+      text: "GF",
+      title: "Ground floor",
+    });
+    expect(floorSwitcherButton({ name: "Ground floor", short: "GF", icon: "mdi:stairs-up" })).toEqual(
+      { icon: "mdi:stairs-up", text: "GF", title: "Ground floor" },
+    );
+    // No short label falls back to the full name, as it always has.
+    expect(floorSwitcherButton({ name: "Attic" }).text).toBe("Attic");
+  });
+
+  it("gates the icon through the style sink, like every other config glyph", () => {
+    // cssIcon is what keeps a hand-edited config out of the icon attribute.
+    expect(floorSwitcherButton({ name: "F", icon: "not an icon; color:red" }).icon).toBeUndefined();
+    expect(floorSwitcherButton({ name: "F", icon: "mdi:stairs" }).icon).toBe("mdi:stairs");
   });
 });

@@ -23,6 +23,7 @@ import {
   projectSunForm,
   projectReliefForm,
   projectDeadSpaceForm,
+  projectFloorSwitcherForm,
   floorImageForm,
   areaForm,
   areaNameForm,
@@ -1816,5 +1817,55 @@ describe("formSlice", () => {
     // renders nothing rather than throwing.
     expect(formSlice(spec, ["shutterStyle", "type"]).fields.map((f) => f.name)).toEqual(["type"]);
     expect(formSlice(spec, []).fields).toEqual([]);
+  });
+});
+
+describe("projectFloorSwitcherForm (issue #121)", () => {
+  const cfg = (floorSwitcher?: Record<string, unknown>) =>
+    ({ type: "t", width: 1000, height: 600, floorSwitcher }) as unknown as FloorplanCardConfig;
+  const names = (c: FloorplanCardConfig) => projectFloorSwitcherForm(c).fields.map((f) => f.name);
+
+  it("offers no position — that is set by dragging it on the canvas", () => {
+    expect(names(cfg())).not.toContain("x");
+    expect(names(cfg())).not.toContain("y");
+  });
+
+  it("offers size only once it is on the plan", () => {
+    // In the corner the buttons size to their labels, which is what a corner
+    // control should do — so there is nothing to set.
+    expect(names(cfg())).toEqual(["hidden", "direction"]);
+    expect(names(cfg({ x: 100, y: 100 }))).toEqual(["hidden", "direction", "width", "height"]);
+  });
+
+  it("hiding it puts every other control away", () => {
+    expect(names(cfg({ hidden: true }))).toEqual(["hidden"]);
+  });
+
+  it("folds every field back into the one nested key", () => {
+    const form = projectFloorSwitcherForm(cfg({ x: 10, y: 20 }));
+    // The position survives an unrelated edit rather than being dropped.
+    expect(form.toPatch({ direction: "row" })).toEqual({
+      floorSwitcher: { x: 10, y: 20, direction: "row" },
+    });
+    expect(form.toPatch({ width: 26 })).toEqual({
+      floorSwitcher: { x: 10, y: 20, width: 26 },
+    });
+  });
+
+  it("keeps defaults out of the YAML, and drops the key when nothing is left", () => {
+    expect(projectFloorSwitcherForm(cfg()).toPatch({ direction: "column" })).toEqual({
+      floorSwitcher: undefined,
+    });
+    expect(projectFloorSwitcherForm(cfg()).toPatch({ hidden: false })).toEqual({
+      floorSwitcher: undefined,
+    });
+    expect(projectFloorSwitcherForm(cfg({ x: 1, y: 2 })).toPatch({ hidden: false })).toEqual({
+      floorSwitcher: { x: 1, y: 2 },
+    });
+  });
+
+  it("reads back what is stored", () => {
+    const d = projectFloorSwitcherForm(cfg({ x: 1, y: 2, direction: "row", width: 26 })).data;
+    expect(d).toMatchObject({ hidden: false, direction: "row", width: 26 });
   });
 });

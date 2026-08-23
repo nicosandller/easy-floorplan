@@ -30,6 +30,7 @@ import type {
   HassEntity,
   FloorItem,
   OverlayScale,
+  FloorSwitcherConfig,
   ActionConfig,
 } from "./types";
 import {
@@ -1586,6 +1587,53 @@ export function pressEffectOf(c: { pressEffect?: PressEffect }): PressEffect {
   return v === "scale" || v === "ripple" || v === "flash" || v === "none"
     ? v
     : DEFAULT_PRESS_EFFECT;
+}
+
+/**
+ * Whether the floor switcher has been given a place on the plan (issue #121),
+ * as opposed to sitting in the card's corner where it has always been.
+ *
+ * Both coordinates or neither. A switcher carrying only an `x` is a
+ * half-edited config, and guessing the other axis would drop it somewhere
+ * nobody chose — the corner is the honest answer to an incomplete position.
+ * Non-finite values (a hand-edited `x: null`) are not a position either.
+ */
+export function floorSwitcherPlaced(
+  c: { floorSwitcher?: FloorSwitcherConfig },
+): { x: number; y: number } | undefined {
+  const fs = c.floorSwitcher;
+  if (!fs || !Number.isFinite(fs.x as number) || !Number.isFinite(fs.y as number)) return undefined;
+  return { x: fs.x as number, y: fs.y as number };
+}
+
+/**
+ * Whether the card draws a floor switcher at all: more than one floor, and not
+ * switched off. One predicate because the card and the editor preview must
+ * agree — an editor that drew a control the card hides would be inviting you
+ * to place something invisible.
+ */
+export function showsFloorSwitcher(
+  c: { floorSwitcher?: FloorSwitcherConfig },
+  floorCount: number,
+): boolean {
+  return floorCount > 1 && c.floorSwitcher?.hidden !== true;
+}
+
+/**
+ * A floor switcher button's label, and the tooltip that goes with it.
+ *
+ * An icon replaces the text rather than joining it (issue #121): the button is
+ * meant to be small enough to sit on a drawn staircase, and a glyph beside a
+ * word is not. The words are still there as the tooltip, so naming the floor
+ * survives shrinking the button to an icon.
+ */
+export function floorSwitcherButton(f: {
+  name: string;
+  short?: string;
+  icon?: string;
+}): { icon?: string; text: string; title: string } {
+  const text = f.short || f.name;
+  return { icon: cssIcon(f.icon), text, title: f.name };
 }
 
 /**

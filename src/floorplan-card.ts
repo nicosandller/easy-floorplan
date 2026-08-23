@@ -86,6 +86,9 @@ import {
   pressEffectOf,
   labelPositionOf,
   offlineStyleOf,
+  showsFloorSwitcher,
+  floorSwitcherPlaced,
+  floorSwitcherButton,
   itemIsOffline,
   itemHiddenWhenInactive,
   itemLabelSize,
@@ -1153,6 +1156,12 @@ export class FloorplanCard extends LitElement {
               (it, i) => it.id || i,
               (it) => this._renderItem(it, c, rot, scale)
             )}
+            ${showsFloorSwitcher(c, floors.length) && floorSwitcherPlaced(c)
+              ? // Placed: part of the drawing, so it belongs in the overlay
+                // with the devices — same rotation remap, same counter-scale
+                // against zoom, same canvas units.
+                this._renderPlacedFloorSwitcher(floors, active, c, rot, scale)
+              : nothing}
           </div>
           </div>
           ${zoom.scale > 1
@@ -1166,40 +1175,99 @@ export class FloorplanCard extends LitElement {
               </button>`
             : nothing}
           ${compactTitle ? html`<div class="plan-title">${c.title}</div>` : nothing}
-          ${floors.length > 1 ? this._renderFloorSwitcher(floors, active, compact) : nothing}
+          ${showsFloorSwitcher(c, floors.length) && !floorSwitcherPlaced(c)
+            ? // Unplaced: the fixed corner control it has always been, outside
+              // the zoom wrapper so it neither pans nor scales.
+              this._renderFloorSwitcher(floors, active, compact)
+            : nothing}
         </div>
       </ha-card>
+    `;
+  }
+
+  /**
+   * Switch to a floor, from wherever the switcher happens to be drawn.
+   *
+   * Shared so the placed and corner switchers cannot drift apart on the two
+   * things that are easy to forget: remembering the choice for the next
+   * preview, and dropping a zoom that belonged to the floor being left.
+   */
+  private _goToFloor(floors: Floor[], id: string): void {
+    this._activeFloorId = id;
+    // Remember it for the next element the editor preview builds.
+    lastViewedFloor.set(floorMemoryKey(floors), id);
+    // A room on the floor just left is meaningless on the new one.
+    this._zoomedAreaId = undefined;
+  }
+
+  /**
+   * The switcher given a place on the plan (issue #121) — canvas coordinates,
+   * inside the overlay, so it travels with the drawing and can sit on the
+   * staircase it changes floors with.
+   *
+   * Its own renderer rather than a flag on the corner one: the corner is
+   * positioned in the card and sized in pixels, this is positioned in canvas
+   * units and remapped through `rotatePlanPoint` like every other overlay
+   * element. Two positioning models, one button.
+   */
+  private _renderPlacedFloorSwitcher(
+    floors: Floor[],
+    active: Floor,
+    c: FloorplanCardConfig,
+    rot: PlanRotation,
+    scale: OverlayScale,
+  ): TemplateResult {
+    const at = floorSwitcherPlaced(c)!;
+    const p = rotatePlanPoint(at.x, at.y, c.width, c.height, rot);
+    const d = rotatedCanvasSize(c.width, c.height, rot);
+    const fs = c.floorSwitcher ?? {};
+    const size = (v: number | undefined) =>
+      Number.isFinite(v as number) ? overlayLength(v as number, scale) : "";
+    return html`
+      <div
+        class="floor-switcher placed ${fs.direction === "row" ? "row" : ""}"
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;"
+      >
+        ${floors.map((f) => this._floorButton(f, active, floors, size(fs.width), size(fs.height)))}
+      </div>
+    `;
+  }
+
+  /** One switcher button, wherever the switcher is drawn. */
+  private _floorButton(
+    f: Floor,
+    active: Floor,
+    floors: Floor[],
+    width = "",
+    height = "",
+  ): TemplateResult {
+    // Per-floor accent (issue #67): applied only while active so the
+    // resting buttons stay theme-neutral. cssColor gates the config
+    // string; no custom color falls back to the theme primary.
+    const accent = f.id === active.id ? cssColor(f.color) : undefined;
+    const { icon, text, title } = floorSwitcherButton(f);
+    return html`
+      <button
+        class=${f.id === active.id ? "active" : ""}
+        title=${title}
+        style=${`${accent ? `background:${accent};border-color:${accent};` : ""}${
+          width ? `width:${width};` : ""
+        }${height ? `height:${height};` : ""}`}
+        @click=${() => this._goToFloor(floors, f.id)}
+      >
+        ${icon ? html`<ha-icon icon=${icon}></ha-icon>` : text}
+      </button>
     `;
   }
 
   private _renderFloorSwitcher(floors: Floor[], active: Floor, compact = false): TemplateResult {
     return html`
       <div class="floor-switcher ${compact ? "row" : ""}">
-        ${floors.map((f) => {
-          // Per-floor accent (issue #67): applied only while active so the
-          // resting buttons stay theme-neutral. cssColor gates the config
-          // string; no custom color falls back to the theme primary.
-          const accent = f.id === active.id ? cssColor(f.color) : undefined;
-          return html`
-            <button
-              class=${f.id === active.id ? "active" : ""}
-              title=${f.name}
-              style=${accent ? `background:${accent};border-color:${accent};` : nothing}
-              @click=${() => {
-                this._activeFloorId = f.id;
-                // Remember it for the next element the editor preview builds.
-                lastViewedFloor.set(floorMemoryKey(floors), f.id);
-                // A room on the floor just left is meaningless on the new one.
-                this._zoomedAreaId = undefined;
-              }}
-            >
-              ${f.short || f.name}
-            </button>
-          `;
-        })}
+        ${floors.map((f) => this._floorButton(f, active, floors))}
       </div>
     `;
   }
+
 
   // skinTokens declares every --fp-skin-* default on :host (issue #122), and
   // skinPalettes the chosen skin's values on the same element (issue #155).
@@ -1332,6 +1400,31 @@ export class FloorplanCard extends LitElement {
        wrap the buttons for nothing. */
     .stage.compact-title .floor-switcher.row {
       left: 44%;
+    }
+    /* Placed on the plan (issue #121) rather than pinned to the card's corner.
+       Positioned by the overlay's own left/top percentages, so it is remapped
+       under rotation and travels with the drawing; centred on its point the
+       way a device badge is, so dropping it on a staircase puts its middle
+       where the pointer was. Counter-scaled against zoom-to-room for the same
+       reason a badge is — a control that quadrupled in size on zoom would
+       cover the room it belongs to. */
+    .floor-switcher.placed {
+      top: auto;
+      right: auto;
+      transform: translate(-50%, -50%) scale(var(--fp-inv-zoom, 1));
+      transition: transform 0.4s ease;
+    }
+    /* A button given an explicit size holds it, so a row of icons lines up
+       instead of each button hugging its own glyph. */
+    .floor-switcher.placed button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 4px;
+    }
+    .floor-switcher.placed ha-icon {
+      --mdc-icon-size: 100%;
+      display: flex;
     }
     .floor-switcher button {
       cursor: pointer;

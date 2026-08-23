@@ -46,7 +46,7 @@ screen size.
 <img width="444" height="313" alt="night" src="https://github.com/user-attachments/assets/1590b710-d88f-4a34-986b-b08640a45f4c" />
 
 
-- **Multiple floors** — per-floor elements with a switcher in both the editor and the card.
+- **Multiple floors** — per-floor elements with a switcher in both the editor and the card. (${\color{red}NEW!}$) Drag that switcher onto the plan — onto the staircase you drew, as icon buttons — instead of leaving it in the corner.
 - **Background image** — trace over a floor-plan scan, per floor, with adjustable opacity.
 - (${\color{red}NEW!}$) **Skins** — restyle the whole plan from one line of config: `default` follows your Home Assistant theme, `odnetnin` is chunky charcoal on cream, `pastel` is soft and low-contrast, `tron` is neon on near-black. Colors you set on an element yourself always win.
   
@@ -378,6 +378,7 @@ The editor writes this config for you; manual editing is optional.
 | `background` | string   | skin / card bg     | Canvas background color (CSS / hex). Overrides the skin's paper. |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see [Floor](#floor)).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
+| `floorSwitcher`| map    | corner             | Where and how the floor switcher is drawn: `{ x?, y?, direction?, width?, height?, hidden? }`. See [Putting the switcher on the stairs](#putting-the-switcher-on-the-stairs). |
 | `walls`      | Wall[]   | `[]`               | Wall segments (single-floor / floor 1).      |
 | `openings`   | Opening[]| `[]`               | Doors and windows (swing or sliding).        |
 | `items`      | Item[]   | `[]`               | Entity devices.                              |
@@ -398,7 +399,9 @@ and remain valid for backward compatibility.
 the editor's **floor** controls; the card shows a switcher when there is more than one.
 
 - **`short`** — abbreviation for the card's switcher button (`GF`, `1st`…), full name as
-  its tooltip. **`color`** accents that button while its floor is active. The top-level
+  its tooltip. **`icon`** replaces that text with a glyph (`mdi:stairs-up`) — what makes a
+  switcher small enough to sit on a drawn staircase; the name stays as the tooltip.
+  **`color`** accents that button while its floor is active. The top-level
   **`defaultFloor`** picks which floor the card opens on.
 - **`haFloor`** — id of a linked Home Assistant floor, set from the floor gear popover.
   Today it auto-names the floor.
@@ -1231,6 +1234,51 @@ label gets no Label group, and an opening with no shutter gets no Shutter group.
 
 Walls and text keep a plain list: a wall is thickness and length, a text is its words, size
 and angle. A heading over one or two fields is chrome rather than structure.
+
+## Putting the switcher on the stairs
+
+A plan with more than one floor gets a switcher in the card's top-right corner. It can go
+somewhere better (issue #121):
+
+```yaml
+floors:
+  - id: ground
+    name: Ground floor
+    icon: mdi:stairs-down
+    # …
+  - id: upstairs
+    name: Upstairs
+    icon: mdi:stairs-up
+    # …
+floorSwitcher:
+  x: 300           # canvas units — on the staircase you drew
+  y: 170
+  direction: row
+  width: 26
+  height: 26
+```
+
+Which answers the original question — *I see an arrow on the stairs and want to tap it to
+see the next floor* — by putting the control there rather than inventing a new kind of
+action for it.
+
+**Unplaced, nothing changes.** Without `x`/`y` the switcher is the fixed corner control it
+has always been: pinned to the card, unaffected by pan or zoom. Give it both coordinates
+and it joins the drawing instead — canvas units like everything else, remapped under
+`rotation`, travelling with the plan, and counter-scaled against zoom-to-room so it stays
+a legible size. One coordinate on its own is not a position, and falls back to the corner.
+
+| Key | What it does |
+| --- | --- |
+| `x`, `y` | Position in canvas units. Both, or neither. |
+| `direction` | `column` (default) or `row`. |
+| `width`, `height` | Button size in canvas units. Unset, each button sizes to its own label. |
+| `hidden` | Draw no switcher at all — for a plan that changes floor its own way. |
+
+**In the editor**, the switcher is previewed on the canvas and you drag it where you want
+it: dashed while it is still standing in for the corner, solid once placed. Its shape and
+the hide toggle are under **Project → Floor switcher**; each floor's icon is in that
+floor's own settings, beside its short label.
 
 ## Doors on locks
 
