@@ -146,6 +146,14 @@ its own `percentage` attribute, and its label hung to the **left** of the badge,
 so a device that labels itself *without* its own state and a label that is not
 underneath are both on the plan at once.
 
+The plan has **two floors** (issue #121), which is what makes the card draw a
+floor switcher at all — and that switcher is placed on the drawn staircase
+rather than left in the card's corner, with `mdi:stairs-up` / `mdi:stairs-down`
+on its buttons. Tapping the stairs changes floor. Delete the `floorSwitcher`
+block to get the corner back; drag it on the editor canvas to move it. Upstairs
+is deliberately sparse — enough to know you changed floor, not a second plan to
+keep up to date.
+
 The plan also carries one device bound to `light.deleted_by_accident`, which is
 not an entity and never will be. It is what a renamed or deleted binding looks
 like, and the reason it is hard-coded rather than switchable is that no live
