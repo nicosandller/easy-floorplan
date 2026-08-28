@@ -1415,6 +1415,35 @@ export function projectPressForm(c: FloorplanCardConfig): FormSpec {
 }
 
 /**
+ * Project-level replay toggle. Keeps replay optional and explicit in config.
+ */
+export function projectReplayForm(c: FloorplanCardConfig): FormSpec {
+  const enabled = c.historyReplay?.enabled ?? false;
+  return {
+    fields: [
+      {
+        name: "historyReplayEnabled",
+        label: "Enable history replay",
+        helper: "Shows replay controls and loads mapped-entity history from Home Assistant",
+        selector: { boolean: {} },
+      },
+    ],
+    data: { historyReplayEnabled: enabled },
+    toPatch: (p) => {
+      if (!("historyReplayEnabled" in p)) return {};
+      if (!p.historyReplayEnabled) return { historyReplay: undefined };
+      return {
+        historyReplay: {
+          enabled: true,
+          lookbackSeconds: c.historyReplay?.lookbackSeconds,
+          defaultSpeed: c.historyReplay?.defaultSpeed,
+        },
+      };
+    },
+  };
+}
+
+/**
  * Built-in skins (issue #122). Its own one-field form so the editor can put it
  * at the top of the Project section, directly above the Background colour it
  * interacts with — the skin supplies the paper, `background` overrides it.

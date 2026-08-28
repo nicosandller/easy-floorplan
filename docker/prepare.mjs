@@ -26,7 +26,7 @@
 
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -74,6 +74,9 @@ try {
 const storageDir = join(here, "config", ".storage");
 const resourceFile = join(storageDir, "lovelace_resources");
 const URL_PATH = "/local/easy-floorplan-card.js";
+const distCardFile = join(here, "..", "dist", "easy-floorplan-card.js");
+const cacheBust = existsSync(distCardFile) ? String(Math.trunc(statSync(distCardFile).mtimeMs)) : String(Date.now());
+const RESOURCE_ID = "easyfloorplandevresource01";
 
 // The URL carries a hash of the bundle, because Home Assistant serves /local/
 // with `Cache-Control: public, max-age=2678400` -- a month. At a fixed URL the
@@ -90,6 +93,7 @@ const version = existsSync(bundle)
   ? createHash("sha256").update(readFileSync(bundle)).digest("hex").slice(0, 12)
   : null;
 const resourceUrl = version ? `${URL_PATH}?v=${version}` : URL_PATH;
+const resourceUrlFromBuild = version ? resourceUrl : `${URL_PATH}?v=${cacheBust}`;
 
 let store = {
   version: 1,
@@ -114,19 +118,38 @@ if (existsSync(resourceFile)) {
 // second one would leave the frontend loading both, and two modules defining
 // <easy-floorplan-card> means the second registration throws.
 const existing = store.data.items.find((item) => item?.url?.split("?")[0] === URL_PATH);
-if (existing?.url === resourceUrl) {
+const desiredResourceUrl = resourceUrlFromBuild;
+if (existing?.url === desiredResourceUrl) {
   console.log("Resource already registered at this build; leaving it alone.");
 } else {
-  if (existing) existing.url = resourceUrl;
-  else
-    store.data.items.push({
-      id: "easyfloorplandevresource01",
-      type: "module",
-      url: resourceUrl,
+  const prevItems = Array.isArray(store.data.items) ? store.data.items : [];
+  const nextItems = prevItems.filter(
+    (item) => !(item?.id === RESOURCE_ID || (typeof item?.url === "string" && item.url.startsWith(URL_PATH))),
+  );
+
+  if (existing) {
+    nextItems.push({
+      ...existing,
+      id: existing.id ?? RESOURCE_ID,
+      type: existing.type ?? "module",
+      url: desiredResourceUrl,
     });
-  mkdirSync(storageDir, { recursive: true });
-  writeFileSync(resourceFile, JSON.stringify(store, null, 2));
-  console.log(`Registered ${resourceUrl} as a Lovelace resource.`);
+  } else {
+    nextItems.push({ id: RESOURCE_ID, type: "module", url: desiredResourceUrl });
+  }
+
+  const resourcesChanged =
+    nextItems.length !== prevItems.length ||
+    nextItems.some((item, index) => JSON.stringify(item) !== JSON.stringify(prevItems[index]));
+
+  if (resourcesChanged) {
+    store.data.items = nextItems;
+    mkdirSync(storageDir, { recursive: true });
+    writeFileSync(resourceFile, JSON.stringify(store, null, 2));
+    console.log(`Registered ${desiredResourceUrl} as a Lovelace resource.`);
+  } else {
+    console.log(`Lovelace resource already current (${desiredResourceUrl}).`);
+  }
 }
 
 // ---------------------------------------------------------------------------

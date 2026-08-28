@@ -51,6 +51,10 @@ views:
             grid: 20
             snap: 0
             showDeadSpaces: true
+            historyReplay:
+              enabled: true
+              lookbackSeconds: 7200
+              defaultSpeed: 1
             # On, so the plan visibly follows the real sun.sun of the latitude set
             # in configuration.yaml. If the plan looks unexpectedly dim, that is
             # this, and it is working.

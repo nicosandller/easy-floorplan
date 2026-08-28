@@ -1,6 +1,9 @@
 import { defineConfig } from "vite";
 
 export default defineConfig({
+  test: {
+    setupFiles: ["./vitest.setup.ts"],
+  },
   build: {
     lib: {
       entry: "src/index.ts",

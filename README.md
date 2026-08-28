@@ -388,10 +388,21 @@ The editor writes this config for you; manual editing is optional.
 | `trackers`   | Tracker[]| `[]`               | Live position trackers (see [Tracker](#tracker)).    |
 | `areas`      | Area[]   | `[]`               | Named room polygons (see [Area](#area)).          |
 | `symbols`    | map      | —                  | Furniture symbols this plan defines for itself, merged over the shipped library. See [Drawing your own](#drawing-your-own). |
+| `historyReplay` | object | disabled | Optional history replay controls. Set `enabled: true` to show replay controls and load Home Assistant history for mapped entities only. |
 
 When `floors` is present each floor carries its own `walls`, `openings`, `items`, `texts`,
 `furniture`, `trackers` and `areas`. The top-level arrays describe a single implicit floor
 and remain valid for backward compatibility.
+
+### History replay
+
+`historyReplay` is optional and off by default.
+
+| Field | Type | Default | Description |
+| --- | --- | --- | --- |
+| `enabled` | boolean | `false` | Shows replay controls and enables loading history for mapped entities. |
+| `lookbackSeconds` | number | `3600` | Initial replay window length in seconds. Must be positive. |
+| `defaultSpeed` | number | auto | Playback speed in simulated seconds per real second. `1` means real-time. |
 
 ### Floor
 
