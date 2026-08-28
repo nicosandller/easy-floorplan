@@ -2,8 +2,6 @@ import type { HomeAssistant, FloorplanCardConfig } from "../types";
 import type { HistoryEventInput, HistoryServiceLike } from "./history-service";
 import { PlaybackController } from "./playback-controller";
 import {
-  formatReplaySpeed,
-  formatReplayInputValue,
   formatReplayTime,
   getDefaultReplayWindow,
   getReplayEventColor,
@@ -11,7 +9,7 @@ import {
   getReplaySpeedForRange,
   getReplayWatchedEntities,
   normalizeReplayWindow,
-  sliderValueToReplaySpeed,
+  parseReplayInputValue,
 } from "./replay-utils";
 
 export interface ReplayState {
@@ -53,8 +51,6 @@ export type ReplayController = {
   watchedEntities: () => string[];
   scopeKey: () => string;
   speedForRange: (start: number, end: number) => number;
-  parseInputValue: (value: string) => number;
-  formatInputValue: (timestamp: number) => string;
   formatReplayTime: (timestamp: number) => string;
   handleRangeChange: (kind: "start" | "end", ev: Event) => void;
   updateWindow: (start: number, end: number) => void;
@@ -137,15 +133,6 @@ export class ReplayControllerImpl implements ReplayController {
     return getReplaySpeedForRange(this._card.getConfig(), start, end);
   }
 
-  public parseInputValue(value: string): number {
-    const parsed = Date.parse(value);
-    return Number.isNaN(parsed) ? Date.now() / 1000 : parsed / 1000;
-  }
-
-  public formatInputValue(timestamp: number): string {
-    return formatReplayInputValue(timestamp);
-  }
-
   public formatReplayTime(timestamp: number): string {
     return formatReplayTime(timestamp, new Intl.DateTimeFormat(undefined, {
       dateStyle: "short",
@@ -155,10 +142,9 @@ export class ReplayControllerImpl implements ReplayController {
 
   public handleRangeChange(kind: "start" | "end", ev: Event): void {
     const input = ev.target as HTMLInputElement;
-    const timestamp = Date.parse(input.value);
-    const safeValue = Number.isNaN(timestamp) ? Date.now() / 1000 : timestamp / 1000;
-    if (kind === "start") this.state.startTime = safeValue;
-    else this.state.endTime = safeValue;
+    const timestamp = parseReplayInputValue(input.value);
+    if (kind === "start") this.state.startTime = timestamp;
+    else this.state.endTime = timestamp;
     this.updateWindow(this.state.startTime, this.state.endTime);
   }
 
@@ -335,20 +321,6 @@ export class ReplayControllerImpl implements ReplayController {
     this.state.playbackController.setPlaybackSpeed(speed);
     this.logReplay("[easy-floorplan] Replay speed", { speed });
     this._card.requestUpdate();
-  }
-
-  public replaySpeedToSliderValue(speed: number): number {
-    if (!Number.isFinite(speed) || speed <= 0) return 0;
-    const value = Math.log10(speed);
-    return Math.min(3, Math.max(-2, value));
-  }
-
-  public sliderValueToReplaySpeed(value: number): number {
-    return sliderValueToReplaySpeed(value);
-  }
-
-  public formatReplaySpeed(speed: number): string {
-    return formatReplaySpeed(speed);
   }
 
   public playReplay(): void {
