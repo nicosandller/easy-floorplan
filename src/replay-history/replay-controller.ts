@@ -1,5 +1,5 @@
 import type { HomeAssistant, FloorplanCardConfig } from "../types";
-import type { HistoryEventInput, HistoryServiceLike } from "./history-service";
+import { HistoryService, type HistoryEventInput, type HistoryServiceLike } from "./history-service";
 import { PlaybackController } from "./playback-controller";
 import {
   formatReplayTime,
@@ -40,7 +40,6 @@ export interface ReplayCardLike {
   getConfig: () => FloorplanCardConfig | undefined;
   getHass: () => HomeAssistant | undefined;
   getActiveFloorId: () => string | undefined;
-  getHistoryService: () => HistoryServiceLike;
   requestUpdate: () => void;
 }
 
@@ -51,6 +50,14 @@ export type ReplayController = {
   watchedEntities: () => string[];
   scopeKey: () => string;
   speedForRange: (start: number, end: number) => number;
+  currentTime: () => number;
+  isHistoryVisible: () => boolean;
+  isReplayReady: () => boolean;
+  isReplayEnabled: () => boolean;
+  shouldAutoStart: () => boolean;
+  getRenderState: () => { enabled: boolean; currentTime: number; historyVisible: boolean };
+  clearConfigColorCache: () => void;
+  pausePlayback: () => void;
   formatReplayTime: (timestamp: number) => string;
   handleRangeChange: (kind: "start" | "end", ev: Event) => void;
   updateWindow: (start: number, end: number) => void;
@@ -69,7 +76,7 @@ export type ReplayController = {
   stepReplay: (direction: 1 | -1) => void;
   setReplaySpeed: (speed: number) => void;
   replaySpeedToSliderValue: (speed: number) => number;
-  sliderValueToReplaySpeed: (value: number) => number;
+  sliderValueToSliderValue: (value: number) => number;
   formatReplaySpeed: (speed: number) => string;
   playReplay: () => void;
   pauseReplay: () => void;
@@ -82,6 +89,7 @@ let nextReplayPanelId = 0;
 
 export class ReplayControllerImpl implements ReplayController {
   public readonly state: ReplayState;
+  private readonly _historyService = new HistoryService();
 
   constructor(private readonly _card: ReplayCardLike) {
     this.state = {
@@ -121,6 +129,21 @@ export class ReplayControllerImpl implements ReplayController {
     return normalizeReplayWindow(start, end);
   }
 
+  public historyService(): HistoryServiceLike {
+    return this._historyService;
+  }
+
+  public clearHistoryCache(): void {
+    this._historyService.clearCache();
+  }
+
+  public syncHistoryServiceContext(): void {
+    this._historyService.configure({
+      hass: this._card.getHass(),
+      watched: this.watchedEntities(),
+    });
+  }
+
   public watchedEntities(): string[] {
     return getReplayWatchedEntities(this._card.getConfig(), this._card.getActiveFloorId());
   }
@@ -131,6 +154,46 @@ export class ReplayControllerImpl implements ReplayController {
 
   public speedForRange(start: number, end: number): number {
     return getReplaySpeedForRange(this._card.getConfig(), start, end);
+  }
+
+  public currentTime(): number {
+    return this.state.playbackController.currentTime;
+  }
+
+  public isHistoryVisible(): boolean {
+    return this.state.historyVisible;
+  }
+
+  public isReplayReady(): boolean {
+    return this.state.ready;
+  }
+
+  public isReplayEnabled(): boolean {
+    return this.state.enabled;
+  }
+
+  public shouldAutoStart(): boolean {
+    return !!this._card.getHass()
+      && !!this._card.getConfig()?.historyReplay?.enabled
+      && !this.state.loadRequested
+      && !this.state.enabled
+      && !this.state.manuallyDisabled;
+  }
+
+  public getRenderState(): { enabled: boolean; currentTime: number; historyVisible: boolean } {
+    return {
+      enabled: this.state.enabled,
+      currentTime: this.state.playbackController.currentTime,
+      historyVisible: this.state.historyVisible,
+    };
+  }
+
+  public clearConfigColorCache(): void {
+    this.state.configuredColorCache.clear();
+  }
+
+  public pausePlayback(): void {
+    this.state.playbackController.pause();
   }
 
   public formatReplayTime(timestamp: number): string {
@@ -155,7 +218,7 @@ export class ReplayControllerImpl implements ReplayController {
     const wasPlaying = this.state.playbackController.playing;
     this.state.startTime = replayStart;
     this.state.endTime = replayEnd;
-    this._card.getHistoryService().clearCache();
+    this.clearHistoryCache();
     this.state.playbackController.pause();
     this.stopReplayLoop();
     this._card.requestUpdate();
@@ -170,7 +233,7 @@ export class ReplayControllerImpl implements ReplayController {
     this.state.error = undefined;
     this.state.loadRequested = false;
     this.state.loadToken += 1;
-    this._card.getHistoryService().clearCache();
+    this.clearHistoryCache();
     this.stopReplayLoop();
     this._card.requestUpdate();
     if (this._card.getHass() && this._card.getConfig()?.historyReplay?.enabled) {
@@ -268,10 +331,10 @@ export class ReplayControllerImpl implements ReplayController {
   public async loadReplayRange(start: number, end: number, loadToken: number): Promise<void> {
     try {
       const scopeKey = this.scopeKey();
-      await this._card.getHistoryService().loadHistory(start, end, { scopeKey, hass: this._card.getHass(), watched: this.watchedEntities() });
+      await this._historyService.loadHistory(start, end, { scopeKey, hass: this._card.getHass(), watched: this.watchedEntities() });
       if (loadToken !== this.state.loadToken) return;
       const watched = new Set(this.watchedEntities());
-      const loadedEvents = this._card.getHistoryService().getEvents();
+      const loadedEvents = this._historyService.getEvents();
       this.state.historyEvents = loadedEvents.filter((event) => watched.has(event.entityId)).map((event) => ({
         ...event,
         color: getReplayEventColor(event, this._card.getConfig(), this._card.getHass(), this.state.configuredColorCache, this.state.configured),
@@ -307,8 +370,8 @@ export class ReplayControllerImpl implements ReplayController {
     const currentTime = this.state.playbackController.currentTime;
     const epsilon = 0.0001;
     const candidate = direction > 0
-      ? this._card.getHistoryService().getEventAfter(currentTime + epsilon)
-      : this._card.getHistoryService().getEventBefore(currentTime - epsilon);
+      ? this._historyService.getEventAfter(currentTime + epsilon)
+      : this._historyService.getEventBefore(currentTime - epsilon);
     if (candidate) {
       this.state.playbackController.seek(candidate.timestamp);
     } else {

@@ -12,7 +12,6 @@ import type {
   OverlayScale,
   RenderHass,
 } from "./types";
-import { HistoryService } from "./replay-history/history-service";
 import { buildRenderHass } from "./replay-history/render-state-service";
 import "./replay-history/history-timeline";
 import "./replay-history/replay-panel";
@@ -171,22 +170,16 @@ export class FloorplanCard extends LitElement {
   private readonly _glowIdBase = `fp-glow-${FloorplanCard._nextGlowId++}`;
   /** Entity ids this plan actually displays; used to skip irrelevant hass updates. */
   private _watchedEntities: Set<string> = new Set();
-  private readonly _historyService = new HistoryService();
-
-  private _syncHistoryServiceContext(): void {
-    this._historyService.configure({
-      hass: this.hass,
-      watched: this._config ? getReplayWatchedEntities(this._config, this._activeFloorId) : undefined,
-    });
-  }
-
   private readonly _replayController = new ReplayControllerImpl({
     getConfig: () => this._config,
     getHass: () => this.hass,
     getActiveFloorId: () => this._activeFloorId,
-    getHistoryService: () => this._historyService,
     requestUpdate: () => this.requestUpdate(),
   });
+
+  private _syncHistoryServiceContext(): void {
+    this._replayController.syncHistoryServiceContext();
+  }
 
 
   public setConfig(config: FloorplanCardConfig): void {
@@ -216,10 +209,10 @@ export class FloorplanCard extends LitElement {
     };
     this._watchedEntities = collectWatchedEntities(this._config);
     this._syncHistoryServiceContext();
-    this._replayController.state.configuredColorCache.clear();
-    this._historyService.clearCache();
+    this._replayController.clearConfigColorCache();
+    this._replayController.historyService().clearCache();
     if (!this._replayController.state.configured) {
-      this._replayController.state.playbackController.pause();
+      this._replayController.pausePlayback();
       this._replayController.stopReplayLoop();
     } else if (this.hass) {
       this._replayController.ensureStarted();
@@ -269,11 +262,7 @@ export class FloorplanCard extends LitElement {
     }
     if (
       (changed.has("hass") || changed.has("_activeFloorId"))
-      && this.hass
-      && this._config?.historyReplay?.enabled
-      && !this._replayController.state.loadRequested
-      && !this._replayController.state.enabled
-      && !this._replayController.state.manuallyDisabled
+      && this._replayController.shouldAutoStart()
     ) {
       this._replayController.ensureStarted();
     }
@@ -803,7 +792,8 @@ export class FloorplanCard extends LitElement {
   protected render(): TemplateResult {
     if (!this._config) return html`${nothing}`;
     const c = this._config;
-    const renderHass = buildRenderHass(this.hass, this._watchedEntities, this._historyService, this._replayController.state.enabled, this._replayController.state.playbackController.currentTime);
+    const replayState = this._replayController.getRenderState();
+    const renderHass = buildRenderHass(this.hass, this._watchedEntities, this._replayController.historyService(), replayState.enabled, replayState.currentTime);
     const floors = getFloors(c);
     const active =
       floors.find((f) => f.id === this._activeFloorId) ??
@@ -888,7 +878,7 @@ export class FloorplanCard extends LitElement {
            shrink it — it declines it, and draws the title inside the stage
            instead, where it costs no layout height at all (issue #152). -->
       <ha-card .header=${compact ? nothing : (c.title ?? nothing)}>
-        <div class="card-shell ${this._replayController.state.historyVisible ? "replay-visible" : ""}">
+        <div class="card-shell ${this._replayController.isHistoryVisible() ? "replay-visible" : ""}">
           ${this._config.historyReplay?.enabled ? this._renderReplayPanel() : nothing}
           <div
             class="stage press-${pressEffectOf(c)} offline-${offlineStyleOf(c)} ${compactTitle
