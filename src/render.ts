@@ -119,11 +119,12 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
   // attribute moves, so identity comparison in hassRenderInputsChanged
   // catches it.
   //
-  // Sun dimming (#113) reads the elevation. Sunlight reads both halves — the
-  // azimuth for the direction, the elevation for whether there is any light —
-  // but only while it follows the real sun: a pinned sunBearing reads neither
-  // (see sunBearingOf and sunlightStrengthOf), so it needs no subscription.
-  if (c.sunDimming || (c.sunlight && !sunIsPinned(c))) ids.add("sun.sun");
+  // Sun dimming (#113) and ambient daylight read the elevation. Sunlight reads
+  // both halves — the azimuth for the direction, the elevation for whether
+  // there is any light — but only while it follows the real sun: a pinned
+  // sunBearing reads neither (see sunBearingOf and sunlightStrengthOf), so it
+  // needs no subscription.
+  if (c.sunDimming || c.ambientDaylight || (c.sunlight && !sunIsPinned(c))) ids.add("sun.sun");
   for (const f of getFloors(c)) {
     for (const o of f.openings) {
       if (o.entity) ids.add(o.entity);

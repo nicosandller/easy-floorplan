@@ -1347,6 +1347,16 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   /** Plan brightness in full daylight, 0-1. Default {@link DEFAULT_SUN_MAX}. */
   sunBrightnessMax?: number;
   /**
+   * Paint soft diffuse daylight from the visible sky through exterior openings.
+   * This is deliberately independent of direct {@link sunlight}: a north-facing
+   * window can brighten its room even when no direct sun ray reaches that wall.
+   *
+   * V1 derives exterior openings from Area adjacency and clips each wash to its
+   * Area polygon, so complete room Areas are required for reliable topology.
+   * Off by default for backward compatibility.
+   */
+  ambientDaylight?: boolean;
+  /**
    * Let the sun in (issue: sunlight through openings). Light arrives from
    * {@link sunBearing}, enters through every window and every open door, and
    * is stopped by the walls — so the rooms it never reaches are drawn a shade

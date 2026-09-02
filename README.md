@@ -828,6 +828,31 @@ follows brightness; a light that's off, unavailable, or has no Cast light clears
 lit room brightens itself and not the one next door. Walls are treated as solid along
 their whole length — light reaches through no doorway, for the clearing or the pool.
 
+## Ambient daylight
+
+Set **`ambientDaylight: true`** for soft room-aware daylight from the sky, independently
+of the directional **Sunlight** layer:
+
+```yaml
+type: custom:easy-floorplan-card
+ambientDaylight: true
+```
+
+A north-facing window can therefore brighten its room even when no direct sun ray reaches
+that wall. V1 uses your **Area polygons** to identify exterior openings and to hard-clip
+the wash to the receiving room: an opening touching exactly one Area is a sky source; one
+touching two Areas is interior; one touching none is ignored. With no Areas, nothing is
+drawn rather than guessing the room topology.
+
+The layer reuses the opening's existing travel, glazing and shutter state. `sunlight: false`
+on an opening remains the natural-light opt-out. Sky strength follows `sun.sun` elevation
+through civil twilight (-6° to +6°), but never uses azimuth/bearing. Missing or unreadable
+sun elevation fails dark until a valid HA state returns.
+
+The switch is off by default and appears under **Project -> Ambient daylight**. V1 keeps
+strength, spread, tint and blur as implementation defaults rather than exposing unstable
+calibration knobs. See `docs/ambient-daylight.md` for the geometry and renderer contract.
+
 ## Dead spaces
 
 A **dead space** is a space the walls close off completely that no door and no window opens

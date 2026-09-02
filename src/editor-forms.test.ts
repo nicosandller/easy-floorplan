@@ -1559,11 +1559,12 @@ describe("projectReliefForm", () => {
   const names = (c: FloorplanCardConfig) => projectReliefForm(c).fields.map((f) => f.name);
 
   it("asks only whether to let the light in, until it is let in", () => {
-    expect(names(cfg())).toEqual(["sunlight"]);
+    expect(names(cfg())).toEqual(["ambientDaylight", "sunlight"]);
   });
 
   it("reveals north and the sun once the light is let in", () => {
     expect(names(cfg({ sunlight: true }))).toEqual([
+      "ambientDaylight",
       "sunlight",
       "north",
       "sunShade",
