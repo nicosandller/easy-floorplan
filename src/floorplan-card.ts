@@ -1279,6 +1279,7 @@ export class FloorplanCard extends LitElement {
                 yReading: trackerSensorReading(renderHass?.states, tr.ySensor?.entity),
                 xPresent: trackerPresenceDetected(renderHass?.states, tr.xSensor?.presence),
                 yPresent: trackerPresenceDetected(renderHass?.states, tr.ySensor?.presence),
+                planRotation: rot,
               })
             )}
             <!-- Sun dimming (issue #113). Last inside the rotated group, so it

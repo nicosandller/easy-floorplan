@@ -2228,7 +2228,7 @@ export class FloorplanCardEditor extends LitElement {
 
   private static readonly TRACKER_GROUPS = [
     ["Zone", ["w", "h", "x", "y", "angle"]],
-    ["Marker", ["dotSize"]],
+    ["Marker", ["dotSize", "label"]],
   ] as const;
 
   /**

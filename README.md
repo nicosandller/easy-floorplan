@@ -343,8 +343,11 @@ rings; readings outside `[min, max]` clamp to the rectangle's edge. With one, a 
 pulsating line spans the unknown axis — honest about knowing only one coordinate. With
 neither reporting, nothing renders.
 
-The rectangle itself is editor-only; the card shows just the marker. **Color** and **dot
-size** are per tracker.
+The rectangle itself is editor-only; the card shows just the marker. **Color**, **dot
+size** and **label** are per tracker — a label (initials like `FR`, up to three
+characters) rides in the triangle's place with the same pulse and glide, so several
+people on one floor stay tellable apart when color alone isn't enough. It stays upright
+under the plan's `rotation`, like every other text on the card.
 
 #### Presence ripples
 

@@ -944,6 +944,14 @@ export interface Tracker {
   color?: string;
   /** Marker diameter in pixels. Default 14. */
   dotSize?: number;
+  /**
+   * Short text drawn in place of the triangle marker — initials like "FR",
+   * so several trackers on one floor stay tellable apart when color alone
+   * isn't enough. The label keeps the triangle's pulse, ripples and glide;
+   * only the shape changes. Clamped to three characters
+   * so it never spreads past the dot. Empty / unset keeps the classic triangle.
+   */
+  label?: string;
   /** Distance sensor mapped to the X axis (rectangle's horizontal span). */
   xSensor?: TrackerSensor;
   /** Distance sensor mapped to the Y axis (rectangle's vertical span). */
