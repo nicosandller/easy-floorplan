@@ -80,6 +80,7 @@ import {
   furnitureFloorTarget,
   entityDefaultIcon,
   trackerSensorReading,
+  renderTracker,
   openingInMotion,
   openingIsActive,
   areaActionForGesture,
@@ -153,7 +154,7 @@ import {
   checkHideCondition,
   itemBadgeHidden,
 } from "./render";
-import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
+import type { FloorplanCardConfig, Opening, RenderHass, Tracker } from "./types";
 import { symbolCatalog, symbolSize } from "./symbols";
 
 /**
@@ -672,6 +673,65 @@ describe("trackerSensorReading", () => {
     expect(trackerSensorReading(states, "sensor.missing")).toBeNull();
     expect(trackerSensorReading(states, "sensor.bad")).toBeNull();
     expect(trackerSensorReading(states, "sensor.text")).toBeNull();
+  });
+});
+
+describe("renderTracker label", () => {
+  const base: Tracker = {
+    id: "t1",
+    x: 0,
+    y: 0,
+    w: 100,
+    h: 100,
+    xSensor: { entity: "sensor.x", min: 0, max: 100 },
+    ySensor: { entity: "sensor.y", min: 0, max: 100 },
+  };
+  const opts = { editing: false, xReading: 50, yReading: 50 };
+
+  it("renders the classic triangle without a label", () => {
+    const out = flattenMarkup(renderTracker(base, opts));
+    expect(out).toContain('<polygon class="tracker-dot"');
+    expect(out).not.toContain("<text");
+  });
+
+  it("renders initials in the triangle's place when a label is set", () => {
+    const out = flattenMarkup(renderTracker({ ...base, label: "FR" }, opts));
+    expect(out).toContain('<text class="tracker-dot"');
+    expect(out).toContain(">FR</text>");
+    expect(out).not.toContain("<polygon");
+    // Still a marker in the same group, so pulse / glide CSS keeps applying.
+    expect(out).toContain('class="tracker-marker"');
+  });
+
+  it("treats a whitespace-only label as unset", () => {
+    const out = flattenMarkup(renderTracker({ ...base, label: "  " }, opts));
+    expect(out).toContain('<polygon class="tracker-dot"');
+    expect(out).not.toContain("<text");
+  });
+
+  it("clamps a long label to three characters", () => {
+    const out = flattenMarkup(renderTracker({ ...base, label: "Fridolin" }, opts));
+    expect(out).toContain(">Fri</text>");
+  });
+
+  it("sizes the halo with the dot, so it neither thins out nor swallows the letters", () => {
+    const small = flattenMarkup(renderTracker({ ...base, label: "FR", dotSize: 8 }, opts));
+    const big = flattenMarkup(renderTracker({ ...base, label: "FR", dotSize: 40 }, opts));
+    expect(small).toContain("stroke-width=1");
+    expect(big).toContain("stroke-width=5");
+  });
+
+  it("counter-rotates the initials so they read level under plan and tracker rotation", () => {
+    const flat = flattenMarkup(renderTracker({ ...base, label: "FR" }, opts));
+    expect(flat).toContain('transform="rotate(0)"');
+    const plan = flattenMarkup(renderTracker({ ...base, label: "FR" }, { ...opts, planRotation: 90 }));
+    expect(plan).toContain('transform="rotate(-90)"');
+    const both = flattenMarkup(
+      renderTracker({ ...base, label: "FR", angle: 30 }, { ...opts, planRotation: 180 })
+    );
+    expect(both).toContain('transform="rotate(-210)"');
+    // The triangle never needed this — it has no reading direction.
+    expect(flattenMarkup(renderTracker(base, { ...opts, planRotation: 90 }))).not.toContain("rotate(-90)");
   });
 });
 
