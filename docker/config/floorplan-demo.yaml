@@ -53,6 +53,22 @@ views:
             grid: 20
             snap: 0
             showDeadSpaces: true
+            # Named colours (issue #265). "Living" was the same #26c6da typed
+            # into the tracker and into the room it moves around in, which is
+            # the exact complaint the feature answers -- recolour the name here
+            # and both follow. Good/Warning/Bad are the plant's thresholds,
+            # named so the next sensor can reuse them instead of copying hexes.
+            palette:
+              - name: Living
+                color: "#26c6da"
+              - name: Kitchen
+                color: "#ffa726"
+              - name: Good
+                color: "#2e7d32"
+              - name: Warning
+                color: "#f9a825"
+              - name: Bad
+                color: "#c62828"
             historyReplay:
               enabled: true
               lookbackSeconds: 7200
@@ -320,9 +336,9 @@ views:
                     h: 60
                     entity: sensor.ficus_soil_moisture
                     stateColor:
-                      - { above: 80, color: "#2e7d32" }
-                      - { above: 65, color: "#f9a825" }
-                      - { color: "#c62828" }
+                      - { above: 80, color: var(--fp-color-good) }
+                      - { above: 65, color: var(--fp-color-warning) }
+                      - { color: var(--fp-color-bad) }
 
                 trackers:
                   # A tracker is a rectangle plus two distance sensors that map onto
@@ -335,7 +351,7 @@ views:
                     y: 120
                     w: 360
                     h: 360
-                    color: "#26c6da"
+                    color: var(--fp-color-living)
                     dotSize: 16
                     xSensor:
                       entity: sensor.tracker_distance_x
@@ -354,7 +370,7 @@ views:
                   - id: a1
                     name: Living Room
                     showName: true
-                    color: "#26c6da"
+                    color: var(--fp-color-living)
                     opacity: 0.15
                     points:
                       - { x: 100, y: 100 }
@@ -364,7 +380,7 @@ views:
                   - id: a2
                     name: Kitchen
                     showName: true
-                    color: "#ffa726"
+                    color: var(--fp-color-kitchen)
                     opacity: 0.15
                     points:
                       - { x: 500, y: 100 }

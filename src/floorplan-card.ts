@@ -16,6 +16,7 @@ import { buildRenderHass } from "./replay-history/render-state-service";
 import "./replay-history/history-timeline";
 import "./replay-history/replay-panel";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, contrastText } from "./css-safe";
+import { paletteStyle, paletteKey, resolvePaletteColor } from "./palette";
 import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
@@ -740,7 +741,13 @@ export class FloorplanCard extends LitElement {
     // (issue #106, @MrMcFlyy): a white state colour used to take the theme's
     // white icon with it. undefined for a colour we cannot resolve — a
     // var()/color-mix()/gradient keeps the theme ink, exactly as before.
-    const badgeInk = contrastText(stateColor ?? activeColor);
+    // resolvePaletteColor first: a badge painted from the palette (issue #265)
+    // stores a var(), which contrastText cannot read and would answer
+    // undefined for — so moving a badge onto a named colour would quietly cost
+    // it the ink it had as a literal hex.
+    const badgeInk = contrastText(
+      resolvePaletteColor(stateColor ?? activeColor, this._config?.palette)
+    );
     const rippleSize = item.rippleSize ?? DEFAULT_RIPPLE_SIZE;
     const rippleDirection = item.rippleDirection ?? DEFAULT_RIPPLE_DIRECTION;
     const rippleWidth = item.rippleWidth ?? DEFAULT_RIPPLE_WIDTH;
@@ -978,7 +985,17 @@ export class FloorplanCard extends LitElement {
            where no rule of ours reaches. compactHeader therefore does not
            shrink it — it declines it, and draws the title inside the stage
            instead, where it costs no layout height at all (issue #152). -->
-      <ha-card .header=${compact ? nothing : (c.title ?? nothing)}>
+      <!-- The palette (issue #265) rides here, above everything that could
+           name one of its colours — the floor switcher and the card background
+           as well as the plan. Inline rather than on :host like the skin
+           tokens, because unlike a skin it is per-config data and there is no
+           fixed set of rules to write ahead of time. It declares only
+           --fp-color-* names, so a card-mod rule on this element still owns
+           every --fp-skin-* token exactly as issue #155 left it. -->
+      <ha-card
+        .header=${compact ? nothing : (c.title ?? nothing)}
+        style=${paletteStyle(c.palette) || nothing}
+      >
         <div class="card-shell ${this._replayController.isHistoryVisible() ? "replay-visible" : ""}">
           ${this._config.historyReplay?.enabled ? this._renderReplayPanel() : nothing}
           <div
@@ -1034,9 +1051,13 @@ export class FloorplanCard extends LitElement {
                every door, window and room fill painted in the previous skin's
                colours while the computed values were already correct. Keying
                rebuilds the subtree instead, which repaints by construction.
-               Only on a skin change; ordinary state updates are untouched. -->
+               Only on a skin change; ordinary state updates are untouched.
+
+               Recolouring a palette entry (issue #265) is the same change seen
+               from the other end — a custom property moving under a var() in a
+               presentation attribute — so it is in this key too. -->
           ${keyed(
-            c.skin ?? "",
+            `${c.skin ?? ""}|${paletteKey(c.palette)}`,
             svg`<svg viewBox="0 0 ${dims.w} ${dims.h}" preserveAspectRatio="none">
             <g transform=${rotTransform || nothing}>
             ${active.image

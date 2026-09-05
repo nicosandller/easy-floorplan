@@ -1399,6 +1399,22 @@ export interface HistoryReplayConfig {
   numericSteps?: number;
 }
 
+/**
+ * One named colour in a plan's palette (issue #265).
+ *
+ * The `name` is both the label in the dropdown and the identity of the colour:
+ * the custom property it declares is derived from it, so renaming an entry does
+ * **not** move the elements already pointing at the old name — they keep
+ * referencing a property nothing declares any more and fall back to whatever
+ * that field's default is. The editor warns before letting that happen.
+ */
+export interface PaletteColor {
+  /** Shown in the dropdown, e.g. `Warm white`. */
+  name: string;
+  /** Any colour the card accepts — hex, a CSS name, `rgb()`, even a theme `var()`. */
+  color: string;
+}
+
 export interface FloorplanCardConfig extends LovelaceCardConfig {
   type: string;
   title?: string;
@@ -1461,6 +1477,19 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * `src/skins.ts`.
    */
   skin?: string;
+  /**
+   * Named colours for this plan (issue #265), offered in a dropdown beside
+   * every colour field: *"I want all my temperature sensors to use the same
+   * conditional colours but I hate copying colour hex codes across so many
+   * entities."*
+   *
+   * A field references an entry by storing `var(--fp-color-<name>)` — the name
+   * lowercased with anything but letters and digits turned into `-`. That is a
+   * plain CSS custom property, declared on the card from this list, so a
+   * hand-written config can use the feature without the editor and recolouring
+   * an entry moves every element that names it. See `src/palette.ts`.
+   */
+  palette?: PaletteColor[];
   /**
    * How the HTML overlay (badges, labels, room names, text) is sized.
    *

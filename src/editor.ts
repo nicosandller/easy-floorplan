@@ -21,6 +21,7 @@ import type {
   HaAreaInfo,
   StateColorRule,
   OverlayScale,
+  PaletteColor,
 } from "./types";
 import {
   normalizeSymbol,
@@ -128,6 +129,17 @@ import {
 import { deadSpacesCached } from "./dead-space";
 import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
 import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
+import {
+  paletteStyle,
+  paletteKey,
+  paletteEntries,
+  paletteRef,
+  paletteRefSlug,
+  paletteSlug,
+  resolvePaletteColor,
+  rewritePaletteRefs,
+  MAX_PALETTE,
+} from "./palette";
 import {
   ENDPOINT_SNAP,
   applyDelta,
@@ -361,6 +373,7 @@ export class FloorplanCardEditor extends LitElement {
   /** Paste-a-symbol box in the Project panel, and its last validation error. */
   @state() private _symbolDraft = "";
   @state() private _symbolError = "";
+  @state() private _paletteError = "";
   /** Project section expanded? Collapsed by default — page settings are touched rarely. */
   @state() private _projectOpen = false;
   /**
@@ -2096,6 +2109,74 @@ export class FloorplanCardEditor extends LitElement {
    * Every colour in this editor is one of these. It lived as eight copies of
    * the same markup before the colour rules below needed a ninth.
    */
+  /**
+   * The plan's named colours (issue #265), usable and deduped.
+   */
+  private _palette(): PaletteColor[] {
+    return paletteEntries(this._config?.palette);
+  }
+
+  /**
+   * The dropdown that puts a named colour into a colour field, or `nothing`
+   * when the plan has no palette.
+   *
+   * Rendering nothing is the point of the empty case: a plan that never names a
+   * colour should see the editor it saw before this feature existed, not a
+   * dropdown with one greyed-out entry in it. The control appears the moment
+   * the first name is added under Project and disappears with the last.
+   *
+   * Choosing a name stores a `var()` reference rather than the colour itself,
+   * which is what makes the link live — see `src/palette.ts`. Choosing "Custom"
+   * writes back the colour the name currently resolves to, so leaving the
+   * palette breaks the link without changing what is on screen.
+   */
+  private _renderPalettePicker(
+    value: string | undefined,
+    onCommit: (color: string | undefined) => void
+  ): TemplateResult | typeof nothing {
+    const palette = this._palette();
+    if (!palette.length) return nothing;
+    const current = paletteRefSlug(value);
+    return html`
+      <select
+        class="palette-pick"
+        title="Use one of the plan's named colours"
+        @change=${(e: Event) => {
+          const slug = (e.target as HTMLSelectElement).value;
+          if (!slug) {
+            // Back to a literal: keep what is drawn, drop the link. Nothing to
+            // do if the field was never on a name — committing the value it
+            // already has would spend an undo step on no change.
+            if (current) onCommit(resolvePaletteColor(value, palette) as string);
+            return;
+          }
+          const hit = palette.find((p) => paletteSlug(p.name) === slug);
+          if (hit) onCommit(paletteRef(hit.name));
+        }}
+      >
+        <option value="" ?selected=${!current}>Custom…</option>
+        ${palette.map(
+          (p) => html`<option
+            value=${paletteSlug(p.name)}
+            ?selected=${paletteSlug(p.name) === current}
+          >
+            ${p.name}
+          </option>`
+        )}
+      </select>
+    `;
+  }
+
+  /**
+   * What an `<input type="color">` should show for a stored value: the literal
+   * colour a palette reference names, since the swatch cannot resolve a var()
+   * and would sit on black instead.
+   */
+  private _swatchValue(value: string | undefined, fallback: string): string {
+    const resolved = resolvePaletteColor(value, this._config?.palette);
+    return typeof resolved === "string" && resolved ? resolved : fallback;
+  }
+
   private _renderColorRow(opts: {
     label: string;
     value: string | undefined;
@@ -2113,7 +2194,7 @@ export class FloorplanCardEditor extends LitElement {
         <input
           type="color"
           title=${opts.title ?? nothing}
-          .value=${opts.value ?? opts.swatch}
+          .value=${this._swatchValue(opts.value, opts.swatch)}
           @input=${(e: Event) => opts.onLive((e.target as HTMLInputElement).value)}
         />
         <input
@@ -2122,6 +2203,7 @@ export class FloorplanCardEditor extends LitElement {
           .value=${opts.value ?? ""}
           @change=${(e: Event) => opts.onCommit((e.target as HTMLInputElement).value || undefined)}
         />
+        ${this._renderPalettePicker(opts.value, opts.onCommit)}
       </div>
     `;
   }
@@ -2465,7 +2547,7 @@ export class FloorplanCardEditor extends LitElement {
                 : html`<span class="cond hint">any other value</span>`}
             <input
               type="color"
-              .value=${rule.color || "#ff0000"}
+              .value=${this._swatchValue(rule.color, "#ff0000")}
               @input=${(e: Event) => patch(i, { color: (e.target as HTMLInputElement).value })}
             />
             <input
@@ -2475,6 +2557,7 @@ export class FloorplanCardEditor extends LitElement {
               .value=${rule.color ?? ""}
               @change=${(e: Event) => patch(i, { color: (e.target as HTMLInputElement).value })}
             />
+            ${this._renderPalettePicker(rule.color, (color) => patch(i, { color: color ?? "" }))}
             ${opts?.icons
               ? // Empty means "keep the device's icon", so the device's icon is
                 // the placeholder — the rule shows what leaving it blank gives
@@ -3314,14 +3397,17 @@ export class FloorplanCardEditor extends LitElement {
           <div class="stage ${overlay === "plan" ? "scale-plan" : ""}"
                style="aspect-ratio: ${cssNumber(c.width, DEFAULT_WIDTH)} / ${cssNumber(
             c.height, DEFAULT_HEIGHT)}; width:${this._zoom * 100}%;
-                   --fp-plan-w: ${cssNumber(c.width, DEFAULT_WIDTH)};${skinStyle(c.skin)}">
-            <!-- Keyed on the skin, for the repaint reason documented on the
-                 card's SVG (issue #122): a var() inside a presentation
-                 attribute does not repaint when the custom property changes,
-                 so without this the canvas kept the previous skin's doors and
-                 room fills. -->
+                   --fp-plan-w: ${cssNumber(c.width, DEFAULT_WIDTH)};${skinStyle(
+            c.skin
+          )}${paletteStyle(c.palette)}">
+            <!-- Keyed on the skin and the palette, for the repaint reason
+                 documented on the card's SVG (issue #122): a var() inside a
+                 presentation attribute does not repaint when the custom
+                 property changes, so without this the canvas kept the previous
+                 skin's doors and room fills — and, since issue #265, would show
+                 a palette colour's old value while you were editing it. -->
             ${keyed(
-              c.skin ?? "",
+              `${c.skin ?? ""}|${paletteKey(c.palette)}`,
               svg`<svg
               viewBox="0 0 ${c.width} ${c.height}"
               preserveAspectRatio="none"
@@ -4299,7 +4385,10 @@ export class FloorplanCardEditor extends LitElement {
     const active = entityIsActive(it.entity, st?.state);
     const activeColor = active ? (cssColor(it.activeColor) ?? lightBadgePaint(st)) : undefined;
     // Ink that reads on whatever the badge ends up painted, same rule as the card.
-    const badgeInk = contrastText(stateColor ?? activeColor);
+    // Palette references resolved first, for the reason the card documents.
+    const badgeInk = contrastText(
+      resolvePaletteColor(stateColor ?? activeColor, this._config?.palette)
+    );
     const rippleColor =
       it.rippleColor ?? stateColor ?? activeColor ?? SKIN_ACCENT;
     const rippleSize = it.rippleSize ?? DEFAULT_RIPPLE_SIZE;
@@ -4483,6 +4572,13 @@ export class FloorplanCardEditor extends LitElement {
           this._renderForm(projectDeadSpaceForm(c), patch)
         )}
         ${this._renderGroup(
+          // Named colours (issue #265). Its own group rather than a row inside
+          // Look: it is a list that grows, and it is the one thing here that
+          // other panels reach back into.
+          "Named colors",
+          this._renderPalettePanel()
+        )}
+        ${this._renderGroup(
           // Per floor, not per project — but it is the floor's paper, so it
           // belongs beside the plan's own.
           "Floor image",
@@ -4569,6 +4665,154 @@ export class FloorplanCardEditor extends LitElement {
    * becoming a broken glyph on the plan. Nothing pasted is ever parsed as
    * markup; see `symbols.ts`.
    */
+  /**
+   * The plan's named colours (issue #265): *"I hate copying color hex codes
+   * across so many entities."*
+   *
+   * Names are stored, but what elements store is a `var()` built from the name
+   * (see `src/palette.ts`), so the two edits that could strand a reference are
+   * the ones this panel has to be careful about — and both are handled by
+   * rewriting the plan rather than by warning about it:
+   *
+   * - **Rename** rewrites every reference to the new name, so the link
+   *   survives. Blocked when the new name would collide with another entry,
+   *   since two entries sharing a slug means one of them silently stops
+   *   resolving.
+   * - **Delete** rewrites every reference to the literal colour the entry held.
+   *   A dangling `var()` is not a colour at all, so the alternative is elements
+   *   turning black the moment a name is removed. This way the plan looks
+   *   exactly the same afterwards and has simply lost the link.
+   */
+  private _renderPalettePanel(): TemplateResult {
+    const list = this._config.palette ?? [];
+    const commit = (next: PaletteColor[]) =>
+      this._patchConfig({ palette: next.length ? next : undefined });
+    const at = (i: number, part: Partial<PaletteColor>, live = false) => {
+      const next = list.map((p, j) => (j === i ? { ...p, ...part } : p));
+      if (live) this._patchConfigLive({ palette: next });
+      else this._patchConfig({ palette: next });
+    };
+
+    return html`
+      <div class="row col palette-panel">
+        <label>Named colors</label>
+        ${list.length
+          ? nothing
+          : html`<span class="hint"
+              >Name a color here and every color field on the plan can point at it.</span
+            >`}
+        ${list.map(
+          (p, i) => html`
+            <div class="row wide palette-row">
+              <input
+                type="text"
+                class="palette-name"
+                placeholder="Warm"
+                .value=${p.name ?? ""}
+                @change=${(e: Event) =>
+                  this._renamePaletteColor(i, e.target as HTMLInputElement)}
+              />
+              <input
+                type="color"
+                .value=${this._swatchValue(p.color, "#ff8800")}
+                @input=${(e: Event) => at(i, { color: (e.target as HTMLInputElement).value }, true)}
+              />
+              <input
+                type="text"
+                class="palette-color"
+                placeholder="#ff8800"
+                .value=${p.color ?? ""}
+                @change=${(e: Event) => at(i, { color: (e.target as HTMLInputElement).value })}
+              />
+              <button
+                class="rule-remove"
+                aria-label="Remove color"
+                title="Remove this color; anything using it keeps the color it has now"
+                @click=${() => this._removePaletteColor(i)}
+              >
+                <ha-icon icon="mdi:close"></ha-icon>
+              </button>
+            </div>
+          `
+        )}
+        ${this._paletteError ? html`<div class="symbol-error">${this._paletteError}</div>` : nothing}
+        ${list.length >= MAX_PALETTE
+          ? nothing
+          : html`<div class="row wide state-color-add">
+              <button
+                @click=${() => {
+                  this._paletteError = "";
+                  commit([...list, { name: this._nextPaletteName(list), color: "#ff8800" }]);
+                }}
+              >
+                <ha-icon icon="mdi:plus"></ha-icon>Add color
+              </button>
+            </div>`}
+      </div>
+    `;
+  }
+
+  /** "Color 1", "Color 2", … — the first number no entry is already using. */
+  private _nextPaletteName(list: readonly PaletteColor[]): string {
+    const taken = new Set(list.map((p) => paletteSlug(p.name)));
+    for (let n = 1; ; n++) {
+      const name = `Color ${n}`;
+      if (!taken.has(paletteSlug(name))) return name;
+    }
+  }
+
+  /**
+   * Takes the input rather than its value so a refused rename can put the old
+   * name back. Lit will not do it: the config is unchanged, so the binding sees
+   * the same value it last wrote and skips the DOM, leaving the box showing a
+   * name the plan does not have.
+   */
+  private _renamePaletteColor(i: number, input: HTMLInputElement): void {
+    const list = this._config.palette ?? [];
+    const entry = list[i];
+    if (!entry) return;
+    const name = input.value;
+    const from = paletteSlug(entry.name);
+    const to = paletteSlug(name);
+    if (from === to) {
+      // Same colour, different spelling ("Warm" → "warm"). Nothing to rewrite.
+      this._paletteError = "";
+      this._patchConfig({ palette: list.map((p, j) => (j === i ? { ...p, name } : p)) });
+      return;
+    }
+    if (to && list.some((p, j) => j !== i && paletteSlug(p.name) === to)) {
+      // Two entries with one slug means one of them stops resolving, and which
+      // one is an accident of ordering. Refuse rather than silently pick.
+      this._paletteError = `Another color is already called “${name}”.`;
+      input.value = entry.name ?? "";
+      return;
+    }
+    this._paletteError = "";
+    const renamed = list.map((p, j) => (j === i ? { ...p, name } : p));
+    this._patchConfig(
+      // An empty new name leaves the entry unusable, so its references have
+      // nothing to point at — freeze them at the colour, as a delete does.
+      to
+        ? rewritePaletteRefs({ ...this._config, palette: renamed }, from, paletteRef(name))
+        : rewritePaletteRefs({ ...this._config, palette: renamed }, from, entry.color)
+    );
+  }
+
+  private _removePaletteColor(i: number): void {
+    const list = this._config.palette ?? [];
+    const entry = list[i];
+    if (!entry) return;
+    this._paletteError = "";
+    const next = list.filter((_, j) => j !== i);
+    this._patchConfig(
+      rewritePaletteRefs(
+        { ...this._config, palette: next.length ? next : undefined },
+        paletteSlug(entry.name),
+        entry.color
+      )
+    );
+  }
+
   private _renderSymbolsPanel(): TemplateResult {
     const own = Object.keys(this._config.symbols ?? {});
     return html`
@@ -6739,6 +6983,29 @@ export class FloorplanCardEditor extends LitElement {
       flex: 1 1 100%;
       min-width: 0;
     }
+    /* Named colours (issue #265). The dropdown is the narrowest control in
+       the row and never grows: it holds short names, and the swatch beside it
+       is what you actually read the colour off. It is absent entirely on a
+       plan with no palette, so these rules cost an unpalettised editor
+       nothing. */
+    .row select.palette-pick {
+      flex: 0 1 96px;
+      min-width: 0;
+    }
+    .palette-panel {
+      gap: 6px;
+    }
+    /* The name leads — it is what the dropdowns elsewhere will show — and the
+       colour text box gives up width first, exactly as a state rule's does. */
+    .row.palette-row input.palette-name {
+      flex: 1 1 90px;
+      min-width: 60px;
+    }
+    .row.palette-row input.palette-color {
+      flex: 1 1 60px;
+      min-width: 60px;
+    }
+    .palette-row .rule-remove,
     .state-color-rule .rule-remove,
     .state-color-add button {
       display: inline-flex;
