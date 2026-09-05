@@ -1,6 +1,6 @@
 # Appearance
 
-How the plan presents itself: its palette, the size of what it draws, and the hooks to restyle it.
+How the plan presents itself: its colours, the size of what it draws, and the hooks to restyle it.
 
 Back to the [README](../README.md).
 
@@ -87,6 +87,65 @@ card_mod:
     ha-card {
       --fp-skin-accent: #f2aa4c !important;
     }
+```
+
+## Named colors
+
+If every temperature sensor on a plan turns red above 25°, that hex code is written into
+every one of them — and changing your mind means finding them all again. Name the colour
+once instead, and point the fields at the name.
+
+Add names under **Project → Named colors**. Every colour field on the plan then grows a
+dropdown listing them; pick one and the field follows that name from then on. The dropdown
+only appears once a plan has a palette, so a plan that never names a colour sees the
+editor it always did.
+
+```yaml
+type: custom:easy-floorplan-card
+palette:
+  - name: Warm
+    color: "#ff8800"
+  - name: Alert
+    color: "#e53935"
+floors:
+  - id: ground
+    areas:
+      - id: living
+        color: var(--fp-color-warm)
+    items:
+      - id: thermostat
+        entity: sensor.living_temperature
+        stateColor:
+          - above: 25
+            color: var(--fp-color-alert)
+          - above: 0
+            color: var(--fp-color-warm)
+```
+
+A reference is an ordinary CSS custom property, which is what makes it work everywhere a
+colour does — room fills, badges, state rules, text, furniture, trackers, the floor
+buttons — with no separate syntax to learn. The name becomes the property by lowercasing
+it and turning anything that is not a letter or digit into a `-`, so `Warm white` is
+`var(--fp-color-warm-white)`.
+
+Two consequences worth knowing:
+
+- **Recolouring a name moves everything using it**, live. That is the point.
+- **Renaming or deleting one leaves nothing dangling.** A rename rewrites every reference
+  to the new name. A delete rewrites them to the colour the name held, so the plan looks
+  exactly as it did and has simply lost the link — a reference to a colour that no longer
+  exists is not a colour at all, and would paint black.
+
+The editor refuses a rename that would collide with another entry, since two names
+reducing to the same reference means one of them silently stops resolving.
+
+Because a reference is just CSS, you can also point one at a Home Assistant theme
+variable and let the palette follow your theme:
+
+```yaml
+palette:
+  - name: Accent
+    color: var(--primary-color)
 ```
 
 ## Overlay scale

@@ -49,6 +49,7 @@ screen size.
 
 - 🏢 **Multiple floors** — per-floor elements with a switcher in both the editor and the card. Give a staircase `goToFloor: up` and clicking it takes you there.
 - 🖼️ **Background image** — trace over a floor-plan scan, per floor, with adjustable opacity.
+- 🏷️ **Named colors** 🆕 — name a colour once under Project and point any colour field at it from a dropdown, instead of copying the same hex into every sensor that uses it. Recolour the name and everything using it follows; rename or delete it and nothing breaks. See [Named colors](https://github.com/nicosandller/easy-floorplan/blob/main/docs/appearance.md#named-colors).
 - 🎨 **Skins** — restyle the whole plan from one line of config: `default` follows your Home Assistant theme, `odnetnin` is chunky charcoal on cream, `pastel` is soft and low-contrast, `tron` is neon on near-black. Colors you set on an element yourself always win.
   
 <img width="300" height="300" alt="default" src="https://github.com/user-attachments/assets/ce2d6545-10f4-4aa2-bbd7-0dcae08c27f5" />
