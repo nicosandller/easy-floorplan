@@ -952,7 +952,7 @@ export function itemLabelForm(it: FloorItem): FormSpec {
     },
     toPatch: (p) => {
       const out = { ...p };
-      
+
       // IMPORTANT: Determine the actual future state
       const isDisable = out.disableLabelColor ?? it.disableLabelColor ?? false;
       const isCustom = out.useCustomLabelColor ?? it.useCustomLabelColor ?? false;
@@ -970,7 +970,7 @@ export function itemLabelForm(it: FloorItem): FormSpec {
       }
 
       if (out.labelCustomColor === "") out.labelCustomColor = undefined;
-      
+
       return out;
     },
   };

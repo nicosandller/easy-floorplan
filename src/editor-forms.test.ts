@@ -2052,7 +2052,7 @@ describe("itemLabelForm — disableLabelColor and custom color state machine", (
 
   it("round-trips custom color when both toggles are enabled", () => {
     const form = itemLabelForm(item);
-    
+
     expect(
       form!.toPatch({
         disableLabelColor: true,

@@ -4291,7 +4291,7 @@ export class FloorplanCardEditor extends LitElement {
     // will actually render (state rules first, then the active colour).
     const rawValue = itemRawValue(it, st);
     const stateColor = cssColor(resolveStateColor(it.stateColor, rawValue));
-    const labelColor = itemLabelColor(it, stateColor);   
+    const labelColor = itemLabelColor(it, stateColor);
     const value = badgeContentOf(it) === "value" ? badgeValue(this.hass, it) : undefined;
     // The active colour — the one the user set, else the bulb's own colour
     // (issue #106). The canvas never previewed either, so setting "Active
