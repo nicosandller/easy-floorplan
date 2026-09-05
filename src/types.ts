@@ -657,7 +657,6 @@ export interface FloorItem {
    * Same meaning as {@link Opening.activeColor}.
    */
   activeColor?: string;
-  /** new option to prevent using the state color for the label too */
   /** Disables the state-driven color inheritance for the label, falling back to the default theme text color. */
   disableLabelColor?: boolean;
   /** Activates a custom color override for the label. Only applies when disableLabelColor is true. */

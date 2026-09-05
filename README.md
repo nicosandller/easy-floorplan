@@ -28,7 +28,7 @@ screen size.
   - **Presence ripples** — presence and vibration sensors drawn as animated rings instead of a static icon.
   - **Cast light** — a light pools its own color and brightness onto the plan; overlapping pools mix, so a warm lamp and a cool one blend between them.
   - **Conditional text / icon / coloring** — threshold and state rules restyle an element from what its entity reads: the badge color, the label, and the glyph itself, so blinds swap between open and closed icons and a thermostat reddens as it heats. The same rules drive furniture and rooms.
- 
+
 <img width="195" height="278" alt="light blend" src="https://github.com/user-attachments/assets/23104587-687b-4c9a-83e8-e83c3d5eb6eb" />
 <img width="240" height="358" alt="conditionals" src="https://github.com/user-attachments/assets/11d359b6-de8c-483c-8763-105ddf7d915b" />
 
@@ -42,7 +42,7 @@ screen size.
 - 📍 **Live position trackers** — map one or two distance sensors (mmWave / radar) onto a marker that moves across the plan in real time.
 - 🧱 **Dead spaces** — hatch the spaces your walls seal off that no door or window reaches: a service shaft, the void behind a boxed-in stairwell. Nothing to draw — the regions come from the walls and openings themselves, so cutting a doorway into one stops it being dead the moment you place the door.
 - 🌗 **Follow the sun** — dim the plan through dusk and brighten it through dawn, from your HA instance's sun elevation. Any light casting light holds the dark back around itself, out to its radius, so a night plan reads as a dark house with lit rooms glowing.
- 
+
 <img width="441" height="301" alt="day" src="https://github.com/user-attachments/assets/f3dbfc88-9d06-4f44-81dc-bf499cbd9bd3" />
 <img width="444" height="313" alt="night" src="https://github.com/user-attachments/assets/1590b710-d88f-4a34-986b-b08640a45f4c" />
 
@@ -50,7 +50,7 @@ screen size.
 - 🏢 **Multiple floors** — per-floor elements with a switcher in both the editor and the card. Give a staircase `goToFloor: up` and clicking it takes you there.
 - 🖼️ **Background image** — trace over a floor-plan scan, per floor, with adjustable opacity.
 - 🎨 **Skins** — restyle the whole plan from one line of config: `default` follows your Home Assistant theme, `odnetnin` is chunky charcoal on cream, `pastel` is soft and low-contrast, `tron` is neon on near-black. Colors you set on an element yourself always win.
-  
+
 <img width="300" height="300" alt="default" src="https://github.com/user-attachments/assets/ce2d6545-10f4-4aa2-bbd7-0dcae08c27f5" />
 <img width="300" height="300" alt="odnetnin" src="https://github.com/user-attachments/assets/1d46f7a3-b894-4fcb-bdb9-a55270b8e4e4" />
 <img width="300" height="300" alt="tron" src="https://github.com/user-attachments/assets/de5b0825-3bff-4817-8a26-8f887bab8c48" />
@@ -127,37 +127,25 @@ then pick the entity in the **Element** section below the canvas.
 - **Label position** — **Below** the badge (the default), or hung off its **left** or
   **right**. A reading under a badge grows in both directions and meets whatever sits
   beside it; hung off one side it grows one way only.
-- **Disable Label Color** (disableLabelColor)
-  With the new disableLabelColor boolean toggle (available in Group 3 of the item editor), you can
-  override this behavior per item. When set to true, the label text will stay locked to its default
-  theme color, while the icon and badge continue to reflect the dynamic state colors.
-  **Label Color Customization**
+- **Disable label color** — an item's label normally follows the same state and active
+  color rules its badge does. That is useful as a status cue and awkward when it hurts
+  readability or fights a deliberately plain dashboard, so this pins the text to the
+  theme's default instead. The icon and badge keep their dynamic colors; only the text
+  stops. With **Own color** — the toggle that appears underneath once this is on — you can
+  pin it to a fixed color rather than the theme default, and the color picker follows.
 
-  By default, an item's label text automatically adapts its color based on the state or active color rules.
-  For some items, this can impact readability or clash with the desired design.
-  
-  With the `disableLabelColor` boolean toggle (available in Group 3 of the item editor), you can override this
-  behavior per item. When set to `true`, the label text will stay locked to its default theme color,
-  while the icon and badge continue to reflect the dynamic state colors.
-  
-  You can also optionally assign a fixed custom color using `useCustomLabelColor` and `labelCustomColor`.
-  
-  | YAML Key | Type | Description |
+  | YAML key | Type | Description |
   | :--- | :--- | :--- |
-  | `disableLabelColor` | boolean | Keeps the text in its default theme color, preventing it from inheriting active or state colors. |
-  | `useCustomLabelColor` | boolean | Activates a custom color option when `disableLabelColor` is enabled ("Own color" toggle in the editor),
-  allowing you to override the theme default. |
-  | `labelCustomColor` | string | The fixed custom color (e.g., `#ff0000` or `red`) applied to the label text. |
-  
-  The `useCustomLabelColor` toggle appears in the visual editor as "Own color" only once `disableLabelColor` is activated,
-  and toggling it reveals the color picker for precise tuning.
-  
-  *Example: Disable automatic state coloring and apply a fixed custom color to a label:*
+  | `disableLabelColor` | boolean | Keeps the label text in the theme's default color instead of inheriting the active or state color. |
+  | `useCustomLabelColor` | boolean | Use a fixed color for the label instead of the theme default. Only read when `disableLabelColor` is on. |
+  | `labelCustomColor` | string | The fixed color (e.g. `#ff0000` or `red`), used when `useCustomLabelColor` is on. |
+
   ```yaml
-    disableLabelColor: true
-    useCustomLabelColor: true
-    labelCustomColor: "#00ff00"
+  disableLabelColor: true
+  useCustomLabelColor: true
+  labelCustomColor: "#00ff00"
   ```
+
 - **Badge shows** — one dropdown for what the device draws: *Icon* — **still**,
   **spinning** or **pulsing** — its *Value*, or *Nothing* (label only). **Value** draws
   the reading inside the badge — a thermostat reads `21°` in the circle your state rules
