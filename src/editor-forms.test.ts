@@ -1910,7 +1910,7 @@ describe("every field lands in exactly one panel group", () => {
     ["tapTarget", "tap_action", "hold_action", "double_tap_action"],
   ];
   const FURNITURE_GROUPS = [["type", "hand", "w", "h", "angle"], ["entity"], ["goToFloor"]];
-  const TRACKER_GROUPS = [["w", "h", "x", "y", "angle"], ["dotSize"]];
+  const TRACKER_GROUPS = [["w", "h", "x", "y", "angle"], ["dotSize", "label"]];
   const AREA_GROUPS = [
     ["showName", "labelSize"],
     ["entity"],
