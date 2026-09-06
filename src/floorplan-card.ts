@@ -34,6 +34,8 @@ import {
   getFloors,
   trackerPresenceDetected,
   newPlanConfig,
+  FURNITURE_COLOR,
+  type Furniture,
 } from "./types";
 import {
   WALL_THICKNESS,
@@ -126,8 +128,24 @@ import {
   resolveAreaZoom,
   zoomedOverlayScale,
   IDENTITY_ZOOM,
+  wallThickness,
   type PlanRotation,
 } from "./render";
+import {
+  normalizeProjection,
+  normalizeWallHeight,
+  projectedCanvasSize,
+  projectPlanPoint,
+  projectPlanDirection,
+  planProjectionTransform,
+  elevationShift,
+  wallSolids,
+  furnitureSolid,
+  renderIsoSolids,
+  FURNITURE_HEIGHT_FRACTION,
+  type DisplayFrame,
+} from "./projection";
+import type { SVGTemplateResult } from "lit";
 import { symbolCatalog } from "./symbols";
 import { deadSpacesCached } from "./dead-space";
 import type { Opening } from "./types";
@@ -246,7 +264,7 @@ export class FloorplanCard extends LitElement {
       if (raw[key] != null && !Array.isArray(raw[key]))
         throw new Error(`Invalid configuration: "${key}" must be a list`);
     }
-    for (const key of ["width", "height", "grid", "rotation", "rotationPortrait", "rotationLandscape"]) {
+    for (const key of ["width", "height", "grid", "rotation", "rotationPortrait", "rotationLandscape", "wallHeight"]) {
       if (raw[key] != null && typeof raw[key] !== "number")
         throw new Error(`Invalid configuration: "${key}" must be a number`);
     }
@@ -476,6 +494,94 @@ export class FloorplanCard extends LitElement {
    * gets a control of its own, instead of living behind a press-and-hold
    * nobody can see.
    */
+  /**
+   * The frame the plan is displayed in: rotated (issue #33), then projected
+   * (issue #261). The SVG's transforms, every overlay anchor and the zoom's
+   * framing all come from this one description, so the layers cannot drift
+   * apart.
+   */
+  private _frame(c: FloorplanCardConfig, rot: PlanRotation): DisplayFrame {
+    const d = rotatedCanvasSize(cssNumber(c.width, DEFAULT_WIDTH), cssNumber(c.height, DEFAULT_HEIGHT), rot);
+    return {
+      w: d.w,
+      h: d.h,
+      projection: normalizeProjection(c.projection),
+      wallHeight: normalizeWallHeight(c.wallHeight),
+    };
+  }
+
+  /**
+   * A plan point on the displayed canvas, with that canvas's size — what an
+   * overlay anchor's left/top percentages are taken against.
+   */
+  private _display(
+    x: number,
+    y: number,
+    c: FloorplanCardConfig,
+    rot: PlanRotation
+  ): { p: { x: number; y: number }; d: { w: number; h: number } } {
+    const f = this._frame(c, rot);
+    const r = rotatePlanPoint(x, y, c.width, c.height, rot);
+    return { p: projectPlanPoint(r.x, r.y, f), d: projectedCanvasSize(f) };
+  }
+
+  /** A screen-space direction out of the rotated frame, turned by the projection as well. */
+  private _displayDirection(
+    n: { x: number; y: number },
+    c: FloorplanCardConfig,
+    rot: PlanRotation
+  ): { x: number; y: number } {
+    return projectPlanDirection(n.x, n.y, this._frame(c, rot));
+  }
+
+  /**
+   * The isometric view's standing geometry (issue #261): walls as extruded
+   * boxes, cut at their doors and lowered to a sill under their windows, and
+   * furniture as blocks with the plan's own glyph on top. Drawn in the
+   * rotated frame, between the floor layers and the sun dimming, and painted
+   * back to front so a wall hides what stands behind it.
+   */
+  private _renderIsoLayer(
+    active: Floor,
+    c: FloorplanCardConfig,
+    rot: PlanRotation,
+    frame: DisplayFrame,
+    rotTransform: string,
+    drawFurniture: (f: Furniture) => SVGTemplateResult,
+    furnitureTone: (f: Furniture) => string
+  ): SVGTemplateResult {
+    const map = (x: number, y: number) => rotatePlanPoint(x, y, c.width, c.height, rot);
+    const walls = active.walls.map((w) => {
+      const a = map(w.x1, w.y1);
+      const b = map(w.x2, w.y2);
+      return { id: w.id, x1: a.x, y1: a.y, x2: b.x, y2: b.y, thickness: wallThickness(w.thickness) };
+    });
+    const openings = active.openings.map((o) => {
+      const p = map(o.x, o.y);
+      // The rotation turns directions along with points.
+      return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
+    });
+    const solids = wallSolids(walls, openings, frame.wallHeight);
+    const height = frame.wallHeight * FURNITURE_HEIGHT_FRACTION;
+    // The glyph is drawn in plan coordinates, so it is lifted by the plan-space
+    // shift that reads as "up" once rotated and projected.
+    const lift = elevationShift(height, rot);
+    for (const f of active.furniture) {
+      solids.push(
+        furnitureSolid(
+          f,
+          map,
+          height,
+          furnitureTone(f),
+          svg`<g transform=${rotTransform || nothing}>
+                <g transform="translate(${lift.x} ${lift.y})">${drawFurniture(f)}</g>
+              </g>`
+        )
+      );
+    }
+    return renderIsoSolids(solids);
+  }
+
   private _renderShutterMark(
     o: Opening,
     c: FloorplanCardConfig,
@@ -490,13 +596,12 @@ export class FloorplanCard extends LitElement {
     const icon = shutterMarkIcon(o, st, open, this.hass?.entities?.[id]?.icon);
     const accent = cssColor(o.shutterActiveColor ?? o.activeColor) ?? SKIN_ACCENT;
     const at = shutterMarkPoint(o);
-    const p = rotatePlanPoint(at.x, at.y, c.width, c.height, rot);
-    const d = rotatedCanvasSize(c.width, c.height, rot);
+    const { p, d } = this._display(at.x, at.y, c, rot);
     // Pushed clear of the opening by the badge's own size as well as by the
     // canvas offset, so the tap target underneath stays reachable. In the
     // badge's own unit: fixed pixels never shrink with the plan, and would
     // otherwise cover the opening on a large canvas in a narrow card.
-    const n = shutterMarkNormal(o, rot);
+    const n = this._displayDirection(shutterMarkNormal(o, rot), c, rot);
     const step = overlayLength(SHUTTER_MARK_PIXEL_OFFSET, scale);
     const push = `translate(calc(${n.x} * ${step}), calc(${n.y} * ${step}))`;
     const box = overlayLength(SHUTTER_MARK_SIZE, scale);
@@ -552,9 +657,8 @@ export class FloorplanCard extends LitElement {
     const icon = openingMarkIcon(o, st, open, this.hass?.entities?.[id]?.icon);
     const accent = cssColor(o.activeColor) ?? SKIN_ACCENT;
     const at = openingMarkPoint(o);
-    const p = rotatePlanPoint(at.x, at.y, c.width, c.height, rot);
-    const d = rotatedCanvasSize(c.width, c.height, rot);
-    const n = openingMarkNormal(o, rot);
+    const { p, d } = this._display(at.x, at.y, c, rot);
+    const n = this._displayDirection(openingMarkNormal(o, rot), c, rot);
     const step = overlayLength(SHUTTER_MARK_PIXEL_OFFSET, scale);
     const push = `translate(calc(${n.x} * ${step}), calc(${n.y} * ${step}))`;
     const box = overlayLength(SHUTTER_MARK_SIZE, scale);
@@ -767,8 +871,7 @@ export class FloorplanCard extends LitElement {
 
     // Rotated frame: the overlay is HTML, so each anchor is remapped instead
     // of transformed — badges and labels stay upright at any rotation.
-    const p = rotatePlanPoint(item.x, item.y, c.width, c.height, rot);
-    const d = rotatedCanvasSize(c.width, c.height, rot);
+    const { p, d } = this._display(item.x, item.y, c, rot);
     // Only a device that answers is a button (issue #134) — the press effect,
     // the pointer cursor, the `button` role, the tab stop and the gesture
     // listeners all hang off this one fact.
@@ -834,8 +937,7 @@ export class FloorplanCard extends LitElement {
   ): TemplateResult | typeof nothing {
     if (!a.name || (a.showName ?? true) === false) return nothing;
     const centroid = polygonCentroid(a.points);
-    const p = rotatePlanPoint(centroid.x, centroid.y, c.width, c.height, rot);
-    const d = rotatedCanvasSize(c.width, c.height, rot);
+    const { p, d } = this._display(centroid.x, centroid.y, c, rot);
     // Empty unless the size has something to say the stylesheet doesn't — see
     // areaLabelFontSize, which keeps card-mod's `.area-label` hook working.
     const fontSize = areaLabelFontSize(a.labelSize, scale);
@@ -855,8 +957,7 @@ export class FloorplanCard extends LitElement {
     rot: PlanRotation,
     scale: OverlayScale
   ): TemplateResult {
-    const p = rotatePlanPoint(t.x, t.y, c.width, c.height, rot);
-    const d = rotatedCanvasSize(c.width, c.height, rot);
+    const { p, d } = this._display(t.x, t.y, c, rot);
     return html`
       <div
         class="text fp-text"
@@ -885,8 +986,51 @@ export class FloorplanCard extends LitElement {
     // transform below; the HTML overlay remaps per point in _renderItem /
     // _renderText. Both must use the same mapping (rotatePlanPoint).
     const rot = resolvePlanRotation(c, this._portrait);
-    const dims = rotatedCanvasSize(cssNumber(c.width, DEFAULT_WIDTH), cssNumber(c.height, DEFAULT_HEIGHT), rot);
+    const frame = this._frame(c, rot);
+    const dims = projectedCanvasSize(frame);
     const rotTransform = planRotationTransform(c.width, c.height, rot);
+    // The isometric view (issue #261): one more transform outside the
+    // rotation, and the walls and furniture stand up in a layer of their own
+    // instead of being drawn flat. The sun dimming has to reach the tops of
+    // the walls too, which lie `wallHeight` outside the plan rectangle.
+    const iso = frame.projection === "iso";
+    const projTransform = planProjectionTransform(frame);
+    const dimPad = WALL_THICKNESS + (iso ? frame.wallHeight : 0);
+    // One furniture glyph, flat. Drawn on the floor on the flat plan and on
+    // top of its block under the isometric view — the same drawing either way.
+    const drawFurniture = (f: Furniture): SVGTemplateResult => {
+      const drawn = renderFurniture(
+        f,
+        furnitureColor(f, f.entity ? renderHass?.states[f.entity]?.state : undefined),
+        symbolCatalog(c.symbols)
+      );
+      // Stairs that go somewhere (issue #121). Only when there is a
+      // floor that way: at the top of the building an "up" staircase
+      // is still a staircase, but it takes no clicks rather than
+      // offering a control that does nothing.
+      const to = furnitureFloorTarget(f, floors, active.id);
+      if (!to) return drawn;
+      const name = floors.find((x) => x.id === to)?.name;
+      return svg`<g class="fp-furniture-link" role="button" tabindex="0"
+            @action=${() => this._goToFloor(floors, to)}
+            .actionHandler=${actionHandler({
+              // A staircase has one gesture. Saying so keeps a tap from
+              // sitting out the hold and double-tap timers before it
+              // does anything.
+              hasHold: false,
+              hasDoubleClick: false,
+            })}>
+          <!-- An SVG tooltip is a <title> child, not a title=
+               attribute: the attribute does nothing here. -->
+          <title>${name ? `Go to ${name}` : "Go to the next floor"}</title>
+          ${drawn}
+        </g>`;
+    };
+    // The block's colour: what the glyph is drawn in, through the same allowlist.
+    const furnitureTone = (f: Furniture): string =>
+      furnitureColor(f, f.entity ? renderHass?.states[f.entity]?.state : undefined) ??
+      cssColor(f.color) ??
+      FURNITURE_COLOR;
     // Overlay sizing mode. --fp-plan-w is the canvas width *as displayed*, so a
     // rotated plan divides by the dimension 100cqw actually measures.
     const scale = normalizeOverlayScale(c.overlayScale);
@@ -959,7 +1103,8 @@ export class FloorplanCard extends LitElement {
           undefined,
           // A room may say how close to go; without one the fit decides,
           // exactly as it always has (issue #222).
-          resolveAreaZoom(zoomedArea)
+          resolveAreaZoom(zoomedArea),
+          frame
         )
       : IDENTITY_ZOOM;
     // Chrome drawn inside the plan rather than above it (issue #152). The
@@ -1039,6 +1184,7 @@ export class FloorplanCard extends LitElement {
           ${keyed(
             c.skin ?? "",
             svg`<svg viewBox="0 0 ${dims.w} ${dims.h}" preserveAspectRatio="none">
+            <g transform=${projTransform || nothing}>
             <g transform=${rotTransform || nothing}>
             ${active.image
               ? svg`<image href=${active.image} x="0" y="0" width=${c.width} height=${c.height}
@@ -1097,34 +1243,7 @@ export class FloorplanCard extends LitElement {
                   : nothing;
               })}
             </g>
-            ${active.furniture.map((f) => {
-              const drawn = renderFurniture(
-                f,
-                furnitureColor(f, f.entity ? renderHass?.states[f.entity]?.state : undefined),
-                symbolCatalog(c.symbols)
-              );
-              // Stairs that go somewhere (issue #121). Only when there is a
-              // floor that way: at the top of the building an "up" staircase
-              // is still a staircase, but it takes no clicks rather than
-              // offering a control that does nothing.
-              const to = furnitureFloorTarget(f, floors, active.id);
-              if (!to) return drawn;
-              const name = floors.find((x) => x.id === to)?.name;
-              return svg`<g class="fp-furniture-link" role="button" tabindex="0"
-                    @action=${() => this._goToFloor(floors, to)}
-                    .actionHandler=${actionHandler({
-                      // A staircase has one gesture. Saying so keeps a tap from
-                      // sitting out the hold and double-tap timers before it
-                      // does anything.
-                      hasHold: false,
-                      hasDoubleClick: false,
-                    })}>
-                  <!-- An SVG tooltip is a <title> child, not a title=
-                       attribute: the attribute does nothing here. -->
-                  <title>${name ? `Go to ${name}` : "Go to the next floor"}</title>
-                  ${drawn}
-                </g>`;
-            })}
+            ${iso ? nothing : active.furniture.map(drawFurniture)}
             <!-- Sunlight through the openings. Under the walls on purpose:
                  light lands on the floor, and the walls stay crisp lines over
                  it rather than being tinted by the patches they let in. The
@@ -1194,7 +1313,7 @@ export class FloorplanCard extends LitElement {
                 : nothing
             }
             ${renderWallMask(active.openings, c.width, c.height, this._wallMaskId)}
-            ${active.walls.map(
+            ${iso ? nothing : active.walls.map(
                 (w) => svg`
                 <g class="fp-wall-neon"><line x1=${w.x1} y1=${w.y1} x2=${w.x2} y2=${w.y2}
                       class="wall fp-wall" data-id=${cssIdent(w.id) ?? nothing}
@@ -1298,17 +1417,23 @@ export class FloorplanCard extends LitElement {
                  night. pointer-events:none is not optional — this rect spans
                  the canvas, and without it every tappable opening underneath
                  stops responding (the lesson from #108). -->
+            </g>
+            ${iso
+              ? this._renderIsoLayer(active, c, rot, frame, rotTransform, drawFurniture, furnitureTone)
+              : nothing}
+            <g transform=${rotTransform || nothing}>
             ${
               c.sunDimming
                 ? svg`${sunDimMask}<rect class="fp-sun-dim"
-                            x=${-WALL_THICKNESS} y=${-WALL_THICKNESS}
-                            width=${c.width + WALL_THICKNESS * 2}
-                            height=${c.height + WALL_THICKNESS * 2}
+                            x=${-dimPad} y=${-dimPad}
+                            width=${c.width + dimPad * 2}
+                            height=${c.height + dimPad * 2}
                             fill="#000"
                             mask=${sunDimMask === nothing ? nothing : `url(#${sunDimMaskId})`}
                             opacity=${1 - sunLevel} />`
                 : nothing
             }
+            </g>
             </g>
           </svg>`
           )}
@@ -1726,6 +1851,41 @@ export class FloorplanCard extends LitElement {
        same way. See issue #203. */
     .fp-wall-neon {
       filter: var(--fp-skin-wall-filter, none);
+    }
+    /* The isometric view (issue #261). Faces take the skin's wall colour; the
+       shade laid over a side is what makes a box read as a box; a furniture
+       block keeps the paper on top so its glyph still reads. None of it takes
+       a tap — the floor underneath answers, as it does flat. */
+    .fp-iso-face {
+      fill: var(--fp-skin-wall, var(--primary-text-color, #212121));
+      stroke: var(--fp-skin-wall, var(--primary-text-color, #212121));
+      stroke-width: 0.6;
+      stroke-linejoin: round;
+      pointer-events: none;
+    }
+    .fp-iso-furniture .fp-iso-face {
+      fill: var(--fp-iso-color, var(--fp-skin-furniture, #9e9e9e));
+      stroke: var(--fp-iso-color, var(--fp-skin-furniture, #9e9e9e));
+    }
+    .fp-iso-furniture .fp-iso-top {
+      fill: var(--fp-skin-bg, var(--card-background-color, #fff));
+    }
+    .fp-iso-shade {
+      fill: #000;
+      /* Stroked in its own colour, like the face under it: two pieces of one
+         wall meet edge to edge, and without this each anti-aliased edge shows
+         through the other as a hairline. */
+      stroke: #000;
+      stroke-width: 0.6;
+      stroke-linejoin: round;
+      pointer-events: none;
+    }
+    .fp-iso-glass {
+      fill: #8ec5ff;
+      fill-opacity: 0.35;
+      stroke: var(--fp-skin-wall, var(--primary-text-color, #212121));
+      stroke-width: 0.6;
+      pointer-events: none;
     }
     /* Dead-space hatching (issue #88). It spans whole regions of the plan, so
        without this it swallows every tap inside one — and a sealed region is

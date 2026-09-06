@@ -68,6 +68,7 @@ import { SKIN_ACCENT, SKIN_PAPER, SKIN_WALL, MAX_SKIN_WALL_WIDTH } from "./skins
 // The same tolerance #141 uses to decide an opening sits on a wall, so "this
 // door is in this wall" means one thing across the card.
 import { OPENING_ON_WALL_EPS } from "./dead-space";
+import { projectPlanPoint, projectedCanvasSize, type DisplayFrame } from "./projection";
 
 export const WALL_THICKNESS = 8;
 
@@ -4571,11 +4572,22 @@ export function areaZoomTransform(
    * fitted scale, which is every room that has not asked for something else.
    * Pass it through {@link resolveAreaZoom} rather than raw config.
    */
-  explicitScale?: number
+  explicitScale?: number,
+  /**
+   * The frame the plan is displayed in (issue #261). Under the isometric
+   * view the room is framed where it is drawn — where its projected outline
+   * lands — rather than where it sits on the flat plan. Absent means flat.
+   */
+  frame?: DisplayFrame
 ): AreaZoomTransform {
   if (!points.length) return IDENTITY_ZOOM;
-  const rotated = points.map((p) => rotatePlanPoint(p.x, p.y, w, h, rot));
-  const d = rotatedCanvasSize(w, h, rot);
+  const rd = rotatedCanvasSize(w, h, rot);
+  const f: DisplayFrame = frame ?? { w: rd.w, h: rd.h, projection: "plan", wallHeight: 0 };
+  const rotated = points.map((p) => {
+    const r = rotatePlanPoint(p.x, p.y, w, h, rot);
+    return projectPlanPoint(r.x, r.y, f);
+  });
+  const d = projectedCanvasSize(f);
   const xs = rotated.map((p) => p.x);
   const ys = rotated.map((p) => p.y);
   const minX = Math.min(...xs);

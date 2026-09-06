@@ -1457,6 +1457,24 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    */
   rotationLandscape?: number;
   /**
+   * How the plan is drawn (issue #261). `plan` — the default — is the flat
+   * drawing. `iso` shows the same plan as an isometric elevation: the floor
+   * turns by one transform and the walls stand up on it as extruded boxes,
+   * cut at their doors and lowered to a sill at their windows, with the
+   * furniture as blocks under the plan's own glyphs. Display only, exactly
+   * like {@link rotation}: coordinates stay plan coordinates and the editor
+   * always shows the plan as drawn. Anything else is read as `plan`.
+   */
+  projection?: "plan" | "iso";
+  /**
+   * How tall the walls stand under `projection: iso`, in canvas units.
+   * Default `DEFAULT_WALL_HEIGHT` (projection.ts), clamped to
+   * `0..MAX_WALL_HEIGHT`. A real wall is taller than a room is wide and
+   * would hide the room, so this is a maquette's cut-down wall, not a
+   * survey. Ignored on the flat plan.
+   */
+  wallHeight?: number;
+  /**
    * Built-in skin id (issue #122), e.g. `odnetnin`, `pastel`, `tron`. Restyles
    * the whole plan at once — paper, walls, badges, accents — by supplying the
    * fallbacks every element already reads.

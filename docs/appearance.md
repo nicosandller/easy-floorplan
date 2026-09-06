@@ -245,6 +245,30 @@ In the editor: **Project → Display**, under *Rotate display*.
 
 Icons and labels stay upright at every angle, so a rotated plan is still readable.
 
+## Isometric view
+
+The same plan, seen from a corner, with the walls standing up on it:
+
+```yaml
+type: custom:easy-floorplan-card
+projection: iso   # the flat plan is `plan`, and the default
+wallHeight: 60    # canvas units; a maquette's cut-down wall, not a real one
+```
+
+- **Nothing is stored differently.** Walls, rooms and devices keep their plan
+  coordinates; `projection` only changes how they are drawn, exactly as `rotation`
+  does. The editor always shows the plan as drawn, flat.
+- **Walls** are extruded to `wallHeight`, cut at their doors, and lowered to a sill
+  with a pane of glass under their windows. **Furniture** stands as a block with its
+  usual glyph on top. Rooms, light pools, sunlight and the background image lie on
+  the floor.
+- **Badges and labels stay upright** and screen-sized, as under rotation, and sit
+  where their device sits on the floor.
+- It composes with `rotation` — rotate first to choose which corner is nearest,
+  then project — and with the skins: the faces take the skin's wall colour.
+- A tall `wallHeight` hides the rooms behind the walls in front of them. The default
+  is short on purpose; raise it for a dollhouse, lower it for a plan with relief.
+
 ## Styling hooks (card-mod)
 
 Every rendered element carries its config `id` as `data-id`, plus a type class, so
