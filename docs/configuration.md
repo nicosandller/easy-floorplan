@@ -36,6 +36,7 @@ Back to the [README](../README.md).
 | `overlayScale`| string  | `fixed`; `plan` in new plans | How badges, labels, room names and text are sized: `plan` = canvas units so they scale with the drawing, `fixed` = screen pixels. A card added from the picker is created with `plan`; a config that doesn't say renders `fixed`, which is what every plan drawn before the option existed was laid out in. See [Overlay scale](appearance.md#overlay-scale). |
 | `zoomedOverlayScale` | number | `1` | Overlay size while zoomed in to a room, as a multiple of its size at full plan. `1` — the default — holds badges, labels and text at the size they have unzoomed, which is what zooming has always done. Raise it for a wall tablet read at arm's length, lower it to get a dense room's badges out of the way. Applies to the whole overlay so a badge and its label scale as one thing, and does nothing at full plan. |
 | `background` | string   | skin / card bg     | Canvas background color (CSS / hex). Overrides the skin's paper. |
+| `palette`    | Palette[]| —                  | Named colours for this plan, referenced from any colour field as `var(--fp-color-<name>)`. See [Named colors](appearance.md#named-colors). |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see [Floor](#floor)).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
 | `walls`      | Wall[]   | `[]`               | Wall segments (single-floor / floor 1).      |
@@ -51,6 +52,20 @@ Back to the [README](../README.md).
 When `floors` is present each floor carries its own `walls`, `openings`, `items`, `texts`,
 `furniture`, `trackers` and `areas`. The top-level arrays describe a single implicit floor
 and remain valid for backward compatibility.
+
+### Palette
+
+One entry per named colour. See [Named colors](appearance.md#named-colors) for how to
+point a field at one.
+
+| Option  | Type   | Default | Description                                            |
+| ------- | ------ | ------- | ------------------------------------------------------ |
+| `name`  | string | —       | Shown in the dropdown, and what the reference is built from: lowercased, with anything but letters and digits turned into `-`. `Warm white` is `var(--fp-color-warm-white)`. |
+| `color` | string | —       | Any colour the card accepts — hex, a CSS name, `rgb()`, `color-mix()`, or a theme `var()`. |
+
+An entry with no usable name, or a colour the card would refuse anywhere else, is
+dropped — the rest of the palette still works. Two names that reduce to the same
+reference are the same colour, and only the first is kept.
 
 ## History replay
 

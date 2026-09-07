@@ -1405,6 +1405,27 @@ export interface HistoryReplayConfig {
   numericSteps?: number;
 }
 
+/**
+ * One named colour in a plan's palette (issue #265).
+ *
+ * The `name` is both the label in the dropdown and the identity of the colour:
+ * the custom property every reference points at is derived from it. So the
+ * editor rewrites the references rather than leaving them behind — a rename
+ * moves them to the new name, and a delete freezes them at the colour the name
+ * was holding.
+ *
+ * That rewriting is not politeness. A reference to a property nothing declares
+ * is not a colour to fall back from: the declaration is dropped, the element
+ * inherits, and an SVG `fill` inherits **black**. A dangling reference would
+ * repaint half a plan.
+ */
+export interface PaletteColor {
+  /** Shown in the dropdown, e.g. `Warm white`. */
+  name: string;
+  /** Any colour the card accepts — hex, a CSS name, `rgb()`, even a theme `var()`. */
+  color: string;
+}
+
 export interface FloorplanCardConfig extends LovelaceCardConfig {
   type: string;
   title?: string;
@@ -1467,6 +1488,19 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * `src/skins.ts`.
    */
   skin?: string;
+  /**
+   * Named colours for this plan (issue #265), offered in a dropdown beside
+   * every colour field: *"I want all my temperature sensors to use the same
+   * conditional colours but I hate copying colour hex codes across so many
+   * entities."*
+   *
+   * A field references an entry by storing `var(--fp-color-<name>)` — the name
+   * lowercased with anything but letters and digits turned into `-`. That is a
+   * plain CSS custom property, declared on the card from this list, so a
+   * hand-written config can use the feature without the editor and recolouring
+   * an entry moves every element that names it. See `src/palette.ts`.
+   */
+  palette?: PaletteColor[];
   /**
    * How the HTML overlay (badges, labels, room names, text) is sized.
    *
