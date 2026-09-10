@@ -150,6 +150,15 @@ straight down the shaft, an evening one throws it right across the room, and
 nothing in the skylight has to read the sky to do it. Per skylight,
 `ceilingHeight` multiplies it — `2` for a stairwell, `0.6` for a low attic.
 
+**A patch has an edge**, and this is where a skylight parts company with the
+beams. A shaft of light through a window has no edge — it fades along its own
+length, which is why its outline is always drawn past the point the light has
+died and you never see a straight cut. A patch of sun on a floor is not a
+shaft: being able to see that it is a *rectangle* is the whole of what makes it
+read as a roof light rather than as a lamp someone left on. So it is drawn as
+two shapes — the rectangle itself, lit evenly corner to corner, and the light
+spilling past it, which is what keeps that outline from reading as a cut.
+
 **It slides; it does not swing.** The patch keeps the skylight's own `angle` all
 day, because a translation turns nothing. A roof light set square to the house
 lays a patch square to the house at every hour.

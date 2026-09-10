@@ -4345,7 +4345,34 @@ export const SKYLIGHT_DROP = 0.55;
  * corners faint, which is what makes the patch read as a soft-cornered
  * rectangle rather than either a hard-edged one or a plain oval.
  */
-export const SKYLIGHT_SPREAD = 1.5;
+export const SKYLIGHT_SPREAD = 2.1;
+
+/**
+ * The other half of that: how far the **core** gradient reaches, as a multiple
+ * of the patch's half-sides.
+ *
+ * A patch of sun on a floor has an edge. That is the one place a skylight
+ * genuinely parts company with the beams, and it is worth being explicit
+ * about because the beams' rule is the opposite: a shaft of light through a
+ * window has no edge — it fades along its length — so its outline is drawn
+ * past the point the light has died and you never see a straight cut. A patch
+ * is not a shaft. It is a rectangle of sun lying on the floor, and being able
+ * to see that it is a *rectangle* is the whole of what makes it read as a roof
+ * light rather than as a lamp someone left on.
+ *
+ * So the core is painted on the rectangle itself, with the ellipse
+ * **circumscribing** it rather than inscribed: √2 is what reaches the corners,
+ * and the little over is what keeps them from going out entirely. The patch is
+ * then evenly lit corner to corner, and its edge is its own outline.
+ *
+ * What keeps that edge from being a hard cut is the halo underneath, at
+ * {@link SKYLIGHT_SPREAD} — the light spilling past the patch, which is what a
+ * bright rectangle on a floor actually does to the floor around it. One
+ * gradient could not do both: bright to the edge and soft past it are opposite
+ * instructions to the same curve, which is why the first attempt at this drew
+ * an oval and read as a glow.
+ */
+export const SKYLIGHT_CORE = 1.5;
 
 /**
  * A usable drop fraction: {@link cssNumber}'s coercion, then bounded.
@@ -4435,20 +4462,25 @@ export function skylightPatchCenter(
  * to the light was the first thing tried and it looked wrong in a way that
  * took a while to name — the patch swung round through the afternoon like a
  * searchlight, when what it should do is slide.
+ *
+ * `grow` is 1 for the patch itself and {@link SKYLIGHT_SPREAD} for the halo
+ * spilling past it — the same four corners at two sizes, so the two can never
+ * disagree about where the light is.
  */
 export function skylightPatchPolygon(
   o: Pick<Opening, "type" | "x" | "y" | "length" | "width" | "angle" | "ceilingHeight">,
   dir: { x: number; y: number },
   drop: number,
   clear = 1,
+  grow = 1,
 ): AreaPoint[] {
   const c = skylightPatchCenter(o, dir, drop);
   const { along, across } = skylightPatchHalfSides(o, clear);
   const rad = (o.angle * Math.PI) / 180;
-  const ux = Math.cos(rad) * along * SKYLIGHT_SPREAD;
-  const uy = Math.sin(rad) * along * SKYLIGHT_SPREAD;
-  const vx = -Math.sin(rad) * across * SKYLIGHT_SPREAD;
-  const vy = Math.cos(rad) * across * SKYLIGHT_SPREAD;
+  const ux = Math.cos(rad) * along * grow;
+  const uy = Math.sin(rad) * along * grow;
+  const vx = -Math.sin(rad) * across * grow;
+  const vy = Math.cos(rad) * across * grow;
   return [
     { x: c.x - ux - vx, y: c.y - uy - vy },
     { x: c.x + ux - vx, y: c.y + uy - vy },
@@ -4907,18 +4939,30 @@ export function renderSunlight(
     if (openingIsSkylight(o)) {
       const c = skylightPatchCenter(o, dir, drop);
       const half = skylightPatchHalfSides(o, f);
+      // The skylight's own rotation, not the light's: a translation turns
+      // nothing, so the patch stays square to the house all day.
+      const at = (grow: number) => ({
+        cx: c.x,
+        cy: c.y,
+        angle: o.angle,
+        along: Math.max(1, half.along * grow),
+        across: Math.max(1, half.across * grow),
+      });
       return {
         ...ids,
         sky: true,
         // Its own rectangle, moved — not a sweep. See skylightPatchPolygon.
+        // Twice: the patch at its true size, and the halo spilling past it,
+        // which is what keeps the edge from being a hard cut. See
+        // SKYLIGHT_CORE for why one gradient cannot do both jobs.
         points: polyPoints(skylightPatchPolygon(o, dir, drop, f)),
-        cx: c.x,
-        cy: c.y,
-        along: Math.max(1, half.along * SKYLIGHT_SPREAD),
-        across: Math.max(1, half.across * SKYLIGHT_SPREAD),
-        // The skylight's own rotation, not the light's: a translation turns
-        // nothing, so the patch stays square to the house all day.
-        angle: o.angle,
+        haloPoints: polyPoints(skylightPatchPolygon(o, dir, drop, f, SKYLIGHT_SPREAD)),
+        // The core's own ellipse rides on the record itself, so the shared
+        // gradient helper reads a skylight exactly as it reads a beam.
+        ...at(SKYLIGHT_CORE),
+        halo: at(SKYLIGHT_SPREAD),
+        haloLightId: `${id}-h${i}`,
+        haloShadeId: `${id}-hs${i}`,
         shadows: downwindShadows(o),
       };
     }
@@ -4948,8 +4992,13 @@ export function renderSunlight(
       along,
       across: Math.max(1, halfWidth * SUN_ACROSS),
       angle: (Math.atan2(dir.y, dir.x) * 180) / Math.PI,
-      // The wall openings all share the one global shadow mask; only a
-      // skylight needs a set of its own.
+      // A beam has no edge to soften — it fades along its own length — so it
+      // has no second polygon, and no shadow set of its own either: the wall
+      // openings all share the one global shadow mask.
+      haloPoints: "",
+      halo: undefined as undefined | { cx: number; cy: number; angle: number; along: number; across: number },
+      haloLightId: "",
+      haloShadeId: "",
       shadows: [] as string[],
     };
   });
@@ -4994,24 +5043,28 @@ export function renderSunlight(
   // rectangle's edges land around two thirds, its corners faint, which is what
   // reads as a soft-cornered rectangle rather than as a plain oval.
   const fade = (
-    b: {
-      cx: number;
-      cy: number;
-      along: number;
-      across: number;
-      angle: number;
-      sky: boolean;
-    },
+    b: { cx: number; cy: number; along: number; across: number; angle: number },
     gid: string,
     color: string,
+    kind: "beam" | "core" | "halo" = "beam",
   ) => svg`<radialGradient id=${gid} gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1"
               gradientTransform=${`translate(${b.cx} ${b.cy}) rotate(${b.angle}) scale(${b.along} ${b.across})`}>
           ${
-            b.sky
-              ? svg`<stop offset="0" stop-color=${color} stop-opacity="1" />
-          <stop offset="0.55" stop-color=${color} stop-opacity="0.9" />
+            kind === "core"
+              ? // Even, corner to corner: the ellipse circumscribes the
+                // rectangle, so what ends this patch is the rectangle's own
+                // outline. See SKYLIGHT_CORE.
+                svg`<stop offset="0" stop-color=${color} stop-opacity="1" />
+          <stop offset="0.66" stop-color=${color} stop-opacity="0.92" />
+          <stop offset="1" stop-color=${color} stop-opacity="0.62" />`
+              : kind === "halo"
+                ? // …and the spill past it, which is what keeps that outline
+                  // from reading as a cut. Never full strength: it is the
+                  // light around the patch, not the patch.
+                  svg`<stop offset="0" stop-color=${color} stop-opacity="0.5" />
+          <stop offset="0.48" stop-color=${color} stop-opacity="0.38" />
           <stop offset="1" stop-color=${color} stop-opacity="0" />`
-              : svg`<stop offset="0" stop-color=${color} stop-opacity="1" />
+                : svg`<stop offset="0" stop-color=${color} stop-opacity="1" />
           <stop offset="0.45" stop-color=${color} stop-opacity="0.55" />
           <stop offset="1" stop-color=${color} stop-opacity="0" />`
           }
@@ -5027,7 +5080,12 @@ export function renderSunlight(
            back wherever a wall stands in one. The order is the whole logic. -->
       <mask id=${shadeId} maskUnits="userSpaceOnUse" x=${x} y=${y} width=${w} height=${h}>
         ${cover("#fff")}
-        ${beams.map((b) => (b ? fade(b, b.shadeId, "#000") : nothing))}
+        ${beams.map((b) =>
+          b ? fade(b, b.shadeId, "#000", b.sky ? "core" : "beam") : nothing
+        )}
+        ${beams.map((b) =>
+          b && b.halo ? fade(b.halo, b.haloShadeId, "#000", "halo") : nothing
+        )}
         ${beams.map((b) =>
           b && !b.sky
             ? svg`<polygon points=${b.points} fill=${`url(#${b.shadeId})`} />`
@@ -5046,6 +5104,7 @@ export function renderSunlight(
         ${beams.map((b) =>
           b && b.sky
             ? svg`<g>
+                <polygon points=${b.haloPoints} fill=${`url(#${b.haloShadeId})`} />
                 <polygon points=${b.points} fill=${`url(#${b.shadeId})`} />
                 ${b.shadows.map((p) => shadowPoly(p, "#fff"))}
               </g>`
@@ -5082,7 +5141,14 @@ export function renderSunlight(
             opacity=${SUN_SHADE * strength} mask=${`url(#${shadeId})`} />`
       }
       ${beams.map((b) =>
-        b ? fade(b, b.lightId, cssColorOr(paint.light, SUN_LIGHT_COLOR)) : nothing
+        b
+          ? fade(b, b.lightId, cssColorOr(paint.light, SUN_LIGHT_COLOR), b.sky ? "core" : "beam")
+          : nothing
+      )}
+      ${beams.map((b) =>
+        b && b.halo
+          ? fade(b.halo, b.haloLightId, cssColorOr(paint.light, SUN_LIGHT_COLOR), "halo")
+          : nothing
       )}
       <g mask=${`url(#${shadowId})`} opacity=${SUN_PATCH_OPACITY * strength}>
         ${beams.map((b) =>
@@ -5097,6 +5163,8 @@ export function renderSunlight(
       ${beams.map((b) =>
         b && b.sky
           ? svg`<g mask=${`url(#${b.shadowMaskId})`} opacity=${SUN_PATCH_OPACITY * strength}>
+              <polygon class="fp-sunbeam fp-skylight-halo" points=${b.haloPoints}
+                       fill=${`url(#${b.haloLightId})`} />
               <polygon class="fp-sunbeam fp-skylight-patch" points=${b.points}
                        fill=${`url(#${b.lightId})`} />
             </g>`

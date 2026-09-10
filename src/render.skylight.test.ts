@@ -202,12 +202,39 @@ describe("where a skylight's light lands", () => {
       const p = skylightPatchPolygon(o, dir, 100);
       return [Math.hypot(p[1]!.x - p[0]!.x, p[1]!.y - p[0]!.y), Math.hypot(p[2]!.x - p[1]!.x, p[2]!.y - p[1]!.y)];
     };
-    const expected = [100 * SKYLIGHT_SPREAD, 60 * SKYLIGHT_SPREAD];
+    // …and it is the skylight's own size, exactly: parallel light projects a
+    // horizontal rectangle onto a horizontal floor congruent.
     for (const dir of [down, { x: 1, y: 0 }, { x: 0.6, y: 0.8 }]) {
       const [a, b] = size(dir);
-      expect(a).toBeCloseTo(expected[0]!);
-      expect(b).toBeCloseTo(expected[1]!);
+      expect(a).toBeCloseTo(100);
+      expect(b).toBeCloseTo(60);
     }
+    // The halo is the same four corners, grown — so the two can never
+    // disagree about where the light is.
+    const halo = skylightPatchPolygon(o, down, 100, 1, SKYLIGHT_SPREAD);
+    expect(Math.hypot(halo[1]!.x - halo[0]!.x, halo[1]!.y - halo[0]!.y)).toBeCloseTo(
+      100 * SKYLIGHT_SPREAD
+    );
+  });
+
+  it("paints the patch and the spill past it as two shapes, not one", () => {
+    // A patch of sun has an edge — that is what makes it read as a rectangle
+    // rather than as a lamp someone left on — and a shaft of light does not.
+    // Bright to the edge and soft past it are opposite instructions to one
+    // gradient, which is why there are two.
+    const s = serialize(
+      renderSunlight([], [sky({ x: 200, y: 200 })], 400, 400, "sun", {
+        dir: down,
+        openAmount: () => 0,
+        shutterOpen: () => undefined,
+      })
+    );
+    expect(s).toContain("fp-skylight-patch");
+    expect(s).toContain("fp-skylight-halo");
+    // The halo never reaches full strength: it is the light around the patch.
+    const haloGrad = s.match(/<radialGradient id=sun-h0[\s\S]*?<\/radialGradient>/)![0];
+    expect(haloGrad).not.toContain('stop-opacity="1"');
+    expect(haloGrad).toContain('stop-opacity="0"');
   });
 
   it("bounds the drop rather than letting a typo throw it off the plan", () => {
