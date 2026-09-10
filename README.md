@@ -36,6 +36,7 @@ screen size.
 - 📊 **Many readings, one device** — a sensor that reports temperature, humidity and pressure needs one badge, not three. Add entities one at a time; they show whether or not the device's own state does, so a smart plug can label itself `1.2 kW · 84 · 5 min ago` while the badge colour carries the on/off. The label can sit below, left or right of the badge.
 - 🚪 **Animated doors & windows** — bind a contact `binary_sensor`, `cover` or `lock` and openings swing, slide or roll with their real state, partial positions included. A lock reads `unlocked` as open, so a door with no contact sensor still animates.
   - 🆕 **Top-hinged (awning) windows** — hinged at the head, swinging out at the sill. Drawn the way a plan draws them: the sash edge-on as a blade projecting from the wall, hinges marked on the wall line, the glass it left behind broken. `flipV` turns it into a bottom-hinged hopper opening inward. See [Top-hinged windows](https://github.com/nicosandller/easy-floorplan/blob/main/docs/appearance.md#top-hinged-windows).
+  - 🆕 **Skylights** — a velux, a roof light, a lantern: a hole in the *ceiling*, so it snaps to no wall, has two sides rather than one, and lays a patch of sun that lands a way off downwind of itself — as far as the ceiling is high over the tangent of the sun's angle, which is why a midday sun drops it almost straight down and an evening one throws it across the room. It is glass, so what darkens the room under it is the blind, drawn across the glass at whatever fraction the cover reports. See [Skylights](https://github.com/nicosandller/easy-floorplan/blob/main/docs/lighting.md#skylights).
   - **A sensor per leaf** — anything with two leaves takes a second contact and draws them independently: a casement window with one sash open and one shut, a double door ajar on one side, a pair of shutters with one folded back.
 - 🎯 **Colors for on *and* off** 🆕 — a badge could always say what colour it is when on, and nothing about when it is off; a closed door was a line the colour of the wall. `inactiveColor` is the counterpart, on devices and openings both, so the valve that is shut is the one that catches your eye. It means off for every domain at once — `locked`, `closed`, `docked` — which a hand-written state rule cannot. See [Colors for on and off](https://github.com/nicosandller/easy-floorplan/blob/main/docs/behavior.md#colors-for-on-and-off).
 - 📴 **Offline devices read as offline** — an entity that is unavailable, unknown, or gone from Home Assistant is dimmed (or crossed out), instead of looking exactly like a device someone switched off.
@@ -95,7 +96,7 @@ HACS adds the dashboard resource automatically.
 | --- | --- | --- |
 | 🎥 | **[Video walkthrough](https://youtu.be/M-b7xK-4Bpw)** | Setting the card up end to end — a community guide, in Italian 🇮🇹 |
 | ⚙️ | **[Configuration](https://github.com/nicosandller/easy-floorplan/blob/main/docs/configuration.md)** | Every config key: per-element tables, defaults, a worked example |
-| 💡 | **[Lighting](https://github.com/nicosandller/easy-floorplan/blob/main/docs/lighting.md)** | Follow the sun, and real sunlight through the windows |
+| 💡 | **[Lighting](https://github.com/nicosandller/easy-floorplan/blob/main/docs/lighting.md)** | Follow the sun, and real sunlight through the windows and skylights |
 | 🎨 | **[Appearance](https://github.com/nicosandller/easy-floorplan/blob/main/docs/appearance.md)** | Skins, overlay scale, rotation, and card-mod styling hooks |
 | ⚡ | **[Behaviour](https://github.com/nicosandller/easy-floorplan/blob/main/docs/behavior.md)** | What elements do once an entity is bound |
 | 🐳 | **[Local Home Assistant](https://github.com/nicosandller/easy-floorplan/blob/main/docker/README.md)** | Running the card against a real instance in Docker |
@@ -106,7 +107,8 @@ Below: what you can put on a plan, and links to the guide for each feature.
 
 ## Elements
 
-Everything you place on the plan is an **element**: **devices**, **doors & windows**,
+Everything you place on the plan is an **element**: **devices**, **doors, windows &
+skylights**,
 **furniture**, **text**, **areas** and **trackers**. Select, move, nudge, copy/paste,
 duplicate and delete them; each floor holds its own set.
 
@@ -222,9 +224,13 @@ hardest to check.
 With the OS *reduce motion* preference set, all three fall back to the flash halo with no
 transition: the affordance stays, the movement goes.
 
-#### Doors & windows
+#### Doors, windows & skylights
 
-Drop a **door** or **window** from the toolbar and it snaps onto the nearest wall. Left
+Drop a **door** or **window** from the toolbar and it snaps onto the nearest wall. A
+**skylight** is the exception: it is a hole in the ceiling, so it snaps to nothing —
+click anywhere inside a room and it stays where you put it. It is also the one opening
+with two sizes, **Length** and **Width**, both settable in the toolbar before you place
+it. Left
 unbound it stays a static drawing. Bind an **Entity** — a contact `binary_sensor` or a
 `cover` — and the opening tracks its real state. The card reads the entity's HA
 `device_class` and picks a sensible `type` / `motion` for you (a `window` cover → a
@@ -449,7 +455,7 @@ Everything the card does beyond placing elements, in four guides:
 | | | |
 | --- | --- | --- |
 | ⚙️ | **[Configuration](https://github.com/nicosandller/easy-floorplan/blob/main/docs/configuration.md)** | Every key it accepts — per-element tables, defaults, a worked example |
-| 💡 | **[Lighting](https://github.com/nicosandller/easy-floorplan/blob/main/docs/lighting.md)** | Sun dimming through dusk and dawn · real sunlight through the windows |
+| 💡 | **[Lighting](https://github.com/nicosandller/easy-floorplan/blob/main/docs/lighting.md)** | Sun dimming through dusk and dawn · real sunlight through the windows · skylights |
 | 🎨 | **[Appearance](https://github.com/nicosandller/easy-floorplan/blob/main/docs/appearance.md)** | Skins · overlay scale · compact header · rotation · card-mod hooks |
 | ⚡ | **[Behaviour](https://github.com/nicosandller/easy-floorplan/blob/main/docs/behavior.md)** | Dead spaces · doors on locks · room actions · devices that only appear up close · stairs between floors · offline devices · hiding logic |
 

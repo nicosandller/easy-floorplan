@@ -80,6 +80,12 @@ views:
             # in configuration.yaml. If the plan looks unexpectedly dim, that is
             # this, and it is working.
             sunDimming: true
+            # …and the light itself, which is what the two skylights below are
+            # here to show. `docker/sun-at.mjs` moves the sun without waiting
+            # for the day: at 9 the patches rake across the plan, at 12 they
+            # sit almost under the roof lights that cast them, and the way that
+            # distance changes IS the skylight feature.
+            sunlight: true
 
             # Two floors, so the card draws its switcher and issue #121 has
             # something to place. The ground floor is everything that was
@@ -193,6 +199,46 @@ views:
                     shutterEntity: binary_sensor.left_leaf
                     shutterStyle: swing
                     shutterSecondaryEntity: binary_sensor.right_leaf
+                  # A skylight: a hole in the ceiling rather than in a wall, so
+                  # it sits in open floor and lays its patch of sun a way off
+                  # downwind of itself rather than sweeping a beam out of a
+                  # gap. Run `node docker/sun-at.mjs 9` and `... 12` and watch
+                  # that distance change -- it is the ceiling height over the
+                  # tangent of the sun's angle, so a midday sun drops the light
+                  # nearly straight down the shaft.
+                  #
+                  # Two entities doing two different jobs, which is the thing
+                  # about a velux that surprises people: the SASH is glass, so
+                  # opening it changes nothing about the light, and the BLIND
+                  # is what darkens the room. `cover.living_room_window` really
+                  # reports a position, so the blind sits half down and the
+                  # patch on the floor narrows to match the slats drawn across
+                  # the glass -- the one shutter in the plan you see face-on,
+                  # and so the one whose half-way positions count.
+                  - id: sk1
+                    type: skylight
+                    x: 450
+                    y: 220
+                    length: 100
+                    width: 60
+                    angle: 0
+                    entity: binary_sensor.front_door
+                    shutterEntity: cover.living_room_window
+                  # The other half of that story: a roof HATCH, not a roof
+                  # window. `glazed: false` says the panel is solid, so there
+                  # is no blind to draw and the sash itself is what lets the
+                  # light in -- shut, it is as dark as the ceiling around it.
+                  # Bound to the garage door, which is open/close only, so it
+                  # is the light switching on and off rather than narrowing.
+                  - id: sk2
+                    type: skylight
+                    glazed: false
+                    x: 170
+                    y: 330
+                    length: 90
+                    width: 50
+                    angle: 90
+                    entity: cover.garage_door
 
                 items:
                   # On *and* off (issue #228). The garage door is the case the

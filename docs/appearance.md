@@ -193,6 +193,62 @@ window, and a top-hung door is not a thing. A hand-written config may still set
 it on a door and the card draws it honestly — this is about what the editor
 suggests, not what it allows.
 
+## Roof windows
+
+*A velux, a roof light, a lantern — a hole in the ceiling rather than in a wall.*
+
+A skylight is drawn as the rectangle it is, seen from below, with four marks
+each doing a job:
+
+- **the kerb**, a plain rectangle in the wall's own colour, because that is what
+  the hole is lined with and what makes it read as structure rather than as a rug;
+- **dashed diagonals**, the floor-plan convention for anything above the cut
+  plane. They are the only thing that tells a roof light from a rectangular
+  piece of furniture at a glance;
+- **the sash**, which foreshortens as it opens. A velux is hinged at its head
+  and swings out, so from directly below you never see it sweep anywhere — you
+  see it get shorter, until wide open it is the edge-on sliver beside its own
+  hinge. It is the [top-hinged window](#top-hinged-windows) one axis further
+  round, and it is the honest picture: a plan view of a top-hung sash has
+  nowhere else to go;
+- **the hinge line**, thicker, along the head edge, so a shut skylight still
+  says which way it opens. Editor: **Hinged at**.
+
+```yaml
+openings:
+  - id: velux
+    type: skylight
+    x: 450
+    y: 220
+    length: 100      # the long side
+    width: 60        # the short one — a roof window is a rectangle
+    angle: 0
+    entity: cover.velux            # the sash
+    shutterEntity: cover.velux_blind   # the blind, which is what darkens the room
+```
+
+Because it stands in no wall, a skylight snaps to none: click anywhere inside a
+room to drop one, and it stays where you put it. Nothing cuts the wall band for
+it, no lamp's pool passes through it, and it is never the way into a
+[dead space](behavior.md#dead-spaces) — you cannot walk through a ceiling.
+
+### The blind is the switch, not the sash
+
+The thing about a velux that surprises people. It is glass, so `glazed` defaults
+**on** and opening the sash changes nothing about the light: what darkens the
+room under it is the blackout blind. Bind it to `shutterEntity` and the slats
+are drawn across the glass, from the same edge the sash is hung at.
+
+A skylight's blind is the one shutter in the plan you look at **face-on** — a
+wall opening's is edge-on, so however far it has travelled the drawing can only
+say up or down. Here half a blind is visibly half a blind, and the patch of sun
+on the floor narrows to match it.
+
+For the roof **hatch** — a loft door, a smoke vent, a lantern with a solid flap
+— set `glazed: false` and the sash itself becomes what lets the light in.
+
+See [Skylights](lighting.md#skylights) for where that light lands.
+
 ## Overlay scale
 
 The card draws in two layers. Walls, doors, furniture and room fills are SVG, scaled from

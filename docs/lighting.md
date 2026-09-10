@@ -122,4 +122,57 @@ laying a plan out, and one with no sensible answer at night. It stacks with
 [Follow the sun](lighting.md#follow-the-sun), which dims the whole plan after dark and has the last
 word: there is nothing to let in at night.
 
+## Skylights
+
+A wall is a line in plan, so the light through a hole in one is that gap swept
+along the sun — it starts where the wall is, and you see the whole shaft. A
+ceiling is not in the plan at all, so a roof window does something else:
+
+```yaml
+openings:
+  - { id: velux, type: skylight, x: 450, y: 220, length: 100, width: 60, angle: 0,
+      shutterEntity: cover.velux_blind }
+skylightDrop: 0.55   # how far the patch slides before it lands (default)
+```
+
+**The patch is the skylight, moved.** Parallel light projects a horizontal
+rectangle onto a horizontal floor unchanged — congruent, at every sun angle —
+so a roof light lays a patch exactly its own size and shape, and the only
+question it ever asks is *where*. That is why it needs no swept polygon and no
+reach: four corners of arithmetic, and no approximation anywhere in it.
+
+**Where is the ceiling height over the tangent of the sun's angle** — the same
+`h/tan(e)` that says how deep a patch of window light is. `skylightDrop` states
+it as a fraction of `sunReach`, and that is not a shortcut: the reach already
+carries `1/tan(elevation)` (it is why patches shorten as the sun climbs), which
+is exactly the factor the drop needs. So a midday sun drops the light almost
+straight down the shaft, an evening one throws it right across the room, and
+nothing in the skylight has to read the sky to do it. Per skylight,
+`ceilingHeight` multiplies it — `2` for a stairwell, `0.6` for a low attic.
+
+**It slides; it does not swing.** The patch keeps the skylight's own `angle` all
+day, because a translation turns nothing. A roof light set square to the house
+lays a patch square to the house at every hour.
+
+**Only the walls downwind of it can shade it**, and this is the one rule that
+had to be written specially rather than reused. A wall opening's light starts
+*at* a wall, so every wall in the plan is fair game to shade it. A skylight's
+starts at the ceiling — above every wall in the house — so a partition standing
+between the roof light and the sun cannot block anything: at that partition the
+ray was still outside, over the roof. Past the glass the ray is below ceiling
+height and a full-height wall then blocks it completely, which makes the answer
+downwind-or-nothing with no half-way case. (Given the plan's ordinary wall
+shadows instead, a velux with a partition a couple of metres upwind lost its
+patch entirely — the arrangement most real roof lights are in.)
+
+**It is always a source.** The test that keeps a window on the shaded façade
+from throwing sunshine into the garden asks which wall stands between it and
+the sky; a skylight stands behind none of them, so it is never asked.
+
+**And it is glass**, so what stops the light is the blind, not the sash — see
+[The blind is the switch](appearance.md#the-blind-is-the-switch-not-the-sash).
+A blind half down leaves half the patch, unlike a wall opening's shutter, which
+the plan can only draw up or down. `glazed: false` makes it a roof hatch
+instead, admitting light only as far as it is actually open.
+
 Skins can restyle both through `--fp-skin-sunlight` and `--fp-skin-sunshade`.

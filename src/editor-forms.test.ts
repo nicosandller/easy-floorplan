@@ -2121,3 +2121,93 @@ describe("itemGroup7aForm - showOnlyWhenZoomed", () => {
     expect({ ...on, ...patch }.showOnlyWhenZoomed).toBeUndefined();
   });
 });
+
+describe("openingForm — skylights", () => {
+  const skylight = (extra: Partial<Opening> = {}) =>
+    ({ ...door, type: "skylight", length: 100, width: 60, ...extra }) as Opening;
+  const names = (o: Opening) => openingForm(o).fields.map((x) => x.name);
+
+  it("asks the questions a roof window has, and none it hasn't", () => {
+    const n = names(skylight());
+    // Two sides and a height, because it is a rectangle you look down into.
+    expect(n).toContain("width");
+    expect(n).toContain("ceilingHeight");
+    // Everything below describes a sash travelling across a floor, which is
+    // not something a hole in a ceiling does — left in, each would have been
+    // a control that changed nothing on screen.
+    for (const gone of ["motion", "sash", "sashSpan", "hinge", "slide", "style"])
+      expect(n).not.toContain(gone);
+    // …and no wall opening grows a second side by accident.
+    expect(names(door)).not.toContain("width");
+    expect(names({ ...door, type: "window" } as Opening)).not.toContain("ceilingHeight");
+  });
+
+  it("offers glazing, which is how you say 'this one is a hatch'", () => {
+    // A window never asks — it is glass by definition. The other two ask for
+    // opposite reasons: a door is opaque and this says it is not, a skylight
+    // is glass and this says it is not.
+    expect(names(skylight())).toContain("glazed");
+    expect(names({ ...door, type: "window" } as Opening)).not.toContain("glazed");
+  });
+
+  it("keeps only the answer that differs from the type's own default", () => {
+    const sky = skylight();
+    // Glass is a skylight's default, so saying so writes nothing…
+    expect(openingForm(sky).toPatch({ glazed: true }).glazed).toBeUndefined();
+    // …and the hatch is what is worth writing down.
+    expect(openingForm(sky).toPatch({ glazed: false }).glazed).toBe(false);
+    // The door is the mirror image, and unchanged by the skylight arriving.
+    expect(openingForm(door).toPatch({ glazed: true }).glazed).toBe(true);
+    expect(openingForm(door).toPatch({ glazed: false }).glazed).toBeUndefined();
+  });
+
+  it("shows the width the plan actually drew, not the one it stored", () => {
+    // A skylight placed without a stated width still has one, and a Width box
+    // that opened empty on a rectangle plainly drawn on the canvas would be a
+    // box claiming the drawing has no width.
+    const bare = skylight({ width: undefined });
+    expect(openingForm(bare).data.width).toBeGreaterThan(0);
+    expect(openingForm(skylight()).data.width).toBe(60);
+    expect(openingForm(skylight()).data.ceilingHeight).toBe(1);
+  });
+
+  it("drops an ordinary ceiling but keeps an unusual one", () => {
+    const sky = skylight();
+    expect(openingForm(sky).toPatch({ ceilingHeight: 1 }).ceilingHeight).toBeUndefined();
+    expect(openingForm(sky).toPatch({ ceilingHeight: 2.4 }).ceilingHeight).toBe(2.4);
+  });
+
+  it("names the blind, and offers it no shape it could not have", () => {
+    const bound = skylight({ shutterEntity: "cover.blind" });
+    const n = names(bound);
+    // A sheet drawn down over the glass is the only way a roof blind travels:
+    // no hinged variant, no side of a wall to hang it on, no second panel.
+    for (const gone of ["shutterStyle", "shutterSide", "shutterSecondaryEntity"])
+      expect(n).not.toContain(gone);
+    // Inverting it is not in that group — a contact on a roof blind reads
+    // backwards exactly as often as one on a shutter.
+    expect(n).toContain("shutterInvert");
+    expect(openingForm(bound).fields.find((f) => f.name === "shutterEntity")!.label).toBe("Blind");
+  });
+
+  it("sweeps the fields the old type owned when the type changes", () => {
+    // Both directions, because both leave a field describing something the
+    // opening no longer is — and one that the editor does not even render, so
+    // it survives invisibly in the YAML.
+    const fromSlider = openingForm({
+      ...door,
+      motion: "slide",
+      sliderStyle: "bypass",
+      secondaryEntity: "binary_sensor.b",
+    } as Opening).toPatch({ type: "skylight" });
+    expect(fromSlider.type).toBe("skylight");
+    expect(fromSlider.motion).toBeUndefined();
+    expect(fromSlider.sliderStyle).toBeUndefined();
+    expect(fromSlider.secondaryEntity).toBeUndefined();
+
+    const toWindow = openingForm(skylight({ ceilingHeight: 2 })).toPatch({ type: "window" });
+    expect(toWindow.type).toBe("window");
+    expect(toWindow.width).toBeUndefined();
+    expect(toWindow.ceilingHeight).toBeUndefined();
+  });
+});
