@@ -2190,6 +2190,18 @@ describe("openingForm — skylights", () => {
     expect(openingForm(bound).fields.find((f) => f.name === "shutterEntity")!.label).toBe("Blind");
   });
 
+  it("tells the truth about what binding an entity does", () => {
+    // A wall opening's type and motion follow the bound entity's device class.
+    // A skylight's deliberately does not — that inference is what would turn a
+    // velux back into a window — so promising it here told a roof-light author
+    // the opposite of what the card does.
+    const helper = (o: Opening) =>
+      openingForm(o).fields.find((f) => f.name === "entity")!.helper ?? "";
+    expect(helper(door)).toContain("device class");
+    expect(helper(skylight())).not.toContain("Type and motion follow");
+    expect(helper(skylight())).toContain("keeps its type");
+  });
+
   it("sweeps the fields the old type owned when the type changes", () => {
     // Both directions, because both leave a field describing something the
     // opening no longer is — and one that the editor does not even render, so
@@ -2209,5 +2221,33 @@ describe("openingForm — skylights", () => {
     expect(toWindow.type).toBe("window");
     expect(toWindow.width).toBeUndefined();
     expect(toWindow.ceilingHeight).toBeUndefined();
+
+    // …including the wall-opening fields a skylight was *ignoring* rather than
+    // lacking. The editor cannot put them on one, but a hand-written plan can,
+    // and a skylight carrying `motion: slide` is harmless right up until the
+    // moment it becomes a window and the slider wakes up.
+    const handWritten = openingForm(
+      skylight({
+        motion: "slide",
+        sliderStyle: "bypass",
+        sash: "double",
+        sashSpan: 0.4,
+        secondaryEntity: "binary_sensor.b",
+        shutterStyle: "swing",
+        shutterFlipV: true,
+        shutterSecondaryEntity: "binary_sensor.c",
+      })
+    ).toPatch({ type: "door" });
+    for (const k of [
+      "motion",
+      "sliderStyle",
+      "sash",
+      "sashSpan",
+      "secondaryEntity",
+      "shutterStyle",
+      "shutterFlipV",
+      "shutterSecondaryEntity",
+    ])
+      expect(handWritten[k]).toBeUndefined();
   });
 });

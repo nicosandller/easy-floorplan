@@ -93,7 +93,7 @@ import {
   SHUTTER_MARK_SIZE,
   SHUTTER_MARK_ICON_SIZE,
   hasShutterMark,
-  openingFromDeviceClass,
+  openingDeviceClassPatch,
   renderRipple,
   renderFurniture,
   renderTracker,
@@ -5140,14 +5140,11 @@ export class FloorplanCardEditor extends LitElement {
           const dc = entity
             ? (this.hass?.states[entity]?.attributes?.device_class as string | undefined)
             : undefined;
-          // …but never over a skylight. Home Assistant has no roof-window
-          // device class, so a velux is bound to a `cover` with device_class
-          // `window` — the very class that infers `type: "window"`. Left
-          // unguarded, binding the entity is what *deletes* the skylight: it
-          // turns back into a wall opening, snaps to nothing, keeps its width
-          // as dead YAML, and the patch of sun on the floor vanishes. The
-          // type was chosen by hand here, and a guess must not overrule one.
-          patch = { ...patch, ...(dc && !openingIsSkylight(o) ? openingFromDeviceClass(dc) : {}) };
+          // …but never over a skylight, which is why this goes through
+          // `openingDeviceClassPatch` rather than asking the device class
+          // directly: that function owns the exception, and owning it
+          // somewhere reachable is what makes it testable.
+          patch = { ...patch, ...openingDeviceClassPatch(o, dc) };
         }
         this._applyElementPatch("opening", o.id, patch, live);
       };

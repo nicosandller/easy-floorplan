@@ -428,9 +428,17 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
     // Says locks are usable, because nothing else would: a lock is neither a
     // contact nor a cover, and its states are `locked` / `unlocked` rather
     // than anything that looks like open/closed (issue #176).
-    helper: twoLeaves
-      ? "Contact, cover or lock. Drives the first leaf; type and motion follow its device class"
-      : "Contact, cover or lock — a lock reads unlocked as open. Type and motion follow its device class",
+    // The device-class promise is a wall opening's. A skylight is deliberately
+    // exempt from that inference (see `editor.ts`, where the guard is) —
+    // Home Assistant has no roof-window class, so a velux binds to a `cover`
+    // with `device_class: window`, the very class that would turn it back into
+    // one. Repeating the promise here told a skylight author the opposite of
+    // what the card does.
+    helper: skylight
+      ? "Contact or cover for the sash. A roof window keeps its type whatever the entity's device class says"
+      : twoLeaves
+        ? "Contact, cover or lock. Drives the first leaf; type and motion follow its device class"
+        : "Contact, cover or lock — a lock reads unlocked as open. Type and motion follow its device class",
     selector: { entity: { filter: [{ domain: OPENING_ENTITY_DOMAINS }] } },
   });
   // One sensor per leaf (issues #145, #159). Only a two-leaved opening has a
@@ -809,6 +817,20 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
             out.width = undefined;
             out.ceilingHeight = undefined;
             out.glazed = undefined;
+            // …and the wall-opening fields a skylight was *ignoring* rather
+            // than lacking. Nothing in the editor can put them on one — the
+            // form does not offer them — but a hand-written plan can, and a
+            // skylight carrying `motion: slide` is harmless right up until the
+            // moment it becomes a window and the slider wakes up. The sweep
+            // has to run both ways or it only half works.
+            out.motion = undefined;
+            out.sliderStyle = undefined;
+            out.sashSpan = undefined;
+            out.sash = undefined;
+            out.secondaryEntity = undefined;
+            out.shutterStyle = undefined;
+            out.shutterFlipV = undefined;
+            out.shutterSecondaryEntity = undefined;
           }
         }
         else out[k] = v;

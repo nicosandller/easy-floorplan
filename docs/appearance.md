@@ -242,7 +242,8 @@ are drawn across the glass, from the same edge the sash is hung at.
 A skylight's blind is the one shutter in the plan you look at **face-on** — a
 wall opening's is edge-on, so however far it has travelled the drawing can only
 say up or down. Here half a blind is visibly half a blind, and the patch of sun
-on the floor narrows to match it.
+on the floor narrows to match it — and slides to the edge of the glass the blind
+has not reached, which is where the light is actually coming through.
 
 For the roof **hatch** — a loft door, a smoke vent, a lantern with a solid flap
 — set `glazed: false` and the sash itself becomes what lets the light in.

@@ -2749,6 +2749,31 @@ export function openingFromDeviceClass(deviceClass: string | undefined): {
   };
 }
 
+/**
+ * What binding `entity` to an opening should change about the opening itself —
+ * {@link openingFromDeviceClass}, except where the author has already answered.
+ *
+ * The exception is the skylight, and it is not a refinement: without it,
+ * binding the entity is what **deletes** the roof light. Home Assistant has no
+ * roof-window device class, so a velux is bound to a `cover` with
+ * `device_class: window` — the very class that infers `type: "window"`. The
+ * skylight then turns back into a wall opening, snaps to nothing, keeps its
+ * `width` as dead YAML, and the patch of sun on the floor disappears. The type
+ * was chosen by hand; a guess must not overrule one.
+ *
+ * Its own exported function rather than a condition inside the editor's entity
+ * handler, which is where it lived and where nothing could reach it. A guard
+ * against silently destroying an element is worth being able to test.
+ */
+export function openingDeviceClassPatch(
+  o: Pick<Opening, "type">,
+  deviceClass: string | undefined,
+): { type?: Opening["type"]; motion?: "slide" | "roll" | undefined } {
+  if (!deviceClass) return {};
+  if (openingIsSkylight(o)) return {};
+  return openingFromDeviceClass(deviceClass);
+}
+
 /** Cover feature bits: OPEN = 1, CLOSE = 2 (a cover with either can be toggled). */
 const COVER_OPEN_CLOSE = 0b11;
 
@@ -4341,9 +4366,10 @@ export const SKYLIGHT_DROP = 0.55;
  * it — the flat far edge issue #206 is about, in two dimensions instead of
  * one.
  *
- * 1.5 leaves the rectangle's own edges at about two thirds strength and its
- * corners faint, which is what makes the patch read as a soft-cornered
- * rectangle rather than either a hard-edged one or a plain oval.
+ * 2.1 is a little over twice the patch, which is about as far as light spills
+ * off a bright rectangle before it stops being visible against the floor. It
+ * is the outer half of a pair: the patch itself is painted by
+ * {@link SKYLIGHT_CORE}, and this only carries what escapes past its edge.
  */
 export const SKYLIGHT_SPREAD = 2.1;
 
@@ -4424,6 +4450,11 @@ export function skylightCeilingHeight(o: Pick<Opening, "ceilingHeight">): number
  * opening the shutter is edge-on and the plan can only say up or down; here
  * you are looking straight at it, so half a blind is visibly half a blind and
  * the light has to agree with the picture.
+ *
+ * Only half of that agreement lives here. Narrowing says *how much* light gets
+ * through; it does not say **where on the glass**, and a roof light never
+ * narrows from both sides — see {@link skylightPatchCenter}, which slides the
+ * patch to the edge that is still clear.
  */
 export function skylightPatchHalfSides(
   o: Pick<Opening, "type" | "length" | "width">,
@@ -4443,12 +4474,39 @@ export function skylightPatchHalfSides(
  * twice as far, which is {@link skylightCeilingHeight}'s whole job.
  */
 export function skylightPatchCenter(
-  o: Pick<Opening, "x" | "y" | "ceilingHeight">,
+  o: Pick<Opening, "x" | "y" | "type" | "length" | "width" | "angle" | "flipV" | "ceilingHeight">,
   dir: { x: number; y: number },
   drop: number,
+  /**
+   * How much of the pane is clear, 0..1. Below 1 the patch also slides
+   * **across** — see below.
+   */
+  clear = 1,
 ): AreaPoint {
   const d = drop * skylightCeilingHeight(o);
-  return { x: o.x + dir.x * d, y: o.y + dir.y * d };
+  // …and across, toward whichever edge of the glass is still clear.
+  //
+  // This is the half of "the light has to agree with the picture" that the
+  // first version missed. It narrowed the patch and left it centred, but
+  // nothing about a roof light narrows from both sides: the blind comes down
+  // from the head edge and the sash foreshortens toward the same edge, so what
+  // is still open is always the strip at the *far* edge. Centred, a patch
+  // under a blind three-quarters down sat mostly beneath the slats — the plan
+  // drawing light coming through the part it had just drawn covered.
+  //
+  // The clear strip runs from `-halfW + covered` to `+halfW`, so its middle is
+  // `covered / 2` off centre, which is `halfW × (1 − clear)`. `flipV` turns the
+  // symbol over and takes the head edge with it, so the offset turns too.
+  const f = Math.max(0, Math.min(1, clear));
+  const across = (skylightWidth(o) / 2) * (1 - f) * (o.flipV ? -1 : 1);
+  // The opening's own +y in plan: its across-axis, before the light is
+  // considered at all. The drop and this are independent — one is where the
+  // sun puts the light, the other is where on the glass the light got in.
+  const rad = (o.angle * Math.PI) / 180;
+  return {
+    x: o.x + dir.x * d - Math.sin(rad) * across,
+    y: o.y + dir.y * d + Math.cos(rad) * across,
+  };
 }
 
 /**
@@ -4474,7 +4532,7 @@ export function skylightPatchPolygon(
   clear = 1,
   grow = 1,
 ): AreaPoint[] {
-  const c = skylightPatchCenter(o, dir, drop);
+  const c = skylightPatchCenter(o, dir, drop, clear);
   const { along, across } = skylightPatchHalfSides(o, clear);
   const rad = (o.angle * Math.PI) / 180;
   const ux = Math.cos(rad) * along * grow;
@@ -4950,7 +5008,7 @@ export function renderSunlight(
     // one every opening has: it is a source whenever it is glass and the blind
     // is not down, at every hour the sun is up.
     if (openingIsSkylight(o)) {
-      const c = skylightPatchCenter(o, dir, drop);
+      const c = skylightPatchCenter(o, dir, drop, f);
       const half = skylightPatchHalfSides(o, f);
       // The skylight's own rotation, not the light's: a translation turns
       // nothing, so the patch stays square to the house all day.

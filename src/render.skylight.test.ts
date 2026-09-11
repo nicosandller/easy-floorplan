@@ -9,6 +9,7 @@ import {
   openingIsGlazed,
   openingIsSkylight,
   openingMarkOffset,
+  openingDeviceClassPatch,
   openingMotion,
   openingSunFraction,
   renderOpening,
@@ -102,6 +103,41 @@ describe("what a skylight is", () => {
   });
 });
 
+describe("binding an entity must not delete the roof light", () => {
+  // The trap: Home Assistant has no roof-window device class, so a velux is
+  // bound to a `cover` with `device_class: window` — the very class that
+  // infers `type: "window"`. Unguarded, binding the entity turns the skylight
+  // back into a wall opening, which snaps to nothing, keeps its `width` as
+  // dead YAML, and loses its patch of sun. Untested, this guard was a closure
+  // inside the editor where nothing could reach it.
+  it("leaves a skylight's type alone, whatever the device class says", () => {
+    for (const dc of ["window", "blind", "shade", "shutter", "curtain", "awning", "garage", "door"])
+      expect(openingDeviceClassPatch(sky(), dc)).toEqual({});
+  });
+
+  it("still infers for everything that is in a wall", () => {
+    expect(openingDeviceClassPatch({ type: "door" }, "window")).toEqual({
+      type: "window",
+      motion: undefined,
+    });
+    expect(openingDeviceClassPatch({ type: "door" }, "garage")).toEqual({
+      type: "door",
+      motion: "roll",
+    });
+    expect(openingDeviceClassPatch({ type: "window" }, "blind")).toEqual({
+      type: "window",
+      motion: "slide",
+    });
+  });
+
+  it("changes nothing when there is no device class to read", () => {
+    // An unbound entity, or one whose integration sets no class: the opening
+    // keeps whatever it was drawn as rather than collapsing to a swing door.
+    expect(openingDeviceClassPatch({ type: "window" }, undefined)).toEqual({});
+    expect(openingDeviceClassPatch({ type: "window" }, "")).toEqual({});
+  });
+});
+
 describe("a skylight is a gap in no wall", () => {
   const wall: Wall = { id: "w1", x1: 0, y1: 200, x2: 400, y2: 200 };
 
@@ -183,6 +219,48 @@ describe("where a skylight's light lands", () => {
     expect(half).toEqual({ along: 50, across: 30 });
     // …and a blind narrows it across, the way the blind itself travels.
     expect(skylightPatchHalfSides(o, 0.5)).toEqual({ along: 50, across: 15 });
+  });
+
+  it("slides to the edge of the glass that is still clear", () => {
+    // The half of "the light agrees with the picture" the first version
+    // missed. Nothing about a roof light narrows from both sides: the blind
+    // comes down from the head edge and the sash foreshortens toward the same
+    // edge, so what is open is always the strip at the far edge. Centred, a
+    // patch under a blind three-quarters down sat mostly beneath the slats.
+    const o = sky(); // width 60, so half is 30
+    const at = (clear: number) => skylightPatchCenter(o, down, 0, clear).y;
+    // Wide open there is no strip to favour, so it does not move at all.
+    expect(at(1)).toBe(200);
+    // Half open, the clear strip's middle is a quarter of the width off
+    // centre — halfW x (1 - clear).
+    expect(at(0.5)).toBeCloseTo(200 + 15);
+    // Nearly shut, it is hard against the far edge.
+    expect(at(0.02)).toBeCloseTo(200 + 30 * 0.98);
+    // …and the patch it draws stays inside the glass it came through: the far
+    // side of the clear strip is the pane's own edge, whatever the fraction.
+    for (const f of [1, 0.6, 0.25, 0.05]) {
+      const half = skylightPatchHalfSides(o, f);
+      expect(at(f) + half.across).toBeCloseTo(230);
+    }
+  });
+
+  it("turns that slide over with the symbol", () => {
+    // `flipV` hangs the sash at the other edge, and the blind comes down from
+    // wherever the sash is hung — so the clear strip is on the other side too.
+    const up = skylightPatchCenter(sky(), down, 0, 0.4).y;
+    const over = skylightPatchCenter(sky({ flipV: true }), down, 0, 0.4).y;
+    expect(up).toBeGreaterThan(200);
+    expect(over - 200).toBeCloseTo(-(up - 200));
+  });
+
+  it("keeps the drop and the slide independent", () => {
+    // One says where the sun puts the light, the other where on the glass the
+    // light got in. A skylight turned 90° slides along the plan's x while the
+    // sun still drops it down y, and the two must not be confused.
+    const turned = sky({ angle: 90 });
+    const c = skylightPatchCenter(turned, down, 100, 0.5);
+    expect(c.y).toBeCloseTo(300); // the drop, untouched by the blind
+    expect(c.x).toBeCloseTo(200 - 15); // the slide, along the opening's own axis
   });
 
   it("slides further from a higher ceiling", () => {

@@ -180,8 +180,12 @@ the sky; a skylight stands behind none of them, so it is never asked.
 
 **And it is glass**, so what stops the light is the blind, not the sash — see
 [The blind is the switch](appearance.md#the-blind-is-the-switch-not-the-sash).
-A blind half down leaves half the patch, unlike a wall opening's shutter, which
-the plan can only draw up or down. `glazed: false` makes it a roof hatch
+A blind half down leaves half the patch — and leaves it **against the edge of
+the glass that is still clear**, not in the middle. Nothing about a roof light
+narrows from both sides: the blind comes down from the head edge and the sash
+foreshortens toward that same edge, so what is open is always the strip at the
+far one. A wall opening's shutter gets none of this, because the plan can only
+draw it up or down. `glazed: false` makes it a roof hatch
 instead, admitting light only as far as it is actually open.
 
 Skins can restyle both through `--fp-skin-sunlight` and `--fp-skin-sunshade`.
