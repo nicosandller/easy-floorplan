@@ -608,3 +608,52 @@ describe("a pinned element sits out a group drag (issue #191)", () => {
     expect(out.walls![0]).toMatchObject({ x1: 0, y1: 0, x2: 100, y2: 0 });
   });
 });
+
+describe("picking a skylight (issue #285)", () => {
+  const opts = { itemSize: 34, textSize: 16, wallThickness: 8 };
+  // A roof light drawn inside a room, which is where every one of them is.
+  const floor = {
+    id: "f", name: "F",
+    walls: [],
+    openings: [{ id: "sk", type: "skylight", x: 200, y: 200, length: 120, width: 80, angle: 0 }],
+    items: [], texts: [], furniture: [], trackers: [],
+    areas: [{ id: "living", name: "Living",
+      points: [{ x: 50, y: 50 }, { x: 350, y: 50 }, { x: 350, y: 350 }, { x: 50, y: 350 }] }],
+  } as unknown as Floor;
+
+  it("answers anywhere inside the rectangle it draws, not just a strip down the middle", () => {
+    // The editor and the card both lay a hit target over the whole rectangle
+    // (openingHitSize). This picker is what actually resolves the click, and
+    // it measured every opening against the wall's thickness — so a 80-deep
+    // roof light was pickable through 4 units either side of its centre line,
+    // and every click outside that fell through to the room underneath. The
+    // same trap the text labels two functions up hit in #225.
+    for (const [dx, dy] of [[0, 0], [0, 30], [0, -30], [55, 35], [-55, -35]]) {
+      const at = elementsAtPoint(floor, 200 + dx, 200 + dy, opts);
+      expect(at[0], `offset ${dx},${dy}`).toEqual({ kind: "opening", id: "sk" });
+    }
+  });
+
+  it("still stops at the edges of that rectangle", () => {
+    // Not simply "always wins": outside the glass it is the room again.
+    for (const [dx, dy] of [[0, 55], [75, 0]]) {
+      const at = elementsAtPoint(floor, 200 + dx, 200 + dy, opts);
+      expect(at.map((s) => s.kind), `offset ${dx},${dy}`).not.toContain("opening");
+    }
+  });
+
+  it("leaves a wall opening measured against the wall", () => {
+    // A door's target is the hole it stands in, and widening it here would
+    // start stealing clicks from whatever is drawn beside the wall.
+    const withDoor = {
+      ...floor,
+      openings: [{ id: "d", type: "door", x: 200, y: 200, length: 120, angle: 0 }],
+    } as unknown as Floor;
+    // Pinned at both edges of the band the wall's thickness gives it, so the
+    // door notices if this line ever stops reading `opts.wallThickness` —
+    // narrowing it is as much a regression as widening it.
+    expect(elementsAtPoint(withDoor, 200, 200, opts)[0]).toEqual({ kind: "opening", id: "d" });
+    expect(elementsAtPoint(withDoor, 200, 206, opts)[0]).toEqual({ kind: "opening", id: "d" });
+    expect(elementsAtPoint(withDoor, 200, 220, opts).map((s) => s.kind)).not.toContain("opening");
+  });
+});

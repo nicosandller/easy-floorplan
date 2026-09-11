@@ -4892,13 +4892,26 @@ export function renderSunlight(
    * the patch was ever going to land.
    */
   const downwindShadows = (o: Opening): string[] => {
+    // Swept far enough to actually reach this skylight's patch, rather than
+    // reused from the plan's own shadows. Those are `reach` long, which is the
+    // distance a *beam* carries; the patch sits `drop x ceilingHeight` from
+    // the skylight, and past about two and a half storeys that is beyond the
+    // end of the sweep. The polygon was still there, so a test asking whether
+    // the mask had one passed — while the wall shaded nothing and the patch
+    // lay in full sun on the far side of it. The editor's slider goes to 4.
+    //
+    // The extra half-diagonal covers the patch's own corners: the centre
+    // being inside a shadow is not enough when the rectangle around it is what
+    // gets painted.
+    const span = drop * skylightCeilingHeight(o) + Math.hypot(o.length, skylightWidth(o)) / 2;
+    const polys = span > reach ? blockers.map((w) => sunShadowPolygon(w, dir, span)) : shadowPolys;
     const out: string[] = [];
     for (let k = 0; k < blockers.length; k++) {
       const w = blockers[k]!;
       const s1 = (w.x1 - o.x) * dir.x + (w.y1 - o.y) * dir.y;
       const s2 = (w.x2 - o.x) * dir.x + (w.y2 - o.y) * dir.y;
       if (Math.max(s1, s2) <= 0) continue;
-      out.push(shadowPolys[k] ? polyPoints(shadowPolys[k]!) : "");
+      out.push(polys[k] ? polyPoints(polys[k]!) : "");
     }
     return out.filter(Boolean);
   };

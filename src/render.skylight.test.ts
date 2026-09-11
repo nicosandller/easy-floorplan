@@ -19,6 +19,8 @@ import {
   skylightPatchCenter,
   skylightPatchHalfSides,
   skylightPatchPolygon,
+  sunReachFraction,
+  pointInPolygon,
   skylightWidth,
   wallsLightPassesThrough,
 } from "./render";
@@ -280,6 +282,30 @@ describe("renderSunlight with a roof light in the plan", () => {
     const mask = near.match(/<mask id=sun-k0[\s\S]*?<\/mask>/)![0];
     expect(mask).toContain("<rect");
     expect(mask).not.toContain("<polygon");
+  });
+
+  it("is shaded by a downwind wall however high the ceiling is", () => {
+    // The mask carrying *a* polygon is not the same as the patch being dark.
+    // The wall shadows are swept `reach` from the wall, while the patch sits
+    // `drop x ceilingHeight` from the skylight — past the end of that sweep
+    // from about 2.5 storeys up, and the editor's own slider goes to 4. So a
+    // full-height wall a stride downwind stopped shading anything, which is
+    // the exact opposite of "downwind or nothing".
+    const reach = 400 * sunReachFraction(undefined);
+    const drop = reach * skylightDropFraction(undefined);
+    for (const ceilingHeight of [1, 2, 3, 4]) {
+      const s = light([sky({ x: 200, y: 40, ceilingHeight })]);
+      const mask = /<mask id=sun-k0[\s\S]*?<\/mask>/.exec(s)![0];
+      const pts = /<polygon points="?([-\d.,\s]+)"?/.exec(mask)![1]!
+        .trim()
+        .split(/\s+/)
+        .map((p) => {
+          const [x, y] = p.split(",").map(Number);
+          return { x: x!, y: y! };
+        });
+      const c = skylightPatchCenter(sky({ x: 200, y: 40, ceilingHeight }), down, drop);
+      expect(pointInPolygon(pts, c.x, c.y), `ceilingHeight ${ceilingHeight}`).toBe(true);
+    }
   });
 
   it("is shaded by the walls downwind of it", () => {
