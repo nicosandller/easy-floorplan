@@ -4942,12 +4942,18 @@ export function renderSunlight(
    * metres upwind of it lost its patch entirely, which is the arrangement
    * almost every real roof light is in.
    *
-   * A wall straddling the skylight — part upwind, part downwind — counts as
-   * downwind, so a little of its length shades that should not. The exact
-   * answer is to cut the wall at the skylight's own along-light coordinate,
-   * and it is not worth it: the shading is wrong only in the wedge behind the
-   * upwind half, which is upwind of the patch as well and so is not somewhere
-   * the patch was ever going to land.
+   * A wall straddling the skylight — part upwind, part downwind — is **cut**
+   * at the skylight's own along-light coordinate, and only the downwind piece
+   * casts. Taking the whole wall instead was the first version, on the
+   * argument that the error was confined to a wedge behind the upwind half
+   * that the patch was never going to land in. That argument is wrong, and
+   * wrong in the ordinary case rather than a corner one: a room's perimeter
+   * walls all run *past* a skylight rather than stopping at it, so every one
+   * of the four had a far end projecting downwind and every one of them was
+   * taken whole. Their shadows then swept the floor from the wrong side, and a
+   * roof light near its own outside wall lost the patch it should have laid —
+   * measured, not guessed: at `ceilingHeight` 0.6 the patch centre sat inside
+   * the shadow of the wall two metres *upwind* of it.
    */
   const downwindShadows = (o: Opening): string[] => {
     // Swept far enough to actually reach this skylight's patch, rather than
@@ -4962,16 +4968,28 @@ export function renderSunlight(
     // being inside a shadow is not enough when the rectangle around it is what
     // gets painted.
     const span = drop * skylightCeilingHeight(o) + Math.hypot(o.length, skylightWidth(o)) / 2;
-    const polys = span > reach ? blockers.map((w) => sunShadowPolygon(w, dir, span)) : shadowPolys;
+    const reachFor = Math.max(span, reach);
     const out: string[] = [];
-    for (let k = 0; k < blockers.length; k++) {
-      const w = blockers[k]!;
+    for (const w of blockers) {
       const s1 = (w.x1 - o.x) * dir.x + (w.y1 - o.y) * dir.y;
       const s2 = (w.x2 - o.x) * dir.x + (w.y2 - o.y) * dir.y;
       if (Math.max(s1, s2) <= 0) continue;
-      out.push(polys[k] ? polyPoints(polys[k]!) : "");
+      // The piece of it that is actually downwind. Whole when both ends are;
+      // otherwise cut where the wall crosses the skylight's own along-light
+      // coordinate, which is where the ray stops being outside the building.
+      let cut = w;
+      if (Math.min(s1, s2) < 0) {
+        const t = s1 / (s1 - s2);
+        const mx = w.x1 + (w.x2 - w.x1) * t;
+        const my = w.y1 + (w.y2 - w.y1) * t;
+        cut =
+          s1 > 0
+            ? { ...w, x2: mx, y2: my }
+            : { ...w, x1: mx, y1: my };
+      }
+      out.push(polyPoints(sunShadowPolygon(cut, dir, reachFor)));
     }
-    return out.filter(Boolean);
+    return out;
   };
   // Only the openings the sun actually shines on are sources — see
   // {@link sunReachesOpening}, which asks it of the *uncut* walls. Testing the

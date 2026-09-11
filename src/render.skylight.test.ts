@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   SKYLIGHT_DROP,
+  SUN_REACH,
   SKYLIGHT_SPREAD,
   SKYLIGHT_WIDTH_RATIO,
   SHUTTER_MARK_OFFSET,
@@ -26,7 +27,7 @@ import {
   wallsLightPassesThrough,
 } from "./render";
 import { deadSpaces } from "./dead-space";
-import type { Opening, Wall } from "./types";
+import type { AreaPoint, Opening, Wall } from "./types";
 import { nothing } from "lit";
 
 /** As render.opening.test.ts — lit templates back into markup. */
@@ -328,6 +329,17 @@ describe("where a skylight's light lands", () => {
   });
 });
 
+/** The shadow polygons inside a skylight's own mask, as point lists. */
+function shadowsOf(markup: string, id = "sun-k0"): AreaPoint[][] {
+  const mask = markup.match(new RegExp(`<mask id=${id}[\\s\\S]*?<\\/mask>`))?.[0] ?? "";
+  return [...mask.matchAll(/<polygon points=([-\d., ]+)/g)].map((m) =>
+    m[1]!
+      .trim()
+      .split(" ")
+      .map((q) => ({ x: Number(q.split(",")[0]), y: Number(q.split(",")[1]) }))
+  );
+}
+
 describe("renderSunlight with a roof light in the plan", () => {
   const wall: Wall = { id: "w1", x1: 0, y1: 100, x2: 400, y2: 100 };
   const light = (openings: Opening[], walls: Wall[] = [wall]) =>
@@ -384,6 +396,46 @@ describe("renderSunlight with a roof light in the plan", () => {
       const c = skylightPatchCenter(sky({ x: 200, y: 40, ceilingHeight }), down, drop);
       expect(pointInPolygon(pts, c.x, c.y), `ceilingHeight ${ceilingHeight}`).toBe(true);
     }
+  });
+
+  it("is not shaded by the wall it is standing next to", () => {
+    // The ordinary case, and the one the first version got wrong. A room's
+    // perimeter walls run *past* a roof light rather than stopping at it, so
+    // every one of the four has a far end projecting downwind — and taken
+    // whole, every one of them cast across the floor from the wrong side. A
+    // skylight near its own outside wall then lost the patch it should have
+    // laid. The wall is now cut at the skylight's along-light coordinate.
+    const W = 1000;
+    const H = 600;
+    const room: Wall[] = [
+      { id: "n", x1: 60, y1: 60, x2: 940, y2: 60 },
+      { id: "e", x1: 940, y1: 60, x2: 940, y2: 540 },
+      { id: "s", x1: 940, y1: 540, x2: 60, y2: 540 },
+      { id: "w", x1: 60, y1: 540, x2: 60, y2: 60 },
+    ];
+    // A diagonal sun, which is the arrangement that exposes it: the north and
+    // west walls each run from upwind of the roof light to downwind of it, so
+    // both straddle. Straight overhead they would simply be excluded and the
+    // bug would never show.
+    //
+    // …and a low ceiling, which is the other half. The patch lands close to
+    // the skylight, so it is still well inside the band an uncut wall sweeps;
+    // a patch thrown further clears the end of that band and escapes by luck.
+    const se = { x: Math.SQRT1_2, y: Math.SQRT1_2 };
+    const o = sky({ x: 160, y: 130, length: 100, width: 62, ceilingHeight: 0.6 });
+    const s = serialize(
+      renderSunlight(room, [o], W, H, "sun", {
+        dir: se,
+        openAmount: () => 0,
+        shutterOpen: () => undefined,
+      })
+    );
+    const patch = skylightPatchCenter(o, se, Math.min(W, H) * SUN_REACH * SKYLIGHT_DROP);
+    const shadows = shadowsOf(s);
+    // Not vacuous: all four walls are still cast, they simply start downwind
+    // of the skylight now instead of at their own far ends.
+    expect(shadows.length).toBe(4);
+    for (const p of shadows) expect(pointInPolygon(p, patch.x, patch.y)).toBe(false);
   });
 
   it("is shaded by the walls downwind of it", () => {
