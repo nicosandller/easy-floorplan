@@ -2179,6 +2179,13 @@ export function projectSunForm(c: FloorplanCardConfig): FormSpec {
 export function projectReliefForm(c: FloorplanCardConfig): FormSpec {
   const fields: FormField[] = [
     {
+      name: "ambientDaylight",
+      label: "Ambient daylight",
+      helper:
+        "Soft sky light through exterior windows and open or glazed doors, even when direct sun does not hit them",
+      selector: { boolean: {} },
+    },
+    {
       name: "sunlight",
       label: "Let the sun in",
       helper:
@@ -2234,6 +2241,7 @@ export function projectReliefForm(c: FloorplanCardConfig): FormSpec {
   return {
     fields,
     data: {
+      ambientDaylight: c.ambientDaylight ?? false,
       sunlight: c.sunlight ?? false,
       sunShade: c.sunShade ?? true,
       north: c.north ?? 0,
@@ -2242,13 +2250,20 @@ export function projectReliefForm(c: FloorplanCardConfig): FormSpec {
       sunBearing: c.sunBearing ?? DEFAULT_SUN_BEARING,
     },
     toPatch: (p) => {
-      const out = { ...p };
-      // Nothing left to aim or to paint, so all of it goes — every one of
-      // these keys is read only while the light is on, and left behind they
+      let out = { ...p };
+      // Ambient daylight is an independent opt-in; false is the default and
+      // therefore stays out of YAML even when direct sunlight is also toggled.
+      if ("ambientDaylight" in out && !out.ambientDaylight)
+        out = { ...out, ambientDaylight: undefined };
+      // Nothing left to aim or to paint, so all of the direct-sun state goes —
+      // every one of these keys is read only while the light is on, and left behind they
       // would sit in the YAML meaning nothing and come back stale on
       // re-enable. The colours are set by their own rows rather than by this
       // form, which is exactly why they have to be named here: nothing else
       // is watching this switch.
+      // ambientDaylight is deliberately absent from the list below: it is a
+      // sibling layer with its own switch, so turning the direct sun off must
+      // not silently turn the sky off with it.
       if ("sunlight" in out && !out.sunlight) {
         return {
           ...out,
