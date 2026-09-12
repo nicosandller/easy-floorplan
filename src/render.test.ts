@@ -126,6 +126,7 @@ import {
   resolvePlanRotation,
   subscribeOrientation,
   rotatedCanvasSize,
+  floorSwitcherAnchor,
   rotatePlanAngle,
   rotatePlanPoint,
   planRotationTransform,
@@ -6322,6 +6323,44 @@ describe("item label color (itemLabelColor)", () => {
     expect(itemLabelColor({ disableLabelColor: true, useCustomLabelColor: true, labelCustomColor: "#00ff00" }, "#ff0000")).toBe("#00ff00");
   });
 });
+describe("floorSwitcherAnchor — where the floor switcher sits (issue #281)", () => {
+  it("reads a position", () => {
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: 60, y: 100 } })).toEqual({ x: 60, y: 100 });
+  });
+
+  it("says nothing when none is set, which is the corner it always used", () => {
+    expect(floorSwitcherAnchor({})).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: undefined })).toBeUndefined();
+  });
+
+  it("refuses half a point rather than implying the other half", () => {
+    // `{ x: 100 }` is not a position. Reading the missing half as 0 would drop
+    // the switcher in the top-left corner with nothing on screen saying why.
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: 100 } as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { y: 100 } as never })).toBeUndefined();
+  });
+
+  it("refuses anything that is not a pair of real numbers", () => {
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: NaN, y: 10 } })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: 10, y: Infinity } })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: "top-right" as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: null as never })).toBeUndefined();
+  });
+
+  it("takes a numeric string, since YAML hands those over freely", () => {
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: "60", y: "100" } as never })).toEqual({
+      x: 60,
+      y: 100,
+    });
+  });
+
+  it("keeps a point outside the canvas instead of clamping it", () => {
+    // A plan whose walls stop short of the canvas has real empty margin to
+    // park the switcher in, and clamping would drag it back onto the drawing.
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: -40, y: 900 } })).toEqual({ x: -40, y: 900 });
+  });
+});
+
 describe("rotatePlanAngle — a bearing turns with the plan (issue #280)", () => {
   // "Ripple direction stays in editing reference": the overlay is HTML and is
   // never transformed as a whole, so a direction set in the editor kept
@@ -6370,5 +6409,34 @@ describe("rotatePlanAngle — a bearing turns with the plan (issue #280)", () =>
 
   it("is the identity on an unrotated plan, which is every plan by default", () => {
     for (const a of [0, 45, 180, 359]) expect(rotatePlanAngle(a, 0)).toBe(a);
+  });
+});
+
+describe("floorSwitcherAnchor — what Number() would have let through (issue #281 review)", () => {
+  // `Number()` answers 0 for all of these, so coercing before checking the
+  // type accepted them and parked the switcher on the left edge — while the
+  // function's own contract said both halves had to be real numbers.
+  it("refuses a key written with no value, which YAML reads as null", () => {
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: null, y: 100 } as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: 100, y: null } as never })).toBeUndefined();
+  });
+
+  it("refuses a blank string", () => {
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: "", y: 100 } as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: "   ", y: 100 } as never })).toBeUndefined();
+  });
+
+  it("refuses values that are not numbers at all", () => {
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: false, y: 100 } as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: [], y: 100 } as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: {}, y: 100 } as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: "left", y: 100 } as never })).toBeUndefined();
+  });
+
+  it("still takes 0, which is a real coordinate", () => {
+    // The point of checking the type rather than the value: the top-left
+    // corner of the canvas is a legitimate place to put it.
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: 0, y: 0 } })).toEqual({ x: 0, y: 0 });
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: "0", y: "0" } as never })).toEqual({ x: 0, y: 0 });
   });
 });

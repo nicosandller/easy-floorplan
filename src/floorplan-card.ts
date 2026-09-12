@@ -122,6 +122,7 @@ import {
   resolvePlanRotation,
   subscribeOrientation,
   rotatedCanvasSize,
+  floorSwitcherAnchor,
   rotatePlanAngle,
   rotatePlanPoint,
   planRotationTransform,
@@ -1428,7 +1429,18 @@ export class FloorplanCard extends LitElement {
               </button>`
             : nothing}
           ${compactTitle ? html`<div class="plan-title">${c.title}</div>` : nothing}
-          ${floors.length > 1 ? this._renderFloorSwitcher(floors, active, compact) : nothing}
+          <!-- Outside the zoom wrapper on purpose, placed or not (issue #281).
+               The buttons are how you change floor, and zoom-to-room can scale
+               the plan well past the card: carried along, a switcher placed in
+               the hall would leave the viewport the moment you tapped a room at
+               the other end, and there would be no way to change floor until
+               you zoomed back out. A control you can lose is a worse failure
+               than one that overlaps the drawing for as long as a zoom lasts —
+               and the position is chosen against the view people spend their
+               time in, which is the unzoomed one. -->
+          ${floors.length > 1
+            ? this._renderFloorSwitcher(floors, active, compact, c, rot)
+            : nothing}
         </div>
         </div>
       </ha-card>
@@ -1440,9 +1452,32 @@ export class FloorplanCard extends LitElement {
     return renderReplayPanel(createReplayPanelProps(this._replayController));
   }
 
-  private _renderFloorSwitcher(floors: Floor[], active: Floor, compact = false): TemplateResult {
+  private _renderFloorSwitcher(
+    floors: Floor[],
+    active: Floor,
+    compact = false,
+    c?: FloorplanCardConfig,
+    rot: PlanRotation = 0,
+  ): TemplateResult {
+    // Where the author put it (issue #281), mapped into the displayed frame
+    // like every other anchor so a rotated card keeps it in the same corner of
+    // the house. Absent, the CSS corner it has always used stands — the class
+    // is what switches between the two, so an unpositioned plan emits no
+    // inline style at all and is byte-identical to before.
+    const at = c ? floorSwitcherAnchor(c) : undefined;
+    const placed = at
+      ? rotatePlanPoint(at.x, at.y, cssNumber(c!.width, DEFAULT_WIDTH), cssNumber(c!.height, DEFAULT_HEIGHT), rot)
+      : undefined;
+    const dims = c
+      ? rotatedCanvasSize(cssNumber(c.width, DEFAULT_WIDTH), cssNumber(c.height, DEFAULT_HEIGHT), rot)
+      : { w: 1, h: 1 };
     return html`
-      <div class="floor-switcher ${compact ? "row" : ""}">
+      <div
+        class="floor-switcher ${compact ? "row" : ""} ${placed ? "placed" : ""}"
+        style=${placed
+          ? `left:${(placed.x / dims.w) * 100}%; top:${(placed.y / dims.h) * 100}%;`
+          : nothing}
+      >
         ${floors.map((f) => {
           // Per-floor accent (issue #67): applied only while active so the
           // resting buttons stay theme-neutral. cssColor gates the config
@@ -1624,6 +1659,19 @@ export class FloorplanCard extends LitElement {
       pointer-events: auto;
       z-index: 1;
     }
+    /* Placed by the author (issue #281). The corner rules above are overridden
+       rather than made conditional, so a plan that sets no position emits no
+       inline style and renders exactly as it always has. The right:auto is the
+       load-bearing half: without it the block is pinned to both edges and the
+       left the card just set does nothing but stretch it. */
+    .floor-switcher.placed {
+      right: auto;
+      transform: translate(-50%, -50%);
+    }
+    /* Centred on its anchor in both axes, so the point you drop it on is the
+       middle of the block rather than a corner of it — which is what makes a
+       drag feel like it is holding the thing it is holding. A wrapped compact
+       row centres the same way. */
     /* Compact chrome (issue #152): the buttons run across the top strip
        instead of down the side, so they share it with the title chip rather
        than each claiming their own band. Wrapped, because a plan with eight
