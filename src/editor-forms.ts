@@ -27,6 +27,9 @@ import {
 import {
   DEFAULT_AREA_OPACITY,
   DEFAULT_AREA_LABEL_SIZE,
+  MAX_AREA_ZOOM,
+  MAX_AREA_ZOOM_FIT,
+  DEFAULT_ZOOMED_OVERLAY_SCALE,
   DEFAULT_GRID,
   DEFAULT_ITEM_SIZE,
   DEFAULT_RIPPLE_SIZE,
@@ -37,6 +40,8 @@ import {
   DEFAULT_SUN_MAX,
   DEFAULT_PRESS_EFFECT,
   DEFAULT_OFFLINE_STYLE,
+  DEFAULT_RIPPLE_DIRECTION,
+  DEFAULT_RIPPLE_WIDTH,
 } from "./types";
 import {
   DEFAULT_LABEL_SIZE,
@@ -48,6 +53,7 @@ import {
   normalizePlanRotation,
   openingActionForGesture,
   openingMotion,
+  MIN_SASH_SPAN,
   openingHasTwoLeaves,
   sliderStyleHasTwoLeaves,
   pressEffectOf,
@@ -239,7 +245,17 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         // Not "garage / shutter": an external shutter is the Shutter field
         // below, a layer over any opening, and naming it here read as the
         // place to set one up.
-        opt("roll", "Roll up (garage)")
+        opt("roll", "Roll up (garage)"),
+        // Windows only (issue #218). A bay or picture window is an ordinary
+        // thing to draw; a door that cannot open is a wall, and offering it
+        // here would only invite drawing one. A hand-written config may still
+        // set it on a door, and the card draws that honestly as a sealed
+        // panel — this is about what the editor suggests, not what it allows.
+        // Windows only, for the same reason `fixed` is (issue #272): a
+        // top-hung sash is a window, and a top-hung door is not a thing.
+        ...(o.type === "window"
+          ? [opt("fixed", "Fixed (does not open)"), opt("awning", "Top-hinged (awning)")]
+          : [])
       ),
     },
     { name: "length", label: "Length", required: true, selector: { number: { min: 1, mode: "box" } } },
@@ -258,6 +274,27 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: door
         ? dropdown(opt("single", "Single (one leaf)"), opt("double", "Double (two leaves)"))
         : dropdown(opt("double", "Double (two leaves)"), opt("single", "Single sash")),
+    });
+  }
+  // How much of the frame actually opens (issue #218). Only a single leaf has
+  // a remainder to be fixed: a double already splits the opening between its
+  // two. Left at 1 it writes nothing, so this appears in no YAML that has not
+  // asked for it.
+  //
+  // Offered on doors as well as windows, unlike `fixed` above. A door leaf
+  // narrower than its frame is an ordinary sidelight door, not a degenerate
+  // case, and `renderOpening` already draws that remainder as a solid panel
+  // rather than glass — so the only thing that would be window-only here is
+  // the wording, which is why the wording is what varies.
+  if (motion === "swing" && openingSash(o) === "single") {
+    fields.push({
+      name: "sashSpan",
+      label: o.type === "door" ? "Leaf width" : "Sash width",
+      helper:
+        o.type === "door"
+          ? "Share of the opening that actually swings — the rest is a fixed panel"
+          : "Share of the opening that actually opens — the rest is fixed glass",
+      selector: { number: { min: MIN_SASH_SPAN, max: 1, step: 0.05, mode: "slider" } },
     });
   }
   // Glass, for a door. A window never needs asking, and the only thing that
@@ -586,11 +623,17 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           if (!v) out.icon = undefined;
         }
         else if (k === "motion") {
-          const motion = v === "slide" || v === "roll" ? (v as "slide" | "roll") : undefined;
+          const motion =
+            v === "slide" || v === "roll" || v === "fixed" || v === "awning"
+              ? (v as "slide" | "roll" | "fixed" | "awning")
+              : undefined;
           out.motion = motion;
           // sliderStyle only applies while sliding — drop it when switching
           // away (issue #145).
           if (v !== "slide") out.sliderStyle = undefined;
+          // Nothing swings any more, so the sash's share of the frame has
+          // nothing left to describe (issue #218).
+          if (v !== "swing") out.sashSpan = undefined;
           // The second leaf's sensor goes only if the opening this *becomes*
           // has no second leaf. Asked of the result rather than of the motion,
           // because since issue #159 a hinged double has one too: a two-sensor
@@ -601,6 +644,10 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
             sliderStyle: v === "slide" ? o.sliderStyle : undefined,
           } as Opening))
             out.secondaryEntity = undefined;
+        } else if (k === "sashSpan") {
+          // A full-width sash is what every opening drew before this field,
+          // so it is the default and stays out of the YAML (issue #218).
+          out.sashSpan = typeof v === "number" && v < 1 ? v : undefined;
         } else if (k === "sash") {
           // The two types default the other way round — a window opens with
           // two sashes, a door with one leaf — so only the value that is *not*
@@ -610,6 +657,9 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           // drive (issue #159).
           if (!openingHasTwoLeaves({ ...o, sash: v as "single" | "double" } as Opening))
             out.secondaryEntity = undefined;
+          // Two sashes already split the opening between them, so there is no
+          // leftover pane for `sashSpan` to describe (issue #218).
+          if (v === "double") out.sashSpan = undefined;
         } else if (k === "shutterStyle") {
           out.shutterStyle = v;
           // Only a hinged pair has a second panel — a roll curtain is one
@@ -866,30 +916,69 @@ export function itemShowStateForm(it: FloorItem): FormSpec {
 
 /** Group 3: where the label sits and how big it is. */
 export function itemLabelForm(it: FloorItem): FormSpec {
+  const fields: FormField[] = [
+    {
+      name: "labelPosition",
+      label: "Label position",
+      helper: "Beside the badge instead of under it — a long reading then grows one way only",
+      selector: dropdown(opt("below", "Below"), opt("left", "Left"), opt("right", "Right")),
+    },
+    {
+      name: "labelSize",
+      label: "Label size",
+      selector: { number: { min: 8, max: 40, step: 1, mode: "slider", unit_of_measurement: "px" } },
+    },
+    {
+      name: "disableLabelColor",
+      label: "Disable label color",
+      helper: "Keeps the text in its default color even if the icon changes color",
+      selector: { boolean: {} },
+    },
+  ];
+
+  if (it.disableLabelColor) {
+    fields.push({
+      name: "useCustomLabelColor",
+      label: "Own color",
+      helper: "Override the theme default with a fixed custom color",
+      selector: { boolean: {} },
+    });
+  }
+
   return {
-    fields: [
-      {
-        name: "labelPosition",
-        label: "Label position",
-        helper: "Beside the badge instead of under it — a long reading then grows one way only",
-        selector: dropdown(opt("below", "Below"), opt("left", "Left"), opt("right", "Right")),
-      },
-      {
-        name: "labelSize",
-        label: "Label size",
-        selector: { number: { min: 8, max: 40, step: 1, mode: "slider", unit_of_measurement: "px" } },
-      },
-    ],
+    fields,
     data: {
       labelPosition: labelPositionOf(it),
       labelSize: it.labelSize ?? DEFAULT_LABEL_SIZE,
+      disableLabelColor: it.disableLabelColor ?? false,
+      useCustomLabelColor: it.useCustomLabelColor ?? false,
+      labelCustomColor: it.labelCustomColor ?? "",
     },
-    // Below is the default, so it stays out of the YAML.
-    toPatch: (p) =>
-      "labelPosition" in p && p.labelPosition === "below" ? { ...p, labelPosition: undefined } : p,
+    toPatch: (p) => {
+      const out = { ...p };
+
+      // IMPORTANT: Determine the actual future state
+      const isDisable = out.disableLabelColor ?? it.disableLabelColor ?? false;
+      const isCustom = out.useCustomLabelColor ?? it.useCustomLabelColor ?? false;
+
+      if (out.labelPosition === "below") out.labelPosition = undefined;
+      if (out.disableLabelColor === false) out.disableLabelColor = undefined;
+      if (out.useCustomLabelColor === false) out.useCustomLabelColor = undefined;
+
+      // Clean up based on the ACTUAL state
+      if (!isDisable) {
+        out.useCustomLabelColor = undefined;
+        out.labelCustomColor = undefined;
+      } else if (!isCustom) {
+        out.labelCustomColor = undefined;
+      }
+
+      if (out.labelCustomColor === "") out.labelCustomColor = undefined;
+
+      return out;
+    },
   };
 }
-
 /**
  * Group 4: the badge — what it holds, which reading, and how big it is.
  *
@@ -1019,6 +1108,20 @@ export function itemEffectsForm(it: FloorItem, deviceClass?: string): FormSpec |
           number: { min: 40, max: 400, step: 4, mode: "slider", unit_of_measurement: "px" },
         },
       });
+      fields.push({
+        name: "rippleDirection",
+        label: "Ripple direction",
+        selector: {
+          number: { min: 0, max: 360, step: 1, mode: "slider", unit_of_measurement: "°" },
+        },
+      });
+      fields.push({
+        name: "rippleWidth",
+        label: "Ripple width",
+        selector: {
+          number: { min: 0, max: 360, step: 1, mode: "slider", unit_of_measurement: "°" },
+        },
+      });
     }
   }
   if (lights) {
@@ -1049,6 +1152,8 @@ export function itemEffectsForm(it: FloorItem, deviceClass?: string): FormSpec |
     data: {
       ripple,
       rippleSize: it.rippleSize ?? DEFAULT_RIPPLE_SIZE,
+      rippleDirection: it.rippleDirection ?? DEFAULT_RIPPLE_DIRECTION,
+      rippleWidth: it.rippleWidth ?? DEFAULT_RIPPLE_WIDTH,
       glow: it.glow ?? false,
       glowRadius: it.glowRadius ?? DEFAULT_GLOW_RADIUS,
       glowColor: it.glowColor ?? "",
@@ -1065,6 +1170,13 @@ export function itemEffectsForm(it: FloorItem, deviceClass?: string): FormSpec |
 
 export function itemGroup7aForm(it: FloorItem): FormSpec {
   const fields: FormField[] = [
+    {
+      name: "showOnlyWhenZoomed",
+      label: "Only show when zoomed into area",
+      helper:
+        "Hidden on the full plan, and shown once the room it sits in is zoomed into",
+      selector: { boolean: {} },
+    },
     {
       name: "enableHideByEntity",
       label: "Hide by condition (Entire Object)",
@@ -1278,6 +1390,7 @@ export function itemGroup7aForm(it: FloorItem): FormSpec {
   return {
     fields,
     data: {
+      showOnlyWhenZoomed: it.showOnlyWhenZoomed ?? false,
       enableHideByEntity: it.enableHideByEntity ?? false,
       hideEntity: it.hideEntity ?? "",
       hideAttribute: it.hideAttribute ?? "",
@@ -1305,7 +1418,20 @@ export function itemGroup7aForm(it: FloorItem): FormSpec {
       hideBadgeThreshold: it.hideBadgeThreshold ?? 0,
       hideBadgeInvert: it.hideBadgeInvert ?? false,
     },
-    toPatch: identity,
+    // Off is the default, so it leaves no key behind — an untouched device's
+    // YAML stays as short as it was before this switch existed.
+    //
+    // Only when the user actually touched it, though. `_renderForm` diffs the
+    // form against the event and passes on just the keys that changed, and
+    // `_updateItem` merges with a spread — so a key that is merely *present*
+    // and undefined overwrites what the config had. Writing it unconditionally
+    // meant every one of this group's two dozen other fields silently switched
+    // this one off. The sibling forms all prune inside a walk of
+    // `Object.entries(patch)`, which has the same guard built in.
+    toPatch: (patch) =>
+      "showOnlyWhenZoomed" in patch
+        ? { ...patch, showOnlyWhenZoomed: patch.showOnlyWhenZoomed || undefined }
+        : patch,
   };
 }
 /** Group 7: when the device is drawn at all, and what a press does. */
@@ -1559,6 +1685,43 @@ export function areaForm(a: Area): FormSpec {
         label: "Fill opacity",
         selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
       },
+      // How close tapping the room goes (issue #222). Only worth asking while
+      // a tap still zooms: an area with its own `tap_action` has replaced the
+      // zoom outright, and a number that does nothing is worse than no number.
+      //
+      // A toggle *and* a slider, rather than the slider alone resting at the
+      // fit's ceiling. That earlier shape made "fit" and an explicit 4 the
+      // same position, so a room whose fit is 1.15 — the ordinary case, and
+      // the one this feature exists for — could not be told to zoom to 4 at
+      // all. "Fit" is not a number on this scale; it is the absence of one,
+      // and it needs its own control to say so.
+      ...(a.tap_action
+        ? []
+        : [
+            {
+              name: "fitZoom",
+              label: "Fit the room to the card",
+              helper: "Off lets you set how close a tap goes",
+              selector: { boolean: {} },
+            },
+            ...(a.zoom === undefined
+              ? []
+              : [
+                  {
+                    name: "zoom",
+                    label: "Zoom level",
+                    helper: "How close a tap goes",
+                    selector: {
+                      number: {
+                        min: 1,
+                        max: MAX_AREA_ZOOM,
+                        step: 0.5,
+                        mode: "slider" as const,
+                      },
+                    },
+                  },
+                ]),
+          ]),
       // Optional entity that makes the room itself live (issue #6) — a presence
       // sensor that lights the room while it is occupied. Last, because most
       // areas are just outlines and never bind anything.
@@ -1615,12 +1778,30 @@ export function areaForm(a: Area): FormSpec {
       entity: a.entity ?? "",
       activeOpacity: a.activeOpacity ?? a.opacity ?? DEFAULT_AREA_OPACITY,
       highlight: a.highlight ?? "fill",
+      // "Fit" is the absence of a number, so it gets its own boolean; the
+      // slider only appears once that is off, and then always shows a real
+      // stored value.
+      fitZoom: a.zoom === undefined,
+      zoom: a.zoom ?? MAX_AREA_ZOOM_FIT,
       tap_action: a.tap_action,
       hold_action: a.hold_action,
       double_tap_action: a.double_tap_action,
     },
-    // "fill" is the default, so keep it out of the YAML.
-    toPatch: (p) => ("highlight" in p && p.highlight === "fill" ? { ...p, highlight: undefined } : p),
+    toPatch: (p) => {
+      let out = p;
+      // "fill" is the default, so keep it out of the YAML.
+      if ("highlight" in out && out.highlight === "fill") out = { ...out, highlight: undefined };
+      // The toggle is a form-only control: it says whether `zoom` is written
+      // at all, and must never reach the config itself (issue #222).
+      if ("fitZoom" in out) {
+        const { fitZoom, ...rest } = out;
+        // Turning the fit off has to leave a number behind for the slider that
+        // is about to appear — the fit's own ceiling is the natural opening
+        // bid, and unlike before it is now a real, re-selectable value.
+        out = { ...rest, zoom: fitZoom ? undefined : MAX_AREA_ZOOM_FIT };
+      }
+      return out;
+    },
   };
 }
 
@@ -1715,6 +1896,35 @@ export function projectPressForm(c: FloorplanCardConfig): FormSpec {
 }
 
 /**
+ * Project-level replay toggle. Keeps replay optional and explicit in config.
+ */
+export function projectReplayForm(c: FloorplanCardConfig): FormSpec {
+  const enabled = c.historyReplay?.enabled ?? false;
+  return {
+    fields: [
+      {
+        name: "historyReplayEnabled",
+        label: "Enable history replay",
+        helper: "Shows replay controls and loads mapped-entity history from Home Assistant",
+        selector: { boolean: {} },
+      },
+    ],
+    data: { historyReplayEnabled: enabled },
+    toPatch: (p) => {
+      if (!("historyReplayEnabled" in p)) return {};
+      if (!p.historyReplayEnabled) return { historyReplay: undefined };
+      return {
+        historyReplay: {
+          enabled: true,
+          lookbackSeconds: c.historyReplay?.lookbackSeconds,
+          defaultSpeed: c.historyReplay?.defaultSpeed,
+        },
+      };
+    },
+  };
+}
+
+/**
  * Built-in skins (issue #122). Its own one-field form so the editor can put it
  * at the top of the Project section, directly above the Background colour it
  * interacts with — the skin supplies the paper, `background` overrides it.
@@ -1753,6 +1963,34 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
         helper: "Rotates the live card only — editing stays as drawn",
         selector: dropdown(opt("0", "0°"), opt("90", "90°"), opt("180", "180°"), opt("270", "270°")),
       },
+      // Per-orientation overrides (issue #237). Two dropdowns with a "same as
+      // above" default rather than a switch plus two angles: the switch would
+      // be a third control whose only job is to say whether the other two
+      // count, and "same as above" says that per orientation and for free.
+      {
+        name: "rotationPortrait",
+        label: "…on a portrait screen",
+        helper: "Overrides the angle above while the screen is taller than it is wide",
+        selector: dropdown(
+          opt("", "Same as above"),
+          opt("0", "0°"),
+          opt("90", "90°"),
+          opt("180", "180°"),
+          opt("270", "270°")
+        ),
+      },
+      {
+        name: "rotationLandscape",
+        label: "…on a landscape screen",
+        helper: "Overrides the angle above while the screen is wider than it is tall",
+        selector: dropdown(
+          opt("", "Same as above"),
+          opt("0", "0°"),
+          opt("90", "90°"),
+          opt("180", "180°"),
+          opt("270", "270°")
+        ),
+      },
       {
         name: "overlayScale",
         label: "Badge & label size",
@@ -1773,6 +2011,13 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
         selector: { boolean: {} },
       },
       {
+        name: "zoomedOverlayScale",
+        label: "Zoomed badge size",
+        helper:
+          "Badges, labels and text while zoomed in to a room, as a multiple of their size at full plan. 1 keeps them the same",
+        selector: { number: { min: 0.5, max: 3, step: 0.1, mode: "slider" } },
+      },
+      {
         name: "offlineStyle",
         label: "Offline devices",
         helper: "How a device is drawn when its entity is unavailable or missing",
@@ -1785,8 +2030,19 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
     ],
     data: {
       rotation: String(normalizePlanRotation(c.rotation)),
+      // "" is "same as above" — the absence of an override, not an angle.
+      // `== null` for the same reason resolvePlanRotation uses it: a key
+      // written with no value (`rotationPortrait:`) parses to `null`, and
+      // reading that as an angle would show 0° here — then write it into the
+      // YAML as a real override the moment this panel is saved, turning a
+      // stray empty key into an instruction the plan never had.
+      rotationPortrait:
+        c.rotationPortrait == null ? "" : String(normalizePlanRotation(c.rotationPortrait)),
+      rotationLandscape:
+        c.rotationLandscape == null ? "" : String(normalizePlanRotation(c.rotationLandscape)),
       overlayScale: normalizeOverlayScale(c.overlayScale),
       compactHeader: c.compactHeader ?? false,
+      zoomedOverlayScale: c.zoomedOverlayScale ?? DEFAULT_ZOOMED_OVERLAY_SCALE,
       offlineStyle: offlineStyleOf(c),
     },
     toPatch: (p) => {
@@ -1794,6 +2050,12 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
       if ("rotation" in out)
         // Stored as a number; 0 means "not rotated", so keep it out of the YAML.
         out = { ...out, rotation: out.rotation === "0" ? undefined : Number(out.rotation) };
+      // The overrides keep their 0 (issue #237): "0° on a portrait screen" is
+      // a real instruction when the plan is otherwise rotated, and dropping it
+      // the way `rotation` drops its own would silently mean "same as above".
+      // Only "" — no override — leaves the YAML.
+      for (const k of ["rotationPortrait", "rotationLandscape"] as const)
+        if (k in out) out = { ...out, [k]: out[k] === "" ? undefined : Number(out[k]) };
       // Both values are written down, which is the one field here that breaks
       // the "defaults stay out of the YAML" habit — deliberately. Omitting the
       // default is what let 1.5.0 restyle every existing plan by changing its
@@ -1808,6 +2070,10 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
         out = { ...out, compactHeader: undefined };
       if ("offlineStyle" in out && out.offlineStyle === DEFAULT_OFFLINE_STYLE)
         out = { ...out, offlineStyle: undefined };
+      // Same again for the zoomed overlay: 1 means "no different while zoomed",
+      // which is what every plan did before this existed (issue #222).
+      if ("zoomedOverlayScale" in out && out.zoomedOverlayScale === DEFAULT_ZOOMED_OVERLAY_SCALE)
+        out = { ...out, zoomedOverlayScale: undefined };
       return out;
     },
   };
@@ -1965,12 +2231,14 @@ export function projectReliefForm(c: FloorplanCardConfig): FormSpec {
       if ("ambientDaylight" in out && !out.ambientDaylight)
         out = { ...out, ambientDaylight: undefined };
       // Nothing left to aim or to paint, so all of the direct-sun state goes —
-      // ambientDaylight deliberately survives because it is a sibling layer.
-      // these keys is read only while the light is on, and left behind they
+      // every one of these keys is read only while the light is on, and left behind they
       // would sit in the YAML meaning nothing and come back stale on
       // re-enable. The colours are set by their own rows rather than by this
       // form, which is exactly why they have to be named here: nothing else
       // is watching this switch.
+      // ambientDaylight is deliberately absent from the list below: it is a
+      // sibling layer with its own switch, so turning the direct sun off must
+      // not silently turn the sky off with it.
       if ("sunlight" in out && !out.sunlight) {
         return {
           ...out,

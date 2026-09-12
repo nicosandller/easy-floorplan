@@ -3,10 +3,11 @@ import { SUN_ELEVATION_DAY, SUN_ELEVATION_NIGHT } from "./types";
 import { OPENING_ON_WALL_EPS } from "./dead-space";
 
 /**
- * Prototype geometry for room-aware diffuse daylight.
+ * Room-aware diffuse daylight geometry.
  *
- * This module is deliberately pure and not wired into the card yet. It answers
- * the questions the eventual renderer needs without changing today's render:
+ * The module is deliberately pure: it reads no Home Assistant state and emits
+ * no SVG, so every decision below is testable on plain numbers. The card wires
+ * it up through ambient-daylight-integration.ts. It answers three questions:
  *
  * 1. Which openings are on the exterior envelope rather than between rooms?
  * 2. How much soft sky light reaches a sample point inside the adjacent room?
@@ -17,7 +18,7 @@ import { OPENING_ON_WALL_EPS } from "./dead-space";
  * even while no direct ray reaches it.
  */
 
-/** Prototype defaults. Kept here until visual calibration gives them a home in card config. */
+/** Tuning defaults. Kept here until visual calibration earns them a home in card config. */
 export const DEFAULT_AMBIENT_DAYLIGHT_STRENGTH = 0.28;
 export const DEFAULT_AMBIENT_DAYLIGHT_DEPTH = 0.8;
 export const DEFAULT_AMBIENT_DAYLIGHT_SPREAD = 1.15;
@@ -211,9 +212,10 @@ export function ambientOpeningSources(
 /**
  * Fraction of ambient sky light an opening can transmit, 0-1.
  *
- * `sunlight: false` remains the explicit "this opening is wall to daylight"
- * opt-out for this prototype only; a dedicated ambient opt-out can replace it
- * if the feature becomes public. Windows are glazed by default, doors opaque
+ * `sunlight: false` is the explicit "this opening is wall to daylight" opt-out,
+ * shared with the direct-sun layer; a dedicated ambient-only opt-out can be
+ * added later if a plan ever needs to split the two. Windows are glazed by
+ * default, doors opaque
  * by default. An opaque opening can still admit daylight while physically open.
  * `openFraction` and `shutterOpenFraction` are intentionally inputs rather
  * than HA reads so this module stays deterministic and renderer-agnostic.

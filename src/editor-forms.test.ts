@@ -26,11 +26,17 @@ import {
   floorImageForm,
   areaForm,
   areaNameForm,
+  itemGroup7aForm,
 } from "./editor-forms";
 import { itemHasLabel } from "./render";
 import type { FormField } from "./editor-forms";
 import type { Area, FloorText, Opening, FloorItem, Floor, Furniture, Tracker, FloorplanCardConfig } from "./types";
-import { DEFAULT_GLOW_RADIUS, DEFAULT_PRESS_EFFECT } from "./types";
+import {
+  DEFAULT_GLOW_RADIUS,
+  DEFAULT_PRESS_EFFECT,
+  MAX_AREA_ZOOM_FIT,
+  DEFAULT_ZOOMED_OVERLAY_SCALE,
+} from "./types";
 import { DEFAULT_SKIN, SKINS, MAX_SKIN_WALL_WIDTH } from "./skins";
 import { DEFAULT_SUN_BEARING, SUN_REACH } from "./render";
 
@@ -120,6 +126,68 @@ describe("openingForm", () => {
     expect(names).toContain("opens");
     expect(names).not.toContain("style");
     expect(names).not.toContain("slide");
+  });
+
+  it("offers Fixed on a window and not on a door (issue #218)", () => {
+    // A door that cannot open is a wall; offering it would only invite one.
+    const optsOf = (o: Opening) => {
+      const f = openingForm(o).fields.find((x) => x.name === "motion")!;
+      return (f.selector as { select: { options: { value: string }[] } }).select.options.map(
+        (x) => x.value,
+      );
+    };
+    expect(optsOf({ ...door, type: "window" } as Opening)).toContain("fixed");
+    expect(optsOf(door)).not.toContain("fixed");
+  });
+
+  it("asks for the sash's share only where there is a leftover pane (issue #218)", () => {
+    const win = { ...door, type: "window" } as Opening;
+    const names = (o: Opening) => openingForm(o).fields.map((x) => x.name);
+    expect(names({ ...win, sash: "single" } as Opening)).toContain("sashSpan");
+    // A double already splits the frame between its two leaves.
+    expect(names({ ...win, sash: "double" } as Opening)).not.toContain("sashSpan");
+    // Sliders, roll-ups and a fixed pane have nothing that swings.
+    expect(names({ ...win, motion: "slide" } as Opening)).not.toContain("sashSpan");
+    expect(names({ ...win, motion: "fixed" } as Opening)).not.toContain("sashSpan");
+  });
+
+  it("names the field for the opening it is on (review of #218)", () => {
+    // Offered on doors as well — a sidelight door is ordinary — but a door's
+    // remainder is a panel, not glass, so the wording has to follow the type.
+    const win = openingForm({ ...door, type: "window", sash: "single" } as Opening);
+    const dr = openingForm({ ...door, sash: "single" } as Opening);
+    const f = (spec: ReturnType<typeof openingForm>) =>
+      spec.fields.find((x) => x.name === "sashSpan")!;
+    expect(f(win).label).toBe("Sash width");
+    expect(f(win).helper).toContain("glass");
+    expect(f(dr).label).toBe("Leaf width");
+    expect(f(dr).helper).toContain("panel");
+    expect(f(dr).helper).not.toContain("glass");
+  });
+
+  it("keeps a full-width sash and a swing motion out of the YAML (issue #218)", () => {
+    const form = openingForm({ ...door, type: "window", sash: "single" } as Opening);
+    expect(form.toPatch({ sashSpan: 1 })).toEqual({ sashSpan: undefined });
+    expect(form.toPatch({ sashSpan: 0.4 })).toEqual({ sashSpan: 0.4 });
+  });
+
+  it("drops the sash's share when the opening stops swinging (issue #218)", () => {
+    const win = { ...door, type: "window", sash: "single", sashSpan: 0.4 } as Opening;
+    const form = openingForm(win);
+    expect(form.toPatch({ motion: "fixed" })).toMatchObject({
+      motion: "fixed",
+      sashSpan: undefined,
+    });
+    expect(form.toPatch({ motion: "slide" })).toMatchObject({ sashSpan: undefined });
+    // A patch says only what changes, so "cleared" is the key present and
+    // undefined — while *absent* means the sash keeps the width it had. Still
+    // swinging is the second of those, and asserting it loosely would not
+    // tell the two apart.
+    expect("sashSpan" in form.toPatch({ motion: "swing" })).toBe(false);
+    // And a second sash leaves no remainder to describe.
+    const twoSash = form.toPatch({ sash: "double" });
+    expect("sashSpan" in twoSash).toBe(true);
+    expect(twoSash.sashSpan).toBeUndefined();
   });
 
   it("sliding opening shows slide + style, hides hinge; biparting hides slide", () => {
@@ -427,7 +495,7 @@ describe("itemForm", () => {
       ["name", "showName"], // 1. Identity — what it is
       ["entity", "attribute"], // 2. What it reads…
       ["showState"], //         …including whether its own state shows
-      ["labelPosition", "labelSize"], // 3. Label
+      ["labelPosition", "labelSize", "disableLabelColor"], // 3. Label
       ["badgeMode", "size", "angle"], // 4. Badge
       // 5. Colour and the readings list are hand-rolled rows, not ha-form
       //    fields, so they do not appear here — the editor slots them into
@@ -977,12 +1045,112 @@ describe("wallForm / projectForm / floorImageForm", () => {
     expect((width.selector.number as { min: number }).min).toBe(1);
   });
 
+  it("rests both orientation overrides at \"same as above\" (issue #237)", () => {
+    const form = projectDisplayForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
+    expect(form.data.rotationPortrait).toBe("");
+    expect(form.data.rotationLandscape).toBe("");
+    // Back to "same as above" clears the override.
+    expect(form.toPatch({ rotationPortrait: "" })).toEqual({ rotationPortrait: undefined });
+    expect(form.toPatch({ rotationPortrait: "270" })).toEqual({ rotationPortrait: 270 });
+    // 0 is kept, unlike `rotation` — on a rotated plan it is a real answer.
+    expect(form.toPatch({ rotationLandscape: "0" })).toEqual({ rotationLandscape: 0 });
+  });
+
+  it("reads an override written with no value as unset, not 0°", () => {
+    // `rotationPortrait:` in YAML parses to null. Shown as 0° the editor would
+    // not just display the wrong thing — saving this panel would write that 0
+    // back as a real override, turning a stray empty key into an instruction
+    // the plan never had. Same `== null` reasoning as resolvePlanRotation.
+    const form = projectDisplayForm({
+      type: "t",
+      width: 1000,
+      height: 600,
+      rotation: 270,
+      rotationPortrait: null,
+      rotationLandscape: null,
+    } as unknown as FloorplanCardConfig);
+    expect(form.data.rotationPortrait).toBe("");
+    expect(form.data.rotationLandscape).toBe("");
+    // The base angle is untouched by the stray key.
+    expect(form.data.rotation).toBe("270");
+  });
+
+  it("shows an override the config already has (issue #237)", () => {
+    const form = projectDisplayForm({
+      type: "t",
+      width: 1000,
+      height: 600,
+      rotation: 270,
+      rotationLandscape: 0,
+    } as FloorplanCardConfig);
+    expect(form.data.rotation).toBe("270");
+    expect(form.data.rotationLandscape).toBe("0");
+    expect(form.data.rotationPortrait).toBe("");
+  });
+
+  it("offers the zoom controls only while a tap still zooms (issue #222)", () => {
+    const area = { id: "a", points: [{ x: 0, y: 0 }] } as Area;
+    expect(areaForm(area).fields.map((x) => x.name)).toContain("fitZoom");
+    // Its own tap_action has replaced the zoom, so a zoom level would be a
+    // number that does nothing.
+    const acting = { ...area, tap_action: { action: "toggle" } } as Area;
+    const names = areaForm(acting).fields.map((x) => x.name);
+    expect(names).not.toContain("fitZoom");
+    expect(names).not.toContain("zoom");
+  });
+
+  it("shows the slider only once the room has stopped fitting (issue #222)", () => {
+    const area = { id: "a", points: [{ x: 0, y: 0 }] } as Area;
+    // Fitting: the toggle is on and there is no number to show.
+    const fitted = areaForm(area);
+    expect(fitted.data.fitZoom).toBe(true);
+    expect(fitted.fields.map((x) => x.name)).not.toContain("zoom");
+    // Chosen: the toggle is off and the slider shows what was chosen.
+    const chosen = areaForm({ ...area, zoom: 8 } as Area);
+    expect(chosen.data.fitZoom).toBe(false);
+    expect(chosen.fields.map((x) => x.name)).toContain("zoom");
+    expect(chosen.data.zoom).toBe(8);
+  });
+
+  it("lets a room pick an explicit 4, which the old sentinel could not (review of #222)", () => {
+    // The bug this shape replaces: "fit" and an explicit 4 were the same
+    // slider position, so a room whose fit is 1.15 — the ordinary case, and
+    // the one the feature exists for — could never be told to zoom to 4.
+    const area = { id: "a", points: [{ x: 0, y: 0 }], zoom: 4 } as Area;
+    const form = areaForm(area);
+    expect(form.data.fitZoom).toBe(false);
+    expect(form.data.zoom).toBe(4);
+    // And 4 survives a round trip instead of being stripped as a default.
+    expect(form.toPatch({ zoom: 4 })).toEqual({ zoom: 4 });
+  });
+
+  it("keeps the fit toggle itself out of the config (issue #222)", () => {
+    const form = areaForm({ id: "a", points: [{ x: 0, y: 0 }], zoom: 8 } as Area);
+    // Turning the fit back on clears the number; the toggle never lands.
+    expect(form.toPatch({ fitZoom: true })).toEqual({ zoom: undefined });
+    // Turning it off leaves a real value behind for the slider to show.
+    expect(form.toPatch({ fitZoom: false })).toEqual({ zoom: MAX_AREA_ZOOM_FIT });
+    for (const p of [{ fitZoom: true }, { fitZoom: false }])
+      expect("fitZoom" in form.toPatch(p)).toBe(false);
+  });
+
+  it("keeps a zoomed overlay scale of 1 out of the YAML (issue #222)", () => {
+    const cfg = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+    const form = projectDisplayForm(cfg);
+    expect(form.data.zoomedOverlayScale).toBe(DEFAULT_ZOOMED_OVERLAY_SCALE);
+    expect(form.toPatch({ zoomedOverlayScale: 1 })).toEqual({ zoomedOverlayScale: undefined });
+    expect(form.toPatch({ zoomedOverlayScale: 1.5 })).toEqual({ zoomedOverlayScale: 1.5 });
+  });
+
   it("rotation lives in the bottom-row display form, defaults to 0°, and patches as a number", () => {
     const form = projectDisplayForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
     expect(form.fields.map((x) => x.name)).toEqual([
       "rotation",
+      "rotationPortrait",
+      "rotationLandscape",
       "overlayScale",
       "compactHeader",
+      "zoomedOverlayScale",
       "offlineStyle",
     ]);
     expect(form.data.rotation).toBe("0");
@@ -1728,7 +1896,7 @@ describe("areaForm — actions on rooms (issue #181)", () => {
 // each form can produce appears in exactly one of them.
 describe("every field lands in exactly one panel group", () => {
   const OPENING_GROUPS = [
-    ["type", "motion", "length", "sash", "hinge", "opens", "slide", "style", "angle"],
+    ["type", "motion", "length", "sash", "sashSpan", "hinge", "opens", "slide", "style", "angle"],
     ["entity", "secondaryEntity", "invert"],
     ["glazed", "sunlight"],
     [
@@ -1749,7 +1917,7 @@ describe("every field lands in exactly one panel group", () => {
     ["showName", "labelSize"],
     ["entity"],
     ["highlight", "opacity", "activeOpacity"],
-    ["tap_action", "hold_action", "double_tap_action"],
+    ["fitZoom", "zoom", "tap_action", "hold_action", "double_tap_action"],
   ];
 
   const check = (fields: { name: string }[], groups: string[][], what: string) => {
@@ -1771,6 +1939,8 @@ describe("every field lands in exactly one panel group", () => {
       { type: "window", sash: "single", entity: "binary_sensor.a" },
       { motion: "slide", sliderStyle: "biparting", entity: "binary_sensor.a" },
       { motion: "roll", entity: "cover.g" },
+      { type: "window", motion: "fixed" },
+      { type: "window", sash: "single", sashSpan: 0.4 },
       { shutterEntity: "binary_sensor.s", shutterStyle: "swing" },
       { shutterEntity: "cover.s", shutterStyle: "roll", entity: "binary_sensor.a" },
       { entity: "binary_sensor.a", showIcon: true },
@@ -1785,7 +1955,14 @@ describe("every field lands in exactly one panel group", () => {
     // offlineStyle as one form with one toPatch, but the panel renders the
     // first three under "Display" and the last under "Devices". Miss it in
     // both slices and the control silently disappears.
-    const DISPLAY = ["rotation", "overlayScale", "compactHeader"];
+    const DISPLAY = [
+      "rotation",
+      "rotationPortrait",
+      "rotationLandscape",
+      "overlayScale",
+      "compactHeader",
+      "zoomedOverlayScale",
+    ];
     const DEVICES = ["offlineStyle"];
     const cfg = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
     check(projectDisplayForm(cfg).fields, [DISPLAY, DEVICES], "project display");
@@ -1831,5 +2008,117 @@ describe("formSlice", () => {
     // renders nothing rather than throwing.
     expect(formSlice(spec, ["shutterStyle", "type"]).fields.map((f) => f.name)).toEqual(["type"]);
     expect(formSlice(spec, []).fields).toEqual([]);
+  });
+});
+
+describe("itemLabelForm — disableLabelColor and custom color state machine", () => {
+  const item = { id: "i", entity: "light.a", kind: "light", x: 0, y: 0, showName: true } as FloorItem;
+
+  it("offers disableLabelColor field when labelled", () => {
+    const fields = itemLabelForm(item)?.fields.map((f) => f.name) ?? [];
+    expect(fields).toContain("disableLabelColor");
+  });
+
+  it("clears custom color fields when disableLabelColor is toggled off", () => {
+    const form = itemLabelForm({
+      ...item,
+      disableLabelColor: true,
+      useCustomLabelColor: true,
+      labelCustomColor: "#ff0000",
+    } as FloorItem);
+
+    // Toggling disableLabelColor OFF must clear both useCustomLabelColor and labelCustomColor
+    const patch = form!.toPatch({ disableLabelColor: false });
+    expect(patch).toEqual({
+      disableLabelColor: undefined,
+      useCustomLabelColor: undefined,
+      labelCustomColor: undefined,
+    });
+  });
+
+  it("clears only labelCustomColor when useCustomLabelColor is toggled off", () => {
+    const form = itemLabelForm({
+      ...item,
+      disableLabelColor: true,
+      useCustomLabelColor: true,
+      labelCustomColor: "#ff0000",
+    } as FloorItem);
+
+    // Toggling useCustomLabelColor OFF must clear only labelCustomColor, keeping disableLabelColor
+    const patch = form!.toPatch({ useCustomLabelColor: false });
+    expect(patch).toEqual({
+      useCustomLabelColor: undefined,
+      labelCustomColor: undefined,
+    });
+  });
+
+  it("round-trips custom color when both toggles are enabled", () => {
+    const form = itemLabelForm(item);
+
+    expect(
+      form!.toPatch({
+        disableLabelColor: true,
+        useCustomLabelColor: true,
+        labelCustomColor: "#00ff00",
+      })
+    ).toEqual({
+      disableLabelColor: true,
+      useCustomLabelColor: true,
+      labelCustomColor: "#00ff00",
+    });
+  });
+});
+
+describe("itemGroup7aForm - showOnlyWhenZoomed", () => {
+  it("includes showOnlyWhenZoomed field and handles patching correctly", () => {
+    // Provide a fully compliant FloorItem mock
+    const item: FloorItem = { 
+      id: "test-item", 
+      x: 10, 
+      y: 10, 
+      entity: "sensor.test", 
+      kind: "sensor" 
+    };
+    const spec = itemGroup7aForm(item);
+
+    // 1. Verify the field exists in the form schema
+    const field = spec.fields.find((f) => f.name === "showOnlyWhenZoomed");
+    expect(field).toBeDefined();
+    expect(field?.selector).toEqual({ boolean: {} });
+
+    // 2. Verify data initialization defaults to false/undefined
+    expect(spec.data.showOnlyWhenZoomed).toBe(false);
+
+    // 3. Verify toPatch keeps true values
+    const patchTrue = spec.toPatch({ showOnlyWhenZoomed: true });
+    expect(patchTrue.showOnlyWhenZoomed).toBe(true);
+
+    // 4. Verify toPatch cleans up falsy/undefined values
+    const patchFalse = spec.toPatch({ showOnlyWhenZoomed: false });
+    expect(patchFalse.showOnlyWhenZoomed).toBeUndefined();
+  });
+
+  it("leaves the flag alone when the user is editing something else", () => {
+    // `_renderForm` diffs the form's data against the event and hands `toPatch`
+    // only the keys that changed, and `_updateItem` merges the result with a
+    // spread — so a key merely *present* and undefined overwrites the config.
+    // Group 7a holds two dozen other fields; pruning unconditionally meant
+    // switching on "Hide by condition" quietly switched this off.
+    //
+    // Asserted on key presence, not on the value: `toBeUndefined()` passes
+    // either way, which is exactly how this got through the first time.
+    const on = { id: "i", x: 0, y: 0, entity: "sensor.a", kind: "sensor",
+                 showOnlyWhenZoomed: true } as FloorItem;
+    const patch = itemGroup7aForm(on).toPatch({ enableHideByEntity: true });
+    expect("showOnlyWhenZoomed" in patch).toBe(false);
+    expect({ ...on, ...patch }.showOnlyWhenZoomed).toBe(true);
+  });
+
+  it("still prunes it when the user is the one turning it off", () => {
+    const on = { id: "i", x: 0, y: 0, entity: "sensor.a", kind: "sensor",
+                 showOnlyWhenZoomed: true } as FloorItem;
+    const patch = itemGroup7aForm(on).toPatch({ showOnlyWhenZoomed: false });
+    expect("showOnlyWhenZoomed" in patch).toBe(true);
+    expect({ ...on, ...patch }.showOnlyWhenZoomed).toBeUndefined();
   });
 });

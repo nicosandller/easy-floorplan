@@ -22,6 +22,14 @@ export interface HomeAssistant extends BaseHomeAssistant {
    */
   formatEntityState(stateObj: HassEntity, state?: string): string;
   /**
+   * The same, for one of an entity's attributes. Carried by HA since 2023.9
+   * and, like `formatEntityState`, the only thing that knows a cover position
+   * is a percentage or a temperature has a degree sign — the raw attribute is
+   * a bare number. Optional because a frontend older than that has none, which
+   * {@link entityAttributeText} falls back for.
+   */
+  formatEntityAttributeValue?(stateObj: HassEntity, attribute: string): string;
+  /**
    * The entity registry as the frontend exposes it. `custom-card-helpers` does
    * not declare it, though HA has handed it to cards since 2023.4. It carries
    * the user's per-entity icon override, which never appears in the state's
@@ -30,10 +38,19 @@ export interface HomeAssistant extends BaseHomeAssistant {
   entities?: Record<string, { icon?: string } | undefined>;
 }
 
-/** The slice of `hass` the card draws from. */
+/**
+ * The slice of `hass` the card draws from.
+ *
+ * Every wording HA owns has to be listed here, not just reachable off the real
+ * `hass`: this is what the card renders through, and anything missing silently
+ * degrades to whatever the raw state object says. A cover position left off
+ * this interface drew "50" on the card and "50%" in the editor, because the
+ * editor hands the real `hass` straight to the same helper (issue #260).
+ */
 export interface RenderHass {
   states: Record<string, HassEntity | undefined>;
   formatEntityState(stateObj: HassEntity): string;
+  formatEntityAttributeValue?(stateObj: HassEntity, attribute: string): string;
 }
 
 /** A straight wall segment in virtual coordinate space. */
@@ -52,6 +69,29 @@ export interface Wall {
    * cleared by its own opening. Raise the ceiling only alongside that mask.
    */
   thickness?: number;
+  /**
+   * Pinned in place in the editor (issue #191).
+   *
+   * A locked element still selects, still edits, still deletes — everything but
+   * *move*. It cannot be dragged, its handles do not stretch it, and arrow keys
+   * do not nudge it, alone or as part of a group. It also yields the click:
+   * anything unlocked under the pointer is picked first, so an unlocked window
+   * on a locked wall selects the window instead of the wall behind it.
+   *
+   * Both halves matter and neither is enough alone. Yielding the click without
+   * pinning still lets a determined mis-click drag the wall; pinning without
+   * yielding still costs a second click to get past it. Together they are what
+   * the reporter asked for: "every time I want to move a window, I end up moving
+   * a wall instead".
+   *
+   * Selectable on purpose, rather than untouchable the way a design tool's
+   * locked layer is: those tools have a layers panel to unlock from and this
+   * editor does not, so an element that could not be picked could never be
+   * unlocked either.
+   *
+   * The editor writes it; nothing about the rendered card reads it.
+   */
+  locked?: boolean;
 }
 
 export type OpeningType = "door" | "window";
@@ -78,8 +118,63 @@ export interface Opening {
    * wall (see {@link sliderStyle}); `roll` is a roll-up cover — garage door,
    * roller shutter — whose slatted curtain leaves the floor plane (issue #45),
    * drawn thinning toward the track line as it opens.
+   *
+   * `fixed` is the one that does not move at all (issue #218): a bay window, a
+   * picture window, a glass-brick panel — a hole in the wall filled with glass
+   * and nothing hinged about it. It is a fourth *motion* rather than a flag
+   * because that is what it is the fourth of, and because every other way of
+   * saying it lies: a swing window with no sensor draws shut but still carries
+   * a leaf and an arc, and one bound to a sensor could be told to open.
+   *
+   * A fixed opening ignores `entity` **for its drawing** — nothing to animate —
+   * but keeps everything else an opening has: it is still tappable, still
+   * badges, and still glass to the light. What it never is, is a gap: see
+   * {@link openingClearFraction}, which answers 0 for it whatever a sensor says.
+   *
+   * `awning` is the top-hinged window (issue #272): hinged at its head, swung
+   * out at the sill. A fifth motion for the same reason `fixed` is a fourth —
+   * it is a different way of moving, and in plan it is a different drawing
+   * entirely. A casement rotates *within* the plan and sweeps an arc across the
+   * floor; an awning rotates about a horizontal axis and leaves the plan
+   * altogether, so you see it edge-on projecting from the wall with the hinge
+   * knuckles left behind on the wall line.
+   *
+   * Calling it a hinge direction on `swing` was the alternative, and it would
+   * have made {@link sash} and {@link flipH} meaningless without saying so:
+   * an awning has no hinge jamb to pick and no second leaf to hang. {@link flipV}
+   * stays meaningful — it is which side of the wall the sash swings out to, so
+   * it is also how you draw a bottom-hinged hopper opening inward.
    */
-  motion?: "swing" | "slide" | "roll";
+  motion?: "swing" | "slide" | "roll" | "fixed" | "awning";
+  /**
+   * How much of the opening the operable sash actually covers, as a fraction
+   * of `length` (0..1]. Default 1 — the sash fills the opening, which is what
+   * every window drew before this existed.
+   *
+   * The case it exists for (issue #218): a window where only part of it opens
+   * and the rest is a fixed pane — one tall casement beside a wide fixed
+   * light, the sash hung in a frame twice its width. Drawn shut the two are
+   * indistinguishable; drawn open the difference is the whole point, because
+   * a sash that swings the full width of the frame is a lie about how much
+   * glass moves.
+   *
+   * Read by **single-leaf swing openings**, doors included — a door leaf
+   * narrower than its frame is an ordinary sidelight door. The remainder
+   * follows the type the rest of the symbol does: thin for a window's glass,
+   * solid for a door's panel. A double is two leaves that already split the
+   * opening between them, so there is no leftover to be fixed; sliders and
+   * roll-ups have their own panel arithmetic. The leaf hangs at the hinge
+   * jamb and the remainder beside it, so `flipH` moves both as one.
+   *
+   * Clamped to {@link MIN_SASH_SPAN}..1: a leaf of no width is a fixed pane,
+   * which `motion: "fixed"` says properly.
+   *
+   * Sunlight and lamp glow are unaffected: glass admits its whole gap however
+   * the sash sits, which is the rule {@link glowClearFraction} already
+   * applies. What it does change is {@link openingClearFraction} — a half-width
+   * sash swung fully open clears half the opening, not all of it.
+   */
+  sashSpan?: number;
   x: number;
   y: number;
   /** Length along the wall, in virtual units. */
@@ -109,6 +204,27 @@ export interface Opening {
   invert?: boolean;
   /** Color of the leaf/sash and swing arc while actively open. Falls back to the primary color. */
   activeColor?: string;
+  /**
+   * Color of the leaf/sash and swing arc while **closed** (issue #228). Falls
+   * back to the wall color, which is what every opening drew before this
+   * existed — a closed door has always been a line the same colour as the wall
+   * it sits in, and that is exactly the problem when the thing you need to
+   * notice is a door that is *shut*.
+   *
+   * The moving parts only: the jambs and the static frame stay the wall's
+   * colour whether the opening is open or closed, so the symbol still reads as
+   * a hole in a wall rather than a coloured shape. An external shutter follows
+   * this too when it is down, the way it follows {@link activeColor} when it
+   * is up.
+   *
+   * Applies while the leaf is **drawn shut**, which is not quite the same
+   * question as "its entity is not active". The two agree for anything with a
+   * contact on it; without one they part company, because a swing door with no
+   * sensor is drawn open by the plan convention (see {@link
+   * openingDefaultOpen}) and is never active. Each leaf of a double is asked
+   * separately, so a pair with one sash open and one shut shows both colours.
+   */
+  inactiveColor?: string;
   /**
    * Mirror the symbol left↔right in the opening's local frame. For a swing door
    * this moves the hinge to the other jamb; for a slider it reverses the slide
@@ -298,6 +414,12 @@ export interface Opening {
    * Ignored for swinging openings.
    */
   sliderStyle?: SliderStyle;
+  /**
+   * Pinned in place in the editor (issue #191): selects and edits normally, but
+   * never moves, and yields the click to anything unlocked under the pointer.
+   * See {@link Wall.locked} for why it stays selectable.
+   */
+  locked?: boolean;
 }
 
 /**
@@ -517,8 +639,24 @@ export interface FloorItem {
    * "Active" is the same domain-aware test the badge highlight uses
    * ({@link entityIsActive}), so a lock reads unlocked, a vacuum cleaning.
    */
-  // --- Extended hide logic for the entire item (Whole-Item) ---
   hideWhenInactive?: boolean;
+  /**
+   * Keep this device off the full plan and show it only while the room it
+   * belongs to is zoomed into (issue #222). Which room that is comes from the
+   * area polygon it sits inside, or from {@link area} when it is named.
+   *
+   * A device with this set and no room to be in never appears on the card. The
+   * editor still draws it, so it stays selectable and fixable.
+   */
+  showOnlyWhenZoomed?: boolean;
+  /**
+   * The room this device belongs to — an {@link Area} `id` or `name` — for
+   * {@link showOnlyWhenZoomed} to read instead of asking where the device is
+   * drawn. For the one that belongs to a room without sitting inside it: a
+   * doorbell on the porch, a thermostat out in the hall.
+   */
+  area?: string;
+  // --- Extended hide logic for the entire item (Whole-Item) ---
   enableHideByEntity?: boolean;
   hideEntity?: string;
   /** Attribute to read instead of the state for the hide condition. */
@@ -587,10 +725,43 @@ export interface FloorItem {
    * Same meaning as {@link Opening.activeColor}.
    */
   activeColor?: string;
+  /**
+   * Badge color while the entity is **not** active (issue #228) — off, closed,
+   * locked, docked, whatever this domain's word for it is. Falls back to the
+   * neutral badge every device has always shown when it is off.
+   *
+   * A {@link stateColor} rule can already paint a badge, and for a plain switch
+   * `state: "off"` would do the same job. This exists because that requires
+   * knowing the word: a lock says `locked`, a cover says `closed`, a vacuum
+   * says `docked`, and a rule written for one is silently wrong on another.
+   * `inactiveColor` is resolved through {@link entityIsActive}, which already
+   * knows each domain's answer — so it means "off" for every domain at once.
+   *
+   * Rules still win over it, as they win over {@link activeColor}: they are the
+   * more specific statement about what this device should look like right now.
+   */
+  inactiveColor?: string;
+  /** Disables the state-driven color inheritance for the label, falling back to the default theme text color. */
+  disableLabelColor?: boolean;
+  /** Activates a custom color override for the label. Only applies when disableLabelColor is true. */
+  useCustomLabelColor?: boolean;
+  /** The specific custom color applied to the label when useCustomLabelColor is true. */
+  labelCustomColor?: string;
   /** Ripple ring color (CSS/hex). Falls back to `activeColor`, then the primary color. */
   rippleColor?: string;
   /** Max ripple ring diameter in pixels. Default 80. */
   rippleSize?: number;
+  /**
+   * Direction of the center of the ripple if its width is not 360°, in degrees.
+   * Default 0° (top).
+   *
+   * Measured on the **plan**, not on the screen: it says which way the sensor
+   * looks in the room, so a card drawn with `rotation` turns it with the
+   * drawing (issue #280). Stored unrotated, exactly as the editor shows it.
+   */
+  rippleDirection?: number;
+  /** Width of the ripple in degrees. Default 360° (all around). */
+  rippleWidth?: number;
   /**
    * Cast a pool of light onto the plan from this device's position (issue #6).
    *
@@ -615,6 +786,12 @@ export interface FloorItem {
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
   double_tap_action?: ActionConfig;
+  /**
+   * Pinned in place in the editor (issue #191): selects and edits normally, but
+   * never moves, and yields the click to anything unlocked under the pointer.
+   * See {@link Wall.locked} for why it stays selectable.
+   */
+  locked?: boolean;
 }
 
 export type ItemDisplay = "badge" | "ripple" | "iconRipple";
@@ -726,6 +903,12 @@ export interface FloorText {
   color?: string;
   /** Rotation in degrees. Default 0. */
   angle?: number;
+  /**
+   * Pinned in place in the editor (issue #191): selects and edits normally, but
+   * never moves, and yields the click to anything unlocked under the pointer.
+   * See {@link Wall.locked} for why it stays selectable.
+   */
+  locked?: boolean;
 }
 
 /**
@@ -763,7 +946,9 @@ export type FurnitureType =
   | "sectional"
   | "fishTank"
   | "piano"
-  | "hotTub";
+  | "hotTub"
+  | "quarterTub"
+  | "cornerShowerCurved";
 
 /**
  * Which end of an L-shaped sectional the chaise sits on, facing the sofa from
@@ -825,6 +1010,12 @@ export interface Furniture {
   stateColor?: StateColorRule[];
   /** Color while `entity` is active. Used when no {@link stateColor} rule matches. */
   activeColor?: string;
+  /**
+   * Pinned in place in the editor (issue #191): selects and edits normally, but
+   * never moves, and yields the click to anything unlocked under the pointer.
+   * See {@link Wall.locked} for why it stays selectable.
+   */
+  locked?: boolean;
 }
 
 /**
@@ -860,6 +1051,12 @@ export interface Tracker {
   xSensor?: TrackerSensor;
   /** Distance sensor mapped to the Y axis (rectangle's vertical span). */
   ySensor?: TrackerSensor;
+  /**
+   * Pinned in place in the editor (issue #191): selects and edits normally, but
+   * never moves, and yields the click to anything unlocked under the pointer.
+   * See {@link Wall.locked} for why it stays selectable.
+   */
+  locked?: boolean;
 }
 
 /**
@@ -931,6 +1128,22 @@ export interface Area {
    * label wider than its room.
    */
   labelSize?: number;
+  /**
+   * How far the plan zooms when this room is tapped (issue #222). Absent — the
+   * default — fits the room to the card, capped at {@link MAX_AREA_ZOOM_FIT},
+   * which is what tapping a room has always done.
+   *
+   * Set it when the fit is not the framing you want. A small room fits at a
+   * scale that fills the card with one cupboard; a long thin one binds on its
+   * long axis and barely zooms at all. Neither is wrong as a fit, and both are
+   * sometimes the wrong picture, which is why this is per room rather than a
+   * single number for the plan.
+   *
+   * The room stays centred either way — this sets how close, not where.
+   * Clamped to 1..{@link MAX_AREA_ZOOM}: a value below 1 becomes 1, since
+   * zooming *out* past the whole plan is what the zoom-out button does.
+   */
+  zoom?: number;
   /** Fill color. Falls back to the theme primary color. */
   color?: string;
   /** Fill opacity, 0-1. Default {@link DEFAULT_AREA_OPACITY}. */
@@ -1005,6 +1218,12 @@ export interface Area {
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
   double_tap_action?: ActionConfig;
+  /**
+   * Pinned in place in the editor (issue #191): selects and edits normally, but
+   * never moves, and yields the click to anything unlocked under the pointer.
+   * See {@link Wall.locked} for why it stays selectable.
+   */
+  locked?: boolean;
 }
 
 /**
@@ -1079,6 +1298,35 @@ export const PRESS_IN_MS = 80;
 export const PRESS_OUT_MS = 260;
 
 export const DEFAULT_AREA_OPACITY = 0.25;
+
+/**
+ * How far tapping a room may zoom when it is left to fit the card by itself
+ * (issue #158). A cap rather than a target: most rooms bind on the canvas long
+ * before this, and the ones that do not are small enough that filling the card
+ * with them reads as a mistake.
+ */
+export const MAX_AREA_ZOOM_FIT = 4;
+/**
+ * The ceiling on a per-room {@link Area.zoom} (issue #222). Higher than the
+ * fit cap on purpose — asking for a closer look at one room is a choice, while
+ * the fit is a guess — but still bounded, because the plan is drawn once at
+ * canvas resolution and past this it is just a bigger blur.
+ */
+export const MAX_AREA_ZOOM = 10;
+
+/**
+ * How much bigger (or smaller) the overlay is drawn while the plan is zoomed
+ * in to a room (issue #222). Default 1: badges, labels, text and trackers hold
+ * the size they have at full plan, which is what zooming has always done —
+ * the overlay is counter-scaled against the zoom so it never balloons.
+ *
+ * The reason to change it is that "the same size" is not always the useful
+ * answer. Zoomed into one room the badges have room to breathe and a wall
+ * tablet at arm's length wants them bigger; a dense room read up close wants
+ * them out of the way. This scales the whole overlay rather than the icons
+ * alone, so a badge and the label under it stay one object.
+ */
+export const DEFAULT_ZOOMED_OVERLAY_SCALE = 1;
 /** Area name label size, matching the hard-coded value it replaces. */
 export const DEFAULT_AREA_LABEL_SIZE = 14;
 export const DEFAULT_AREA_BORDER_WIDTH = 3;
@@ -1151,6 +1399,9 @@ export const DEFAULT_ITEM_SIZE = 34;
 export const MIN_TOUCH_TARGET = 34;
 export const DEFAULT_TEXT_SIZE = 16;
 export const DEFAULT_RIPPLE_SIZE = 80;
+export const DEFAULT_RIPPLE_DIRECTION = 0;
+export const DEFAULT_RIPPLE_WIDTH = 360;
+
 /** Neutral gray, so furniture reads differently from the walls. Skinnable (#122). */
 export const FURNITURE_COLOR = "var(--fp-skin-furniture, #9e9e9e)";
 
@@ -1222,6 +1473,52 @@ export interface Floor {
 /** Sizing mode for the HTML overlay layer. See {@link FloorplanCardConfig.overlayScale}. */
 export type OverlayScale = "fixed" | "plan";
 
+export interface HistoryReplayConfig {
+  enabled?: boolean;
+  lookbackSeconds?: number;
+  defaultSpeed?: number;
+  /**
+   * Log replay lifecycle to the browser console. Off by default: these fire on
+   * every seek, so scrubbing the playhead would otherwise bury anything else
+   * in the console. Failures are reported through `console.warn`/`error`
+   * regardless — this flag only gates the running commentary.
+   */
+  debug?: boolean;
+  /**
+   * How finely a numeric sensor's drift is kept, as the number of levels its
+   * observed range is divided into. A busy plan can produce thousands of
+   * points a sensor never meaningfully moved through, and every one becomes a
+   * marker on the timeline; thinning them cuts the time to draw a freshly
+   * loaded window without changing the shape of the curve.
+   *
+   * Discrete states — lights, doors, covers — are never thinned, whatever this
+   * is set to: each one is a distinct thing that happened. Unset keeps
+   * everything.
+   */
+  numericSteps?: number;
+}
+
+/**
+ * One named colour in a plan's palette (issue #265).
+ *
+ * The `name` is both the label in the dropdown and the identity of the colour:
+ * the custom property every reference points at is derived from it. So the
+ * editor rewrites the references rather than leaving them behind — a rename
+ * moves them to the new name, and a delete freezes them at the colour the name
+ * was holding.
+ *
+ * That rewriting is not politeness. A reference to a property nothing declares
+ * is not a colour to fall back from: the declaration is dropped, the element
+ * inherits, and an SVG `fill` inherits **black**. A dangling reference would
+ * repaint half a plan.
+ */
+export interface PaletteColor {
+  /** Shown in the dropdown, e.g. `Warm white`. */
+  name: string;
+  /** Any colour the card accepts — hex, a CSS name, `rgb()`, even a theme `var()`. */
+  color: string;
+}
+
 export interface FloorplanCardConfig extends LovelaceCardConfig {
   type: string;
   title?: string;
@@ -1249,6 +1546,31 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    */
   rotation?: number;
   /**
+   * Rotation to use while the screen is **portrait**, overriding
+   * {@link rotation} (issue #237). Unset — the default — means `rotation`
+   * applies whichever way the screen is; a key written with no value at all
+   * (`rotationPortrait:`) is unset too, not 0°.
+   *
+   * The case it exists for: a plan of a rectangular flat wants the long side
+   * across the screen, and which side that is changes with the device. The
+   * reporter was rotating 270° for their phone and then living with the
+   * result on a desktop and a tablet, because one number cannot be right for
+   * both. This is the second number.
+   *
+   * Read from the **screen's** orientation, not the card's own box (see
+   * {@link resolvePlanRotation}), which is what "my vertical devices" means
+   * and what keeps a narrow card in a sidebar from rotating on a landscape
+   * desktop. Editing is unaffected either way: the editor always shows the
+   * plan as drawn.
+   */
+  rotationPortrait?: number;
+  /**
+   * Rotation to use while the screen is **landscape**, overriding
+   * {@link rotation} (issue #237). Unset means `rotation` applies. The
+   * mirror of {@link rotationPortrait}; set either, or both.
+   */
+  rotationLandscape?: number;
+  /**
    * Built-in skin id (issue #122), e.g. `odnetnin`, `pastel`, `tron`. Restyles
    * the whole plan at once — paper, walls, badges, accents — by supplying the
    * fallbacks every element already reads.
@@ -1259,6 +1581,19 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * `src/skins.ts`.
    */
   skin?: string;
+  /**
+   * Named colours for this plan (issue #265), offered in a dropdown beside
+   * every colour field: *"I want all my temperature sensors to use the same
+   * conditional colours but I hate copying colour hex codes across so many
+   * entities."*
+   *
+   * A field references an entry by storing `var(--fp-color-<name>)` — the name
+   * lowercased with anything but letters and digits turned into `-`. That is a
+   * plain CSS custom property, declared on the card from this list, so a
+   * hand-written config can use the feature without the editor and recolouring
+   * an entry moves every element that names it. See `src/palette.ts`.
+   */
+  palette?: PaletteColor[];
   /**
    * How the HTML overlay (badges, labels, room names, text) is sized.
    *
@@ -1290,6 +1625,15 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * text. See the README's "Where it helps, and where it costs".
    */
   overlayScale?: OverlayScale;
+  /**
+   * Overlay size while zoomed in to a room, as a multiple of its size at full
+   * plan (issue #222). Default {@link DEFAULT_ZOOMED_OVERLAY_SCALE} — no
+   * change, which is what zooming has always done. Applies to everything in
+   * the HTML overlay (device badges and their labels, room names, free text,
+   * trackers) so a badge and its label scale as one thing, and only while a
+   * room is actually zoomed: at full plan it does nothing at all.
+   */
+  zoomedOverlayScale?: number;
   /** Canvas background color (CSS / hex). Falls back to the skin's paper, then the card background. */
   background?: string;
   /**
@@ -1448,6 +1792,8 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   floors?: Floor[];
   /** Id of the floor shown first. Falls back to the first floor. */
   defaultFloor?: string;
+  /** Optional history replay controls and playback defaults. */
+  historyReplay?: HistoryReplayConfig;
   walls?: Wall[];
   openings?: Opening[];
   items?: FloorItem[];

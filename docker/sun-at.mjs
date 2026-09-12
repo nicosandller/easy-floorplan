@@ -48,8 +48,18 @@ function eot(day) {
 function declination(day) {
   return rad(23.44) * Math.sin(rad((360 / 365.25) * (day - 81)));
 }
+/**
+ * @param {Date} date
+ * @param {number} lat
+ * @param {number} lon
+ */
 function solarPosition(date, lat, lon) {
-  const day = Math.floor((date - new Date(Date.UTC(date.getUTCFullYear(), 0, 0))) / 864e5);
+  // getTime() on both sides: subtracting two Dates is valid JavaScript but not
+  // valid TypeScript, and the day-of-year here is genuinely arithmetic on
+  // milliseconds rather than on dates.
+  const day = Math.floor(
+    (date.getTime() - Date.UTC(date.getUTCFullYear(), 0, 0)) / 864e5
+  );
   const utc = date.getUTCHours() + date.getUTCMinutes() / 60 + date.getUTCSeconds() / 3600;
   const solar = utc + (4 * lon + eot(day)) / 60;
   const H = rad(15 * (solar - 12));
@@ -85,7 +95,7 @@ if (!Number.isFinite(target) || target < 0 || target >= 24) {
   process.exit(1);
 }
 
-const day = Math.floor((now - new Date(Date.UTC(now.getUTCFullYear(), 0, 0))) / 864e5);
+const day = Math.floor((now.getTime() - Date.UTC(now.getUTCFullYear(), 0, 0)) / 864e5);
 const utc = now.getUTCHours() + now.getUTCMinutes() / 60 + now.getUTCSeconds() / 3600;
 // solarTime = utc + (4*lon + eot)/60  =>  lon = ((target - utc)*60 - eot) / 4
 let lon = ((target - utc) * 60 - eot(day)) / 4;

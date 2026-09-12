@@ -1,7 +1,9 @@
 # Furniture symbols
 
 Every glyph the card draws lives in this directory, one JSON file per symbol. Adding a new
-one is adding a file — no code, no build step, no entry in a list somewhere else.
+one is adding a file — no code and no build step. There is one list to keep in step: the
+`FurnitureType` union in [`src/types.ts`](../src/types.ts), which is what a hand-written
+config autocompletes against. Add the id there too, or `symbols.test.ts` fails.
 
 **A symbol is geometry, not markup.** It is a list of primitives with numeric attributes,
 and the card builds the SVG elements itself. Nothing here is ever parsed as markup, which
@@ -95,10 +97,11 @@ which is a `body` at `0.08` with a dashed outline.
 1. Copy the closest existing file and change the numbers. Most glyphs are under a dozen parts.
 2. Try it without a PR: paste the JSON into **Project → Custom symbols** in the editor. It
    lands in your card's `symbols:` block and shows up in the picker beside the built-ins.
-3. When it looks right, drop it here as `<id>.json` and open a pull request.
+3. When it looks right, drop it here as `<id>.json`, add the id to the `FurnitureType`
+   union in `src/types.ts`, run `npm test`, and open a pull request.
 
 Check it at its default size *and* stretched: a glyph can be right by the numbers and wrong
-on screen. `npm run ha` (see the [main README](../README.md#local-home-assistant)) gets you
+on screen. `npm run ha` (see [`docker/README.md`](../docker/README.md)) gets you
 an editor to drop it into and resize.
 
 ## What gets merged

@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import { html, nothing } from "lit";
 import type { Area, FloorText, Furniture, FurnitureType, ItemKind, ItemReading } from "./types";
 import { SKIN_ACCENT, SKIN_WALL, MAX_SKIN_WALL_WIDTH } from "./skins";
+import { MAX_AREA_ZOOM, DEFAULT_ZOOMED_OVERLAY_SCALE } from "./types";
 import {
   DEFAULT_GLOW_RADIUS,
   DEFAULT_GLOW_COLOR,
@@ -94,6 +95,7 @@ import {
   labelPositionOf,
   editorItemLabel,
   itemHiddenWhenInactive,
+  itemHiddenUntilZoomed,
   resolveStateColor,
   itemLabelSize,
   areaLabelSize,
@@ -120,11 +122,16 @@ import {
   isRippleEntity,
   itemIconSize,
   normalizePlanRotation,
+  resolvePlanRotation,
+  subscribeOrientation,
   rotatedCanvasSize,
+  rotatePlanAngle,
   rotatePlanPoint,
   planRotationTransform,
   polygonCentroid,
   areaZoomTransform,
+  resolveAreaZoom,
+  zoomedOverlayScale,
   IDENTITY_ZOOM,
   renderArea,
   renderAreaBorder,
@@ -137,6 +144,8 @@ import {
   wallsLightPassesThrough,
   openingClearFraction,
   openingClearSpan,
+  openingSashSpan,
+  MIN_SASH_SPAN,
   glowClearSpan,
   glowClearFraction,
   renderGlowMask,
@@ -145,7 +154,9 @@ import {
   renderRipple,
   checkHideCondition,
   itemBadgeHidden,
+  itemLabelColor,
 } from "./render";
+import { buildRenderHass } from "./replay-history/render-state-service";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
 import { symbolCatalog, symbolSize } from "./symbols";
 
@@ -1176,11 +1187,62 @@ describe("overlay scaling", () => {
   // path: dropping the argument at one of the badge/item call sites would
   // otherwise still pass. renderRipple is exported, so it anchors the wiring.
   it("threads the mode through a real render path, not just the helper", () => {
-    expect(flattenMarkup(renderRipple(true, "#fff", 80, 3, "plan"))).toContain(
+    expect(flattenMarkup(renderRipple(true, "#fff", 80, 0, 360, 3, "plan"))).toContain(
       "width:calc(80 * var(--fp-u, 1px))"
     );
-    expect(flattenMarkup(renderRipple(true, "#fff", 80, 3, "fixed"))).toContain("width:80px");
+    expect(flattenMarkup(renderRipple(true, "#fff", 80, 0, 360, 3, "fixed"))).toContain("width:80px");
   });
+
+  it("passes --fp-ripple-width and --fp-ripple-direction through to rendering", () => {
+    expect(flattenMarkup(renderRipple(true, "#fff", 80, 0, 180, 3, "plan"))).toContain(
+      "--fp-ripple-width:180"
+    );
+    expect(flattenMarkup(renderRipple(true, "#fff", 80, 0, 180, 3, "plan"))).toContain(
+      "--fp-ripple-direction:0"
+    );
+
+    expect(flattenMarkup(renderRipple(true, "#fff", 80, 90, 180, 3, "plan"))).toContain(
+      "--fp-ripple-width:180"
+    );
+    expect(flattenMarkup(renderRipple(true, "#fff", 80, 90, 180, 3, "plan"))).toContain(
+      "--fp-ripple-direction:90"
+    );
+
+    expect(flattenMarkup(renderRipple(true, "#fff", 80, 400, 400, 3, "plan"))).toContain(
+      "--fp-ripple-width:360"
+    );
+    expect(flattenMarkup(renderRipple(true, "#fff", 80, 400, 400, 3, "plan"))).toContain(
+      "--fp-ripple-direction:40"
+    );
+  });
+
+  // Both values land in a `style` attribute, so they are exactly the kind of
+  // config the adversarial suite exists for (css-safe.adversarial.test.ts):
+  // "nothing accepted can break out of a style declaration".
+  it("cannot be used to inject a style declaration", () => {
+    const hostile = [
+      "0; background:url(https://evil.example/x.png)",
+      '0" onload="alert(1)',
+      "0/*",
+      "abc",
+    ];
+    for (const value of hostile) {
+      const asDirection = flattenMarkup(
+        renderRipple(true, "#fff", 80, value as unknown as number, 360, 3, "fixed")
+      );
+      expect(asDirection).toContain("--fp-ripple-direction:0");
+      expect(asDirection).not.toContain("background");
+      expect(asDirection).not.toContain("onload");
+
+      const asWidth = flattenMarkup(
+        renderRipple(true, "#fff", 80, 0, value as unknown as number, 3, "fixed")
+      );
+      expect(asWidth).toContain("--fp-ripple-width:360");
+      expect(asWidth).not.toContain("background");
+      expect(asWidth).not.toContain("onload");
+    }
+  });
+
 
   it("clamps the area name size to the same range item labels use", () => {
     expect(areaLabelSize(undefined)).toBe(14);
@@ -1788,6 +1850,59 @@ describe("resolveIconAnimation (issue #48)", () => {
     expect(resolveIconAnimation({ entity: "climate.ac" }, "off")).toBeUndefined();
   });
 
+  it("a climate entity animates only while hvac_action says it is working (issue #235)", () => {
+    // The reported case: an AC set to "cool" that has reached its setpoint
+    // reports state "cool" with hvac_action "idle". The mode is a setting,
+    // not moving air, so a spin there is a claim the unit is not making.
+    expect(
+      resolveIconAnimation({ entity: "climate.ac", iconAnimation: "spin" }, "cool", {
+        hvac_action: "idle",
+      }),
+    ).toBeUndefined();
+    // Same unit a minute later, actually cooling: the spin is true again.
+    expect(
+      resolveIconAnimation({ entity: "climate.ac", iconAnimation: "spin" }, "cool", {
+        hvac_action: "cooling",
+      }),
+    ).toBe("spin");
+    // Every other working action counts the same way.
+    for (const action of ["heating", "drying", "fan", "preheating", "defrosting"]) {
+      expect(
+        resolveIconAnimation({ entity: "climate.ac", iconAnimation: "pulse" }, "heat", {
+          hvac_action: action,
+        }),
+      ).toBe("pulse");
+    }
+    // "off" as an action is the same story as idle: nothing is running.
+    expect(
+      resolveIconAnimation({ entity: "climate.ac", iconAnimation: "spin" }, "cool", {
+        hvac_action: "off",
+      }),
+    ).toBeUndefined();
+    // fan_only's own spin is gated too — a stopped fan is not spinning
+    // whatever the mode says — but still plays while the fan runs.
+    expect(
+      resolveIconAnimation({ entity: "climate.ac" }, "fan_only", { hvac_action: "idle" }),
+    ).toBeUndefined();
+    expect(
+      resolveIconAnimation({ entity: "climate.ac" }, "fan_only", { hvac_action: "fan" }),
+    ).toBe("spin");
+    // An integration that reports no hvac_action at all keeps animating:
+    // the attribute is optional, and going quiet on those would be a second
+    // regression to fix the first.
+    expect(
+      resolveIconAnimation({ entity: "climate.ac", iconAnimation: "spin" }, "cool", {
+        current_temperature: 20,
+      }),
+    ).toBe("spin");
+    expect(resolveIconAnimation({ entity: "climate.ac" }, "fan_only", {})).toBe("spin");
+    // The gate is climate-only: a fan entity has no hvac_action to consult,
+    // and an unrelated domain that happens to carry one is not a thermostat.
+    expect(
+      resolveIconAnimation({ entity: "fan.ceiling" }, "on", { hvac_action: "idle" }),
+    ).toBe("spin");
+  });
+
   it("a forced spin plays for a climate entity running in any mode (issue #206)", () => {
     // The reported bug exactly: an AC in "cool" with iconAnimation: "spin"
     // read as off (entityIsActive didn't know "cool" from "off") and never
@@ -2069,6 +2184,34 @@ describe("itemStateText with attributes (issue #70)", () => {
 
   it("missing attribute renders the em dash", () => {
     expect(itemStateText(climate(), { entity: "climate.home", attribute: "nope" })).toBe("—");
+  });
+
+  it("carries that formatter through the slice the card renders from (issue #260)", () => {
+    // The editor hands the real `hass` to these helpers; the card hands them a
+    // RenderHass built from it. Anything the build drops is not missing, it is
+    // replaced by the raw attribute — which is how a cover position read "50%"
+    // in the editor and "50" on the card.
+    const h = climate() as unknown as Record<string, unknown>;
+    h.formatEntityAttributeValue = (_s: unknown, a: string) => `fmt:${a}`;
+    const rendered = buildRenderHass(
+      h as never,
+      ["climate.home"],
+      { getStateAt: () => new Map() } as never,
+      false,
+      0,
+    );
+    expect(itemStateText(rendered, { entity: "climate.home", attribute: "current_temperature" }))
+      .toBe("fmt:current_temperature");
+  });
+
+  it("re-renders when HA rebuilds the attribute formatter", () => {
+    // A plan built only out of attribute readings never calls the state
+    // formatter, so its identity is not a signal that this plan's wording
+    // changed.
+    const base = climate() as unknown as Record<string, unknown>;
+    const prev = { ...base, formatEntityAttributeValue: () => "old" } as never;
+    const next = { ...base, formatEntityAttributeValue: () => "new" } as never;
+    expect(hassRenderInputsChanged(prev, next, ["climate.home"])).toBe(true);
   });
 });
 
@@ -3663,6 +3806,185 @@ describe("polygonCentroid", () => {
   });
 });
 
+describe("rotation that follows the screen (issue #237)", () => {
+  it("uses `rotation` for both orientations until an override says otherwise", () => {
+    const c = { rotation: 270 } as FloorplanCardConfig;
+    expect(resolvePlanRotation(c, true)).toBe(270);
+    expect(resolvePlanRotation(c, false)).toBe(270);
+  });
+
+  it("takes the override for the orientation it names, and only that one", () => {
+    const c = { rotation: 0, rotationPortrait: 270 } as FloorplanCardConfig;
+    expect(resolvePlanRotation(c, true)).toBe(270);
+    expect(resolvePlanRotation(c, false)).toBe(0); // landscape keeps the base
+    const both = { rotation: 0, rotationPortrait: 270, rotationLandscape: 90 } as FloorplanCardConfig;
+    expect(resolvePlanRotation(both, true)).toBe(270);
+    expect(resolvePlanRotation(both, false)).toBe(90);
+  });
+
+  it("honours an override of 0 rather than reading it as unset", () => {
+    // "0° on a portrait screen" is a real instruction on a plan that is
+    // otherwise rotated — the case the reporter is in.
+    const c = { rotation: 270, rotationPortrait: 0 } as FloorplanCardConfig;
+    expect(resolvePlanRotation(c, true)).toBe(0);
+    expect(resolvePlanRotation(c, false)).toBe(270);
+  });
+
+  it("stays on the base rotation when the orientation is unknown", () => {
+    // No window to ask. Guessing would rotate the plan on a wrong guess.
+    const c = { rotation: 90, rotationPortrait: 180 } as FloorplanCardConfig;
+    expect(resolvePlanRotation(c, undefined)).toBe(90);
+  });
+
+  it("reads an empty YAML override as unset, not as 0° (review of #237)", () => {
+    // `rotationPortrait:` with nothing after it parses to null, and the card's
+    // numeric guard lets nullish through. Read as a value it normalizes to 0
+    // and silently cancels the base rotation — the one thing an unset
+    // override must never do.
+    const c = { rotation: 270, rotationPortrait: null } as unknown as FloorplanCardConfig;
+    expect(resolvePlanRotation(c, true)).toBe(270);
+    expect(resolvePlanRotation(c, false)).toBe(270);
+    const l = { rotation: 90, rotationLandscape: null } as unknown as FloorplanCardConfig;
+    expect(resolvePlanRotation(l, false)).toBe(90);
+    // An explicit 0 is still an explicit 0 — that distinction is the point.
+    expect(resolvePlanRotation({ rotation: 270, rotationPortrait: 0 } as FloorplanCardConfig, true)).toBe(0);
+  });
+
+  it("normalizes an override the same way `rotation` is normalized", () => {
+    expect(resolvePlanRotation({ rotationPortrait: 450 } as FloorplanCardConfig, true)).toBe(90);
+    expect(resolvePlanRotation({ rotationPortrait: -90 } as FloorplanCardConfig, true)).toBe(270);
+    expect(resolvePlanRotation({ rotationPortrait: 45 } as FloorplanCardConfig, true)).toBe(0);
+  });
+
+  it("a config with no rotation at all is unaffected, whatever the screen", () => {
+    expect(resolvePlanRotation({} as FloorplanCardConfig, true)).toBe(0);
+    expect(resolvePlanRotation({} as FloorplanCardConfig, false)).toBe(0);
+    expect(resolvePlanRotation({} as FloorplanCardConfig, undefined)).toBe(0);
+  });
+});
+
+describe("subscribing to the screen's orientation (review of #237)", () => {
+  // MediaQueryList only became an EventTarget in Safari 14 / Chrome 39, and
+  // the devices this feature is for — wall tablets, old phones — are the ones
+  // most likely to predate that. Calling a missing method would throw out of
+  // connectedCallback and take the card's whole render with it.
+  const fn = () => {};
+
+  it("uses the modern API when it is there, and unsubscribes through it", () => {
+    const calls: string[] = [];
+    const q = {
+      addEventListener: (t: string) => calls.push(`add:${t}`),
+      removeEventListener: (t: string) => calls.push(`remove:${t}`),
+      // Present too, as on any current browser — and must not be the one used.
+      addListener: () => calls.push("legacy-add"),
+      removeListener: () => calls.push("legacy-remove"),
+    };
+    subscribeOrientation(q, fn)();
+    expect(calls).toEqual(["add:change", "remove:change"]);
+  });
+
+  it("falls back to addListener where that is all there is", () => {
+    const calls: string[] = [];
+    const q = {
+      addListener: () => calls.push("add"),
+      removeListener: () => calls.push("remove"),
+    };
+    subscribeOrientation(q, fn)();
+    expect(calls).toEqual(["add", "remove"]);
+  });
+
+  it("never crosses the two — a legacy listener is removed the legacy way", () => {
+    // Crossing them leaves the listener attached to a card that is gone.
+    const seen: string[] = [];
+    const q = {
+      addListener: () => seen.push("add"),
+      removeListener: () => seen.push("remove"),
+      removeEventListener: () => seen.push("WRONG"),
+    };
+    subscribeOrientation(q, fn)();
+    expect(seen).not.toContain("WRONG");
+  });
+
+  it("subscribes to nothing, quietly, when neither API exists", () => {
+    // The card reads the query before subscribing, so this case still renders
+    // at the right rotation — it just stops following the device being turned.
+    expect(() => subscribeOrientation({}, fn)()).not.toThrow();
+  });
+
+  it("hands the listener straight through, so it is the one removed", () => {
+    let held: unknown;
+    const q = {
+      addEventListener: (_t: string, f: unknown) => { held = f; },
+      removeEventListener: (_t: string, f: unknown) => { expect(f).toBe(held); },
+    };
+    subscribeOrientation(q, fn)();
+    expect(held).toBe(fn);
+  });
+});
+
+describe("a room's own zoom level (issue #222)", () => {
+  // A 10x10 room in the middle of a 100x100 canvas: fits at the 4x cap, so
+  // every difference below is the explicit scale rather than the fit.
+  const room = [{ x: 45, y: 45 }, { x: 55, y: 45 }, { x: 55, y: 55 }, { x: 45, y: 55 }];
+
+  it("uses the room's scale instead of the fit, and still centres it", () => {
+    const t = areaZoomTransform(room, 100, 100, 0, undefined, undefined, 7);
+    expect(t.scale).toBe(7);
+    // Centre stays the centre — this sets how close, not where.
+    expect(t.txPercent).toBeCloseTo(50 - 7 * 0.5 * 100);
+    expect(t.tyPercent).toBeCloseTo(50 - 7 * 0.5 * 100);
+  });
+
+  it("can ask for less than the fit as well as more", () => {
+    // The long-thin-room case in reverse: the fit is not always too far out.
+    expect(areaZoomTransform(room, 100, 100, 0, undefined, undefined, 1.5).scale).toBe(1.5);
+  });
+
+  it("falls back to the fit when the room has no zoom of its own", () => {
+    expect(areaZoomTransform(room, 100, 100, 0, undefined, undefined, undefined)).toEqual(
+      areaZoomTransform(room, 100, 100, 0),
+    );
+  });
+
+  it("resolves and clamps what a config may hold", () => {
+    expect(resolveAreaZoom({ zoom: 6 })).toBe(6);
+    expect(resolveAreaZoom({ zoom: 99 })).toBe(MAX_AREA_ZOOM);
+    // Below 1 would zoom out past the whole plan; that is the zoom-out button.
+    expect(resolveAreaZoom({ zoom: 0.2 })).toBe(1);
+    // No zoom, and nonsense from a hand-edited config, both leave the fit be.
+    expect(resolveAreaZoom({})).toBeUndefined();
+    expect(resolveAreaZoom({ zoom: NaN })).toBeUndefined();
+    expect(resolveAreaZoom({ zoom: Infinity })).toBeUndefined();
+  });
+});
+
+describe("overlay size while zoomed (issue #222)", () => {
+  it("holds the overlay at its full-plan size by default, as it always has", () => {
+    expect(zoomedOverlayScale(4)).toBeCloseTo(0.25);
+    expect(zoomedOverlayScale(4, DEFAULT_ZOOMED_OVERLAY_SCALE)).toBeCloseTo(0.25);
+  });
+
+  it("multiplies that counter-scale, so badges can grow when zoomed in", () => {
+    expect(zoomedOverlayScale(4, 2)).toBeCloseTo(0.5); // twice full-plan size
+    expect(zoomedOverlayScale(4, 0.5)).toBeCloseTo(0.125); // half of it
+  });
+
+  it("does nothing at full plan — the setting is about the zoomed view", () => {
+    // Otherwise setting it would resize every plan the moment it was set.
+    expect(zoomedOverlayScale(1, 2)).toBe(1);
+    expect(zoomedOverlayScale(0.5, 2)).toBe(1);
+  });
+
+  it("ignores a value that would poison the custom property it lands in", () => {
+    // --fp-inv-zoom:NaN invalidates the property, and .item's transform is
+    // built from it — every badge would lose its centring, not just its size.
+    expect(zoomedOverlayScale(4, NaN)).toBeCloseTo(0.25);
+    expect(zoomedOverlayScale(4, 0)).toBeCloseTo(0.25);
+    expect(zoomedOverlayScale(4, -2)).toBeCloseTo(0.25);
+    expect(zoomedOverlayScale(NaN, 2)).toBe(1);
+  });
+});
+
 describe("areaZoomTransform", () => {
   it("returns the identity transform for an empty polygon", () => {
     expect(areaZoomTransform([], 100, 100, 0)).toEqual(IDENTITY_ZOOM);
@@ -4464,6 +4786,69 @@ describe("lightBadgePaint (#106)", () => {
 // Issue #145 meets #143: a two-panel slider has two sensors and its leaves do
 // not travel the full width, so neither the amount nor the leaf count could be
 // read off `entity` alone.
+describe("a fixed opening and a partial sash, as gaps (issue #218)", () => {
+  const win = (extra: Partial<Opening>) =>
+    ({ id: "o", type: "window", x: 0, y: 0, length: 100, angle: 0, ...extra }) as Opening;
+
+  it("a fixed opening is never a gap, whatever a sensor says", () => {
+    const f = win({ motion: "fixed" });
+    expect(openingClearFraction(f, 0)).toBe(0);
+    expect(openingClearFraction(f, 1)).toBe(0);
+    expect(openingClearSpan(f, 1)).toEqual([0.5, 0.5]);
+  });
+
+  it("but it is still glass, so light goes straight through it", () => {
+    // The distinction the feature turns on: no *airflow* gap, full daylight.
+    const f = win({ motion: "fixed" });
+    expect(glowClearFraction(f, 0)).toBe(1);
+    expect(openingSunFraction(f, openingClearFraction(f, 0))).toBe(1);
+  });
+
+  it("an opaque fixed panel is neither a gap nor a window", () => {
+    const f = win({ motion: "fixed", glazed: false });
+    expect(glowClearFraction(f, 1)).toBe(0);
+    expect(openingSunFraction(f, openingClearFraction(f, 1))).toBe(0);
+  });
+
+  it("a half-width sash swung wide open clears half the opening", () => {
+    const half = win({ sash: "single", sashSpan: 0.5 });
+    expect(openingClearFraction(half, 1)).toBeCloseTo(0.5);
+    expect(openingClearFraction(half, 0.5)).toBeCloseTo(0.25);
+    expect(openingClearFraction(half, 0)).toBe(0);
+  });
+
+  it("and clears it at its own jamb, where the sash is — not in the middle", () => {
+    const half = win({ sash: "single", sashSpan: 0.5 });
+    expect(openingClearSpan(half, 1)).toEqual([0, 0.5]);
+    // flipH hangs the sash on the other jamb, so the clear half moves with it.
+    expect(openingClearSpan(win({ sash: "single", sashSpan: 0.5, flipH: true }), 1)).toEqual([
+      0.5, 1,
+    ]);
+  });
+
+  it("a full-width sash keeps the centred span every plan already lights by", () => {
+    const full = win({ sash: "single" });
+    expect(openingClearFraction(full, 1)).toBe(1);
+    expect(openingClearSpan(full, 0.5)).toEqual([0.25, 0.75]);
+  });
+
+  it("clamps a nonsense span rather than drawing a sliver or an inside-out sash", () => {
+    expect(openingSashSpan(win({ sash: "single", sashSpan: 0 }))).toBe(MIN_SASH_SPAN);
+    expect(openingSashSpan(win({ sash: "single", sashSpan: -3 }))).toBe(MIN_SASH_SPAN);
+    expect(openingSashSpan(win({ sash: "single", sashSpan: 4 }))).toBe(1);
+    expect(openingSashSpan(win({ sash: "single", sashSpan: NaN }))).toBe(1);
+  });
+
+  it("is ignored where there is no leftover pane to describe", () => {
+    // A double splits the frame between its leaves; a slider and a roll-up
+    // have panel arithmetic of their own.
+    expect(openingSashSpan(win({ sash: "double", sashSpan: 0.4 }))).toBe(1);
+    expect(openingSashSpan(win({ motion: "slide", sashSpan: 0.4 }))).toBe(1);
+    expect(openingSashSpan(win({ motion: "roll", sashSpan: 0.4 }))).toBe(1);
+    expect(openingClearFraction(win({ sash: "double", sashSpan: 0.4 }), 1, 1)).toBe(1);
+  });
+});
+
 describe("openingClearFraction (#145 / #143)", () => {
   const slider = (sliderStyle: string): Opening =>
     ({ id: "o", type: "window", motion: "slide", sliderStyle, x: 300, y: 300, length: 200, angle: 0 }) as Opening;
@@ -5228,6 +5613,76 @@ describe("renderGlow (issue #6)", () => {
   });
 });
 
+describe("itemHiddenUntilZoomed (issue #222)", () => {
+  // A room across the top-left quadrant of a 1000x600 plan.
+  const living: Area = {
+    id: "a1",
+    name: "Living",
+    points: [
+      { x: 100, y: 100 },
+      { x: 500, y: 100 },
+      { x: 500, y: 400 },
+      { x: 100, y: 400 },
+    ],
+  };
+  const kitchen: Area = {
+    id: "a2",
+    name: "Kitchen",
+    points: [
+      { x: 600, y: 100 },
+      { x: 900, y: 100 },
+      { x: 900, y: 400 },
+      { x: 600, y: 400 },
+    ],
+  };
+  const inside = { showOnlyWhenZoomed: true, x: 300, y: 250 };
+  const outside = { showOnlyWhenZoomed: true, x: 800, y: 250 };
+
+  it("leaves an ordinary device alone at every zoom", () => {
+    expect(itemHiddenUntilZoomed({ x: 300, y: 250 }, undefined)).toBe(false);
+    expect(itemHiddenUntilZoomed({ x: 300, y: 250 }, living)).toBe(false);
+    // Explicitly off is the same as unset.
+    expect(itemHiddenUntilZoomed({ showOnlyWhenZoomed: false, x: 300, y: 250 }, living)).toBe(false);
+  });
+
+  it("hides a flagged device on the full plan", () => {
+    expect(itemHiddenUntilZoomed(inside, undefined)).toBe(true);
+  });
+
+  it("shows it in its own room and nowhere else", () => {
+    expect(itemHiddenUntilZoomed(inside, living)).toBe(false);
+    expect(itemHiddenUntilZoomed(inside, kitchen)).toBe(true);
+    expect(itemHiddenUntilZoomed(outside, living)).toBe(true);
+    expect(itemHiddenUntilZoomed(outside, kitchen)).toBe(false);
+  });
+
+  it("takes the room by id or by name when one is given", () => {
+    // A device drawn outside every polygon — the porch doorbell — is reachable
+    // only this way, which is the whole reason `area` exists.
+    const porch = { showOnlyWhenZoomed: true, area: "a1", x: 960, y: 560 };
+    expect(itemHiddenUntilZoomed(porch, living)).toBe(false);
+    expect(itemHiddenUntilZoomed(porch, kitchen)).toBe(true);
+    expect(itemHiddenUntilZoomed({ ...porch, area: "Living" }, living)).toBe(false);
+    expect(itemHiddenUntilZoomed({ ...porch, area: "Living" }, kitchen)).toBe(true);
+  });
+
+  it("lets the named room override where the device is drawn", () => {
+    // Sitting in the Living polygon but assigned to the Kitchen: the name wins,
+    // otherwise `area` could only ever add rooms and never correct one.
+    const assigned = { showOnlyWhenZoomed: true, area: "a2", x: 300, y: 250 };
+    expect(itemHiddenUntilZoomed(assigned, kitchen)).toBe(false);
+    expect(itemHiddenUntilZoomed(assigned, living)).toBe(true);
+  });
+
+  it("stays hidden when there is no room it could belong to", () => {
+    // Fails hidden rather than falling back to "always show": a degenerate
+    // polygon is not a room, and neither is a plan with no areas drawn on it.
+    const degenerate: Area = { id: "a3", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }] };
+    expect(itemHiddenUntilZoomed(inside, degenerate)).toBe(true);
+    expect(itemHiddenUntilZoomed(inside, { id: "a4", points: [] })).toBe(true);
+  });
+});
+
 describe("itemHiddenWhenInactive (issue #55)", () => {
   it("hides only when asked to, and only while inactive", () => {
     expect(itemHiddenWhenInactive({ entity: "light.a", hideWhenInactive: true }, "off")).toBe(true);
@@ -5800,5 +6255,71 @@ describe("hide by condition, through the card's own entry points", () => {
       ],
     } as unknown as FloorplanCardConfig);
     for (const id of [RADIATOR, OUTSIDE, "sensor.a", "sensor.b"]) expect(ids.has(id)).toBe(true);
+  });
+});
+
+describe("item label color (itemLabelColor)", () => {
+  it("returns the state color by default when disableLabelColor is false or omitted", () => {
+    expect(itemLabelColor({ disableLabelColor: false }, "#ff0000")).toBe("#ff0000");
+    expect(itemLabelColor({}, "#ff0000")).toBe("#ff0000");
+  });
+
+  it("returns undefined when disableLabelColor is true and custom color is off", () => {
+    expect(itemLabelColor({ disableLabelColor: true, useCustomLabelColor: false }, "#ff0000")).toBe(undefined);
+    expect(itemLabelColor({ disableLabelColor: true }, "#ff0000")).toBe(undefined);
+  });
+
+  it("returns the custom color when both toggles are true", () => {
+    expect(itemLabelColor({ disableLabelColor: true, useCustomLabelColor: true, labelCustomColor: "#00ff00" }, "#ff0000")).toBe("#00ff00");
+  });
+});
+describe("rotatePlanAngle — a bearing turns with the plan (issue #280)", () => {
+  // "Ripple direction stays in editing reference": the overlay is HTML and is
+  // never transformed as a whole, so a direction set in the editor kept
+  // pointing the same way on screen while the plan turned underneath it.
+  it("adds the rotation, so plan-up becomes screen-right at 90°", () => {
+    expect(rotatePlanAngle(0, 0)).toBe(0);
+    expect(rotatePlanAngle(0, 90)).toBe(90);
+    expect(rotatePlanAngle(0, 180)).toBe(180);
+    expect(rotatePlanAngle(0, 270)).toBe(270);
+  });
+
+  it("agrees with rotatePlanPoint about which way the plan turns", () => {
+    // The two must not disagree: the point mapping puts a device somewhere and
+    // this points its cone. Plan-up is (0,-1) in screen axes; at 90° the point
+    // mapping sends it to (1,0) — screen-right — which is a bearing of 90.
+    const W = 400;
+    const H = 200;
+    const centre = { x: W / 2, y: H / 2 };
+    const above = { x: W / 2, y: H / 2 - 50 }; // 50 units toward plan-north
+    for (const rot of [0, 90, 180, 270] as const) {
+      const c = rotatePlanPoint(centre.x, centre.y, W, H, rot);
+      const a = rotatePlanPoint(above.x, above.y, W, H, rot);
+      // Bearing of the mapped offset, clockwise from screen-up.
+      const bearing = ((Math.atan2(a.x - c.x, c.y - a.y) * 180) / Math.PI + 360) % 360;
+      expect(Math.round(bearing), `rot=${rot}`).toBe(rotatePlanAngle(0, rot));
+    }
+  });
+
+  it("carries whatever bearing was stored, not just the default", () => {
+    expect(rotatePlanAngle(45, 90)).toBe(135);
+    expect(rotatePlanAngle(200, 270)).toBe(110);
+  });
+
+  it("normalises into 0..360 so the value can go straight into CSS", () => {
+    expect(rotatePlanAngle(350, 90)).toBe(80);
+    expect(rotatePlanAngle(-90, 0)).toBe(270);
+    expect(rotatePlanAngle(720, 90)).toBe(90);
+  });
+
+  it("treats an unusable angle as 0 rather than poisoning the rotation", () => {
+    // cssNumber's job: a config carrying a string or NaN must not turn the
+    // whole expression into NaN and take the mask with it.
+    expect(rotatePlanAngle(NaN, 90)).toBe(90);
+    expect(rotatePlanAngle("nonsense" as unknown as number, 180)).toBe(180);
+  });
+
+  it("is the identity on an unrotated plan, which is every plan by default", () => {
+    for (const a of [0, 45, 180, 359]) expect(rotatePlanAngle(a, 0)).toBe(a);
   });
 });

@@ -176,6 +176,8 @@ export const SKIN_PAPER = "var(--fp-skin-bg, var(--card-background-color, #fff))
 export const SKIN_WALL = "var(--fp-skin-wall, var(--primary-text-color))";
 export const SKIN_TEXT = "var(--fp-skin-text, var(--primary-text-color))";
 export const SKIN_ACCENT = "var(--fp-skin-accent, var(--primary-color, #03a9f4))";
+export const SKIN_ACTIVE = "var(--fp-skin-active, var(--state-light-active-color, var(--state-active-color, #fdd835)))";
+export const SKIN_INACTIVE = "var(--fp-skin-badge-bg, var(--card-background-color, #fff))";
 
 /** The skin with this id, or `undefined` — including for the default. */
 export function findSkin(id: unknown): Skin | undefined {

@@ -1,6 +1,6 @@
 import { nothing } from "lit";
 import { describe, expect, it } from "vitest";
-import type { Floor, FloorplanCardConfig, HomeAssistant } from "./types";
+import type { Floor, FloorplanCardConfig, HomeAssistant, RenderHass } from "./types";
 import { ambientDaylightEnabled, renderAmbientDaylightLayer } from "./ambient-daylight-integration";
 import { collectWatchedEntities } from "./render";
 
@@ -92,6 +92,47 @@ describe("ambient daylight host integration", () => {
         openingState,
       ),
     ).not.toBe(nothing);
+  });
+
+  // The card renders every light layer through `renderHass`, which is the live
+  // `hass` normally and the reconstructed past while replay history is running
+  // (PR #204 merged after that feature landed). Reading `this.hass` here instead
+  // would have shown tonight's darkness over a replayed midday plan.
+  it("reads its sun through the replay-aware state source, not the live one", () => {
+    const replayedNoon: Pick<RenderHass, "states"> = {
+      states: {
+        "sun.sun": {
+          state: "above_horizon",
+          attributes: { elevation: 40 },
+        },
+      },
+    } as unknown as Pick<RenderHass, "states">;
+
+    expect(
+      renderAmbientDaylightLayer(
+        floor(),
+        config({ ambientDaylight: true }),
+        replayedNoon,
+        "card-a",
+        openingState,
+      ),
+    ).not.toBe(nothing);
+
+    const replayedNight: Pick<RenderHass, "states"> = {
+      states: {
+        "sun.sun": { state: "below_horizon", attributes: { elevation: -20 } },
+      },
+    } as unknown as Pick<RenderHass, "states">;
+
+    expect(
+      renderAmbientDaylightLayer(
+        floor(),
+        config({ ambientDaylight: true }),
+        replayedNight,
+        "card-a",
+        openingState,
+      ),
+    ).toBe(nothing);
   });
 
   it("fails dark while sun elevation is missing or unreadable", () => {

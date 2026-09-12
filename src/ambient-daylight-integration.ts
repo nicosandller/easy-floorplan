@@ -1,5 +1,5 @@
 import { nothing, svg, type SVGTemplateResult } from "lit";
-import type { Floor, FloorplanCardConfig, HomeAssistant, Opening } from "./types";
+import type { Floor, FloorplanCardConfig, Opening, RenderHass } from "./types";
 import { openingClearFraction, shutterAmount } from "./render";
 import {
   ambientDaylightPatches,
@@ -33,7 +33,7 @@ export interface AmbientDaylightOpeningState {
 export function renderAmbientDaylightLayer(
   floor: Pick<Floor, "areas" | "openings">,
   config: FloorplanCardConfig,
-  hass: HomeAssistant | undefined,
+  hass: Pick<RenderHass, "states"> | undefined,
   idPrefix: string,
   openingState: AmbientDaylightOpeningState,
 ): SVGTemplateResult | typeof nothing {

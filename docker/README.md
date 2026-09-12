@@ -8,7 +8,8 @@ thing rather than a mock.
 
 Needs Docker with **Compose v2**: the scripts call `docker compose` as a
 subcommand, not the older standalone `docker-compose` binary. `docker compose
-version` tells you which you have.
+version` tells you which you have. Docker Desktop ships it; for a CLI-only
+setup, `brew install colima docker docker-compose && colima start`.
 
 Run `npm install` first, and again after a pull that changes dependencies —
 the seeding step reads the demo plan with `js-yaml`, and will tell you to if
@@ -52,8 +53,7 @@ Then, in the sidebar:
 While working, run `npm run watch` in a second terminal. It rebuilds `dist/` on
 save, and `dist/` is mounted into the container, so the new file is in place
 immediately — but the browser has already cached the old one, so a change needs
-a hard refresh (<kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>). This is the
-one place the container is more friction than the vite harness, which hot-reloads.
+a hard refresh (<kbd>Cmd/Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>R</kbd>).
 
 Home Assistant serves `/local/` with a month-long `Cache-Control`, so a plain
 reload will happily keep running a card you built last week — which looks like
@@ -173,14 +173,12 @@ short of writing rows into the recorder database directly — not worth it, sinc
 the schema moves between Home Assistant versions and you would end up debugging
 the fixture instead of the card.
 
-## What this catches that `dev/` cannot
+## Why a real Home Assistant
 
-The vite harness in [`dev/`](../dev) is faster and will stay the right tool for
-laying out a plan or iterating on the editor: it hot-reloads, it needs no
-account, and it starts instantly. What it cannot do is disagree with you,
-because the `hass` object it passes the card is one the repo wrote.
-
-Against a container:
+This container is the only harness in the repo. There was once a mock-`hass` one
+under `dev/`, faster to start but only ever able to agree with itself, because the
+`hass` object it passed the card was one the repo wrote. It is gone. What a real
+instance gives you instead:
 
 - **The websocket is real.** State arrives as Home Assistant actually delivers
   it, at its own pace, with the attributes that Home Assistant version actually

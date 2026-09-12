@@ -46,3 +46,20 @@ jobs:
         run: npm test
       - name: Build
         run: npm run build
+
+  # The editor's gesture wiring needs real layout and a live CTM, so it is
+  # tested in Chromium (vitest.browser.config.ts). A separate job: the node
+  # suite above stays as fast as it is, and this one fails on its own.
+  browser-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+      - name: Browser tests
+        run: npm run test:browser

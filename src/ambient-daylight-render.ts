@@ -4,13 +4,13 @@ import type { AmbientDaylightPatch } from "./ambient-daylight";
 
 /** Neutral/cool sky light, intentionally distinct from warm direct sunlight. */
 export const DEFAULT_AMBIENT_DAYLIGHT_COLOR = "#f4f8ff";
-/** Canvas-space edge feather for the prototype light pool. */
+/** Canvas-space edge feather for the light pool. */
 export const DEFAULT_AMBIENT_DAYLIGHT_BLUR = 10;
 
 export interface AmbientDaylightRenderOptions {
   /** Stable namespace when more than one floorplan SVG can exist on a page. */
   idPrefix?: string;
-  /** Prototype sky-light tint. Public configuration can be added after visual calibration. */
+  /** Sky-light tint. Public configuration can be added after visual calibration. */
   color?: string;
   /** Gaussian blur in plan/canvas units. Zero keeps the deterministic patch edge sharp. */
   blur?: number;

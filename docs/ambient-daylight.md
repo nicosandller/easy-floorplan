@@ -1,5 +1,7 @@
 # Diffuse ambient daylight
 
+Back to the [Lighting guide](lighting.md) or the [README](../README.md).
+
 `ambientDaylight` adds a soft room-aware daylight layer from the visible sky. It is deliberately separate from Easy Floorplan's existing direct `sunlight` layer.
 
 Direct sunlight answers **where does the sun itself cast a patch right now?** It depends on sun bearing, elevation, openings and wall shadows.
@@ -37,6 +39,7 @@ This makes complete room geometry important. If a real neighbouring room has no 
 - The exact Area polygon clips the result. Blur can soften the pool inside a room but cannot leak through a solid Area boundary.
 - Multiple exterior sources combine without normalised brightness exceeding 1.
 - The existing opening travel, glazing and shutter state are reused for transmission instead of introducing a second state model.
+- Every state the layer reads — sun elevation, opening travel and shutter position — comes from the card's replay-aware state source, so a plan scrubbed back through replay history shows the daylight of the moment being replayed rather than of now.
 - `sunlight: false` remains the opening-level natural-light opt-out. This matters for intentionally schematic openings such as an unbound solid door that is drawn open as a floor-plan convention but should not illuminate the room.
 
 The layer is rendered above Area fills and below the existing dead-space, artificial-light and direct-sun layers. It does not reorder those existing layers.
