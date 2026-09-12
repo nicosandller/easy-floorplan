@@ -218,7 +218,6 @@ const TOOL_META: Record<Tool, { icon: string; label: string }> = {
   area: { icon: "mdi:vector-polygon", label: "Area" },
 };
 
-/** Icon shown in the Element header per selected element kind. */
 /**
  * Where the editor draws the switcher handle before it has been placed.
  *
@@ -241,6 +240,7 @@ const switcherHandleHome = (w: number, h: number) => ({ x: w * 0.93, y: h * 0.08
  */
 const DRAG_SLOP = 4;
 
+/** Icon shown in the Element header per selected element kind. */
 const SEL_KIND_ICON: Record<SelKind, string> = {
   wall: "mdi:wall",
   opening: "mdi:door",
@@ -474,6 +474,22 @@ export class FloorplanCardEditor extends LitElement {
   private _dragMoves = new FrameCoalescer<DragMove>(rafScheduler, (move) => {
     if (this._drag) this._applyDrag(move);
   });
+  /**
+   * The switcher drag's moves, coalesced to one a frame (issue #281).
+   *
+   * Same reason as `_dragMoves` above: a pointer reports faster than the
+   * browser paints, and `_config` is reactive — applying every raw move
+   * re-renders the whole editor per event and leaves the handle further behind
+   * the cursor the longer the drag runs.
+   */
+  private _switcherMoves = new FrameCoalescer<{ x: number; y: number }>(rafScheduler, (at) => {
+    if (!this._switcherDrag) return;
+    // Only the anchor moves. Unlike every other drag this one cannot change
+    // which entities the card watches — `floorSwitcher` is a point and binds
+    // nothing — so there is no `collectWatchedEntities` here: rescanning the
+    // whole config per frame to arrive at the same set is work for nothing.
+    this._config = { ...this._config, floorSwitcher: { x: at.x, y: at.y } };
+  });
   /** A drag changed the config and the host has not been told yet. */
   private _dragDirty = false;
   /**
@@ -552,6 +568,14 @@ export class FloorplanCardEditor extends LitElement {
     // with it, so the gesture is over either way. `_config` is the host's only
     // copy of where it was dropped, so hand that over rather than rolling back
     // — a reparent mid-drag should not silently undo the move.
+    // Settled, not dropped — the opposite of the element drag above, for a
+    // reason specific to this one. `moved` is set the instant the pointer
+    // passes the slop, before any frame has run, so a drag torn down between
+    // those two moments would otherwise emit the *pre-drag* config as if it
+    // were the result: a config-changed that says nothing changed. The queued
+    // value is a plain point with no DOM dependency, so settling it is safe
+    // and means `moved` always corresponds to a real position.
+    this._switcherMoves.settle();
     if (this._switcherDrag?.moved) this._emit(this._config);
     this._switcherDrag = undefined;
     this._gesturePointer = null;
@@ -1396,6 +1420,16 @@ export class FloorplanCardEditor extends LitElement {
 
   private _onCanvasMove(ev: PointerEvent): void {
     if (this._foreignPointer(ev)) return;
+    // A switcher drag whose pointer capture never took (capture is best-effort
+    // — see `_capturePointer`) reports here the moment the cursor leaves the
+    // handle. Without this the generic canvas handling below ignores the drag
+    // outright, and `_onCanvasUp` then clears `_gesturePointer` without ever
+    // finishing it: the handle sticks to the pointer with no way to let go,
+    // and the move is never emitted.
+    if (this._switcherDrag?.pointerId === ev.pointerId) {
+      this._onSwitcherMove(ev);
+      return;
+    }
     // A gesture with no buttons held means pointerup never reached us
     // (alt-tab, dialog retarget) — treat it as canceled instead of letting
     // the element chase the hovering mouse.
@@ -1436,6 +1470,14 @@ export class FloorplanCardEditor extends LitElement {
 
   private _onCanvasUp(ev: PointerEvent): void {
     if (this._foreignPointer(ev)) return;
+    // The release half of the uncaptured switcher drag above. It has to come
+    // before `_gesturePointer` is cleared: `_onSwitcherUp` is what emits the
+    // move, and once the gate is open a second gesture can start on top of a
+    // drag that was never finished.
+    if (this._switcherDrag?.pointerId === ev.pointerId) {
+      this._onSwitcherUp(ev);
+      return;
+    }
     // Land on the last position the pointer reported, not on whatever the
     // previous frame caught — settle while _drag is still set.
     this._dragMoves.settle();
@@ -4710,14 +4752,12 @@ export class FloorplanCardEditor extends LitElement {
       this._pushHistory();
       d.moved = true;
     }
-    const at = this._toVirtual(ev);
     // Local, not emitted. Every other drag in this editor writes to `_config`
     // while it is live and emits once on release, and both halves matter: the
     // host is spared a `config-changed` (and the card-stack re-render behind
     // it) per frame, and — because nothing has been emitted — a rollback can
     // put the old config back locally instead of emitting its way out.
-    this._config = { ...this._config, floorSwitcher: { x: at.x, y: at.y } };
-    this._watchedEntities = collectWatchedEntities(this._config);
+    this._switcherMoves.push(this._toVirtual(ev));
   };
 
   private _onSwitcherUp = (ev: PointerEvent): void => {
@@ -4725,6 +4765,10 @@ export class FloorplanCardEditor extends LitElement {
     if (!d || d.pointerId !== ev.pointerId) return;
     ev.stopPropagation();
     this._releasePointer(ev, ev.currentTarget as Element);
+    // Land on the last position the pointer reported rather than whatever the
+    // previous frame caught — and while `_switcherDrag` is still set, since
+    // that is what the coalescer checks before applying.
+    this._switcherMoves.settle();
     this._switcherDrag = undefined;
     this._gesturePointer = null;
     // `_emit`, not `_commit`: the history entry was pushed at first movement,
@@ -4766,6 +4810,8 @@ export class FloorplanCardEditor extends LitElement {
   private _rollBackSwitcherDrag(): void {
     const d = this._switcherDrag;
     if (!d) return;
+    // Whatever is queued is about to be replaced by the pre-drag config.
+    this._switcherMoves.cancel();
     this._switcherDrag = undefined;
     this._gesturePointer = null;
     if (!d.moved) return;

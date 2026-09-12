@@ -23,6 +23,9 @@ import type { PlanRotation } from "./render";
  */
 let seq = 0;
 
+/** The room the zoom test zooms into. */
+const ZOOM_AREA = "living";
+
 function config(extra: Partial<FloorplanCardConfig> = {}): FloorplanCardConfig {
   const s = seq++;
   return {
@@ -41,7 +44,14 @@ function config(extra: Partial<FloorplanCardConfig> = {}): FloorplanCardConfig {
         texts: [],
         furniture: [],
         trackers: [],
-        areas: [],
+        // A real room, so the zoom test has something the card will actually
+        // zoom into. A polygon in one corner, small enough that fitting it
+        // scales the plan up noticeably rather than by a rounding error.
+        areas: [
+          { id: ZOOM_AREA, name: "Living", points: [
+            { x: 20, y: 20 }, { x: 140, y: 20 }, { x: 140, y: 90 }, { x: 20, y: 90 },
+          ] },
+        ],
       },
       {
         id: `u${s}`,
@@ -80,6 +90,7 @@ async function mountCard(extra: Partial<FloorplanCardConfig> = {}) {
   const root = card.shadowRoot!;
   const sw = () => root.querySelector(".floor-switcher") as HTMLElement;
   const plan = () => root.querySelector(".plan") as HTMLElement;
+  const planZoom = () => root.querySelector(".plan-zoom") as HTMLElement;
   /** The switcher's centre as a percentage of the plan box. */
   const centre = () => {
     const s = sw().getBoundingClientRect();
@@ -89,7 +100,27 @@ async function mountCard(extra: Partial<FloorplanCardConfig> = {}) {
       y: Math.round(((s.y + s.height / 2 - p.y) / p.height) * 100),
     };
   };
-  return { card, sw, centre, style: () => sw().getAttribute("style") };
+  return {
+    card,
+    sw,
+    centre,
+    planZoom,
+    /** Wait out the `.plan-zoom` transition, so a measurement is of the end state. */
+    zoomSettled: () =>
+      new Promise<void>((resolve) => {
+        const el = planZoom();
+        const done = () => resolve();
+        el.addEventListener("transitionend", done, { once: true });
+        // A browser that coalesces the transition away fires nothing at all.
+        setTimeout(done, 800);
+      }),
+    /** Where the drawing itself sits, to tell a real zoom from no zoom at all. */
+    planBox: () => {
+      const b = planZoom().getBoundingClientRect();
+      return { x: Math.round(b.x), y: Math.round(b.y), w: Math.round(b.width) };
+    },
+    style: () => sw().getAttribute("style"),
+  };
 }
 
 describe("the card draws the switcher where the plan says", () => {
@@ -162,9 +193,23 @@ describe("the card draws the switcher where the plan says", () => {
     // end, with no way to change floor until you zoomed back out.
     const t = await mountCard({ floorSwitcher: { x: 60, y: 100 } });
     const before = t.centre();
-    // Zoom the card into a room the way a tap does.
-    (t.card as unknown as { _zoomedAreaId?: string })._zoomedAreaId = "zoomed";
+    const planBefore = t.planBox();
+    // Zoom the card into a room the way a tap does. It has to be a room the
+    // plan actually has: an id nothing matches leaves the identity transform
+    // in place, and the test would pass without ever entering the state it
+    // claims to be about.
+    (t.card as unknown as { _zoomedAreaId?: string })._zoomedAreaId = ZOOM_AREA;
     await t.card.updateComplete;
+    // `.plan-zoom` eases its transform over 0.4s, so measuring on the next
+    // frame catches the drawing before it has gone anywhere — which looks
+    // exactly like a zoom that never happened.
+    await t.zoomSettled();
+
+    // The drawing really did move and scale…
+    const planAfter = t.planBox();
+    expect(planAfter.w).toBeGreaterThan(planBefore.w);
+    expect(planAfter).not.toEqual(planBefore);
+    // …and the switcher did not go with it.
     expect(t.centre()).toEqual(before);
   });
 
@@ -293,6 +338,12 @@ async function mountEditor(extra: Partial<FloorplanCardConfig> = {}) {
     ptr,
     handleCentre,
     canvasPoint,
+    /** The canvas itself — where events land when pointer capture never took. */
+    svg: () => root().querySelector("svg") as SVGSVGElement,
+    /** What the editor is holding locally, which a live drag writes to. */
+    anchor: () =>
+      (ed as unknown as { _config: FloorplanCardConfig })._config.floorSwitcher,
+    frame: () => new Promise<void>((r) => requestAnimationFrame(() => r())),
   };
 }
 
@@ -478,6 +529,62 @@ describe("the editor lets you drag the switcher anywhere on the canvas", () => {
 
     expect(history().length).toBe(depth);
     expect(history()[0]).toBe(oldest);
+  });
+
+  it("finishes even when pointer capture never took", async () => {
+    // `_capturePointer` is best-effort and swallows failures. Without capture
+    // the moment the cursor leaves the handle every event lands on the canvas
+    // instead — and the canvas handlers know nothing about this drag, so the
+    // handle would follow the pointer with no way to let go and the move would
+    // never be emitted.
+    const t = await mountEditor();
+    const h = t.handle();
+    h.dispatchEvent(t.ptr("pointerdown", t.handleCentre()));
+    // Everything from here on goes to the canvas, as it would with no capture.
+    const to = t.canvasPoint(120, 160);
+    t.svg().dispatchEvent(t.ptr("pointermove", to));
+    await t.frame();
+    t.svg().dispatchEvent(t.ptr("pointerup", to, 0));
+    await t.ed.updateComplete;
+
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual({ x: 120, y: 160 });
+    // The gesture really is over: the handle is not still being dragged, and
+    // the gate it holds is open for the next one.
+    expect(
+      (t.ed as unknown as { _switcherDrag?: unknown; _gesturePointer: number | null })
+        ._switcherDrag,
+    ).toBeUndefined();
+    expect(
+      (t.ed as unknown as { _gesturePointer: number | null })._gesturePointer,
+    ).toBeNull();
+  });
+
+  it("applies one move a frame, not one an event", async () => {
+    // `_config` is reactive, so writing it per raw pointermove re-renders the
+    // whole editor at pointer rate and the handle falls behind the cursor.
+    const t = await mountEditor();
+    const h = t.handle();
+    h.dispatchEvent(t.ptr("pointerdown", t.handleCentre()));
+    for (const [x, y] of [
+      [80, 40],
+      [100, 60],
+      [140, 160],
+    ]) {
+      h.dispatchEvent(t.ptr("pointermove", t.canvasPoint(x, y)));
+    }
+    // Still nothing written: three events, no frame yet.
+    expect(t.anchor()).toBeUndefined();
+    await t.frame();
+    // …and one write when the frame comes, carrying the newest point rather
+    // than replaying the three.
+    expect(t.anchor()).toEqual({ x: 140, y: 160 });
+
+    // A release still lands on the last point the pointer reported, even one
+    // that arrived after the last frame.
+    h.dispatchEvent(t.ptr("pointermove", t.canvasPoint(200, 100)));
+    h.dispatchEvent(t.ptr("pointerup", t.canvasPoint(200, 100), 0));
+    await t.ed.updateComplete;
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual({ x: 200, y: 100 });
   });
 
   it("refuses to start while another gesture owns the pointer", async () => {
