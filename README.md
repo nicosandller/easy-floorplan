@@ -449,7 +449,7 @@ Everything the card does beyond placing elements, in four guides:
 | | | |
 | --- | --- | --- |
 | ⚙️ | **[Configuration](https://github.com/nicosandller/easy-floorplan/blob/main/docs/configuration.md)** | Every key it accepts — per-element tables, defaults, a worked example |
-| 💡 | **[Lighting](https://github.com/nicosandller/easy-floorplan/blob/main/docs/lighting.md)** | Sun dimming through dusk and dawn · real sunlight through the windows |
+| 💡 | **[Lighting](https://github.com/nicosandller/easy-floorplan/blob/main/docs/lighting.md)** | Sun dimming through dusk and dawn · real sunlight through the windows · diffuse ambient daylight |
 | 🎨 | **[Appearance](https://github.com/nicosandller/easy-floorplan/blob/main/docs/appearance.md)** | Skins · overlay scale · compact header · rotation · card-mod hooks |
 | ⚡ | **[Behaviour](https://github.com/nicosandller/easy-floorplan/blob/main/docs/behavior.md)** | Dead spaces · doors on locks · room actions · devices that only appear up close · stairs between floors · offline devices · hiding logic |
 

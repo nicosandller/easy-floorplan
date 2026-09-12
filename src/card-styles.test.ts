@@ -29,6 +29,13 @@ describe("the stylesheet does not overwrite paint the renderer computes", () => 
   const gradientPainted = [
     { selector: ".fp-sunbeam", property: "fill" },
     { selector: ".fp-glow", property: "fill" },
+    // Ambient daylight paints a per-element linearGradient the same way, and
+    // hangs the room's softness on a per-element `filter: url(#...)` besides.
+    // A flat `fill` here would give every window the same hard slab the
+    // sunbeam got; a flat `filter` would take the blur away and leave the bare
+    // trapezoid, which is the shape the gradient exists to hide.
+    { selector: ".fp-ambient-daylight-patch", property: "fill" },
+    { selector: ".fp-ambient-daylight-patch", property: "filter" },
   ];
 
   for (const { selector, property } of gradientPainted) {
