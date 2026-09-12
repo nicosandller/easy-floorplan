@@ -205,12 +205,43 @@ describe("a piece of furniture answers the gestures it was given", () => {
     // that will not happen, and the hold timer makes every tap wait for it.
     const t = await mount({ type: "table", hold_action: { action: "more-info" } as never });
     expect(t.link()).toBeNull();
-    // Same config, now with something to show: a real gesture again.
+    // Same config, now with something to show: a real gesture again, and the
+    // listeners that go with it.
     const ok = await mount({
       type: "table",
       hold_action: { action: "more-info", entity: "light.shelf" } as never,
     });
-    expect(ok.role()).toBe("button");
+    expect(ok.link()).not.toBeNull();
+  });
+
+  it("offers no tab stop to a piece the keyboard cannot operate", async () => {
+    // Enter and Space are the keyboard's only activation, and `actionHandler`
+    // turns both into a tap. A piece whose sole action is on hold would take
+    // focus, announce itself as a button, and then do nothing when pressed.
+    const held = await mount({
+      type: "table",
+      hold_action: { action: "more-info", entity: "light.shelf" } as never,
+    });
+    expect(held.role()).toBeUndefined();
+    expect(held.link()!.getAttribute("tabindex")).toBeNull();
+    // No name either: an aria-label belongs to a control, and this is not one.
+    expect(held.spoken()).toBeUndefined();
+    // The hold itself still works — it just never claimed to be a button.
+    await held.gesture("hold");
+    expect(moreInfo).toEqual(["light.shelf"]);
+
+    // A tap that does something earns the role and the tab stop…
+    const tapped = await mount({
+      type: "table",
+      tap_action: { action: "more-info", entity: "light.shelf" } as never,
+    });
+    expect(tapped.role()).toBe("button");
+    expect(tapped.link()!.getAttribute("tabindex")).toBe("0");
+
+    // …and so does a staircase, whose tap is the floor change.
+    const stairs = await mount({ goToFloor: "up" });
+    expect(stairs.role()).toBe("button");
+    expect(stairs.link()!.getAttribute("tabindex")).toBe("0");
   });
 
   it("keeps changing floor when its tap action is one that cannot run", async () => {

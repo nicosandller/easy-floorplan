@@ -1246,6 +1246,20 @@ export class FloorplanCard extends LitElement {
               // A gray diagram that announces itself as a button and then does
               // nothing is worse than one that says nothing at all.
               if (!goesToFloor && !hasTap && !hasHold && !hasDoubleClick) return drawn;
+              // The button role and the tab stop are earned by the *tap*, not by
+              // any gesture at all. `actionHandler` turns Enter and Space into
+              // a tap and nothing else, so a piece whose only action sits on
+              // hold or double-tap would take focus, announce itself as a
+              // button, and then do nothing when a keyboard user pressed it —
+              // a promise this card cannot keep.
+              //
+              // Such a piece keeps its listeners, so the hold still works under
+              // a pointer; it just stops advertising a control that cannot be
+              // operated. Hold and double-tap being pointer-only is not new
+              // here — it is true of every item and room on the plan, because
+              // the keyboard has one activation and they are the second and
+              // third gestures on it.
+              const tappable = hasTap || goesToFloor;
               const name = floors.find((x) => x.id === to)?.name;
               // Names the gesture that actually runs. A configured tap replaces
               // the floor change, so promising "Go to Upstairs" would be a lie
@@ -1264,8 +1278,10 @@ export class FloorplanCard extends LitElement {
               // the gesture itself does: `_onFurnitureAction` hands the live
               // hass to `executeAction`, so the button is named after the
               // state it will actually act on, replay or no replay.
-              const spoken = label ? nothing : furnitureAccessibleName(f, this.hass);
-              return svg`<g class="fp-furniture-link" role="button" tabindex="0"
+              const spoken = tappable && !label ? furnitureAccessibleName(f, this.hass) : nothing;
+              return svg`<g class="fp-furniture-link"
+                    role=${tappable ? "button" : nothing}
+                    tabindex=${tappable ? "0" : nothing}
                     aria-label=${spoken}
                     @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
                       this._onFurnitureAction(ev, f, floors, to)}

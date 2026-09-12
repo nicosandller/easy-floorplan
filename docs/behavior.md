@@ -188,7 +188,14 @@ that was never going to fire. A staircase whose `goToFloor` is switched off by a
 `tap_action` that cannot run is inert too; an unusable tap is still a configured one, so it
 suppresses the floor change the same way `none` does.
 
-A piece that *does* answer gestures is a button, and the drawing gives a screen reader
+The button role and the tab stop are earned by the **tap** specifically, not by any gesture.
+Enter and Space are the keyboard's only activation and the card turns both into a tap, so a
+piece whose sole action sits on hold or double-tap would take focus, announce itself as a
+button, and then do nothing when pressed. Such a piece still answers a pointer hold; it
+just does not advertise a control nobody can operate from a keyboard. (Hold and double-tap
+are pointer gestures everywhere on the plan, on items and rooms too, for the same reason.)
+
+A piece that *does* answer a tap is a button, and the drawing gives a screen reader
 nothing to call it by. Where the floor tooltip is not already naming it, the card names it
 after the entity the gesture will act on — the action's own `entity` where it names one —
 using its friendly name, or the entity id. Only `toggle` and `more-info` act on an entity,
