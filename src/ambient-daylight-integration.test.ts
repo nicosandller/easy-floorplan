@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { Floor, FloorplanCardConfig, HomeAssistant, RenderHass } from "./types";
 import { ambientDaylightEnabled, renderAmbientDaylightLayer } from "./ambient-daylight-integration";
 import { collectWatchedEntities } from "./render";
+import { getReplayWatchedEntities } from "./replay-history/replay-utils";
 
 function config(extra: Partial<FloorplanCardConfig> = {}): FloorplanCardConfig {
   return {
@@ -92,6 +93,16 @@ describe("ambient daylight host integration", () => {
         openingState,
       ),
     ).not.toBe(nothing);
+  });
+
+  // Subscribing to `sun.sun` is only half the contract. During replay the card
+  // builds its state from the replay scope, and history is fetched for exactly
+  // the entities in it; anything absent falls back to the live entity instead.
+  // With the sun left out, every opening in the room replayed correctly while
+  // the daylight over them stayed stuck on tonight.
+  it("puts its sun in the replay scope so history is actually fetched for it", () => {
+    expect(getReplayWatchedEntities(config())).not.toContain("sun.sun");
+    expect(getReplayWatchedEntities(config({ ambientDaylight: true }))).toContain("sun.sun");
   });
 
   // The card renders every light layer through `renderHass`, which is the live

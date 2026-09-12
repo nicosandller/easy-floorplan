@@ -1,6 +1,7 @@
 import type { Area, AreaPoint, Opening } from "./types";
 import { SUN_ELEVATION_DAY, SUN_ELEVATION_NIGHT } from "./types";
 import { OPENING_ON_WALL_EPS } from "./dead-space";
+import { liveSunAttribute, openingIsGlazed, openingMotion } from "./render";
 
 /**
  * Room-aware diffuse daylight geometry.
@@ -221,13 +222,19 @@ export function ambientOpeningSources(
  * than HA reads so this module stays deterministic and renderer-agnostic.
  */
 export function ambientOpeningTransmission(
-  opening: Pick<Opening, "type" | "glazed" | "sunlight">,
+  opening: Pick<Opening, "type" | "glazed" | "sunlight" | "motion">,
   openFraction = 0,
   shutterOpenFraction = 1,
 ): number {
   if (opening.sunlight === false) return 0;
-  const glazed = opening.glazed ?? opening.type === "window";
-  const base = glazed ? 1 : clamp01(openFraction, 0);
+  // Carries glowClearFraction's roll-motion exception, read from the same two
+  // helpers. A `motion: "roll"` window is a blind, shade or awning bound as the
+  // opening's own entity — the covering standing in for the glass behind it,
+  // not the glass itself. Glazed by the default every window gets, it would
+  // pass full daylight with the blind all the way down, which is the one thing
+  // binding it was for.
+  const glass = openingIsGlazed(opening) && openingMotion(opening) !== "roll";
+  const base = glass ? 1 : clamp01(openFraction, 0);
   return base * clamp01(shutterOpenFraction, 1);
 }
 
@@ -240,8 +247,16 @@ export function ambientOpeningTransmission(
  * must never make the card invent daylight. The next valid HA state restores it.
  */
 export function ambientDaylightDayFactor(elevation: unknown): number {
-  if (typeof elevation !== "number" || !Number.isFinite(elevation)) return 0;
-  const e = elevation;
+  // liveSunAttribute rather than a bare typeof: HA hands the same elevation
+  // over as a number or as a numeric string depending on the path it arrived
+  // by, and "25" is a bright afternoon rather than an outage. It is also what
+  // keeps null, "" and false from coercing to a confident 0 — the horizon
+  // exactly. Only the policy on an unreadable value differs from the direct-sun
+  // layers: they fail bright so an outage leaves the plan legible, while
+  // daylight invented out of a sun we cannot read would be a picture of
+  // something that is not there.
+  const e = liveSunAttribute(elevation);
+  if (e === undefined) return 0;
   if (e <= SUN_ELEVATION_NIGHT) return 0;
   if (e >= SUN_ELEVATION_DAY) return 1;
   const t = (e - SUN_ELEVATION_NIGHT) / (SUN_ELEVATION_DAY - SUN_ELEVATION_NIGHT);

@@ -113,11 +113,40 @@ describe("ambient daylight prototype", () => {
     expect(ambientDaylightDayFactor(Number.NaN)).toBe(0);
   });
 
+  // HA hands the same attribute over as a number or as a numeric string
+  // depending on the path it arrived by; render.test.ts pins the same tolerance
+  // for sunBrightness. Rejecting the string form hid ambient daylight through
+  // the whole of a bright afternoon.
+  it("reads a numeric string elevation, as HA attributes sometimes arrive", () => {
+    expect(ambientDaylightDayFactor("25")).toBe(1);
+    expect(ambientDaylightDayFactor("6")).toBe(1);
+    expect(ambientDaylightDayFactor("-10")).toBe(0);
+    expect(ambientDaylightDayFactor("0")).toBeCloseTo(0.5);
+  });
+
   it("fails dark instead of coercing missing or non-numeric elevations to zero", () => {
     expect(ambientDaylightDayFactor(null)).toBe(0);
     expect(ambientDaylightDayFactor("")).toBe(0);
     expect(ambientDaylightDayFactor(" ")).toBe(0);
     expect(ambientDaylightDayFactor([])).toBe(0);
+  });
+
+  // A roll-motion window is a blind, shade or awning bound as the opening's own
+  // entity, not glass — glowClearFraction carves out the same exception for the
+  // same reason. Treated as glazed it passed full daylight with the blind all
+  // the way down, which is the one thing binding the entity was for.
+  it("treats a roll-motion window as its covering rather than as glass", () => {
+    const blind = { id: "b", type: "window", motion: "roll" } as const;
+    expect(ambientOpeningTransmission(blind, 0)).toBe(0);
+    expect(ambientOpeningTransmission(blind, 0.5)).toBeCloseTo(0.5);
+    expect(ambientOpeningTransmission(blind, 1)).toBe(1);
+
+    // An ordinary window is still glass, open or shut.
+    const glass = { id: "w", type: "window" } as const;
+    expect(ambientOpeningTransmission(glass, 0)).toBe(1);
+
+    // And a roll-motion window still answers to a shutter layered over it.
+    expect(ambientOpeningTransmission(blind, 1, 0)).toBe(0);
   });
 
   it("disappears at night even with a valid exterior window", () => {

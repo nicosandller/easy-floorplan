@@ -140,12 +140,14 @@ the wash to the receiving room: an opening touching exactly one Area is a sky so
 touching two Areas is interior; one touching none is ignored. With no Areas, nothing is
 drawn rather than guessing the room topology.
 
-The layer reuses the opening's existing travel, glazing and shutter state. `sunlight: false`
-on an opening remains the natural-light opt-out. Sky strength follows `sun.sun` elevation
+The layer reuses the opening's existing travel, glazing and shutter state, including the
+rule that a `motion: roll` window is the blind across the glass rather than the glass
+itself. `sunlight: false` on an opening remains the natural-light opt-out. Sky strength follows `sun.sun` elevation
 through civil twilight (-6° to +6°), but never uses azimuth/bearing. Missing or unreadable
 sun elevation fails dark until a valid HA state returns.
 
-The switch is off by default and appears under **Project → Ambient daylight**. V1 keeps
+The switch is off by default and appears under **Project → Sunlight → Ambient daylight**,
+beside the direct-sun rows it is independent of. V1 keeps
 strength, spread, tint and blur as implementation defaults rather than exposing unstable
 calibration knobs. See [Diffuse ambient daylight](ambient-daylight.md) for the geometry and
 renderer contract.

@@ -2487,7 +2487,7 @@ export function kindFromEntity(entity: string): ItemKind {
  * plane), `fixed` (issue #218: it does not) or `awning` (issue #272: hinged at
  * the head, swung out at the sill). Defaults to `swing`.
  */
-export function openingMotion(o: Opening): "swing" | "slide" | "roll" | "fixed" | "awning" {
+export function openingMotion(o: Pick<Opening, "motion">): "swing" | "slide" | "roll" | "fixed" | "awning" {
   return o.motion ?? "swing";
 }
 
@@ -3961,7 +3961,7 @@ export const SUN_ELEVATION_FULL = 12;
  * blindly turns "we do not know" into a confident wrong answer, so each
  * caller gets `undefined` and applies its own fail-bright default.
  */
-function liveSunAttribute(value: unknown): number | undefined {
+export function liveSunAttribute(value: unknown): number | undefined {
   const usable = typeof value === "number" || (typeof value === "string" && value.trim() !== "");
   if (!usable) return undefined;
   const n = typeof value === "number" ? value : Number(value);

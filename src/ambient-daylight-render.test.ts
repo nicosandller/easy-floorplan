@@ -7,6 +7,7 @@ import {
   ambientDaylightPolygonPoints,
   ambientDaylightSvgId,
   buildAmbientDaylightRenderModel,
+  renderAmbientDaylight,
 } from "./ambient-daylight-render";
 
 function room(): Area {
@@ -121,5 +122,75 @@ describe("ambient daylight SVG render model", () => {
     const model = buildAmbientDaylightRenderModel(room(), [patch(), second]);
     expect(model?.patches).toHaveLength(2);
     expect(model?.patches[0]?.gradientId).not.toBe(model?.patches[1]?.gradientId);
+  });
+});
+
+/**
+ * Serialize a Lit SVGTemplateResult (and its nested templates/arrays) back into
+ * markup, the same way `render.opening.test.ts` does, so the composition can be
+ * asserted without a browser.
+ */
+function serialize(node: unknown): string {
+  if (node == null || node === false) return "";
+  if (Array.isArray(node)) return node.map(serialize).join("");
+  if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+    const { strings, values } = node as { strings: string[]; values: unknown[] };
+    let out = strings[0]!;
+    for (let i = 0; i < values.length; i++) out += serialize(values[i]) + strings[i + 1]!;
+    return out;
+  }
+  return String(node);
+}
+
+/**
+ * The model tests above assert on numbers and ids. None of them looks at the
+ * markup those ids end up in, which is the half that actually broke for the
+ * sunbeam: a layer can compute a perfect gradient and still render a flat slab
+ * if the `fill` never references it, or leak through a wall if the clip lands
+ * on the wrong group. This is that half.
+ */
+describe("ambient daylight SVG composition", () => {
+  const markup = () => serialize(renderAmbientDaylight(room(), [patch()], { idPrefix: "card-a" }));
+
+  it("points the patch fill at the gradient it just built", () => {
+    const svg = markup();
+    const gradientId = svg.match(/<linearGradient id=([\w-]+)/)?.[1];
+    expect(gradientId).toBeTruthy();
+    expect(svg).toContain(`fill=url(#${gradientId})`);
+  });
+
+  it("hangs the blur on the patch and the clip on the group above it", () => {
+    const svg = markup();
+    const filterId = svg.match(/<filter id=([\w-]+)/)?.[1];
+    const clipId = svg.match(/<clipPath id=([\w-]+)/)?.[1];
+    expect(filterId).toBeTruthy();
+    expect(clipId).toBeTruthy();
+    expect(svg).toContain(`filter=url(#${filterId})`);
+    // Blur first, clip second. The other order feathers the room boundary
+    // itself and lets the wash bleed through the wall into the next room,
+    // which is the one thing the Area polygon is here to prevent.
+    const clippedGroup = svg.indexOf(`<g clip-path=url(#${clipId})`);
+    expect(clippedGroup).toBeGreaterThan(-1);
+    expect(clippedGroup).toBeLessThan(svg.indexOf("fp-ambient-daylight-patch"));
+  });
+
+  it("carries the class the stylesheet guard protects, and stays inert to pointers", () => {
+    const svg = markup();
+    expect(svg).toContain('class="fp-ambient-daylight-patch"');
+    expect(svg).toContain('pointer-events="none"');
+    expect(svg).toContain('aria-hidden="true"');
+  });
+
+  it("closes every tag it opens", () => {
+    const svg = markup();
+    for (const tag of ["g", "defs", "clipPath", "filter", "linearGradient", "polygon"]) {
+      const open = svg.match(new RegExp(`<${tag}[\\s>]`, "g"))?.length ?? 0;
+      const close = svg.match(new RegExp(`</${tag}>`, "g"))?.length ?? 0;
+      expect({ tag, open, close }).toEqual({ tag, open: close, close });
+    }
+  });
+
+  it("renders nothing at all for a room it cannot clip", () => {
+    expect(serialize(renderAmbientDaylight({ id: "bedroom", points: [] }, [patch()]))).toBe("");
   });
 });

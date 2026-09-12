@@ -34,12 +34,14 @@ This makes complete room geometry important. If a real neighbouring room has no 
 
 - Ambient daylight does not use sun azimuth or bearing. Directional direct sunlight remains the job of `sunlight`.
 - Sun elevation controls day/twilight/night strength. The transition uses the same civil-twilight interval as the card's sun visual language: zero at or below -6°, full at or above +6°, smoothly eased between them.
+- Sun elevation is read as a number or as a numeric string, since Home Assistant supplies it either way depending on the path it arrives by.
 - Missing, `unknown`, `unavailable` or otherwise unreadable sun elevation fails dark: the layer renders no invented daylight until Home Assistant supplies a valid elevation again.
 - Each exterior opening creates a broad widening wash rather than a narrow sun beam.
 - The exact Area polygon clips the result. Blur can soften the pool inside a room but cannot leak through a solid Area boundary.
 - Multiple exterior sources combine without normalised brightness exceeding 1.
 - The existing opening travel, glazing and shutter state are reused for transmission instead of introducing a second state model.
-- Every state the layer reads — sun elevation, opening travel and shutter position — comes from the card's replay-aware state source, so a plan scrubbed back through replay history shows the daylight of the moment being replayed rather than of now.
+- A `motion: roll` window is a blind, shade or awning bound as the opening's own entity, so it is judged by how far down it is rather than treated as always-clear glass. This is the same exception the lamp-glow layer makes, read from the same two helpers.
+- Every state the layer reads — sun elevation, opening travel and shutter position — comes from the card's replay-aware state source, and enabling the layer adds `sun.sun` to the replay scope so history is actually fetched for it. A plan scrubbed back through replay history therefore shows the daylight of the moment being replayed rather than of now.
 - `sunlight: false` remains the opening-level natural-light opt-out. This matters for intentionally schematic openings such as an unbound solid door that is drawn open as a floor-plan convention but should not illuminate the room.
 
 The layer is rendered above Area fills and below the existing dead-space, artificial-light and direct-sun layers. It does not reorder those existing layers.
@@ -83,4 +85,6 @@ These can be added later without changing the distinction between directional su
 
 The feature follows the repository's normal validation path: project typecheck, the complete Vitest suite and production build. Geometry tests cover exterior/interior classification, twilight strength, transmission, falloff, clipping, invalid inputs and multiple-card SVG ID isolation. Host/editor tests pin opt-in behaviour, the `sun.sun` watcher contract, fail-dark behavior and independence from direct sunlight.
 
-Before release, the built card must also be checked in a real browser with its actual stylesheet for layer order and gradient/filter composition. Markup-only rendering is not sufficient evidence because CSS participates in the final SVG composition.
+The renderer's own markup is asserted directly — the patch fill pointing at the gradient it built, the blur on the patch with the Area clip on the group above it — because a layer can compute perfect geometry and still paint a flat slab if the `fill` never references it. The stylesheet guard in `src/card-styles.test.ts` covers `.fp-ambient-daylight-patch` for both `fill` and `filter`, so a future CSS rule cannot silently discard renderer-owned paint the way `.fp-sunbeam` once did.
+
+Before release, the built card is still worth a look in a real browser for layer order against the rest of the plan. Markup assertions fix the composition, not the stacking order it lands in.
