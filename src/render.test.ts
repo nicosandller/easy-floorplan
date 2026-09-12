@@ -83,6 +83,7 @@ import {
   openingInMotion,
   openingIsActive,
   areaActionForGesture,
+  furnitureAccessibleName,
   furnitureActionForGesture,
   areaHasActions,
   entityStateText,
@@ -6324,6 +6325,24 @@ describe("furnitureActionForGesture — a piece can do more than change floor (i
     // changing floor on tap", and treating it as unset would keep the change.
     const f = piece({ goToFloor: "up", tap_action: { action: "none" } });
     expect(furnitureActionForGesture(f, "tap")?.config).toEqual({ action: "none" });
+  });
+
+  it("names a piece for anyone who cannot see it", () => {
+    // A piece that answers gestures is a button, and the drawing contributes
+    // paths and nothing else — so this is the only thing standing between an
+    // action-only piece and an unnamed button.
+    const hass = {
+      states: { "light.shelf": { state: "on", attributes: { friendly_name: "Shelf light" } } },
+    } as unknown as Parameters<typeof furnitureAccessibleName>[1];
+    expect(furnitureAccessibleName(piece({ entity: "light.shelf" }), hass)).toBe("Shelf light");
+    // An entity nothing has a friendly name for still beats the symbol id.
+    expect(furnitureAccessibleName(piece({ entity: "light.spare" }), hass)).toBe("light.spare");
+    // No entity at all: what it is drawn as, said the way a person would.
+    expect(furnitureAccessibleName({ type: "coffee-table" }, hass)).toBe("coffee table");
+    expect(furnitureAccessibleName({ type: "double_bed" }, hass)).toBe("double bed");
+    // And never the empty string, which would leave the button unnamed again.
+    expect(furnitureAccessibleName({ type: "" }, hass)).toBe("Furniture");
+    expect(furnitureAccessibleName({ type: "sofa" }, undefined)).toBe("sofa");
   });
 
   it("matches areaActionForGesture, which is the shape it was asked to copy", () => {

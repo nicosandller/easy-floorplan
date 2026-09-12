@@ -2823,6 +2823,27 @@ export function furnitureActionForGesture(
   return { entity: configured.entity ?? f.entity, config: configured };
 }
 
+/**
+ * What to call a piece of furniture out loud.
+ *
+ * A piece that answers gestures is a button, and `renderFurniture` contributes
+ * paths and nothing else — so unless the floor-change tooltip happens to be
+ * naming it, a screen reader is handed a button with no name at all. The
+ * entity it drives is the most useful thing to call it, because that is what
+ * the gesture will act on; failing that the symbol it is drawn as, because
+ * that is what everyone else is looking at. Ids are hyphenated (`double-bed`),
+ * which is not how anything should be read aloud.
+ */
+export function furnitureAccessibleName(
+  f: Pick<Furniture, "type" | "entity">,
+  hass?: RenderHass,
+): string {
+  const friendly = f.entity
+    ? (hass?.states[f.entity]?.attributes?.friendly_name as string | undefined)
+    : undefined;
+  return friendly || f.entity || String(f.type ?? "").replace(/[-_]+/g, " ").trim() || "Furniture";
+}
+
 export function areaActionForGesture(
   a: Pick<Area, "entity" | "tap_action" | "hold_action" | "double_tap_action">,
   gesture: "tap" | "hold" | "double_tap",

@@ -1588,7 +1588,7 @@ export function furnitureForm(
         selector: dropdown(opt("", "Nothing"), opt("up", "Up one floor"), opt("down", "Down one floor")),
       },
       // Actions on the piece itself (issue #284), offered on every piece the
-      // way a room's are — furniture with no entity can still navigate or call
+      // way a room's actions are — furniture with no entity can still navigate or call
       // a service, and requiring one first would rule that out.
       //
       // The tap helper names what it replaces, but only when there is

@@ -69,6 +69,7 @@ import {
   renderRipple,
   renderFurniture,
   furnitureColor,
+  furnitureAccessibleName,
   furnitureActionForGesture,
   furnitureFloorTarget,
   renderTracker,
@@ -1192,25 +1193,40 @@ export class FloorplanCard extends LitElement {
               // and double-tap are asked for separately because the handler
               // needs to know whether to spend their timers: a staircase with
               // only a floor change must still answer a tap immediately.
-              const hasHold = !!furnitureActionForGesture(f, "hold");
-              const hasDoubleClick = !!furnitureActionForGesture(f, "double_tap");
-              const hasTap = !!furnitureActionForGesture(f, "tap");
+              //
+              // `hasAction`, not a bare existence check — the same test the
+              // rooms above apply. `{ action: "none" }` is a gesture someone
+              // configured to do nothing, and counting it as real would spend
+              // the hold and double-tap timers on a piece that answers to
+              // neither, and hand a tab stop and a button role to one that
+              // answers to nothing at all.
+              const hasHold = hasAction(furnitureActionForGesture(f, "hold")?.config);
+              const hasDoubleClick = hasAction(furnitureActionForGesture(f, "double_tap")?.config);
+              const hasTap = hasAction(furnitureActionForGesture(f, "tap")?.config);
+              // Configured at all, `none` included — a separate question from
+              // whether it does anything. Writing `tap_action: none` on a
+              // staircase is how a plan says "draw the stairs, but do not let
+              // them navigate", so a configured tap suppresses the floor
+              // fallback whether or not it is a no-op. `_onFurnitureAction`
+              // decides the same way, by asking whether a tap was configured
+              // rather than whether it does anything.
+              const tapConfigured = !!furnitureActionForGesture(f, "tap");
+              const goesToFloor = !!to && !tapConfigured;
               // An inert piece stays inert: no role, no tab stop, no listeners.
               // A gray diagram that announces itself as a button and then does
               // nothing is worse than one that says nothing at all.
-              if (!to && !hasTap && !hasHold && !hasDoubleClick) return drawn;
+              if (!goesToFloor && !hasTap && !hasHold && !hasDoubleClick) return drawn;
               const name = floors.find((x) => x.id === to)?.name;
               // Names the gesture that actually runs. A configured tap replaces
               // the floor change, so promising "Go to Upstairs" would be a lie
               // on exactly the plans this feature was asked for.
-              const label = hasTap
-                ? undefined
-                : to
-                  ? name
-                    ? `Go to ${name}`
-                    : "Go to the next floor"
-                  : undefined;
+              const label = goesToFloor ? (name ? `Go to ${name}` : "Go to the next floor") : undefined;
+              // With no floor label there is nothing naming this button, so
+              // say what it is. Only in that case: an `aria-label` would
+              // override the <title> that is already doing the job.
+              const spoken = label ? nothing : furnitureAccessibleName(f, renderHass);
               return svg`<g class="fp-furniture-link" role="button" tabindex="0"
+                    aria-label=${spoken}
                     @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
                       this._onFurnitureAction(ev, f, floors, to)}
                     .actionHandler=${actionHandler({ hasHold, hasDoubleClick })}>

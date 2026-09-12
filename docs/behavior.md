@@ -180,6 +180,16 @@ contact sensor once is enough for `more-info` to know what to show. A piece with
 floor to go to nor any action stays inert: no button role, no tab stop, nothing that
 announces itself and then does nothing.
 
+`none` counts as "nothing to do" for that last rule. A piece whose only action is
+`{ action: none }` is inert, and so is a staircase whose `goToFloor` has been switched off
+by a `tap_action: none` — there is nothing left for either of them to answer, and a tab
+stop that swallows a keypress to do nothing is worse than no tab stop.
+
+A piece that *does* answer gestures is a button, and the drawing gives a screen reader
+nothing to call it by. Where the floor tooltip is not already naming it, the card names it
+after the entity it drives — its friendly name, or the entity id — and failing that after
+the symbol it is drawn as.
+
 ## Stairs that change floor
 
 A staircase already draws an arrow saying which way it goes. `goToFloor` makes that a
