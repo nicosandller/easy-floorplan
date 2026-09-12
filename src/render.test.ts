@@ -103,6 +103,7 @@ import {
   wallThickness,
   wallStrokeStyle,
   normalizeOverlayScale,
+  normalizeOverlayMinWidth,
   overlayLength,
   hassRenderInputsChanged,
   collectWatchedEntities,
@@ -6322,4 +6323,18 @@ describe("rotatePlanAngle — a bearing turns with the plan (issue #280)", () =>
   it("is the identity on an unrotated plan, which is every plan by default", () => {
     for (const a of [0, 45, 180, 359]) expect(rotatePlanAngle(a, 0)).toBe(a);
   });
+});
+
+
+describe("minimum overlay width", () => {
+  it("accepts numeric widths and caps them at the editor maximum", () => {
+    expect(normalizeOverlayMinWidth(800)).toBe(800);
+    expect(normalizeOverlayMinWidth("800")).toBe(800);
+    expect(normalizeOverlayMinWidth(8000)).toBe(4000);
+  });
+  it.each([undefined, null, false, true, {}, [], "", "wide", 0, -1, Infinity, NaN])(
+    "ignores invalid or disabled value %s", (value) => {
+      expect(normalizeOverlayMinWidth(value)).toBeUndefined();
+    }
+  );
 });

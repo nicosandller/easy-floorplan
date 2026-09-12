@@ -287,8 +287,8 @@ sizes (room name `14`, device label `12`):
 So `plan` suits a card rendering down to roughly **two-thirds of its canvas width** on the
 defaults. Below that it trades collision for illegibility, and the sizes have to come up
 to compensate — a `labelSize` of `20`–`24` on a card at half its canvas width lands back
-where the default was. That is a real trade, not a free win: sizes are relative, and
-nothing puts a floor under them.
+where the default was. Alternatively, set `overlayMinWidth` to stop shrinking the
+overlay below a chosen displayed plan width.
 
 So the escape hatch runs both ways. On a card **much** smaller than its canvas, raise the
 sizes rather than switching to `fixed` — the geometry is still right, only the numbers are
@@ -297,6 +297,27 @@ wall tablet showing the plan at full size where a px floor is what keeps text le
 across the room.
 
 The rule of thumb: `plan` is what a plan wants, and the size numbers are yours to set.
+
+### Minimum overlay size
+
+Under **Project → Display → Stop shrinking below**, choose the displayed plan width
+(in pixels) below which badges and labels should stop shrinking. This setting appears
+only with **Canvas units** selected. Zero turns it off.
+
+```yaml
+overlayScale: plan
+overlayMinWidth: 800
+```
+
+On a 980-unit-wide plan, a 14-unit room name scales normally down to an 800px-wide
+plan, then stays about 11.4px tall even in a 505px-wide widget. Badges, readings,
+room names and the other HTML overlays use the same minimum scaling unit, so their
+relative sizes stay consistent. The drawing and label positions continue shrinking.
+
+This trades space for readability: below the threshold, labels and badges can overlap.
+Choose a width that still leaves room for them. The setting is optional, accepts values
+up to 4000px, and has no effect in **Fixed pixels** mode. Rotation uses the displayed
+canvas width; the zoomed badge-size setting still applies independently.
 
 ## Compact header
 
