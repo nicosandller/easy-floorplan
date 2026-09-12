@@ -275,6 +275,13 @@ interface Drag {
   /** The redo stack as it stood before the drag's history push cleared it. */
   priorFuture?: FloorplanCardConfig[];
   /**
+   * The undo stack as it stood before that same push. Restored wholesale on
+   * cancel, because the push is `slice(-HISTORY_MAX)`: on a full stack it
+   * evicts the oldest entry as well as adding a new one, and dropping the new
+   * one by identity leaves the evicted one gone for good.
+   */
+  priorHistory?: FloorplanCardConfig[];
+  /**
    * Set if anything emitted while this drag was live. A drag normally emits
    * nothing until it is released, which is what lets cancel restore the
    * pre-drag config locally; if something did emit, the host has moved on and
@@ -409,8 +416,13 @@ export class FloorplanCardEditor extends LitElement {
     before: FloorplanCardConfig;
     /** The redo stack the first-movement history push cleared. */
     priorFuture: FloorplanCardConfig[];
-    /** The entry that push added, removed by identity on cancel. */
-    snapshot?: FloorplanCardConfig;
+    /**
+     * The whole undo stack as it stood before the first-movement push, so a
+     * cancel can restore it wholesale. Dropping the pushed entry by identity
+     * is not enough: that push is `slice(-HISTORY_MAX)`, so on a full stack it
+     * also evicts the oldest entry, which no amount of filtering brings back.
+     */
+    priorHistory?: FloorplanCardConfig[];
   };
   /** Project section expanded? Collapsed by default — page settings are touched rarely. */
   @state() private _projectOpen = false;
@@ -1355,7 +1367,7 @@ export class FloorplanCardEditor extends LitElement {
     const drag = this._drag;
     this._drag = null;
     if (drag?.moved && drag.snapshot) {
-      this._history = this._history.filter((c) => c !== drag.snapshot);
+      this._history = drag.priorHistory ?? this._history.filter((c) => c !== drag.snapshot);
       if (drag.emitted) {
         this._emit(drag.snapshot);
       } else {
@@ -1595,6 +1607,7 @@ export class FloorplanCardEditor extends LitElement {
       if (Math.hypot(p.x - drag.start.x, p.y - drag.start.y) <= DRAG_SLOP) return;
       drag.moved = true;
       drag.priorFuture = this._future;
+      drag.priorHistory = this._history;
       this._pushHistory();
       drag.snapshot = this._history[this._history.length - 1];
     }
@@ -4693,8 +4706,8 @@ export class FloorplanCardEditor extends LitElement {
     // whole move. The snapshot it pushes is the config as it stood before —
     // which is what a rollback puts back, and removes from the stack.
     if (!d.moved) {
+      d.priorHistory = this._history;
       this._pushHistory();
-      d.snapshot = this._history[this._history.length - 1];
       d.moved = true;
     }
     const at = this._toVirtual(ev);
@@ -4745,10 +4758,10 @@ export class FloorplanCardEditor extends LitElement {
    * Put the config back as it was before the switcher drag started.
    *
    * Nothing was emitted while it was live, so the host still holds the pre-drag
-   * config and restoring it locally spares a round trip. The history entry
-   * pushed at first movement is removed by identity, and the redo stack that
-   * push cleared is put back, so a canceled drag is a complete no-op — the same
-   * contract `_cancelGesture` keeps for an element drag.
+   * config and restoring it locally spares a round trip. The undo stack and the
+   * redo stack are both put back as they stood before the first-movement push,
+   * so a canceled drag is a complete no-op — the same contract `_cancelGesture`
+   * keeps for an element drag.
    */
   private _rollBackSwitcherDrag(): void {
     const d = this._switcherDrag;
@@ -4756,7 +4769,7 @@ export class FloorplanCardEditor extends LitElement {
     this._switcherDrag = undefined;
     this._gesturePointer = null;
     if (!d.moved) return;
-    this._history = this._history.filter((c) => c !== d.snapshot);
+    if (d.priorHistory) this._history = d.priorHistory;
     this._config = d.before;
     this._watchedEntities = collectWatchedEntities(d.before);
     this._future = d.priorFuture;
@@ -5197,10 +5210,16 @@ export class FloorplanCardEditor extends LitElement {
                      what carries the name, and says the unit as well, since
                      "X" alone does not tell you these are canvas units. -->
                 <label aria-hidden="true">X</label>
+                <!-- The exact stored number, not a rounded one. With Snap off
+                     (or a hand-written config) an anchor is legitimately
+                     fractional, and a field that showed 12 for a stored 12.4
+                     would be lying about where the switcher is — then rewrite
+                     it to 13 the moment anyone touched the spinner. These are
+                     meant to be the precise way to place it. -->
                 <input
                   type="number"
                   aria-label="Floor switcher X, in canvas units"
-                  .value=${at ? String(Math.round(at.x)) : ""}
+                  .value=${at ? String(at.x) : ""}
                   placeholder=${Math.round(switcherHandleHome(w, h).x)}
                   @change=${(e: Event) => this._setSwitcherCoord("x", (e.target as HTMLInputElement).value)}
                 />
@@ -5208,7 +5227,7 @@ export class FloorplanCardEditor extends LitElement {
                 <input
                   type="number"
                   aria-label="Floor switcher Y, in canvas units"
-                  .value=${at ? String(Math.round(at.y)) : ""}
+                  .value=${at ? String(at.y) : ""}
                   placeholder=${Math.round(switcherHandleHome(w, h).y)}
                   @change=${(e: Event) => this._setSwitcherCoord("y", (e.target as HTMLInputElement).value)}
                 />

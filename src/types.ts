@@ -1786,8 +1786,8 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * Where the floor switcher sits on the plan (issue #281), in canvas units —
    * the point the block of buttons is centred on.
    *
-   * Unset it stays pinned to the plan's top-right corner, which is where it has
-   * always been and is right until the plan has something there: *"they often
+   * If unset, it stays pinned to the plan's top-right corner, which is where it
+   * has always been and is right until the plan has something there: *"they often
    * end up right in the middle of the floor plan on smaller screens."* The
    * corner is a guess about the drawing, and only the author knows which corner
    * of their plan is empty.

@@ -122,8 +122,12 @@ describe("the card draws the switcher where the plan says", () => {
   it("honours a point outside the canvas", async () => {
     // Deliberately not clamped: a plan with margin around its walls has real
     // empty space to park it in.
-    const t = await mountCard({ floorSwitcher: { x: 400, y: 0 } });
-    expect(t.centre()).toEqual({ x: 100, y: 0 });
+    //
+    // Genuinely past the edge, not on it: x === width lands at 100%, which is
+    // exactly where a clamping implementation would put it too, so it would
+    // prove nothing about the promise being made here.
+    const t = await mountCard({ floorSwitcher: { x: 440, y: -40 } });
+    expect(t.centre()).toEqual({ x: 110, y: -20 });
   });
 
   it("measures against the plan, not the stage it is centred in", async () => {
@@ -356,6 +360,21 @@ describe("the coordinate fields are a real way to place it", () => {
     expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toBeUndefined();
   });
 
+  it("shows a fractional anchor as it really is, not rounded to the nearest unit", async () => {
+    // With Snap off, a drag stores whatever point the pointer landed on, and
+    // hand-written YAML can say anything. A field that rounded 60.4 to 60
+    // would misreport the position — and the next nudge of the spinner would
+    // write that rounding back as a real edit.
+    const t = await mountEditor({ floorSwitcher: { x: 60.4, y: 100.25 } });
+    const [x, y] = await openSwitcherPanel(t.ed);
+    expect(x.value).toBe("60.4");
+    expect(y.value).toBe("100.25");
+
+    // And editing one axis leaves the other's precision alone.
+    await typeInto(t.ed, y, "40");
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual({ x: 60.4, y: 40 });
+  });
+
   it("takes a negative coordinate, which is off-canvas margin", async () => {
     const t = await mountEditor({ floorSwitcher: { x: 60, y: 100 } });
     const [x] = await openSwitcherPanel(t.ed);
@@ -429,6 +448,36 @@ describe("the editor lets you drag the switcher anywhere on the canvas", () => {
     (t.ed as unknown as { _undo(): void })._undo();
     await t.ed.updateComplete;
     expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toBeUndefined();
+  });
+
+  it("costs no undo step when it is canceled on a full history stack", async () => {
+    // The push at first movement is `slice(-HISTORY_MAX)`, so once the stack is
+    // full it evicts the oldest entry as well as adding a new one. Dropping
+    // just the added entry would leave that eviction standing, and a canceled
+    // drag would quietly cost the user their oldest undo — which is not the
+    // "complete no-op" this gesture promises.
+    const t = await mountEditor({ floorSwitcher: { x: 60, y: 100 } });
+    const [xField] = await openSwitcherPanel(t.ed);
+    const history = () =>
+      (t.ed as unknown as { _history: FloorplanCardConfig[] })._history;
+
+    // Fill it by editing, rather than naming HISTORY_MAX here: the stack is
+    // full the first time an edit stops making it longer.
+    let capped = false;
+    let len = history().length;
+    for (let i = 1; i <= 500 && !capped; i++) {
+      await typeInto(t.ed, xField, String(i));
+      capped = history().length === len;
+      len = history().length;
+    }
+    expect(capped).toBe(true);
+    const depth = history().length;
+    const oldest = history()[0];
+
+    await t.dragThenCancel(200, 150);
+
+    expect(history().length).toBe(depth);
+    expect(history()[0]).toBe(oldest);
   });
 
   it("refuses to start while another gesture owns the pointer", async () => {
