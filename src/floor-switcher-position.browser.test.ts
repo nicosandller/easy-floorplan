@@ -417,6 +417,119 @@ describe("the editor lets you drag the switcher anywhere on the canvas", () => {
     expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual({ x: 100, y: 120 });
   });
 
+  it("ignores a press that is not the primary button", async () => {
+    // A right-drag reports `buttons === 2`, which the no-buttons guard does
+    // not catch — so without a button check it repositioned the switcher
+    // instead of opening the context menu.
+    const t = await mountEditor();
+    const at = t.handleCentre();
+    t.handle().dispatchEvent(
+      new PointerEvent("pointerdown", {
+        pointerId: 1,
+        button: 2,
+        buttons: 2,
+        clientX: at.x,
+        clientY: at.y,
+        bubbles: true,
+        cancelable: true,
+      }),
+    );
+    t.handle().dispatchEvent(t.ptr("pointermove", t.canvasPoint(100, 120), 2));
+    t.handle().dispatchEvent(t.ptr("pointerup", t.canvasPoint(100, 120), 0));
+    await t.ed.updateComplete;
+    expect(t.emitted).toEqual([]);
+  });
+
+  it("treats exactly the slop as a click, like every other drag", async () => {
+    // `_applyDrag` calls 4 units a click; this used `<` and called it a drag,
+    // so one control disagreed with the rest of the editor about where a click
+    // stops being a click.
+    const t = await mountEditor();
+    const at = t.handleCentre();
+    const sb = (t.ed.shadowRoot!.querySelector("svg") as SVGElement).getBoundingClientRect();
+    // Exactly 4 canvas units along x, in screen pixels.
+    const fourUnits = (sb.width / 400) * 4;
+    t.handle().dispatchEvent(t.ptr("pointerdown", at));
+    t.handle().dispatchEvent(t.ptr("pointermove", { x: at.x + fourUnits, y: at.y }));
+    t.handle().dispatchEvent(t.ptr("pointerup", { x: at.x + fourUnits, y: at.y }, 0));
+    await t.ed.updateComplete;
+    expect(t.emitted).toEqual([]);
+  });
+
+  it("takes focus off a text field so Escape can still cancel", async () => {
+    // Starting the drag from the X/Y inputs left focus in a text input, where
+    // `isTypingPath` rejects Escape — so the drag could not be canceled at all
+    // and a partial position was committed on release.
+    const t = await mountEditor();
+    const root = t.ed.shadowRoot!;
+    root.querySelector<HTMLButtonElement>("button.section-toggle")?.click();
+    await t.ed.updateComplete;
+    [...root.querySelectorAll<HTMLButtonElement>(".cfg-group-title")]
+      .find((b) => b.textContent?.includes("Floor switcher"))
+      ?.click();
+    await t.ed.updateComplete;
+    const field = root.querySelector("input[type=number]") as HTMLInputElement | null;
+    expect(field, "a coordinate field to focus").toBeTruthy();
+    field!.focus();
+    const at = t.handleCentre();
+    t.handle().dispatchEvent(t.ptr("pointerdown", at));
+    t.handle().dispatchEvent(t.ptr("pointermove", t.canvasPoint(100, 120)));
+    await t.ed.updateComplete;
+    // Dispatched from whatever holds focus, which is where a real key press
+    // comes from — and the whole point: `isTypingPath` reads the event's
+    // composed path, so an Escape originating in a text field is rejected.
+    // Sending it from the handle instead would dodge the very condition this
+    // test exists for.
+    (root.activeElement ?? field!).dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }),
+    );
+    await t.ed.updateComplete;
+    // The release has to happen for this to mean anything: without it nothing
+    // would have been emitted whether Escape cancelled or not, and the test
+    // would pass against the very bug it is for.
+    t.handle().dispatchEvent(t.ptr("pointerup", t.canvasPoint(100, 120), 0));
+    await t.ed.updateComplete;
+    expect(t.emitted).toEqual([]);
+  });
+
+  it("names both coordinate fields for a screen reader", async () => {
+    // The visible labels are siblings, so they name nothing: unlabelled, these
+    // are two spinbuttons with no way to tell which axis each edits.
+    const t = await mountEditor({ floorSwitcher: { x: 60, y: 100 } });
+    // The fields sit behind two collapses — the Project section, then the
+    // "Floor switcher" group inside it — and neither is open on mount.
+    const root = t.ed.shadowRoot!;
+    root.querySelector<HTMLButtonElement>("button.section-toggle")?.click();
+    await t.ed.updateComplete;
+    [...root.querySelectorAll<HTMLButtonElement>(".cfg-group-title")]
+      .find((b) => b.textContent?.includes("Floor switcher"))
+      ?.click();
+    await t.ed.updateComplete;
+
+    const names = [...root.querySelectorAll("input[type=number]")]
+      .map((i) => i.getAttribute("aria-label"))
+      .filter((n): n is string => !!n);
+    expect(names.some((n) => /switcher x/i.test(n))).toBe(true);
+    expect(names.some((n) => /switcher y/i.test(n))).toBe(true);
+  });
+
+  it("ignores an undo that arrives mid-drag", async () => {
+    // Every other gesture bails on keyboard mutation while live, because an
+    // undo landing between the history snapshot and the emit interleaves with
+    // both.
+    const t = await mountEditor();
+    const at = t.handleCentre();
+    t.handle().dispatchEvent(t.ptr("pointerdown", at));
+    t.handle().dispatchEvent(t.ptr("pointermove", t.canvasPoint(100, 120)));
+    await t.ed.updateComplete;
+    const before = t.emitted.length;
+    t.handle().dispatchEvent(
+      new KeyboardEvent("keydown", { key: "z", ctrlKey: true, bubbles: true, composed: true }),
+    );
+    await t.ed.updateComplete;
+    expect(t.emitted).toHaveLength(before);
+  });
+
   it("draws no handle on a plan with one floor, which has no switcher", async () => {
     const one = config();
     one.floors = [one.floors![0]];

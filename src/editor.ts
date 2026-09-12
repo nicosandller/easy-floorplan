@@ -231,8 +231,13 @@ const TOOL_META: Record<Tool, { icon: string; label: string }> = {
 const switcherHandleHome = (w: number, h: number) => ({ x: w * 0.93, y: h * 0.08 });
 
 /**
- * How far the pointer must travel, in canvas units, before a press on the
- * floor-switcher handle counts as a drag rather than a click.
+ * How far the pointer must travel, in canvas units, before a press counts as a
+ * drag rather than a click — the jitter a real click or tap produces.
+ *
+ * Shared by `_applyDrag` and the floor-switcher handle so the two cannot drift:
+ * they were the same number written twice, with one of them comparing `<` and
+ * the other `<=`, so a move of exactly 4 units was a click for an element and a
+ * drag for the switcher.
  */
 const DRAG_SLOP = 4;
 
@@ -1091,7 +1096,11 @@ export class FloorplanCardEditor extends LitElement {
       this._draft ||
       this._draftTracker ||
       this._draftArea ||
-      this._marquee
+      this._marquee ||
+      // The switcher's drag is a gesture like any other (issue #281): an undo
+      // or a nudge landing mid-drag would interleave with its history snapshot
+      // and its eventual emit.
+      this._switcherDrag
     );
     // Backspace pops the last placed vertex instead of deleting a selected
     // element while an Area draft is in progress (checked ahead of the
@@ -1583,7 +1592,7 @@ export class FloorplanCardEditor extends LitElement {
     // taps produce — doesn't spam history or wipe the redo stack. Threshold
     // matches the marquee's click-vs-drag test.
     if (!drag.moved) {
-      if (Math.hypot(p.x - drag.start.x, p.y - drag.start.y) <= 4) return;
+      if (Math.hypot(p.x - drag.start.x, p.y - drag.start.y) <= DRAG_SLOP) return;
       drag.moved = true;
       drag.priorFuture = this._future;
       this._pushHistory();
@@ -4621,6 +4630,11 @@ export class FloorplanCardEditor extends LitElement {
 
   private _onSwitcherDown = (ev: PointerEvent): void => {
     if (this._tool !== "select") return;
+    // Primary button only, as `_onCanvasDown` requires. A right-button press
+    // reports `buttons === 2`, which the no-buttons guard below does not catch
+    // — so without this a right-drag repositioned the switcher instead of
+    // opening the context menu.
+    if (ev.button !== 0) return;
     // One gesture at a time, the same gate every other pointer path honours.
     // Without it a second touch could start this drag on top of a live element
     // drag or marquee, and two touches on the handle could overwrite each
@@ -4629,7 +4643,13 @@ export class FloorplanCardEditor extends LitElement {
     // Kept off the canvas: without this the pointerdown reaches the stage and
     // starts a marquee behind the thing being dragged.
     ev.stopPropagation();
+    // preventDefault suppresses native focusing, so move focus explicitly, the
+    // way `_onOverlayDown` does. It is not cosmetic here: the handle is not
+    // focusable, so focus would otherwise stay in whatever was focused before —
+    // and starting the drag from the X/Y fields left it in a text input, where
+    // `isTypingPath` rejects Escape and the drag could not be canceled at all.
     ev.preventDefault();
+    this._canvasWrap?.focus({ preventScroll: true });
     const handle = ev.currentTarget as Element;
     // The editor's guarded helper, not the DOM method: setPointerCapture
     // throws for a pointer that is not active, which a synthetic or
@@ -4661,7 +4681,11 @@ export class FloorplanCardEditor extends LitElement {
     // delivering a zero- or one-pixel move on an ordinary click would push
     // history and write a position — which is exactly what the "a click does
     // not place it" rule promises it will not do.
-    if (!d.moved && Math.hypot(raw.x - d.at.x, raw.y - d.at.y) < DRAG_SLOP) return;
+    // `<=`, matching `_applyDrag` exactly: at precisely the slop this is a
+    // click everywhere else in the editor, and one control disagreeing about
+    // where a click stops being a click is the kind of difference nobody finds
+    // on purpose.
+    if (!d.moved && Math.hypot(raw.x - d.at.x, raw.y - d.at.y) <= DRAG_SLOP) return;
     // History once per drag, not once per frame, so undo steps back over the
     // whole move. The snapshot it pushes is the config as it stood before —
     // which is what a rollback puts back, and removes from the stack.
@@ -5163,16 +5187,24 @@ export class FloorplanCardEditor extends LitElement {
                    also the precise option, for a plan being nudged a few units
                    rather than aimed by eye. -->
               <div class="row wide">
-                <label>X</label>
+                <!-- The visible <label>s are siblings rather than wrappers, so
+                     they name nothing as far as assistive tech is concerned:
+                     a screen reader would announce two unlabelled spinbuttons
+                     and leave you to guess which is which. The aria-label is
+                     what carries the name, and says the unit as well, since
+                     "X" alone does not tell you these are canvas units. -->
+                <label aria-hidden="true">X</label>
                 <input
                   type="number"
+                  aria-label="Floor switcher X, in canvas units"
                   .value=${at ? String(Math.round(at.x)) : ""}
                   placeholder=${Math.round(switcherHandleHome(w, h).x)}
                   @change=${(e: Event) => this._setSwitcherCoord("x", (e.target as HTMLInputElement).value)}
                 />
-                <label>Y</label>
+                <label aria-hidden="true">Y</label>
                 <input
                   type="number"
+                  aria-label="Floor switcher Y, in canvas units"
                   .value=${at ? String(Math.round(at.y)) : ""}
                   placeholder=${Math.round(switcherHandleHome(w, h).y)}
                   @change=${(e: Event) => this._setSwitcherCoord("y", (e.target as HTMLInputElement).value)}
