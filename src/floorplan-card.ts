@@ -39,6 +39,7 @@ import {
 import {
   WALL_THICKNESS,
   renderOpening,
+  openingHitSize,
   renderWallMask,
   imageFitRatio,
   sunBrightness,
@@ -1242,6 +1243,13 @@ export class FloorplanCard extends LitElement {
                         o.shutterEntity
                           ? shutterAmount(renderHass?.states[o.shutterEntity], o.shutterInvert)
                           : undefined,
+                      // How far a skylight's patch slides from the roof light
+                      // before it lands. Handed on raw: it is a fraction of
+                      // the reach above, which already carries the sun's
+                      // height, so scaling it here would apply 1/tan twice
+                      // and pin every patch under its own skylight at noon.
+                      // Bounded at the sink, in skylightDropFraction.
+                      drop: c.skylightDrop,
                       light: c.sunlightColor ?? SUN_LIGHT_COLOR,
                       shade: c.sunShade === false ? null : (c.sunShadeColor ?? SUN_SHADE_COLOR),
                     }
@@ -1330,8 +1338,9 @@ export class FloorplanCard extends LitElement {
               if (!openingIsPressable(o, this._featuresOf)) return symbol;
               // A transparent rect over the opening's wall gap gives a reliable
               // hit target beyond the thin leaf/panel strokes.
-              const half = o.length / 2;
-              const cutH = WALL_THICKNESS + 4;
+              // The gap for a wall opening, the whole rectangle for a
+              // skylight — see openingHitSize.
+              const hit = openingHitSize(o);
               return svg`<g class="fp-opening" role="button" tabindex="0"
                     @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
                       this._onOpeningAction(ev, o)}
@@ -1343,8 +1352,9 @@ export class FloorplanCard extends LitElement {
                       hasDoubleClick: hasAction(this._openingPress(o, "double_tap")?.config),
                     })}>
                   ${symbol}
-                  <rect class="fp-opening-hit" x=${o.x - half} y=${o.y - cutH / 2}
-                        width=${o.length} height=${cutH}
+                  <rect class="fp-opening-hit"
+                        x=${o.x - hit.width / 2} y=${o.y - hit.height / 2}
+                        width=${hit.width} height=${hit.height}
                         transform="rotate(${o.angle} ${o.x} ${o.y})" />
                 </g>`;
             })}

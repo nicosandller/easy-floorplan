@@ -68,6 +68,13 @@ import { SKIN_ACCENT, SKIN_PAPER, SKIN_WALL, MAX_SKIN_WALL_WIDTH } from "./skins
 // The same tolerance #141 uses to decide an opening sits on a wall, so "this
 // door is in this wall" means one thing across the card.
 import { OPENING_ON_WALL_EPS } from "./dead-space";
+// Defined beside the type union it reads rather than here with the rest of the
+// opening helpers, because `dead-space` needs it too and this module already
+// imports from there — the same trade `pointInPolygon` made in the other
+// direction. Re-exported so it reads as one of these helpers at every call
+// site, which is what it is.
+import { openingIsSkylight } from "./types";
+export { openingIsSkylight };
 
 export const WALL_THICKNESS = 8;
 
@@ -877,6 +884,12 @@ export function wallsLightPassesThrough(
   // same handful of questions.
   const open: Array<{ o: Opening; span: [number, number] }> = [];
   for (const o of openings) {
+    // A skylight is a hole in the ceiling, so it is a gap in no wall at all —
+    // and the test below is only "does its centre lie on this wall", which a
+    // roof light drawn over one passes by coincidence. Left in, a velux
+    // hanging above a partition sawed that partition in half for every lamp
+    // and every beam of sun in the plan.
+    if (openingIsSkylight(o)) continue;
     const answer = openAmount(o);
     // A number is a width with no opinion about placement, so it centres; a
     // pair is a placement already worked out. Both are clamped here rather
@@ -2481,12 +2494,51 @@ export function kindFromEntity(entity: string): ItemKind {
 }
 
 /**
+ * The proportion a skylight's second side takes when it is not stated — the
+ * upright portrait shape of an ordinary roof window, rather than a square.
+ */
+export const SKYLIGHT_WIDTH_RATIO = 0.62;
+
+/**
+ * A skylight's second plan dimension, across its {@link Opening.length} — see
+ * {@link Opening.width}.
+ *
+ * Bounded below rather than merely coerced. This is a rectangle's side and it
+ * ends up in a polygon's coordinates and in a gradient's scale, and both of
+ * those go strange at zero: a patch of light with no width is invisible, which
+ * on screen is indistinguishable from the skylight not working. Anything a
+ * plan can hand it that is not a usable number falls back to the default
+ * proportion, the way a missing one does.
+ *
+ * Answers 0 for a door or a window, which have no such side. Callers that
+ * would divide by it are all skylight-only, but a caller that asks anyway
+ * gets an honest "there isn't one" rather than a proportion of the length.
+ */
+export function skylightWidth(o: Pick<Opening, "type" | "length" | "width">): number {
+  if (!openingIsSkylight(o)) return 0;
+  const fallback = Math.abs(o.length) * SKYLIGHT_WIDTH_RATIO;
+  const raw = o.width;
+  if (typeof raw !== "number" || !Number.isFinite(raw) || raw <= 0) return Math.max(1, fallback);
+  return Math.max(1, raw);
+}
+
+/**
  * How an opening moves — `swing` (hinged door / casement window), `slide`
  * (panels travelling along the wall), `roll` (a curtain leaving the floor
  * plane), `fixed` (issue #218: it does not) or `awning` (issue #272: hinged at
  * the head, swung out at the sill). Defaults to `swing`.
+ *
+ * A **skylight** is an `awning` and cannot be told otherwise: a roof window is
+ * hinged at its head and swings out of the plan, which is what `awning`
+ * already means, and none of the other four describe anything a hole in a
+ * ceiling does. Pinning it here rather than defaulting it is what keeps the
+ * rest of the file from having to ask twice — the clear-fraction arithmetic,
+ * the sash count and the leaf count all read the motion, and a skylight that
+ * had inherited the `swing` default would have arrived at each of them
+ * carrying a hinge jamb and a quarter-circle arc across the floor.
  */
 export function openingMotion(o: Opening): "swing" | "slide" | "roll" | "fixed" | "awning" {
+  if (openingIsSkylight(o)) return "awning";
   return o.motion ?? "swing";
 }
 
@@ -2695,6 +2747,31 @@ export function openingFromDeviceClass(deviceClass: string | undefined): {
         ? "slide"
         : undefined,
   };
+}
+
+/**
+ * What binding `entity` to an opening should change about the opening itself —
+ * {@link openingFromDeviceClass}, except where the author has already answered.
+ *
+ * The exception is the skylight, and it is not a refinement: without it,
+ * binding the entity is what **deletes** the roof light. Home Assistant has no
+ * roof-window device class, so a velux is bound to a `cover` with
+ * `device_class: window` — the very class that infers `type: "window"`. The
+ * skylight then turns back into a wall opening, snaps to nothing, keeps its
+ * `width` as dead YAML, and the patch of sun on the floor disappears. The type
+ * was chosen by hand; a guess must not overrule one.
+ *
+ * Its own exported function rather than a condition inside the editor's entity
+ * handler, which is where it lived and where nothing could reach it. A guard
+ * against silently destroying an element is worth being able to test.
+ */
+export function openingDeviceClassPatch(
+  o: Pick<Opening, "type">,
+  deviceClass: string | undefined,
+): { type?: Opening["type"]; motion?: "slide" | "roll" | undefined } {
+  if (!deviceClass) return {};
+  if (openingIsSkylight(o)) return {};
+  return openingFromDeviceClass(deviceClass);
 }
 
 /** Cover feature bits: OPEN = 1, CLOSE = 2 (a cover with either can be toggled). */
@@ -2987,6 +3064,53 @@ function rollCurtain(length: number, tone: string, amt: number): SVGTemplateResu
 }
 
 /**
+ * A skylight's blind, drawn over the aperture (issue #285).
+ *
+ * The one shutter you see face-on. Every other one in this file is edge-on —
+ * a band on the wall line for a roller, folded panels beside the jambs for a
+ * pair of persiane — because a wall opening is a line in plan and its shutter
+ * is a line over a line. A roof light is a rectangle you are looking straight
+ * down into, so its blind is a rectangle over a rectangle, and how far down it
+ * is, is something you can actually see. Which is also why the sunlight takes
+ * a skylight's blind as a fraction and every other one as up-or-down: the
+ * light has to agree with a picture the viewer is reading directly (see
+ * {@link openingSunFraction}).
+ *
+ * Drawn from the head edge — the same edge the sash is hinged at — so the
+ * blind and the sash share a top and the symbol reads as one object. `amt` is
+ * how far **open** it is, so 0 covers the whole aperture and 1 leaves it
+ * clear, matching every other `amount` in this file.
+ */
+function skylightBlind(
+  length: number,
+  width: number,
+  tone: string,
+  amt: number,
+): SVGTemplateResult {
+  const halfL = length / 2;
+  const halfW = width / 2;
+  const covered = width * (1 - Math.max(0, Math.min(1, amt)));
+  // Nothing to draw rather than a zero-height rect: a rect of no height still
+  // strokes, so a blind fully up left a hard line across the head of the
+  // glass that read as a half-closed one.
+  if (covered <= 0.5) return svg``;
+  const slats = Math.max(2, Math.round(covered / 7));
+  const ticks: SVGTemplateResult[] = [];
+  for (let i = 1; i < slats; i++) {
+    const y = -halfW + (covered * i) / slats;
+    ticks.push(
+      svg`<line x1=${-halfL} y1=${y} x2=${halfL} y2=${y}
+            stroke=${SKIN_PAPER} stroke-width="0.75" />`
+    );
+  }
+  return svg`<g class="fp-skylight-blind">
+      <rect x=${-halfL} y=${-halfW} width=${length} height=${covered}
+            style="fill:${tone};" opacity="0.85" />
+      ${ticks}
+    </g>`;
+}
+
+/**
  * Hinged external shutters (issue #74) — the louvered panels you fold back
  * against the façade, not a roller curtain. Two leaves hinged at the jambs,
  * drawn just **outside** the wall band so they never collide with the
@@ -3109,12 +3233,52 @@ export function shutterMarkNormal(
  * mirrored by `flipV`, which is what moves the drawn shutter too.
  */
 export function shutterMarkPoint(
-  o: Pick<Opening, "x" | "y" | "angle" | "flipV">,
-  offset: number = SHUTTER_MARK_OFFSET,
+  o: Pick<Opening, "x" | "y" | "angle" | "flipV" | "type" | "length" | "width">,
+  offset: number = openingMarkOffset(o),
 ): { x: number; y: number } {
   const dy = (o.flipV ? -1 : 1) * offset;
   const rad = (o.angle * Math.PI) / 180;
   return { x: o.x - Math.sin(rad) * dy, y: o.y + Math.cos(rad) * dy };
+}
+
+/**
+ * How far off centre a badge has to sit to clear the symbol it describes.
+ *
+ * {@link SHUTTER_MARK_OFFSET} for anything in a wall, whose symbol is a band
+ * a wall thick and whose shutter reaches a little past that — the offset is
+ * measured to clear exactly those. A **skylight** has no such fixed extent: it
+ * is a rectangle as wide as its author drew it, and a badge 22 units off its
+ * centre lands squarely on the glass of any roof light bigger than a hatch,
+ * covering the very thing it is reporting on and stealing its taps.
+ *
+ * So the skylight's is measured from its own edge instead, which keeps the
+ * badge the same distance clear of the symbol at every size.
+ */
+/**
+ * The rectangle a transparent hit target has to cover for `o`, centred on it
+ * and turned by its own `angle`.
+ *
+ * Every opening needs one, because the symbol itself is strokes — thin lines
+ * and an arc — and `visiblePainted` hit-testing means a tap only counts when
+ * it lands on a line. What differs is the shape: a wall opening's target is
+ * its gap by a wall's thickness, which is the hole it stands in; a skylight's
+ * is the rectangle it *is*. Sized off the wall for a skylight, the target was
+ * a strip across the middle of a roof light three times as wide, so most of
+ * the symbol you can plainly see was not the button.
+ */
+export function openingHitSize(
+  o: Pick<Opening, "type" | "length" | "width">,
+): { width: number; height: number } {
+  return {
+    width: Math.abs(o.length),
+    height: openingIsSkylight(o) ? skylightWidth(o) : WALL_THICKNESS + 4,
+  };
+}
+
+export function openingMarkOffset(
+  o: Pick<Opening, "type" | "length" | "width">,
+): number {
+  return openingIsSkylight(o) ? SHUTTER_MARK_OFFSET + skylightWidth(o) / 2 : SHUTTER_MARK_OFFSET;
 }
 
 /**
@@ -3139,10 +3303,21 @@ export function hasShutterMark(
 /** Last-resort shutter glyphs, for an entity with no device class of its own. */
 const SHUTTER_FALLBACK_ICON = { on: "mdi:window-shutter-open", off: "mdi:window-shutter" };
 
-/** The same, for an opening's own badge — a door reads as a door, glass as glass. */
+/**
+ * The same, for an opening's own badge — a door reads as a door, glass as
+ * glass.
+ *
+ * A skylight borrows the window's `-variant` pair rather than getting a glyph
+ * of its own, because Material Design Icons has no roof window: the nearest
+ * candidates are all buildings seen from outside, which say "house" where this
+ * has to say "open or shut". The variant pair is the same sash drawn at an
+ * angle, which is at least the right object — and a plan that wants better can
+ * name one with {@link Opening.icon}.
+ */
 const OPENING_FALLBACK_ICON: Record<OpeningType, { on: string; off: string }> = {
   door: { on: "mdi:door-open", off: "mdi:door-closed" },
   window: { on: "mdi:window-open", off: "mdi:window-closed" },
+  skylight: { on: "mdi:window-open-variant", off: "mdi:window-closed-variant" },
 };
 
 /**
@@ -3251,9 +3426,9 @@ export function openingMarkIcon(
  * other exists.
  */
 export function openingMarkPoint(
-  o: Pick<Opening, "x" | "y" | "angle" | "flipV">,
+  o: Pick<Opening, "x" | "y" | "angle" | "flipV" | "type" | "length" | "width">,
 ): { x: number; y: number } {
-  return shutterMarkPoint(o, -SHUTTER_MARK_OFFSET);
+  return shutterMarkPoint(o, -openingMarkOffset(o));
 }
 
 export function openingMarkNormal(
@@ -3381,7 +3556,59 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   const tone2 = style.second ? leafTone(!!style.second.active, amt2) : tone;
 
   let body: SVGTemplateResult;
-  if (openingMotion(o) === "swing") {
+  if (openingIsSkylight(o)) {
+    // A hole in the ceiling, seen from below. The only opening in this file
+    // with two plan dimensions, and the only one drawn *over* the floor rather
+    // than in a gap sawn out of a wall — nothing cuts the wall band for it,
+    // because it stands in no wall (see renderWallMask).
+    //
+    // Four marks, and each is doing a job:
+    //
+    // - the **kerb**, a plain rectangle in the wall's own colour, because that
+    //   is what the hole is lined with and what makes it read as structure
+    //   rather than as a rug;
+    // - the **diagonals**, dashed. This is the convention that says "above the
+    //   cut plane" on a floor plan, and it is the only thing in the symbol
+    //   that distinguishes a roof light from a rectangular piece of furniture
+    //   at a glance. Dashed, because everything overhead is;
+    // - the **sash**, which foreshortens as it opens. A velux is hinged at its
+    //   head and swings out, so from directly below you do not see it sweep
+    //   anywhere — you see it get shorter, until wide open it is the edge-on
+    //   sliver next to its own hinge. That is the whole animation, and it is
+    //   the honest one: a plan view of a top-hung sash has nowhere else to go.
+    //   The same reasoning as the awning branch below, one axis further round;
+    // - the **hinge line**, thicker, along the head edge, so a shut skylight
+    //   still says which way it opens. `flipV` turns the sash to the other
+    //   edge, exactly as it does for every other opening.
+    const halfL = half;
+    const halfW = skylightWidth(o) / 2;
+    // The glass sits inside the kerb, and the inset is a fraction of the
+    // smaller side rather than a constant: a constant swallowed a small roof
+    // light whole and was invisible on a large one.
+    const inset = Math.max(1.5, Math.min(4, Math.min(halfL, halfW) * 0.18));
+    const gl = Math.max(0.5, halfL - inset);
+    const gw = Math.max(0.5, halfW - inset);
+    // How much of the aperture the sash still covers. Not down to zero: fully
+    // open it is a sash seen edge-on, which is a sliver and not nothing, and
+    // a pane that vanished read as a skylight that had been deleted.
+    const paneH = gw * 2 * (1 - amt * 0.82);
+    body = svg`
+        <!-- the kerb -->
+        <rect x=${-halfL} y=${-halfW} width=${halfL * 2} height=${halfW * 2}
+              fill="none" stroke=${color} stroke-width="2" />
+        <!-- "above you": the plan convention for anything overhead -->
+        <line x1=${-gl} y1=${-gw} x2=${gl} y2=${gw}
+              stroke=${color} stroke-width="1" stroke-dasharray="4 4" opacity="0.55" />
+        <line x1=${-gl} y1=${gw} x2=${gl} y2=${-gw}
+              stroke=${color} stroke-width="1" stroke-dasharray="4 4" opacity="0.55" />
+        <!-- the sash, foreshortening toward its hinge as it swings out -->
+        <rect x=${-gl} y=${-gw} width=${gl * 2} height=${paneH}
+              fill="none" stroke=${tone} stroke-width="1.5"
+              stroke-dasharray=${amt > 0.02 ? "5 4" : nothing} />
+        <!-- the head it is hung from -->
+        <line x1=${-gl} y1=${-halfW} x2=${gl} y2=${-halfW}
+              stroke=${tone} stroke-width="2.5" />`;
+  } else if (openingMotion(o) === "swing") {
     // One symbol for every hinged opening. A single-sash window (issue #73)
     // and a plain door draw the same thing; so do a double door and a pair of
     // casement leaves. The differences are the leaf count and the jambs, so
@@ -3712,7 +3939,15 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
     const shutterAmt2 = second ? Math.max(0, Math.min(1, second.amount)) : shutterAmt;
     const shutterTone2 = second ? shutterLeaf(second.active, shutterAmt2) : shutterTone;
     body = svg`${body}${
-      style.shutter.style === "swing"
+      // A roof light's blind is neither of the wall shapes: it is neither a
+      // band on the wall line nor a pair of panels beside the jambs, but a
+      // sheet drawn across the aperture you are looking down into. It also
+      // ignores `shutterStyle` — there is only the one way a velux blind
+      // travels, and offering a hinged one would be offering a shutter that
+      // folds back against a roof.
+      openingIsSkylight(o)
+        ? skylightBlind(o.length, skylightWidth(o), shutterTone, shutterAmt)
+        : style.shutter.style === "swing"
         ? swingShutter(
             o.length,
             cutH,
@@ -4126,6 +4361,213 @@ export function sunReachFraction(value: unknown): number {
 }
 
 /**
+ * How far a skylight's patch of light slides from the skylight itself, as a
+ * fraction of the reach a wall opening gets — see
+ * {@link FloorplanCardConfig.skylightDrop} for why it is stated against the
+ * reach and not in plan units.
+ *
+ * 0.55 puts the patch a bit over half a room's depth downwind of the roof
+ * light at the reference sun, which is what an ordinary storey height looks
+ * like from above: far enough that you can see it is not simply a glowing
+ * hole, near enough that the patch and the skylight still read as belonging
+ * to each other.
+ */
+export const SKYLIGHT_DROP = 0.55;
+
+/**
+ * How far the patch spreads past the skylight's own rectangle before the
+ * light has died to nothing, as a multiple of its half-sides.
+ *
+ * The same trick the beams use ({@link SUN_ACROSS}): the polygon is drawn out
+ * to here and the falloff reaches zero at exactly the same place, so what
+ * bounds the patch is the light giving out rather than the edge of a shape.
+ * Drawn at its true size with a gradient inside it, a skylight patch had a
+ * hard rectangular border with the wall shadows visibly cutting corners off
+ * it — the flat far edge issue #206 is about, in two dimensions instead of
+ * one.
+ *
+ * 2.1 is a little over twice the patch, which is about as far as light spills
+ * off a bright rectangle before it stops being visible against the floor. It
+ * is the outer half of a pair: the patch itself is painted by
+ * {@link SKYLIGHT_CORE}, and this only carries what escapes past its edge.
+ */
+export const SKYLIGHT_SPREAD = 2.1;
+
+/**
+ * The other half of that: how far the **core** gradient reaches, as a multiple
+ * of the patch's half-sides.
+ *
+ * A patch of sun on a floor has an edge. That is the one place a skylight
+ * genuinely parts company with the beams, and it is worth being explicit
+ * about because the beams' rule is the opposite: a shaft of light through a
+ * window has no edge — it fades along its length — so its outline is drawn
+ * past the point the light has died and you never see a straight cut. A patch
+ * is not a shaft. It is a rectangle of sun lying on the floor, and being able
+ * to see that it is a *rectangle* is the whole of what makes it read as a roof
+ * light rather than as a lamp someone left on.
+ *
+ * So the core is painted on the rectangle itself, with the ellipse
+ * **circumscribing** it rather than inscribed: √2 is what reaches the corners,
+ * and the little over is what keeps them from going out entirely. The patch is
+ * then evenly lit corner to corner, and its edge is its own outline.
+ *
+ * What keeps that edge from being a hard cut is the halo underneath, at
+ * {@link SKYLIGHT_SPREAD} — the light spilling past the patch, which is what a
+ * bright rectangle on a floor actually does to the floor around it. One
+ * gradient could not do both: bright to the edge and soft past it are opposite
+ * instructions to the same curve, which is why the first attempt at this drew
+ * an oval and read as a glow.
+ */
+export const SKYLIGHT_CORE = 1.5;
+
+/**
+ * A usable drop fraction: {@link cssNumber}'s coercion, then bounded.
+ *
+ * Zero is allowed here, unlike {@link sunReachFraction}'s lower bound, and it
+ * means something real: a sun directly overhead drops its patch straight down
+ * the shaft, so the light lands on the floor exactly under the skylight. That
+ * is a picture, not a bug — where a reach of zero is a beam with no length,
+ * which draws nothing at all.
+ *
+ * The ceiling is what keeps a typo from throwing the patch off the plan
+ * entirely, which for a skylight is the failure that looks most like the
+ * feature being broken: the roof light is right there, and its light is
+ * nowhere.
+ */
+export function skylightDropFraction(value: unknown): number {
+  return Math.max(0, Math.min(4, cssNumber(value, SKYLIGHT_DROP)));
+}
+
+/**
+ * A skylight's ceiling height, as a multiple of an ordinary one — see
+ * {@link Opening.ceilingHeight}.
+ *
+ * Clamped rather than merely defaulted, and the lower bound is not zero: a
+ * ceiling of no height is a skylight lying on the floor, and it would put the
+ * patch of light exactly on top of the symbol, where it reads as the drawing
+ * having gone wrong rather than as a very low roof.
+ */
+export function skylightCeilingHeight(o: Pick<Opening, "ceilingHeight">): number {
+  const raw = o.ceilingHeight;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return 1;
+  return Math.max(0.1, Math.min(8, raw));
+}
+
+/**
+ * The half-sides of the patch a skylight lays on the floor, along and across
+ * its own axis.
+ *
+ * The patch is the **same size as the opening**, and that is not an
+ * approximation — it is what parallel light does. A horizontal rectangle
+ * projected onto a horizontal floor by parallel rays is that rectangle moved,
+ * congruent whatever the angle: only its *position* depends on the sun. That
+ * is why a skylight needs no swept polygon and no reach along the light the
+ * way a wall opening does, and why {@link skylightPatchPolygon} is four
+ * corners of arithmetic rather than a sweep.
+ *
+ * `clear` narrows it across, not along, because that is the way the blind
+ * travels — down the pane — and it is drawn doing exactly that. On a wall
+ * opening the shutter is edge-on and the plan can only say up or down; here
+ * you are looking straight at it, so half a blind is visibly half a blind and
+ * the light has to agree with the picture.
+ *
+ * Only half of that agreement lives here. Narrowing says *how much* light gets
+ * through; it does not say **where on the glass**, and a roof light never
+ * narrows from both sides — see {@link skylightPatchCenter}, which slides the
+ * patch to the edge that is still clear.
+ */
+export function skylightPatchHalfSides(
+  o: Pick<Opening, "type" | "length" | "width">,
+  clear = 1,
+): { along: number; across: number } {
+  const f = Math.max(0, Math.min(1, clear));
+  return { along: Math.abs(o.length) / 2, across: (skylightWidth(o) * f) / 2 };
+}
+
+/**
+ * Where a skylight's patch of light lands: the skylight, moved along the light
+ * by however far it falls on the way down.
+ *
+ * `drop` is that distance in plan units, and the caller works it out from the
+ * reach, which already carries the sun's height — see
+ * {@link FloorplanCardConfig.skylightDrop}. A patch two storeys up slides
+ * twice as far, which is {@link skylightCeilingHeight}'s whole job.
+ */
+export function skylightPatchCenter(
+  o: Pick<Opening, "x" | "y" | "type" | "length" | "width" | "angle" | "flipV" | "ceilingHeight">,
+  dir: { x: number; y: number },
+  drop: number,
+  /**
+   * How much of the pane is clear, 0..1. Below 1 the patch also slides
+   * **across** — see below.
+   */
+  clear = 1,
+): AreaPoint {
+  const d = drop * skylightCeilingHeight(o);
+  // …and across, toward whichever edge of the glass is still clear.
+  //
+  // This is the half of "the light has to agree with the picture" that the
+  // first version missed. It narrowed the patch and left it centred, but
+  // nothing about a roof light narrows from both sides: the blind comes down
+  // from the head edge and the sash foreshortens toward the same edge, so what
+  // is still open is always the strip at the *far* edge. Centred, a patch
+  // under a blind three-quarters down sat mostly beneath the slats — the plan
+  // drawing light coming through the part it had just drawn covered.
+  //
+  // The clear strip runs from `-halfW + covered` to `+halfW`, so its middle is
+  // `covered / 2` off centre, which is `halfW × (1 − clear)`. `flipV` turns the
+  // symbol over and takes the head edge with it, so the offset turns too.
+  const f = Math.max(0, Math.min(1, clear));
+  const across = (skylightWidth(o) / 2) * (1 - f) * (o.flipV ? -1 : 1);
+  // The opening's own +y in plan: its across-axis, before the light is
+  // considered at all. The drop and this are independent — one is where the
+  // sun puts the light, the other is where on the glass the light got in.
+  const rad = (o.angle * Math.PI) / 180;
+  return {
+    x: o.x + dir.x * d - Math.sin(rad) * across,
+    y: o.y + dir.y * d + Math.cos(rad) * across,
+  };
+}
+
+/**
+ * The patch of light a skylight admits: its own rectangle, moved to where the
+ * light lands and grown by {@link SKYLIGHT_SPREAD} so the falloff, not this
+ * outline, is what ends it.
+ *
+ * Rotated by the skylight's own `angle` rather than aligned to the sun,
+ * because a translation does not turn anything: a roof light set square to the
+ * house lays a patch square to the house at every hour of the day. Aligning it
+ * to the light was the first thing tried and it looked wrong in a way that
+ * took a while to name — the patch swung round through the afternoon like a
+ * searchlight, when what it should do is slide.
+ *
+ * `grow` is 1 for the patch itself and {@link SKYLIGHT_SPREAD} for the halo
+ * spilling past it — the same four corners at two sizes, so the two can never
+ * disagree about where the light is.
+ */
+export function skylightPatchPolygon(
+  o: Pick<Opening, "type" | "x" | "y" | "length" | "width" | "angle" | "ceilingHeight">,
+  dir: { x: number; y: number },
+  drop: number,
+  clear = 1,
+  grow = 1,
+): AreaPoint[] {
+  const c = skylightPatchCenter(o, dir, drop, clear);
+  const { along, across } = skylightPatchHalfSides(o, clear);
+  const rad = (o.angle * Math.PI) / 180;
+  const ux = Math.cos(rad) * along * grow;
+  const uy = Math.sin(rad) * along * grow;
+  const vx = -Math.sin(rad) * across * grow;
+  const vy = Math.cos(rad) * across * grow;
+  return [
+    { x: c.x - ux - vx, y: c.y - uy - vy },
+    { x: c.x + ux - vx, y: c.y + uy - vy },
+    { x: c.x + ux + vx, y: c.y + uy + vy },
+    { x: c.x - ux + vx, y: c.y - uy + vy },
+  ];
+}
+
+/**
  * How far the light from `o` actually travels before a wall stops it, capped
  * at `max`.
  *
@@ -4216,6 +4658,18 @@ export function openingSunFraction(
   // however open, however glazed (issue #177).
   if (o.sunlight === false) return 0;
   if (shutter !== undefined && shutter <= 0) return 0;
+  // A skylight is the one opening whose blind you see face-on, so it is the
+  // one whose blind can be half down on the plan. Everything above is a wall
+  // opening seen edge-on: however far its shutter has travelled, the drawing
+  // can only say up or down, so the light says the same. Here the slats are
+  // drawn across the pane at exactly the fraction the cover reports, and a
+  // patch that ignored that would contradict a picture the viewer is looking
+  // straight at. `openingSunFraction` is what narrows the patch, so the two
+  // stay one number rather than two that have to be kept in step.
+  if (openingIsSkylight(o)) {
+    const pane = openingIsGlazed(o) ? 1 : Math.max(0, Math.min(1, amount));
+    return pane * (shutter === undefined ? 1 : Math.max(0, Math.min(1, shutter)));
+  }
   if (openingIsGlazed(o)) return 1;
   return Math.max(0, Math.min(1, amount));
 }
@@ -4234,13 +4688,21 @@ export function openingAdmitsSun(
 }
 
 /**
- * Whether an opening is glass. A window is, by definition; a door is not,
- * unless it says so — which patio and French doors do. They are drawn as
+ * Whether an opening is glass. A window is, by definition, and so is a
+ * skylight — a roof window is glazed or it is a hole in your roof. A door is
+ * not, unless it says so — which patio and French doors do. They are drawn as
  * doors because that is how they swing, and treating them as opaque left the
  * sunniest side of a house dark: every one of them is a wall of glass.
+ *
+ * Overridable in both directions on a skylight, and the direction that matters
+ * is `false`. It is what makes a roof **hatch** — a loft door, a smoke vent, a
+ * lantern with a solid flap — behave the way its owner expects: light only
+ * while it is actually open. Glazed, the sash makes no difference to the
+ * light and only the blind over it does, which is the truth about a velux and
+ * a surprise to anyone who bound the sash expecting a switch.
  */
 export function openingIsGlazed(o: Pick<Opening, "type" | "glazed">): boolean {
-  return o.glazed ?? o.type === "window";
+  return o.glazed ?? o.type !== "door";
 }
 
 /** The two ends of an opening's gap, in plan coordinates. */
@@ -4427,6 +4889,12 @@ export interface SunlightOptions {
    * (see {@link sunReachScale}).
    */
   reach?: number;
+  /**
+   * How far a **skylight's** patch slides from the skylight, as a fraction of
+   * the reach. Defaults to {@link SKYLIGHT_DROP}; see
+   * {@link FloorplanCardConfig.skylightDrop} for why it is stated that way.
+   */
+  drop?: number;
   light?: string;
   /**
    * `null` draws the light without darkening anything else — the patches
@@ -4470,6 +4938,79 @@ export function renderSunlight(
   const clear = (o: Opening) => openingSunFraction(o, openAmount(o), shutterOpen(o));
   const blockers = wallsLightPassesThrough(walls, openings, clear);
   const shadowPolys = blockers.map((w) => sunShadowPolygon(w, dir, reach));
+  // How far a skylight's patch slides from the skylight before it reaches the
+  // floor. Off the same reach as everything else, so it carries the sun's
+  // height for free — see FloorplanCardConfig.skylightDrop.
+  const drop = reach * skylightDropFraction(opts.drop);
+  /**
+   * The walls that can shade a **skylight's** patch: the ones downwind of it
+   * along the light, and only those.
+   *
+   * This is the one place the sun does something different to a hole in a
+   * ceiling than to a hole in a wall, and it is not a refinement — without it
+   * the feature does not work at all. A wall opening's light starts *at* a
+   * wall, so every wall in the plan is fair game to shade it and the one
+   * global shadow mask does the job. A skylight's light starts at the ceiling,
+   * which is to say above every wall in the house: a wall standing between the
+   * roof light and the sun cannot shade it, because at that wall's position
+   * the ray was still outside the building, over the roof. Only after the ray
+   * has passed through the glass is it below ceiling height and so blockable —
+   * and being below ceiling height, a full-height wall then blocks it
+   * completely. Downwind or nothing; there is no half-answer.
+   *
+   * Handed the global shadows instead, a velux with a partition a couple of
+   * metres upwind of it lost its patch entirely, which is the arrangement
+   * almost every real roof light is in.
+   *
+   * A wall straddling the skylight — part upwind, part downwind — is **cut**
+   * at the skylight's own along-light coordinate, and only the downwind piece
+   * casts. Taking the whole wall instead was the first version, on the
+   * argument that the error was confined to a wedge behind the upwind half
+   * that the patch was never going to land in. That argument is wrong, and
+   * wrong in the ordinary case rather than a corner one: a room's perimeter
+   * walls all run *past* a skylight rather than stopping at it, so every one
+   * of the four had a far end projecting downwind and every one of them was
+   * taken whole. Their shadows then swept the floor from the wrong side, and a
+   * roof light near its own outside wall lost the patch it should have laid —
+   * measured, not guessed: at `ceilingHeight` 0.6 the patch centre sat inside
+   * the shadow of the wall two metres *upwind* of it.
+   */
+  const downwindShadows = (o: Opening): string[] => {
+    // Swept far enough to actually reach this skylight's patch, rather than
+    // reused from the plan's own shadows. Those are `reach` long, which is the
+    // distance a *beam* carries; the patch sits `drop x ceilingHeight` from
+    // the skylight, and past about two and a half storeys that is beyond the
+    // end of the sweep. The polygon was still there, so a test asking whether
+    // the mask had one passed — while the wall shaded nothing and the patch
+    // lay in full sun on the far side of it. The editor's slider goes to 4.
+    //
+    // The extra half-diagonal covers the patch's own corners: the centre
+    // being inside a shadow is not enough when the rectangle around it is what
+    // gets painted.
+    const span = drop * skylightCeilingHeight(o) + Math.hypot(o.length, skylightWidth(o)) / 2;
+    const reachFor = Math.max(span, reach);
+    const out: string[] = [];
+    for (const w of blockers) {
+      const s1 = (w.x1 - o.x) * dir.x + (w.y1 - o.y) * dir.y;
+      const s2 = (w.x2 - o.x) * dir.x + (w.y2 - o.y) * dir.y;
+      if (Math.max(s1, s2) <= 0) continue;
+      // The piece of it that is actually downwind. Whole when both ends are;
+      // otherwise cut where the wall crosses the skylight's own along-light
+      // coordinate, which is where the ray stops being outside the building.
+      let cut = w;
+      if (Math.min(s1, s2) < 0) {
+        const t = s1 / (s1 - s2);
+        const mx = w.x1 + (w.x2 - w.x1) * t;
+        const my = w.y1 + (w.y2 - w.y1) * t;
+        cut =
+          s1 > 0
+            ? { ...w, x2: mx, y2: my }
+            : { ...w, x1: mx, y1: my };
+      }
+      out.push(polyPoints(sunShadowPolygon(cut, dir, reachFor)));
+    }
+    return out;
+  };
   // Only the openings the sun actually shines on are sources — see
   // {@link sunReachesOpening}, which asks it of the *uncut* walls. Testing the
   // cut ones (which is what standing in a shadow polygon amounts to) made a
@@ -4490,7 +5031,51 @@ export function renderSunlight(
   // opening's own centre along the light, so every patch dims over its own
   // length rather than sharing one gradient across the plan.
   const beams = openings.map((o, i) => {
-    if (!(clear(o) > 0 && sunReachesOpening(o, walls, dir))) return undefined;
+    const ids = {
+      lightId: `${id}-b${i}`,
+      shadeId: `${id}-s${i}`,
+      fadeId: `${id}-f${i}`,
+      shadowMaskId: `${id}-k${i}`,
+    };
+    const f = clear(o);
+    if (!(f > 0)) return undefined;
+    // A skylight is never asked whether the sun reaches it. Nothing in a floor
+    // plan stands between a roof and the sky — that test is about which façade
+    // the sun is on, and a skylight is on none of them. It is also the reason
+    // a skylight has no `sunlight: false` case worth worrying about beyond the
+    // one every opening has: it is a source whenever it is glass and the blind
+    // is not down, at every hour the sun is up.
+    if (openingIsSkylight(o)) {
+      const c = skylightPatchCenter(o, dir, drop, f);
+      const half = skylightPatchHalfSides(o, f);
+      // The skylight's own rotation, not the light's: a translation turns
+      // nothing, so the patch stays square to the house all day.
+      const at = (grow: number) => ({
+        cx: c.x,
+        cy: c.y,
+        angle: o.angle,
+        along: Math.max(1, half.along * grow),
+        across: Math.max(1, half.across * grow),
+      });
+      return {
+        ...ids,
+        sky: true,
+        // Its own rectangle, moved — not a sweep. See skylightPatchPolygon.
+        // Twice: the patch at its true size, and the halo spilling past it,
+        // which is what keeps the edge from being a hard cut. See
+        // SKYLIGHT_CORE for why one gradient cannot do both jobs.
+        points: polyPoints(skylightPatchPolygon(o, dir, drop, f)),
+        haloPoints: polyPoints(skylightPatchPolygon(o, dir, drop, f, SKYLIGHT_SPREAD)),
+        // The core's own ellipse rides on the record itself, so the shared
+        // gradient helper reads a skylight exactly as it reads a beam.
+        ...at(SKYLIGHT_CORE),
+        halo: at(SKYLIGHT_SPREAD),
+        haloLightId: `${id}-h${i}`,
+        haloShadeId: `${id}-hs${i}`,
+        shadows: downwindShadows(o),
+      };
+    }
+    if (!sunReachesOpening(o, walls, dir)) return undefined;
     // How far the light gets before a wall stops it. The falloff is measured
     // against this, so a patch is faint by the time it ends however deep or
     // shallow the room is.
@@ -4506,17 +5091,24 @@ export function renderSunlight(
     // half its width to give on each side (issue #206).
     const halfWidth = width / 2;
     return {
+      ...ids,
+      sky: false,
       // The outline runs past the falloff, so the ellipse is what bounds the
       // patch and never the polygon's flat far edge.
-      points: polyPoints(sunBeamPolygon(o, dir, along + o.length, clear(o))),
+      points: polyPoints(sunBeamPolygon(o, dir, along + o.length, f)),
       cx: o.x,
       cy: o.y,
       along,
       across: Math.max(1, halfWidth * SUN_ACROSS),
       angle: (Math.atan2(dir.y, dir.x) * 180) / Math.PI,
-      lightId: `${id}-b${i}`,
-      shadeId: `${id}-s${i}`,
-      fadeId: `${id}-f${i}`,
+      // A beam has no edge to soften — it fades along its own length — so it
+      // has no second polygon, and no shadow set of its own either: the wall
+      // openings all share the one global shadow mask.
+      haloPoints: "",
+      halo: undefined as undefined | { cx: number; cy: number; angle: number; along: number; across: number },
+      haloLightId: "",
+      haloShadeId: "",
+      shadows: [] as string[],
     };
   });
   if (!beams.some((b) => b !== undefined)) return nothing;
@@ -4550,15 +5142,41 @@ export function renderSunlight(
   //
   // It reaches zero at the far end, so nothing bounds the patch except the
   // light giving out — and the flanks dim too, because SUN_ACROSS is under 1.
+  //
+  // The two families fade differently, because they are different shapes. A
+  // **beam** is long and thin and genuinely dims along its length, so it gives
+  // up most of its strength in the first half — that is what a shaft of light
+  // through a window looks like from above. A **skylight patch** is a
+  // rectangle of even light with a soft edge, so it holds nearly full strength
+  // out to its own outline and does all its fading in the halo beyond: the
+  // rectangle's edges land around two thirds, its corners faint, which is what
+  // reads as a soft-cornered rectangle rather than as a plain oval.
   const fade = (
-    b: { fadeId: string; cx: number; cy: number; along: number; across: number; angle: number },
+    b: { cx: number; cy: number; along: number; across: number; angle: number },
     gid: string,
     color: string,
+    kind: "beam" | "core" | "halo" = "beam",
   ) => svg`<radialGradient id=${gid} gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1"
               gradientTransform=${`translate(${b.cx} ${b.cy}) rotate(${b.angle}) scale(${b.along} ${b.across})`}>
-          <stop offset="0" stop-color=${color} stop-opacity="1" />
+          ${
+            kind === "core"
+              ? // Even, corner to corner: the ellipse circumscribes the
+                // rectangle, so what ends this patch is the rectangle's own
+                // outline. See SKYLIGHT_CORE.
+                svg`<stop offset="0" stop-color=${color} stop-opacity="1" />
+          <stop offset="0.66" stop-color=${color} stop-opacity="0.92" />
+          <stop offset="1" stop-color=${color} stop-opacity="0.62" />`
+              : kind === "halo"
+                ? // …and the spill past it, which is what keeps that outline
+                  // from reading as a cut. Never full strength: it is the
+                  // light around the patch, not the patch.
+                  svg`<stop offset="0" stop-color=${color} stop-opacity="0.5" />
+          <stop offset="0.48" stop-color=${color} stop-opacity="0.38" />
+          <stop offset="1" stop-color=${color} stop-opacity="0" />`
+                : svg`<stop offset="0" stop-color=${color} stop-opacity="1" />
           <stop offset="0.45" stop-color=${color} stop-opacity="0.55" />
-          <stop offset="1" stop-color=${color} stop-opacity="0" />
+          <stop offset="1" stop-color=${color} stop-opacity="0" />`
+          }
         </radialGradient>`;
   // Only built when it is going to be used: the shade mask is the one that
   // needs every beam *and* every shadow, so declining the shade halves the
@@ -4571,13 +5189,36 @@ export function renderSunlight(
            back wherever a wall stands in one. The order is the whole logic. -->
       <mask id=${shadeId} maskUnits="userSpaceOnUse" x=${x} y=${y} width=${w} height=${h}>
         ${cover("#fff")}
-        ${beams.map((b) => (b ? fade(b, b.shadeId, "#000") : nothing))}
         ${beams.map((b) =>
-          b
+          b ? fade(b, b.shadeId, "#000", b.sky ? "core" : "beam") : nothing
+        )}
+        ${beams.map((b) =>
+          b && b.halo ? fade(b.halo, b.haloShadeId, "#000", "halo") : nothing
+        )}
+        ${beams.map((b) =>
+          b && !b.sky
             ? svg`<polygon points=${b.points} fill=${`url(#${b.shadeId})`} />`
             : nothing
         )}
         ${shadows.map((p) => shadowPoly(p, "#fff"))}
+        <!-- Skylights come after the wall shade has been put back, each with
+             only its OWN downwind walls restored over it. Every other wall in
+             the plan is upwind of the roof light and so cannot shade it — see
+             downwindShadows above. Two skylights whose patches lie in each
+             other's
+             shadows would resolve by array order here rather than by which
+             light actually lands; a plan with that arrangement is a plan with
+             one roof light shining through another's floor, and it is not
+             worth a mask each to get right. -->
+        ${beams.map((b) =>
+          b && b.sky
+            ? svg`<g>
+                <polygon points=${b.haloPoints} fill=${`url(#${b.haloShadeId})`} />
+                <polygon points=${b.points} fill=${`url(#${b.shadeId})`} />
+                ${b.shadows.map((p) => shadowPoly(p, "#fff"))}
+              </g>`
+            : nothing
+        )}
       </mask>`;
   return svg`
     <defs>
@@ -4587,6 +5228,18 @@ export function renderSunlight(
         ${cover("#fff")}
         ${shadows.map((p) => shadowPoly(p, "#000"))}
       </mask>
+      <!-- …and one per skylight, carrying its downwind walls alone. A mask
+           each rather than a shared one because "downwind" is measured from
+           the roof light, so no two skylights have the same answer. -->
+      ${beams.map((b) =>
+        b && b.sky
+          ? svg`<mask id=${b.shadowMaskId} maskUnits="userSpaceOnUse"
+                      x=${x} y=${y} width=${w} height=${h}>
+              ${cover("#fff")}
+              ${b.shadows.map((p) => shadowPoly(p, "#000"))}
+            </mask>`
+          : nothing
+      )}
     </defs>
     <g class="fp-sunlight">
       ${
@@ -4596,19 +5249,36 @@ export function renderSunlight(
             style=${`fill:${cssColorOr(paint.shade, SUN_SHADE_COLOR)};`}
             opacity=${SUN_SHADE * strength} mask=${`url(#${shadeId})`} />`
       }
+      ${beams.map((b) =>
+        b
+          ? fade(b, b.lightId, cssColorOr(paint.light, SUN_LIGHT_COLOR), b.sky ? "core" : "beam")
+          : nothing
+      )}
+      ${beams.map((b) =>
+        b && b.halo
+          ? fade(b.halo, b.haloLightId, cssColorOr(paint.light, SUN_LIGHT_COLOR), "halo")
+          : nothing
+      )}
       <g mask=${`url(#${shadowId})`} opacity=${SUN_PATCH_OPACITY * strength}>
         ${beams.map((b) =>
-          b
-            ? fade(b, b.lightId, cssColorOr(paint.light, SUN_LIGHT_COLOR))
-            : nothing
-        )}
-        ${beams.map((b) =>
-          b
+          b && !b.sky
             ? svg`<polygon class="fp-sunbeam" points=${b.points}
                             fill=${`url(#${b.lightId})`} />`
             : nothing
         )}
       </g>
+      <!-- Each roof light through a mask of its own, carrying the walls
+           downwind of it and no others — the reason spelled out above. -->
+      ${beams.map((b) =>
+        b && b.sky
+          ? svg`<g mask=${`url(#${b.shadowMaskId})`} opacity=${SUN_PATCH_OPACITY * strength}>
+              <polygon class="fp-sunbeam fp-skylight-halo" points=${b.haloPoints}
+                       fill=${`url(#${b.haloLightId})`} />
+              <polygon class="fp-sunbeam fp-skylight-patch" points=${b.points}
+                       fill=${`url(#${b.lightId})`} />
+            </g>`
+          : nothing
+      )}
     </g>`;
 }
 
@@ -4664,6 +5334,9 @@ export function renderWallMask(
         <rect x=${-pad} y=${-pad} width=${width + pad * 2} height=${height + pad * 2}
               fill="white" />
         ${openings.map((o) => {
+          // Nothing to cut: a skylight stands in no wall, and one drawn over
+          // one would rub a hole in it that no symbol then fills.
+          if (openingIsSkylight(o)) return nothing;
           const half = o.length / 2;
           return svg`<rect x=${o.x - half} y=${o.y - cutH / 2}
                            width=${o.length} height=${cutH} fill="black"

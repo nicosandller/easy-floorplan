@@ -1,5 +1,6 @@
 import type { Area, AreaPoint, Floor, RenderHass, Wall } from "./types";
-import { polygonCentroid, pointInPolygon, textLabel } from "./render";
+import { polygonCentroid, pointInPolygon, skylightWidth, textLabel } from "./render";
+import { openingIsSkylight } from "./types";
 
 /** Element kinds addressable by the editor's selection model. */
 export type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker" | "area";
@@ -395,8 +396,18 @@ export function elementsAtPoint(
     if (Math.abs(p.x) <= hw && Math.abs(p.y) <= hh) push("text", t.id, i, t.locked);
   });
   f.openings.forEach((o, i) => {
+    // A wall opening's target is the hole it stands in, so the wall's own
+    // thickness is the right depth for it. A skylight is not in a wall: it is
+    // the rectangle it draws, and measured against a wall it answered through
+    // a strip four units either side of its centre line while the shape on
+    // screen was ten times that. Every click outside the strip fell through to
+    // whatever was beneath — which for a roof light is always the room it is
+    // drawn in, so the skylight could not be selected or dragged at all. The
+    // same trap the text labels above hit in #225; `openingHitSize` is the
+    // rectangle the editor overlay and the card already use.
+    const halfDepth = openingIsSkylight(o) ? skylightWidth(o) / 2 : opts.wallThickness / 2;
     const p = toLocal(x, y, o.x, o.y, o.angle ?? 0);
-    if (Math.abs(p.x) <= o.length / 2 && Math.abs(p.y) <= opts.wallThickness / 2 + HIT.pad) {
+    if (Math.abs(p.x) <= o.length / 2 && Math.abs(p.y) <= halfDepth + HIT.pad) {
       push("opening", o.id, i, o.locked);
     }
   });

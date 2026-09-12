@@ -47,6 +47,7 @@
  *   the YAML; the polygons are recomputed for the render and thrown away.
  */
 
+import { openingIsSkylight } from "./types";
 import type { AreaPoint, Opening, Wall } from "./types";
 
 /**
@@ -318,7 +319,15 @@ export function traceFaces(segments: readonly Seg[], eps: number): AreaPoint[][]
   return faces;
 }
 
-/** True when any opening's centre sits on one of the ring's edges. */
+/**
+ * True when any opening's centre sits on one of the ring's edges.
+ *
+ * Skylights do not count. The test is a *wall* test — "this region's boundary
+ * has a hole in it" — and a roof light is a hole in the ceiling, so it neither
+ * sits on a boundary nor makes one passable. One drawn near a wall would pass
+ * this by coincidence and un-hatch a genuinely sealed void: the chimney shaft
+ * or service duct this whole module exists to find (issue #88).
+ */
 function ringHasOpening(
   ring: readonly AreaPoint[],
   openings: readonly Opening[],
@@ -326,6 +335,7 @@ function ringHasOpening(
 ): boolean {
   for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
     for (const o of openings) {
+      if (openingIsSkylight(o)) continue;
       if (distToSegment(o.x, o.y, ring[j]!, ring[i]!) <= eps) return true;
     }
   }

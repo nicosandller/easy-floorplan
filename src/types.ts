@@ -94,7 +94,51 @@ export interface Wall {
   locked?: boolean;
 }
 
-export type OpeningType = "door" | "window";
+/**
+ * What kind of hole in the building this is.
+ *
+ * `door` and `window` are both holes in a **wall**, which is why they share
+ * almost everything: a centre on a wall line, a length along it, a leaf that
+ * swings or slides across the floor, and a beam of sun swept out of the gap.
+ *
+ * `skylight` is the one that is not (issue #285). It is a
+ * hole in the **ceiling** — a velux, a roof light, a lantern — so it sits in
+ * open floor rather than on a wall line, it has two plan dimensions rather
+ * than one ({@link Opening.width}), and the sun does something else entirely
+ * with it: no gap to sweep a beam out of, but a rectangle of light that lands
+ * away from the opening by however far the light falls on its way down (see
+ * `skylightPatchPolygon`).
+ *
+ * A third *type* rather than a fourth {@link Opening.motion}, and rather than
+ * a top-level element of its own. It is a type because that is the level the
+ * difference lives at — the same reason a window is not a door with the glass
+ * flag set: what changes is where it sits, what the sun does with it, and what
+ * it is drawn as, not how its sash travels. And it stays an {@link Opening}
+ * because the other ninety per cent — an entity that says open or shut, a
+ * blind over it with an entity of its own, colours, icons, gestures, actions,
+ * locking, selection and drag — is exactly what an opening already is. Making
+ * it a top-level array would have meant a second copy of all of it.
+ */
+export type OpeningType = "door" | "window" | "skylight";
+
+/**
+ * Whether this opening is a hole in the **ceiling** rather than in a wall.
+ *
+ * The one question every piece of wall arithmetic in the card has to ask
+ * before it does anything with an opening, because all of it assumes the
+ * opening is a gap in a line: the mask that cuts the wall band, the walls a
+ * lamp's pool passes through, the shade a wall casts, the dead-space test that
+ * reads an opening's centre as "this region has a way in". A skylight sits in
+ * open floor and answers none of those; it is not on a wall to begin with, and
+ * one that happened to be drawn over one would otherwise punch a hole through
+ * it.
+ *
+ * A predicate rather than `o.type === "skylight"` spelled out at each of those
+ * sites, because there are a dozen of them and every one is the same question.
+ */
+export function openingIsSkylight(o: Pick<Opening, "type">): boolean {
+  return o.type === "skylight";
+}
 
 /**
  * How a sliding opening's panels are arranged. Named as a type rather than
@@ -105,12 +149,17 @@ export type OpeningType = "door" | "window";
 export type SliderStyle = "single" | "bypass" | "biparting" | "biparting-bypass" | "converging";
 
 /**
- * A door or window. Positioned by its center point and rotation so it can be
- * dropped onto (and aligned with) a wall, but it is stored independently.
+ * A door, a window, or a skylight. Positioned by its center point and rotation
+ * so it can be dropped onto (and aligned with) a wall, but it is stored
+ * independently. A skylight is in the ceiling and so snaps to no wall — see
+ * {@link OpeningType}.
  */
 export interface Opening {
   id: string;
-  /** The kind of opening: a `door` (single leaf) or a `window` (two leaves / glass). */
+  /**
+   * The kind of opening: a `door` (single leaf), a `window` (two leaves /
+   * glass), or a `skylight` (a hole in the ceiling). See {@link OpeningType}.
+   */
   type: OpeningType;
   /**
    * How the opening moves. `swing` (default) is a hinged door / casement window;
@@ -177,10 +226,45 @@ export interface Opening {
   sashSpan?: number;
   x: number;
   y: number;
-  /** Length along the wall, in virtual units. */
+  /** Length along the wall, in virtual units. For a skylight, its longer plan side. */
   length: number;
   /** Rotation in degrees, 0 = horizontal. */
   angle: number;
+  /**
+   * **Skylights only**: the other plan dimension, across {@link length}, in
+   * virtual units. A wall opening has no such thing — it is a gap in a line,
+   * and the wall's own thickness is all the width it has — but a roof window
+   * is a rectangle you look down on, so it needs both sides.
+   *
+   * Defaults to {@link SKYLIGHT_WIDTH_RATIO} of `length`, which draws the
+   * upright portrait proportions an ordinary velux has. Both sides matter to
+   * the light and not only to the drawing: the patch a skylight lays on the
+   * floor is this rectangle moved, so a long thin roof light lays a long thin
+   * stripe.
+   *
+   * Ignored by doors and windows, which is why it is one field rather than a
+   * `w`/`h` pair replacing `length`: `length` is what every existing plan
+   * already stores, and a skylight's rotation still turns it the same way.
+   */
+  width?: number;
+  /**
+   * **Skylights only**: how high the ceiling is here, as a multiple of an
+   * ordinary one. Default 1.
+   *
+   * Not a distance, because the plan has no unit for height — it is a section
+   * through a house, so nothing in it is measured vertically. What this
+   * actually scales is how far the patch of light **slides** from the skylight
+   * before it reaches the floor, which is the only thing a ceiling height
+   * changes about a plan view: light falling at an angle through a hole two
+   * storeys up lands twice as far across the room as light through the same
+   * hole in an ordinary ceiling.
+   *
+   * So `2` is a stairwell or a double-height living room, and `0.6` a low
+   * attic where the velux is barely above your head. The plan-wide starting
+   * point is {@link FloorplanCardConfig.skylightDrop}; this is the per-skylight
+   * multiplier on it.
+   */
+  ceilingHeight?: number;
   /**
    * Optional entity (e.g. a contact `binary_sensor` or a `cover`) whose state
    * drives whether the opening is drawn open or closed. When unset, doors are
@@ -1749,6 +1833,34 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * put NaN straight into a coordinate.
    */
   sunReach?: number;
+  /**
+   * How far a **skylight's** patch of light slides from the skylight itself,
+   * as a fraction of the reach a wall opening gets. Default
+   * {@link SKYLIGHT_DROP} (0.55).
+   *
+   * The one number a roof window needs that a wall one does not. Light coming
+   * through a wall starts at the wall, so where it lands is where it enters;
+   * light coming through a ceiling has a storey to fall through first, so it
+   * lands a pace or two *downwind* of the hole it came through — and how far
+   * is exactly how high the ceiling is over how steep the sun is.
+   *
+   * Stated against the reach rather than in plan units so that both halves of
+   * that come for free. The reach is already a fraction of the plan (so this
+   * is too, and a plan drawn at any scale behaves the same), and it already
+   * carries `1/tan(elevation)` (see {@link sunReachScale}) — which is the very
+   * same factor the drop needs, because a patch of sun is as deep as the
+   * opening is tall over the tangent of the sun's angle either way round. So a
+   * midday sun drops the patch almost straight down, an evening one throws it
+   * across the room, and nothing here has to know the sun's height to do it.
+   *
+   * Raise it for a plan whose skylights read as too directly overhead; lower
+   * it for one whose patches wander further from the roof lights than the
+   * rooms are deep. Per-skylight, {@link Opening.ceilingHeight} multiplies it.
+   *
+   * Coerced and clamped before it reaches a coordinate — see
+   * {@link skylightDropFraction} — for the same reason `sunReach` is.
+   */
+  skylightDrop?: number;
   /**
    * What a device does when you press it (issue #134). Tapping used to change
    * nothing on screen until the entity itself came back — which on a cover or

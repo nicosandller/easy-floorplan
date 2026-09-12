@@ -53,6 +53,8 @@ import {
   normalizePlanRotation,
   openingActionForGesture,
   openingMotion,
+  skylightWidth,
+  skylightCeilingHeight,
   MIN_SASH_SPAN,
   openingHasTwoLeaves,
   sliderStyleHasTwoLeaves,
@@ -234,9 +236,24 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
   const motion = openingMotion(o);
   const style = sliderStyleOf(o);
   const twoLeaves = openingHasTwoLeaves(o);
+  // A roof window answers a different set of questions from a wall one, and
+  // the interesting part is which questions it does *not* answer: motion (it
+  // is top-hung and cannot be anything else), leaves, sash width, hinge jamb,
+  // slide direction and slider style all describe a sash travelling across a
+  // floor, which is not a thing a hole in a ceiling has. Left in, every one of
+  // them would have been a control that changed nothing on screen.
+  //
+  // What it gains is a second side and a ceiling height — see below.
+  const skylight = o.type === "skylight";
   const fields: FormField[] = [
-    { name: "type", label: "Type", selector: dropdown(opt("door", "Door"), opt("window", "Window")) },
     {
+      name: "type",
+      label: "Type",
+      selector: dropdown(opt("door", "Door"), opt("window", "Window"), opt("skylight", "Skylight")),
+    },
+  ];
+  if (!skylight) {
+    fields.push({
       name: "motion",
       label: "Motion",
       selector: dropdown(
@@ -257,13 +274,41 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           ? [opt("fixed", "Fixed (does not open)"), opt("awning", "Top-hinged (awning)")]
           : [])
       ),
-    },
-    { name: "length", label: "Length", required: true, selector: { number: { min: 1, mode: "box" } } },
-  ];
+    });
+  }
+  fields.push({
+    name: "length",
+    label: "Length",
+    helper: skylight ? "The roof window's long side" : undefined,
+    required: true,
+    selector: { number: { min: 1, mode: "box" } },
+  });
+  if (skylight) {
+    // The second side. Only a skylight has one, and it is not optional in any
+    // useful sense — a rectangle needs both — so it sits next to the length
+    // rather than under a fold.
+    fields.push({
+      name: "width",
+      label: "Width",
+      helper: "The short side; the patch of sun it lays is this rectangle, moved",
+      required: true,
+      selector: { number: { min: 1, mode: "box" } },
+    });
+    // How far the light slides on the way down. A slider rather than a box
+    // because it is a judgement about how the plan reads, not a measurement:
+    // the plan has no vertical unit, so what this scales is the distance
+    // between the roof light and its patch. See Opening.ceilingHeight.
+    fields.push({
+      name: "ceilingHeight",
+      label: "Ceiling height",
+      helper: "1 is an ordinary storey; higher throws the patch of sun further across the room",
+      selector: { number: { min: 0.2, max: 4, step: 0.1, mode: "slider" } },
+    });
+  }
   // Leaf count, for anything hinged. Offered on doors too: a double door is
   // as ordinary as a double casement, and was previously undrawable — every
   // door came out as one leaf spanning the whole opening, however wide.
-  if (motion === "swing") {
+  if (!skylight && motion === "swing") {
     const door = o.type === "door";
     fields.push({
       name: "sash",
@@ -297,14 +342,24 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: { number: { min: MIN_SASH_SPAN, max: 1, step: 0.05, mode: "slider" } },
     });
   }
-  // Glass, for a door. A window never needs asking, and the only thing that
-  // reads it is the sunlight — a patio door left opaque keeps the sunniest
-  // side of a house dark.
-  if (o.type === "door") {
+  // Glass, for a door and for a skylight. A window never needs asking, and
+  // the only thing that reads it is the sunlight — a patio door left opaque
+  // keeps the sunniest side of a house dark.
+  //
+  // The two are offered for opposite reasons, which is why they are worded
+  // differently. A door is opaque and this is how you say it is not. A
+  // skylight is glass and this is how you say it is not — the roof hatch, the
+  // loft door, the smoke vent — and it is also the answer to the question
+  // everyone asks first: bind the sash to a cover, notice the light does not
+  // change, and this is why. Glazed, only the blind can darken the room,
+  // which is the truth about a velux; switched off, the sash itself does.
+  if (o.type === "door" || skylight) {
     fields.push({
       name: "glazed",
       label: "Glazed",
-      helper: "Lets sunlight through even when shut — a patio or French door",
+      helper: skylight
+        ? "On (a roof window): only the blind stops the light. Off (a hatch): the sash does"
+        : "Lets sunlight through even when shut — a patio or French door",
       selector: { boolean: {} },
     });
   }
@@ -326,14 +381,26 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: dropdown(opt("left", "Left"), opt("right", "Right")),
     });
   }
-  if (motion === "swing") {
+  if (!skylight && motion === "swing") {
     fields.push({
       name: "opens",
       label: "Opens",
       selector: dropdown(opt("this", "This side"), opt("other", "Other side")),
     });
   }
-  if (motion === "slide") {
+  // The same flag under a name that means something for a roof window. A
+  // velux is hung at one edge and the sash foreshortens toward it as it opens
+  // — and the blind rolls down from the same edge — so which edge it is, is
+  // visible in the symbol and worth being able to turn.
+  if (skylight) {
+    fields.push({
+      name: "opens",
+      label: "Hinged at",
+      helper: "Which edge the sash is hung from, and the edge its blind comes down from",
+      selector: dropdown(opt("this", "Top edge"), opt("other", "Bottom edge")),
+    });
+  }
+  if (!skylight && motion === "slide") {
     // A two-panel slider moves both ways at once, so there is no direction to
     // pick — `flipH` only swaps which panel each sensor drives (issue #145).
     if (!twoLeaves) {
@@ -361,9 +428,17 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
     // Says locks are usable, because nothing else would: a lock is neither a
     // contact nor a cover, and its states are `locked` / `unlocked` rather
     // than anything that looks like open/closed (issue #176).
-    helper: twoLeaves
-      ? "Contact, cover or lock. Drives the first leaf; type and motion follow its device class"
-      : "Contact, cover or lock — a lock reads unlocked as open. Type and motion follow its device class",
+    // The device-class promise is a wall opening's. A skylight is deliberately
+    // exempt from that inference (see `editor.ts`, where the guard is) —
+    // Home Assistant has no roof-window class, so a velux binds to a `cover`
+    // with `device_class: window`, the very class that would turn it back into
+    // one. Repeating the promise here told a skylight author the opposite of
+    // what the card does.
+    helper: skylight
+      ? "Contact or cover for the sash. A roof window keeps its type whatever the entity's device class says"
+      : twoLeaves
+        ? "Contact, cover or lock. Drives the first leaf; type and motion follow its device class"
+        : "Contact, cover or lock — a lock reads unlocked as open. Type and motion follow its device class",
     selector: { entity: { filter: [{ domain: OPENING_ENTITY_DOMAINS }] } },
   });
   // One sensor per leaf (issues #145, #159). Only a two-leaved opening has a
@@ -383,21 +458,33 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
   // sensors belong in the picker next to covers (issue #74).
   fields.push({
     name: "shutterEntity",
-    label: "Shutter",
-    helper: "External shutter over this opening — a cover, or a contact sensor",
+    label: skylight ? "Blind" : "Shutter",
+    helper: skylight
+      // Named for what it is on a roof window, and sold on what it does: with
+      // the glass left glazed this is the only thing in the plan that can
+      // darken the room under it.
+      ? "Blackout blind over the glass — a cover, or a contact sensor. This is what stops the light"
+      : "External shutter over this opening — a cover, or a contact sensor",
     selector: { entity: { filter: [{ domain: ["cover", "binary_sensor"] }] } },
   });
   if (o.shutterEntity) {
-    fields.push({
-      name: "shutterStyle",
-      label: "Shutter type",
-      helper: "Hinged panels fold back against the wall; roll-up slats disappear upward",
-      selector: dropdown(opt("swing", "Hinged (louvered panels)"), opt("roll", "Roll-up (slats)")),
-    });
+    // A roof window's blind has one shape and one direction: a sheet drawn
+    // down over the glass from the head. There is no hinged variant to pick (a
+    // shutter that folds back against a roof is not a thing), no side of a
+    // wall to hang it on, and so no second panel to bind either — which is
+    // why the next three fields are the wall opening's alone. Inverting it
+    // is not: a contact on a roof blind reads backwards exactly as often.
+    if (!skylight)
+      fields.push({
+        name: "shutterStyle",
+        label: "Shutter type",
+        helper: "Hinged panels fold back against the wall; roll-up slats disappear upward",
+        selector: dropdown(opt("swing", "Hinged (louvered panels)"), opt("roll", "Roll-up (slats)")),
+      });
     // Which face of the wall hinged panels hang on. Only asked for hinged
     // shutters: the roll curtain is drawn symmetrically about the wall line,
     // so the answer would change nothing on screen.
-    if (shutterStyleOf(o) === "swing") {
+    if (!skylight && shutterStyleOf(o) === "swing") {
       fields.push({
         name: "shutterSide",
         label: "Shutter side",
@@ -408,7 +495,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
     // One contact per shutter panel (issue #159), on the same terms as the
     // opening's own second leaf above: only a hinged pair *has* a second panel
     // — a roll curtain is one piece — and only once the first is bound.
-    if (shutterStyleOf(o) === "swing") {
+    if (!skylight && shutterStyleOf(o) === "swing") {
       fields.push({
         name: "shutterSecondaryEntity",
         label: "Second shutter panel",
@@ -423,7 +510,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
     // "Invert" / "Invert shutter" left you guessing which was which.
     fields.push({
       name: "shutterInvert",
-      label: "Invert shutter animation",
+      label: skylight ? "Invert blind animation" : "Invert shutter animation",
       selector: { boolean: {} },
     });
   }
@@ -435,11 +522,17 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
   // unbound door can be drawn shut, or an unbound window drawn open.
   fields.push({
     name: "invert",
-    label: o.type === "door" ? "Invert door animation" : "Invert window animation",
+    label:
+      o.type === "door"
+        ? "Invert door animation"
+        : skylight
+          ? "Invert skylight animation"
+          : "Invert window animation",
     helper: o.entity
       ? undefined
       : // Only a swing door draws open with no sensor to ask
-        // (openingDefaultOpen) — everything else, door or window, draws shut.
+        // (openingDefaultOpen) — everything else, door, window or roof light,
+        // draws shut.
         o.type === "door" && openingMotion(o) === "swing"
         ? "No sensor bound — draws shut instead of open"
         : "No sensor bound — draws open instead of shut",
@@ -500,8 +593,11 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       label: "Tap opens",
       helper: "The other one moves to press-and-hold. Opens the dialog; use Tap action below to move the shutter itself",
       selector: dropdown(
-        opt("opening", o.type === "door" ? "The door" : "The window"),
-        opt("shutter", "The shutter")
+        opt(
+          "opening",
+          o.type === "door" ? "The door" : skylight ? "The skylight" : "The window"
+        ),
+        opt("shutter", skylight ? "The blind" : "The shutter")
       ),
     });
   }
@@ -545,6 +641,12 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       type: o.type,
       motion,
       length: o.length,
+      // The *effective* pair, not the raw ones: a skylight placed without a
+      // stated width still has one (SKYLIGHT_WIDTH_RATIO of its length), and
+      // a Width box that opened empty on a rectangle plainly drawn on the
+      // canvas would be a box claiming the drawing has no width.
+      width: skylightWidth(o),
+      ceilingHeight: skylightCeilingHeight(o),
       hinge: o.flipH ? "right" : "left",
       opens: o.flipV ? "other" : "this",
       slide: o.flipH ? "right" : "left",
@@ -597,9 +699,22 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           // On is the default, so only "off" is worth writing down.
           out.sunlight = v ? undefined : false;
         } else if (k === "glazed") {
-          // A window is glass whatever this says, so only a door's answer is
-          // worth keeping — and only when it differs from its type's default.
-          out.glazed = o.type === "door" && v ? true : undefined;
+          // Only an answer that differs from the type's own default is worth
+          // writing down, and the two types that ask default opposite ways: a
+          // door is opaque until it says otherwise, a skylight is glass until
+          // it does. A window never asks — it is glass by definition — so its
+          // answer is always the default and always dropped.
+          out.glazed =
+            o.type === "door" ? (v ? true : undefined) : skylight ? (v ? undefined : false) : undefined;
+        } else if (k === "width") {
+          // Skylights only, and always written: it is half of what the
+          // rectangle is, so leaving it to the default ratio the moment
+          // someone types the length it already has would silently resize it.
+          out.width = skylight && typeof v === "number" && v > 0 ? v : undefined;
+        } else if (k === "ceilingHeight") {
+          // An ordinary storey is the default, so it stays out of the YAML.
+          out.ceilingHeight =
+            skylight && typeof v === "number" && v !== 1 ? v : undefined;
         } else if (k === "entity") {
           out.entity = v;
           // The badge and its glyph only mean something with an entity to
@@ -667,6 +782,14 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           if (v !== "swing") out.shutterSecondaryEntity = undefined;
         }
         else if (k === "hinge" || k === "slide") out.flipH = v === "right" || undefined;
+        // Switching type is the one edit that can leave a field describing
+        // something the opening no longer is. Both directions have to be swept
+        // — a door turned into a roof light carries a slider style and a hinge
+        // jamb it can never use again, and a roof light turned into a window
+        // carries a second side and a ceiling height that would come back the
+        // day someone turned it into a skylight again, at whatever size it
+        // used to be. Left behind, both are invisible in the editor (their
+        // fields are not even rendered) and plainly wrong in the YAML.
         else if (k === "opens") out.flipV = v === "other" || undefined;
         else if (k === "style") {
           out.sliderStyle = v === "single" ? undefined : v;
@@ -675,6 +798,41 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           if (!sliderStyleHasTwoLeaves(v as SliderStyle)) out.secondaryEntity = undefined;
         }
         else if (k === "invert") out.invert = v || undefined;
+        else if (k === "type") {
+          out.type = v;
+          if (v === "skylight") {
+            out.motion = undefined;
+            out.sliderStyle = undefined;
+            out.sashSpan = undefined;
+            out.sash = undefined;
+            out.secondaryEntity = undefined;
+            out.shutterStyle = undefined;
+            out.shutterFlipV = undefined;
+            out.shutterSecondaryEntity = undefined;
+            // Its default glazing is the opposite of a door's, so a door's
+            // `glazed: true` would read as "a glazed skylight", which is
+            // every skylight, and survive as noise.
+            out.glazed = undefined;
+          } else if (skylight) {
+            out.width = undefined;
+            out.ceilingHeight = undefined;
+            out.glazed = undefined;
+            // …and the wall-opening fields a skylight was *ignoring* rather
+            // than lacking. Nothing in the editor can put them on one — the
+            // form does not offer them — but a hand-written plan can, and a
+            // skylight carrying `motion: slide` is harmless right up until the
+            // moment it becomes a window and the slider wakes up. The sweep
+            // has to run both ways or it only half works.
+            out.motion = undefined;
+            out.sliderStyle = undefined;
+            out.sashSpan = undefined;
+            out.sash = undefined;
+            out.secondaryEntity = undefined;
+            out.shutterStyle = undefined;
+            out.shutterFlipV = undefined;
+            out.shutterSecondaryEntity = undefined;
+          }
+        }
         else out[k] = v;
       }
       return out;
