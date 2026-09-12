@@ -104,6 +104,7 @@ import {
   resolveStateColor,
   entityIsActive,
   lightBadgePaint,
+  itemIsOffline,
   itemRawValue,
   isRippleEntity,
   badgeContentOf,
@@ -528,6 +529,12 @@ export class FloorplanCardEditor extends LitElement {
     // A setConfig that isn't the echo of our own emission is an external change
     // (YAML-tab edit, a different card loaded into the dialog): stale undo/redo
     // snapshots would silently revert it, so drop them.
+    //
+    // The identity check is the fast path and not the guarantee: HA hands our
+    // own object straight back, but anything patching the editor between the
+    // two can replace it with a copy. card-mod deep-clones every config on its
+    // way in, so with it installed this comparison is always the deep one --
+    // which is why `_lastEmitted` has to be a snapshot nobody else holds.
     if (this._lastEmitted && config !== this._lastEmitted && !configsEqual(config, this._lastEmitted)) {
       this._history = [];
       this._future = [];
@@ -905,7 +912,15 @@ export class FloorplanCardEditor extends LitElement {
     for (const key of ["walls", "openings", "items", "texts", "furniture", "trackers", "areas"] as const) {
       if (!out[key]?.length) delete out[key];
     }
-    this._lastEmitted = out;
+    // A snapshot, not the object being handed out. `out` travels on the event
+    // and whoever catches it may write to it before HA hands it back: card-mod
+    // patches the editor's config-changed handler and puts the user's
+    // `card_mod` block *back onto this very object* on its way past. Keeping a
+    // reference here meant comparing the next setConfig against a config we
+    // never emitted -- it had grown a key -- so the echo never matched, every
+    // edit looked like an external YAML change, and the undo stack was cleared
+    // on every keystroke (issue #257).
+    this._lastEmitted = structuredClone(out);
     this.dispatchEvent(
       new CustomEvent("config-changed", { detail: { config: out }, bubbles: true, composed: true })
     );
@@ -4134,6 +4149,9 @@ export class FloorplanCardEditor extends LitElement {
          @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "opening", id: o.id })}>
         ${renderOpening(o, {
           color: selected ? "var(--primary-color, #03a9f4)" : SKIN_WALL,
+          // The closed colour previews here too (issue #228) — unless this is
+          // the selected opening, whose whole symbol goes blue to show that.
+          inactive: selected ? undefined : o.inactiveColor,
           open: openingDefaultOpen(o),
           // Draw sliding / rolling openings partly open in the editor so the
           // motion is visible — closed, both look like a plain band, which
@@ -4399,10 +4417,23 @@ export class FloorplanCardEditor extends LitElement {
     // both are the same one line, so both land together.
     const active = entityIsActive(it.entity, st?.state);
     const activeColor = active ? (cssColor(it.activeColor) ?? lightBadgePaint(st)) : undefined;
+    // Its counterpart (issue #228), previewed for the same reason: a field
+    // that changes nothing on the canvas reads as a field that does nothing.
+    //
+    // Offline stands down here exactly as it does on the card, and the reason
+    // is the same one: an entity that has dropped out is not active either, so
+    // without this a dead sensor previews in the loudest colour on the plan as
+    // though it were genuinely shut (issue #162). It also has to be the same
+    // *because* it is a preview — one that disagrees with the card is worse
+    // than none, since the plan gets tuned against a picture the dashboard
+    // will not draw. `hass` is guarded for the card's reason too: before the
+    // first states arrive every device reads as offline.
+    const offline = !!this.hass && itemIsOffline(it, st?.state);
+    const inactiveColor = active || offline ? undefined : cssColor(it.inactiveColor);
     // Ink that reads on whatever the badge ends up painted, same rule as the card.
     // Palette references resolved first, for the reason the card documents.
     const badgeInk = contrastText(
-      resolvePaletteColor(stateColor ?? activeColor, this._config?.palette)
+      resolvePaletteColor(stateColor ?? activeColor ?? inactiveColor, this._config?.palette)
     );
     const rippleColor =
       it.rippleColor ?? stateColor ?? activeColor ?? SKIN_ACCENT;
@@ -4423,12 +4454,14 @@ export class FloorplanCardEditor extends LitElement {
         ? "state-colored"
         : active
           ? "active-colored"
-          : ""}"
+          : inactiveColor
+            ? "inactive-colored"
+            : ""}"
       style="width:${box};height:${box};transform:rotate(${cssNumber(it.angle, 0)}deg);${
         stateColor ? `--fp-state:${stateColor};` : ""
       }${activeColor ? `--fp-active:${activeColor};` : ""}${
-        badgeInk ? `--fp-ink:${badgeInk};` : ""
-      }"
+        inactiveColor ? `--fp-inactive:${inactiveColor};` : ""
+      }${badgeInk ? `--fp-ink:${badgeInk};` : ""}"
     >
       ${value
         ? html`<span
@@ -4998,14 +5031,24 @@ export class FloorplanCardEditor extends LitElement {
                 title,
                 names,
                 o.entity
-                  ? this._renderColorRow({
-                      label: "Active color",
+                  ? html`${this._renderColorRow({
+                      label: "Open color",
+                      title: "Leaf, sash and swing arc while this opening is open",
                       value: o.activeColor,
                       swatch: "#03a9f4",
                       placeholder: "(primary)",
                       onLive: (activeColor) => this._updateOpeningLive(o.id, { activeColor }),
                       onCommit: (activeColor) => this._updateOpening(o.id, { activeColor }),
-                    })
+                    })}
+                    ${this._renderColorRow({
+                      label: "Closed color",
+                      title: "Leaf, sash and swing arc while it is closed — the jambs stay the wall's color",
+                      value: o.inactiveColor,
+                      swatch: "#c62828",
+                      placeholder: "(wall)",
+                      onLive: (inactiveColor) => this._updateOpeningLive(o.id, { inactiveColor }),
+                      onCommit: (inactiveColor) => this._updateOpening(o.id, { inactiveColor }),
+                    })}`
                   : nothing
               )
             : title === "Shutter"
@@ -5107,9 +5150,9 @@ export class FloorplanCardEditor extends LitElement {
               // both invites setting one and seeing the other. Say which one is
               // in charge instead of leaving a dead control on screen.
               html`<p class="hint rule-note">
-                Colored by the state rules below — they replace the active color.
+                Colored by the state rules below — they replace the active and inactive colors.
               </p>`
-            : this._renderColorRow({
+            : html`${this._renderColorRow({
                 label: "Active color",
                 title: "Badge color while this device is on (issue #79)",
                 value: it.activeColor,
@@ -5117,7 +5160,17 @@ export class FloorplanCardEditor extends LitElement {
                 placeholder: "(theme)",
                 onLive: (activeColor) => this._updateItemLive(it.id, { activeColor }),
                 onCommit: (activeColor) => this._updateItem(it.id, { activeColor }),
-              }),
+              })}
+              ${this._renderColorRow({
+                label: "Inactive color",
+                title:
+                  "Badge color while this device is off — closed, locked or docked, whichever this entity says (issue #228)",
+                value: it.inactiveColor,
+                swatch: "#c62828",
+                placeholder: "(theme)",
+                onLive: (inactiveColor) => this._updateItemLive(it.id, { inactiveColor }),
+                onCommit: (inactiveColor) => this._updateItem(it.id, { inactiveColor }),
+              })}`,
           this._renderStateColorRules(
             it.stateColor,
             (stateColor) => this._updateItem(it.id, { stateColor }),
@@ -7036,6 +7089,13 @@ export class FloorplanCardEditor extends LitElement {
       background: var(--fp-active, var(--fp-skin-active, var(--state-light-active-color, var(--state-active-color, #fdd835))));
       border-color: var(--fp-active, var(--fp-skin-active, var(--state-light-active-color, var(--state-active-color, #fdd835))));
       color: var(--fp-ink, var(--fp-skin-active-ink, var(--text-primary-color, #212121)));
+    }
+    /* The off colour, previewed as the card paints it (issue #228). Below
+       .active-colored and .state-colored in the same order the card uses. */
+    .edit-item .badge.inactive-colored {
+      background: var(--fp-inactive);
+      border-color: var(--fp-inactive);
+      color: var(--fp-ink, var(--text-primary-color, #212121));
     }
     .state-color-rule select {
       flex: 0 0 96px;

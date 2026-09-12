@@ -114,6 +114,9 @@ export function hassRenderInputsChanged(
   watchedEntities: Iterable<string>,
 ): boolean {
   if (prev.formatEntityState !== next.formatEntityState) return true;
+  // Both formatters, because a plan can be built entirely out of attribute
+  // readings and would otherwise be watching a function it never calls.
+  if (prev.formatEntityAttributeValue !== next.formatEntityAttributeValue) return true;
   for (const id of watchedEntities) {
     if (prev.states[id] !== next.states[id]) return true;
   }
@@ -201,8 +204,7 @@ export function entityAttributeText(
   if (!entityId || !hass) return NO_STATE;
   const stateObj = hass.states[entityId];
   if (!stateObj) return NO_STATE;
-  const fmt = (hass as { formatEntityAttributeValue?: (s: unknown, a: string) => string })
-    .formatEntityAttributeValue;
+  const fmt = hass.formatEntityAttributeValue;
   if (typeof fmt === "function") return fmt(stateObj, attribute);
   const raw = (stateObj.attributes as Record<string, unknown>)?.[attribute];
   return raw === undefined || raw === null || raw === "" ? NO_STATE : String(raw);
@@ -689,6 +691,10 @@ export function openingClearFraction(o: Opening, amount: number, secondAmount?: 
   // the identity for every opening that has always filled its frame.
   if (openingMotion(o) === "swing")
     return openingSash(o) === "double" ? (a1 + a2) / 2 : a1 * openingSashSpan(o);
+  // A top-hinged sash leaves the plan rather than sweeping across it (issue
+  // #272), so nothing of it is left in the gap: open it and the whole width is
+  // clear. One leaf, so `secondAmount` has nothing to average with.
+  if (openingMotion(o) === "awning") return a1;
   switch (sliderStyleOf(o)) {
     case "biparting":
       // Each leaf recesses into its own wall, so between them they can clear
@@ -1219,6 +1225,39 @@ export function itemHiddenWhenInactive(
   // No entity, nothing that can be active — hide.
   if (!item.entity) return true;
   return !entityIsActive(item.entity, state);
+}
+
+/**
+ * Whether a device asked to appear only inside its own room, and the plan is
+ * not in that room right now (issue #222, item 1).
+ *
+ * A dense plan cannot show every minor sensor at full zoom without becoming
+ * unreadable, and the room zoom is already the gesture that says "I care about
+ * this room". So this is not a second hiding mechanism so much as a place to
+ * put the ones that only make sense up close: they drop out of the overview and
+ * come back when the room is tapped.
+ *
+ * Which room a device is in is answered geometrically, from the polygon the
+ * plan already draws — a device sitting inside the room *is* in the room, with
+ * nothing to keep in step when either one moves. `area` overrides that, by the
+ * room's id or its name, for the sensor that belongs to a room but is not drawn
+ * inside it: a doorbell on the porch, a thermostat out in the hall.
+ *
+ * A device with the flag set and no room to be in — no `area`, and not inside
+ * any polygon — never appears on the card. That is the honest reading of what
+ * it asked for, and the editor still draws it, so it stays findable and
+ * fixable rather than becoming furniture the user cannot get back.
+ */
+export function itemHiddenUntilZoomed(
+  item: Pick<FloorItem, "showOnlyWhenZoomed" | "area" | "x" | "y">,
+  zoomedArea: Area | undefined
+): boolean {
+  if (!item.showOnlyWhenZoomed) return false;
+  if (!zoomedArea) return true;
+  // Named room wins over geometry: it is the explicit answer, and it is the
+  // only one available for a device drawn outside every polygon.
+  if (item.area) return item.area !== zoomedArea.id && item.area !== zoomedArea.name;
+  return !pointInPolygon(zoomedArea.points ?? [], item.x, item.y);
 }
 
 export function itemBadgeHidden(
@@ -2435,9 +2474,10 @@ export function kindFromEntity(entity: string): ItemKind {
 /**
  * How an opening moves — `swing` (hinged door / casement window), `slide`
  * (panels travelling along the wall), `roll` (a curtain leaving the floor
- * plane) or `fixed` (issue #218: it does not). Defaults to `swing`.
+ * plane), `fixed` (issue #218: it does not) or `awning` (issue #272: hinged at
+ * the head, swung out at the sill). Defaults to `swing`.
  */
-export function openingMotion(o: Pick<Opening, "motion">): "swing" | "slide" | "roll" | "fixed" {
+export function openingMotion(o: Pick<Opening, "motion">): "swing" | "slide" | "roll" | "fixed" | "awning" {
   return o.motion ?? "swing";
 }
 
@@ -3235,6 +3275,17 @@ export interface OpeningStyle {
    */
   accent?: string;
   /**
+   * Color of the moving parts while **not** `active` (issue #228). Defaults to
+   * `color`, which is what every opening drew before this existed.
+   *
+   * Deliberately separate from `color` rather than reusing it: `color` also
+   * draws the jambs and the static frame, and those must stay the wall's colour
+   * whichever way the door is — recolouring them would turn the symbol from a
+   * hole in a wall into a coloured shape. This is the leaf, the sash, the swing
+   * arc, and a shutter that is down.
+   */
+  inactive?: string;
+  /**
    * External roller shutter layered over the opening (issue #74): how far
    * open (0..1, see {@link shutterAmount}) and whether it wears the accent.
    * Rendered as the roll curtain on top of the sash.
@@ -3282,7 +3333,12 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   const cutH = WALL_THICKNESS + 4;
   // The moving parts take the accent color when actively open (sensor-driven).
   // Sanitised: color/accent are config-supplied and land in `style="stroke/fill:…"`.
-  const tone = cssColorOr(active ? accent : color, SKIN_ACCENT);
+  // Sanitised here rather than left to `cssColorOr` below, which falls back to
+  // the *accent* — the colour this symbol wears when it is open. `inactive` is
+  // documented to default to `color`, so a value cssColor refuses has to land
+  // on the wall colour; passing it through raw drew a shut door as an open one
+  // on nothing worse than a typo.
+  const shut = cssColor(style.inactive) ?? color;
   // Fraction open (0..1) drives partial swing/slide. Defaults to the binary
   // `open` so callers that don't pass `amount` render exactly as before.
   const amt = Math.max(0, Math.min(1, style.amount ?? (open ? 1 : 0)));
@@ -3292,9 +3348,28 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   // a branch because two shapes now have two leaves — sliding panels and a
   // hinged double — and both read the same pair.
   const amt2 = style.second ? Math.max(0, Math.min(1, style.second.amount)) : amt;
-  const tone2 = style.second
-    ? cssColorOr(style.second.active ? accent : color, SKIN_ACCENT)
-    : tone;
+  /**
+   * The colour a leaf wears, from what it is *doing* rather than from what its
+   * sensor says (issue #228).
+   *
+   * `active` and "drawn shut" agree for every entity-bound opening, which is
+   * why this started life as `active ? accent : shut`. They come apart with no
+   * entity: a swing door with no sensor is drawn **open** by the static
+   * floor-plan convention ({@link openingDefaultOpen}) and is never active, so
+   * reading "not active" as "closed" painted a wide-open door in the colour
+   * that is documented to mean shut.
+   *
+   * Asking the amount instead makes the option mean what it says on all four
+   * corners: an unbound window (drawn shut) wears it, an unbound door (drawn
+   * open) does not, and a bound opening is unchanged either way. It also gets
+   * the per-leaf case right for free — a double with one sash open and one shut
+   * paints each from its own amount, which a single `active` flag could not
+   * express.
+   */
+  const leafTone = (isActive: boolean, a: number) =>
+    cssColorOr(isActive ? accent : a === 0 ? shut : color, SKIN_ACCENT);
+  const tone = leafTone(active, amt);
+  const tone2 = style.second ? leafTone(!!style.second.active, amt2) : tone;
 
   let body: SVGTemplateResult;
   if (openingMotion(o) === "swing") {
@@ -3394,6 +3469,76 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
         }
         <line x1=${-half} y1="0" x2=${half} y2="0"
               stroke=${color} stroke-width=${t} />`;
+  } else if (openingMotion(o) === "awning") {
+    // Top-hinged window (issue #272): hinged at its head, swinging out at the
+    // sill. "My windows are hinged at the top and swing out at the bottom."
+    //
+    // Every other opening we draw rotates *within* the plan — a casement
+    // sweeps an arc across the floor, a slider travels along the wall. This one
+    // rotates about a horizontal axis and leaves the plan altogether, so the
+    // plan view is the sash seen edge-on: a blade projecting from the wall,
+    // narrowing as it goes because you are looking along it, with the hinge
+    // knuckles left behind on the wall line and the glass it vacated drawn as
+    // a broken line.
+    //
+    // Only `amount` drives it. `sash` and `flipH` are meaningless here (there
+    // is no hinge jamb to pick and no second leaf to hang), while `flipV` falls
+    // out of the mirror every opening already gets — which is also how you draw
+    // a bottom-hinged hopper that opens inward.
+    const hingeW = Math.min(12, o.length * 0.16);
+    const hingeH = 5;
+    // Knuckle centres, tucked just inside each jamb.
+    const hx = half - hingeW / 2 - 1;
+    // The blade spans between the knuckles, and projects with `amt`. Capped
+    // against the opening's own half-length so a wide window does not throw a
+    // blade halfway across the room.
+    const bx = Math.max(0, hx - hingeW / 2);
+    const depth = Math.min(half * 0.62, 34) * amt;
+    // Capped against the blade's own half-width. A tiny opening leaves almost
+    // no room between the knuckles — `bx` reaches 0 below about 3.5 units —
+    // and an uncapped taper then pulls the far corners past each other, so the
+    // "trapezoid" crosses itself and draws inverted. Nothing that small is
+    // legible on a plan, but the editor's Length field allows it, and a shape
+    // that folds through itself is not a drawing of anything. The cap only
+    // engages under ~4.5 units; at every size you would actually draw, the
+    // taper is well under it.
+    const taper = Math.min(depth * 0.16, bx * 0.4);
+    const openNow = amt > 0.02;
+    body = svg`
+        <!-- jambs, as any window -->
+        <line x1=${-half} y1=${-cutH / 2} x2=${-half} y2=${cutH / 2}
+              stroke=${color} stroke-width="2" />
+        <line x1=${half} y1=${-cutH / 2} x2=${half} y2=${cutH / 2}
+              stroke=${color} stroke-width="2" />
+        <!-- The glass line: solid while the sash is shut and sitting in it,
+             broken once the sash has swung out and left the gap behind. -->
+        <line x1=${-half} y1="0" x2=${half} y2="0"
+              stroke=${tone} stroke-width="1.5"
+              stroke-dasharray=${openNow ? "6 4" : nothing} />
+        ${
+          openNow
+            ? // A polyline, not a polygon, and that is the whole point of the
+              // broken line above it. A closed shape strokes its own base back
+              // along y=0 — straight over the dashes, solid — and the only
+              // glass left uncovered would be the sliver outside `bx`, which
+              // is exactly where the knuckles sit. The line would have been
+              // dashed in the markup and solid on the screen at every size.
+              svg`<polyline
+                    points="${-bx},0 ${-bx + taper},${-depth} ${bx - taper},${-depth} ${bx},0"
+                    fill="none" stroke=${tone} stroke-width="1.5"
+                    stroke-linejoin="round" />`
+            : nothing
+        }
+        <!-- Hinge knuckles, drawn whether or not it is open: they are what says
+             this window is top-hung rather than fixed when it happens to be
+             shut, and the request asked for them by name. -->
+        ${[-hx, hx].map(
+          (cx) => svg`
+          <rect x=${cx - hingeW / 2} y=${-hingeH / 2} width=${hingeW} height=${hingeH}
+                fill="none" stroke=${tone} stroke-width="1.25" />
+          <line x1=${cx} y1=${-hingeH / 2} x2=${cx} y2=${hingeH / 2}
+                stroke=${tone} stroke-width="1.25" />`
+        )}`;
   } else if (openingMotion(o) === "roll") {
     // Roll-up cover — garage door, roller shutter (issues #45 / #47). Unlike a
     // slider nothing travels along the wall: the curtain leaves the floor
@@ -3544,21 +3689,19 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
   // sash so a shut shutter visibly covers an open window. Its own
   // active/accent state is independent of the window's.
   if (style.shutter) {
-    const shutterTone = cssColorOr(
-      style.shutter.active ? (style.shutter.accent ?? accent) : color,
-      SKIN_ACCENT
-    );
+    // A shutter that is down follows the opening's closed colour, the way one
+    // that is up follows its accent (issue #228).
     const shutterAmt = Math.max(0, Math.min(1, style.shutter.amount));
+    // Same rule as the leaf above, with the shutter's own accent: a shutter is
+    // "shut" when it is down, not merely when its contact is quiet.
+    const shutterLeaf = (isActive: boolean | undefined, a: number) =>
+      cssColorOr(isActive ? (style.shutter!.accent ?? accent) : a === 0 ? shut : color, SKIN_ACCENT);
+    const shutterTone = shutterLeaf(style.shutter.active, shutterAmt);
     // The hinged pair's other panel, on its own contact when it has one
     // (issue #159); without one it folds with the first, as before.
     const second = style.shutter.second;
-    const shutterTone2 = second
-      ? cssColorOr(
-          second.active ? (style.shutter.accent ?? accent) : color,
-          SKIN_ACCENT
-        )
-      : shutterTone;
     const shutterAmt2 = second ? Math.max(0, Math.min(1, second.amount)) : shutterAmt;
+    const shutterTone2 = second ? shutterLeaf(second.active, shutterAmt2) : shutterTone;
     body = svg`${body}${
       style.shutter.style === "swing"
         ? swingShutter(
@@ -3683,6 +3826,26 @@ export function rotatedCanvasSize(
   rot: PlanRotation
 ): { w: number; h: number } {
   return rot === 90 || rot === 270 ? { w: h, h: w } : { w, h };
+}
+
+/**
+ * Map a plan *direction* into the rotated (displayed) frame (issue #280).
+ *
+ * The overlay is HTML, so unlike the SVG it is never transformed as a whole —
+ * each anchor is remapped instead, which is what keeps badges and labels
+ * upright at any rotation. That is right for a glyph and wrong for a bearing:
+ * an angle like a motion sensor's ripple direction describes where the sensor
+ * looks *in the room*, so when the plan turns under it the angle has to turn
+ * too, or the cone points at a different wall than the one it was aimed at.
+ *
+ * Degrees clockwise from plan-north, matching how {@link rotatePlanPoint} turns
+ * the plan: at 90° the top of the plan becomes the right of the screen, so a
+ * bearing of 0 becomes 90. The result is normalised into 0..360 so callers can
+ * hand it straight to CSS.
+ */
+export function rotatePlanAngle(angle: number, rot: PlanRotation): number {
+  const a = cssNumber(angle, 0) + rot;
+  return ((a % 360) + 360) % 360;
 }
 
 /** Map a plan point into the rotated (displayed) frame. */

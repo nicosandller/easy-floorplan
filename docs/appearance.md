@@ -148,6 +148,51 @@ palette:
     color: var(--primary-color)
 ```
 
+## Top-hinged windows
+
+*"My windows are hinged at the top and swing out at the bottom."*
+
+Every other opening the card draws rotates **within** the plan: a casement
+sweeps an arc across the floor, a slider travels along the wall. A top-hung
+sash rotates about a horizontal axis and leaves the plan altogether — so in
+plan you see it edge-on, a blade projecting from the wall and narrowing as it
+goes, with the hinge knuckles left behind on the wall line and the glass it
+vacated drawn as a broken line.
+
+![A top-hinged window shut, part open, wide open, and opening inward](img/awning-window.png)
+
+```yaml
+openings:
+  - id: bath
+    type: window
+    motion: awning
+    x: 300
+    y: 500
+    length: 120
+    angle: 0
+    entity: binary_sensor.bathroom_window
+```
+
+Bind a position-aware `cover` and it projects proportionally, the way a partly
+open casement swings partly.
+
+### A motion, not a hinge direction
+
+`awning` sits beside `swing`, `slide`, `roll` and `fixed` rather than being a
+hinge setting on `swing`. Calling it a direction would have left two neighbours
+meaningless without saying so: an awning has no hinge **jamb** to pick, so
+`flipH` has nothing to mirror, and no second leaf to hang, so `sash` has nothing
+to count. The editor offers neither, and the card ignores both.
+
+`flipV` **does** still mean something — which side of the wall the sash swings
+out to. Which is also how you draw a bottom-hinged **hopper** that tilts inward:
+same picture, other side of the wall, so it needs no motion of its own.
+
+Offered on windows only, for the same reason `fixed` is: a top-hung sash is a
+window, and a top-hung door is not a thing. A hand-written config may still set
+it on a door and the card draws it honestly — this is about what the editor
+suggests, not what it allows.
+
 ## Overlay scale
 
 The card draws in two layers. Walls, doors, furniture and room fills are SVG, scaled from
@@ -303,6 +348,13 @@ rotationLandscape: 0   # desktop, wall tablet
 In the editor: **Project → Display**, under *Rotate display*.
 
 Icons and labels stay upright at every angle, so a rotated plan is still readable.
+
+A **bearing** is the exception, and has to be: a ripple's `rippleDirection` says which way
+a sensor looks *in the room*, so it turns with the drawing rather than staying put on
+screen. Otherwise a cone aimed at a wall in the editor pointed at open space once the card
+was rotated (issue #280).
+
+![The same sensor at every rotation: before, the cone stays pointing up the screen while the wall moves; after, it follows the wall](img/ripple-direction-rotation.png)
 
 ## Styling hooks (card-mod)
 

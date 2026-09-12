@@ -1,0 +1,10 @@
+{
+  "id": "cornerShowerCurved",
+  "name": "curved corner shower",
+  "category": "bath",
+  "keywords": ["shower", "corner", "cubicle", "stall", "dusche"],
+  "size": { "w": 100, "h": 100 },
+  "parts": [
+    { "path": [["M", 100, 0], ["L", 100, 100], ["L", 94, 100], ["C", 47, 105, -5, 53, 0, 6], ["L", 0, 0], ["Z"]], "role": "body" }
+  ]
+}

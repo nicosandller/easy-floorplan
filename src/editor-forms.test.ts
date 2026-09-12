@@ -26,6 +26,7 @@ import {
   floorImageForm,
   areaForm,
   areaNameForm,
+  itemGroup7aForm,
 } from "./editor-forms";
 import { itemHasLabel } from "./render";
 import type { FormField } from "./editor-forms";
@@ -2064,5 +2065,59 @@ describe("itemLabelForm — disableLabelColor and custom color state machine", (
       useCustomLabelColor: true,
       labelCustomColor: "#00ff00",
     });
+  });
+});
+
+describe("itemGroup7aForm - showOnlyWhenZoomed", () => {
+  it("includes showOnlyWhenZoomed field and handles patching correctly", () => {
+    // Provide a fully compliant FloorItem mock
+    const item: FloorItem = { 
+      id: "test-item", 
+      x: 10, 
+      y: 10, 
+      entity: "sensor.test", 
+      kind: "sensor" 
+    };
+    const spec = itemGroup7aForm(item);
+
+    // 1. Verify the field exists in the form schema
+    const field = spec.fields.find((f) => f.name === "showOnlyWhenZoomed");
+    expect(field).toBeDefined();
+    expect(field?.selector).toEqual({ boolean: {} });
+
+    // 2. Verify data initialization defaults to false/undefined
+    expect(spec.data.showOnlyWhenZoomed).toBe(false);
+
+    // 3. Verify toPatch keeps true values
+    const patchTrue = spec.toPatch({ showOnlyWhenZoomed: true });
+    expect(patchTrue.showOnlyWhenZoomed).toBe(true);
+
+    // 4. Verify toPatch cleans up falsy/undefined values
+    const patchFalse = spec.toPatch({ showOnlyWhenZoomed: false });
+    expect(patchFalse.showOnlyWhenZoomed).toBeUndefined();
+  });
+
+  it("leaves the flag alone when the user is editing something else", () => {
+    // `_renderForm` diffs the form's data against the event and hands `toPatch`
+    // only the keys that changed, and `_updateItem` merges the result with a
+    // spread — so a key merely *present* and undefined overwrites the config.
+    // Group 7a holds two dozen other fields; pruning unconditionally meant
+    // switching on "Hide by condition" quietly switched this off.
+    //
+    // Asserted on key presence, not on the value: `toBeUndefined()` passes
+    // either way, which is exactly how this got through the first time.
+    const on = { id: "i", x: 0, y: 0, entity: "sensor.a", kind: "sensor",
+                 showOnlyWhenZoomed: true } as FloorItem;
+    const patch = itemGroup7aForm(on).toPatch({ enableHideByEntity: true });
+    expect("showOnlyWhenZoomed" in patch).toBe(false);
+    expect({ ...on, ...patch }.showOnlyWhenZoomed).toBe(true);
+  });
+
+  it("still prunes it when the user is the one turning it off", () => {
+    const on = { id: "i", x: 0, y: 0, entity: "sensor.a", kind: "sensor",
+                 showOnlyWhenZoomed: true } as FloorItem;
+    const patch = itemGroup7aForm(on).toPatch({ showOnlyWhenZoomed: false });
+    expect("showOnlyWhenZoomed" in patch).toBe(true);
+    expect({ ...on, ...patch }.showOnlyWhenZoomed).toBeUndefined();
   });
 });

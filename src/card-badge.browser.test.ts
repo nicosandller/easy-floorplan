@@ -112,6 +112,59 @@ describe("badge contents on the rendered card", () => {
   });
 });
 
+describe("an attribute reading is worded by HA, on the card too (issue #260)", () => {
+  // A cover's position is a bare number on the state object; the "%" comes
+  // from HA's own attribute formatter. The editor hands the real `hass` to the
+  // helper that asks for it, the card hands it a RenderHass built from that —
+  // and the build did not carry the formatter, so the same cover read "50%"
+  // while you were editing it and "50" once you saved.
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  async function mountCover() {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    host.style.height = "540px";
+    document.body.appendChild(host);
+
+    const card = document.createElement("easy-floorplan-card") as FloorplanCard;
+    card.setConfig({
+      type: "custom:easy-floorplan-card",
+      width: 1000,
+      height: 600,
+      floors: [{
+        id: "f1", name: "Floor 1", walls: [], openings: [], texts: [], furniture: [], trackers: [], areas: [],
+        items: [{
+          id: "c1", kind: "cover", entity: "cover.blind", x: 500, y: 300,
+          name: "Blind", showName: true, showState: true, attribute: "current_position",
+        } as unknown as FloorItem],
+      }],
+    } as FloorplanCardConfig);
+    card.hass = {
+      states: {
+        "cover.blind": {
+          entity_id: "cover.blind",
+          state: "open",
+          attributes: { current_position: 50, device_class: "shutter" },
+        },
+      },
+      entities: {},
+      formatEntityState: (st: { state: string }) => st.state,
+      formatEntityAttributeValue: (_st: unknown, attribute: string) =>
+        attribute === "current_position" ? "50%" : "?",
+    } as unknown as FloorplanCard["hass"];
+    host.appendChild(card);
+    await card.updateComplete;
+    return card;
+  }
+
+  it("keeps the unit HA put on the position", async () => {
+    const card = await mountCover();
+    expect(card.shadowRoot?.querySelector(".label")?.textContent?.trim()).toContain("50%");
+  });
+});
+
 describe("a device is drawn from one instant, not two", () => {
   // Replay renders the plan from `renderHass` — history at the playback head.
   // Anything in a device that still read `this.hass` disagreed with the rest

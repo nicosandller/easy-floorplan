@@ -1,5 +1,12 @@
 import { describe, it, expect } from "vitest";
-import { renderOpening, renderSunlight, SUN_REACH, SUN_ACROSS } from "./render";
+import {
+  openingClearFraction,
+  openingHasTwoLeaves,
+  renderOpening,
+  renderSunlight,
+  SUN_REACH,
+  SUN_ACROSS,
+} from "./render";
 import type { OpeningStyle } from "./render";
 import type { Opening, Wall } from "./types";
 import { nothing } from "lit";
@@ -1245,5 +1252,336 @@ describe("renderOpening — a sash narrower than its frame (issue #218)", () => 
     });
     expect(two).toContain("fp-leaf-r");
     expect(two).toContain("width=45"); // each leaf still half the opening
+  });
+});
+
+describe("an opening can say what colour it is when closed (issue #228)", () => {
+  // "users could specify separate colors for switches or doors when they are
+  // on/open and off/closed". A closed door was always a line the same colour
+  // as the wall it sits in, which is exactly wrong when the thing you need to
+  // notice is a door that is shut.
+  const door = { type: "door", entity: "binary_sensor.front" } as Partial<Opening>;
+
+  it("paints the moving parts with the closed colour", () => {
+    const svg = svgOf(door, { color: "#000", inactive: "#c62828", active: false, open: false });
+    expect(svg).toContain("#c62828");
+  });
+
+  it("leaves the frame the wall colour, and only moves the sash", () => {
+    // `color` also draws the static frame. Recolouring that would turn the
+    // symbol from a hole in a wall into a coloured shape, so the closed colour
+    // must not reach it. A window is the case that draws both at once — a
+    // closed door and a closed slider draw no frame stroke to check.
+    const svg = svgOf(
+      { type: "window", entity: "binary_sensor.front" },
+      { color: "#0000ff", inactive: "#c62828", active: false, open: false },
+    );
+    expect(svg).toContain("#0000ff");
+    expect(svg).toContain("#c62828");
+  });
+
+  it("works for every kind of opening, not just the one it was written for", () => {
+    // Both types, and both motions — a slider's panel is drawn by a different
+    // branch from a swing leaf, so covering one proves nothing about the other.
+    const shapes = [
+      { type: "door" },
+      { type: "window" },
+      { type: "door", motion: "slide" },
+      { type: "window", motion: "slide" },
+    ] as const;
+    for (const shape of shapes) {
+      const svg = svgOf(
+        { ...shape, entity: "binary_sensor.front" },
+        { color: "#000", inactive: "#c62828", active: false, open: false },
+      );
+      expect(svg, `${JSON.stringify(shape)} should paint its closed colour`).toContain("#c62828");
+    }
+  });
+
+  it("is ignored while the opening is open, where the accent belongs", () => {
+    const svg = svgOf(door, {
+      color: "#000",
+      inactive: "#c62828",
+      active: true,
+      open: true,
+      accent: "#00ff00",
+    });
+    expect(svg).toContain("#00ff00");
+    expect(svg).not.toContain("#c62828");
+  });
+
+  it("changes nothing for an opening that does not set one", () => {
+    // The default path has to be byte-identical, since every existing plan is
+    // on it.
+    const withOut = svgOf(door, { color: "#123456", active: false, open: false });
+    const withUndefined = svgOf(door, {
+      color: "#123456",
+      inactive: undefined,
+      active: false,
+      open: false,
+    });
+    expect(withUndefined).toBe(withOut);
+  });
+
+  it("carries the second leaf of a double, which has its own state", () => {
+    // A pair of sashes with one open and one shut should show both colours —
+    // the shut one is the whole point of the feature.
+    const svg = svgOf(
+      { ...door, sash: "double" },
+      {
+        color: "#000",
+        inactive: "#c62828",
+        accent: "#00ff00",
+        active: true,
+        open: true,
+        second: { amount: 0, active: false },
+      },
+    );
+    expect(svg).toContain("#00ff00");
+    expect(svg).toContain("#c62828");
+  });
+
+  it("follows what the leaf is doing, not what its sensor says", () => {
+    // `active` and "drawn shut" agree for every entity-bound opening, which is
+    // why the tone started life as `active ? accent : shut`. They come apart
+    // with no entity: a swing door is drawn *open* by the plan convention and
+    // is never active, so reading one as the other painted a wide-open door in
+    // the colour documented to mean closed.
+    const openDoor = svgOf(
+      { type: "door" },
+      { color: "#0000ff", inactive: "#c62828", active: false, open: true, amount: 1 },
+    );
+    expect(openDoor).not.toContain("#c62828");
+    expect(openDoor).toContain("#0000ff");
+
+    // Shut, the same door does wear it.
+    const shutDoor = svgOf(
+      { type: "door" },
+      { color: "#0000ff", inactive: "#c62828", active: false, open: false, amount: 0 },
+    );
+    expect(shutDoor).toContain("#c62828");
+  });
+
+  it("paints one sash of a double and not the other", () => {
+    // Falls out of asking each leaf's own amount rather than one `active` flag,
+    // which could not express a pair with one sash open and one shut.
+    const svg = svgOf(
+      { type: "window", sash: "double", entity: "binary_sensor.a" },
+      {
+        color: "#0000ff",
+        inactive: "#c62828",
+        accent: "#00ff00",
+        active: true,
+        open: true,
+        amount: 1,
+        second: { amount: 0, active: false },
+      },
+    );
+    expect(svg).toContain("#00ff00"); // the open sash
+    expect(svg).toContain("#c62828"); // the shut one
+  });
+
+  it("reaches a top-hinged sash too, which arrived at the same time", () => {
+    // #272 merged while this was open, and its blade and glass line are drawn
+    // from the same `tone` every other motion uses — so it gets a closed colour
+    // for free. Pinned because "for free" is exactly the kind of thing a later
+    // refactor of that branch could take away without noticing.
+    const svg = svgOf(
+      { type: "window", motion: "awning", entity: "cover.win" },
+      { color: "#0000ff", inactive: "#c62828", active: false, open: false, amount: 0 },
+    );
+    expect(svg).toContain("#c62828");
+    // …and its jambs are still the wall's colour, as every other opening's are.
+    expect(svg).toContain("#0000ff");
+  });
+
+  it("takes a shutter down with it, as the accent takes one up", () => {
+    const svg = svgOf(
+      { ...door, shutterEntity: "cover.shutter" },
+      {
+        color: "#000",
+        inactive: "#c62828",
+        active: false,
+        open: false,
+        shutter: { amount: 0, active: false, style: "roll" },
+      },
+    );
+    expect(svg).toContain("#c62828");
+  });
+});
+
+describe("an unusable closed colour falls back to the wall, not the accent (issue #228)", () => {
+  // `inactive` is documented to default to `color`. It reached
+  // `cssColorOr(…, SKIN_ACCENT)` unsanitised, so a value cssColor refuses did
+  // not fall back to the wall — it fell all the way through to the accent,
+  // which is the colour this symbol wears when it is *open*. A typo in
+  // `inactiveColor` therefore drew a shut door as an open one.
+  const shut = { color: "#123456", open: false, amount: 0 } as const;
+
+  it("draws an unsanitisable value as the wall colour", () => {
+    const svg = svgOf({ type: "door" }, { ...shut, inactive: "url(javascript:alert(1))" });
+    expect(svg).toContain("#123456");
+    expect(svg).not.toContain("javascript");
+  });
+
+  it("still honours a usable one", () => {
+    expect(svgOf({ type: "door" }, { ...shut, inactive: "#c62828" })).toContain("#c62828");
+  });
+});
+
+describe("a window can be hinged at the top (issue #272)", () => {
+  // "My windows are hinged at the top and swing out at the bottom." Every
+  // other opening rotates within the plan; this one rotates about a horizontal
+  // axis and leaves it, so the plan view is the sash edge-on — a blade
+  // projecting from the wall, with the hinges left on the wall line.
+  const awning = { type: "window", motion: "awning", entity: "cover.win" } as Partial<Opening>;
+  /** The broken-line pattern the vacated glass line is drawn with. */
+  const DASH = "6 4";
+
+  it("projects a tapered blade once it is open", () => {
+    const svg = svgOf(awning, { color: "#000", open: true, amount: 1 });
+    expect(svg).toContain("<polyline");
+    // Tapered, not a rectangle: the two far corners are pulled in.
+    const pts = /points="([^"]+)"/.exec(svg)?.[1].split(" ").map((p) => p.split(",").map(Number));
+    expect(pts).toHaveLength(4);
+    const [base1, far1, far2, base2] = pts!;
+    expect(Math.abs(far1[0])).toBeLessThan(Math.abs(base1[0]));
+    expect(Math.abs(far2[0])).toBeLessThan(Math.abs(base2[0]));
+    // …and it projects away from the wall line rather than sitting on it.
+    expect(far1[1]).toBeLessThan(0);
+    expect(base1[1]).toBe(0);
+  });
+
+  it("draws no blade while it is shut", () => {
+    const svg = svgOf(awning, { color: "#000", open: false, amount: 0 });
+    expect(svg).not.toContain("<polyline");
+  });
+
+  it("stays a trapezoid at any length, rather than folding through itself", () => {
+    // The taper is a fraction of how far the sash projects, and the blade's
+    // half-width shrinks to nothing on a very short opening — so uncapped, the
+    // two far corners cross and the shape draws inverted. Below ~3.5 units
+    // that is every awning. Nothing that small is legible on a plan, but the
+    // editor's Length field goes down to 1, and a shape folded through itself
+    // is not a drawing of anything.
+    const far = (length: number) => {
+      const svg = svgOf({ ...awning, length }, { color: "#000", open: true, amount: 1 });
+      const pts = /points="([^"]+)"/.exec(svg)![1].split(" ").map((p) => p.split(",").map(Number));
+      return [pts[1]![0], pts[2]![0]] as const;
+    };
+    for (const length of [1, 2, 3, 3.5, 5, 20, 140]) {
+      const [left, right] = far(length);
+      expect(left, `length ${length}`).toBeLessThanOrEqual(right);
+    }
+  });
+
+  it("does not blunt the taper at a length anyone would draw", () => {
+    // The guard against the cap quietly reshaping ordinary windows: at 140
+    // units the taper is a sixth of the projection, nowhere near the cap.
+    const svg = svgOf({ ...awning, length: 140 }, { color: "#000", open: true, amount: 1 });
+    const pts = /points="([^"]+)"/.exec(svg)![1].split(" ").map((p) => p.split(",").map(Number));
+    const [base, far1] = [pts[0]![0], pts[1]![0]];
+    expect(Math.abs(far1 - base)).toBeCloseTo(5.44, 2);
+  });
+
+  it("leaves the broken glass line showing under the blade", () => {
+    // The blade is an open shape on purpose. As a polygon it stroked its own
+    // base straight back along the wall line — solid, over the dashes — and
+    // the only glass left uncovered was the sliver outside the blade, which is
+    // exactly where the knuckles sit. The dash pattern was in the markup and
+    // the line was solid on screen at every size, so the test above passed on
+    // a picture that never showed it.
+    const svg = svgOf(awning, { color: "#000", open: true, amount: 1 });
+    expect(svg).not.toContain("<polygon");
+  });
+
+  it("projects further the wider it is open", () => {
+    const depth = (amount: number) => {
+      const svg = svgOf(awning, { color: "#000", open: true, amount });
+      return Math.abs(Number(/points="[^"]*?,(-[\d.]+)/.exec(svg)![1]));
+    };
+    expect(depth(1)).toBeGreaterThan(depth(0.4));
+    expect(depth(0.4)).toBeGreaterThan(0);
+  });
+
+  it("breaks the glass line only once the sash has left it", () => {
+    // Shut, the sash is sitting in the opening and the line is solid. Open,
+    // the line is what the sash vacated.
+    // Asserted on the dash pattern rather than the attribute name: the
+    // attribute is bound to lit's `nothing` when shut, which removes it in a
+    // real DOM but survives this serializer as a placeholder.
+    expect(svgOf(awning, { color: "#000", open: false, amount: 0 })).not.toContain(DASH);
+    expect(svgOf(awning, { color: "#000", open: true, amount: 1 })).toContain(DASH);
+  });
+
+  it("shows the hinges whether or not it is open", () => {
+    // The request asked for them by name, and shut they are the only thing
+    // that says this window is top-hung rather than fixed.
+    for (const amount of [0, 1]) {
+      const svg = svgOf(awning, { color: "#000", open: amount > 0, amount });
+      expect((svg.match(/<rect/g) ?? []).length, `amount=${amount}`).toBe(2);
+    }
+  });
+
+  it("is not a casement — no swinging leaf, no arc", () => {
+    const svg = svgOf(awning, { color: "#000", open: true, amount: 1 });
+    expect(svg).not.toContain("fp-door-leaf");
+    expect(svg).not.toContain("fp-door-arc");
+    expect(svg).not.toContain("fp-slide-panel");
+  });
+
+  it("wears the accent while it is actively open", () => {
+    const svg = svgOf(awning, { color: "#000", open: true, amount: 1, active: true, accent: "#00ff00" });
+    expect(svg).toContain("#00ff00");
+  });
+
+  it("opens the other way with flipV, which is how a hopper is drawn", () => {
+    // A bottom-hinged sash tilting inward is the same picture on the other
+    // side of the wall, so it needs no motion of its own.
+    const out = svgOf(awning, { color: "#000", open: true, amount: 1 });
+    const inward = svgOf({ ...awning, flipV: true }, { color: "#000", open: true, amount: 1 });
+    expect(out).toContain("scale(1 1)");
+    expect(inward).toContain("scale(1 -1)");
+  });
+
+  it("ignores sash and flipH, which have nothing to describe here", () => {
+    // There is no hinge jamb to pick and no second leaf to hang. Pinned so a
+    // config carrying them from a previous motion cannot change the drawing.
+    const plain = svgOf(awning, { color: "#000", open: true, amount: 1 });
+    const noisy = svgOf({ ...awning, sash: "single", flipH: true }, {
+      color: "#000",
+      open: true,
+      amount: 1,
+    });
+    expect(noisy.replace(/scale\(-1 1\)/, "scale(1 1)")).toBe(plain);
+  });
+});
+
+describe("openingClearFraction — a top-hinged sash leaves the plan (issue #272)", () => {
+  const awning = {
+    id: "a",
+    x: 0,
+    y: 0,
+    length: 100,
+    angle: 0,
+    type: "window",
+    motion: "awning",
+  } as Opening;
+
+  it("clears its whole width when open, because nothing is left in the gap", () => {
+    expect(openingClearFraction(awning, 1)).toBe(1);
+    expect(openingClearFraction(awning, 0.5)).toBe(0.5);
+    expect(openingClearFraction(awning, 0)).toBe(0);
+  });
+
+  it("has one leaf, so a second amount changes nothing", () => {
+    expect(openingClearFraction(awning, 1, 0)).toBe(1);
+  });
+
+  it("is a one-sash opening, so the editor offers it no second contact", () => {
+    // A casement pair and a biparting slider each take a sensor per leaf. A
+    // top-hung sash is one piece, and offering a second contact would be a
+    // control that drives nothing.
+    expect(openingHasTwoLeaves(awning)).toBe(false);
   });
 });

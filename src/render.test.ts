@@ -96,6 +96,7 @@ import {
   labelPositionOf,
   editorItemLabel,
   itemHiddenWhenInactive,
+  itemHiddenUntilZoomed,
   resolveStateColor,
   itemLabelSize,
   areaLabelSize,
@@ -125,6 +126,7 @@ import {
   resolvePlanRotation,
   subscribeOrientation,
   rotatedCanvasSize,
+  rotatePlanAngle,
   rotatePlanPoint,
   planRotationTransform,
   polygonCentroid,
@@ -155,6 +157,7 @@ import {
   itemBadgeHidden,
   itemLabelColor,
 } from "./render";
+import { buildRenderHass } from "./replay-history/render-state-service";
 import type { FloorplanCardConfig, Opening, RenderHass } from "./types";
 import { symbolCatalog, symbolSize } from "./symbols";
 
@@ -2182,6 +2185,34 @@ describe("itemStateText with attributes (issue #70)", () => {
 
   it("missing attribute renders the em dash", () => {
     expect(itemStateText(climate(), { entity: "climate.home", attribute: "nope" })).toBe("—");
+  });
+
+  it("carries that formatter through the slice the card renders from (issue #260)", () => {
+    // The editor hands the real `hass` to these helpers; the card hands them a
+    // RenderHass built from it. Anything the build drops is not missing, it is
+    // replaced by the raw attribute — which is how a cover position read "50%"
+    // in the editor and "50" on the card.
+    const h = climate() as unknown as Record<string, unknown>;
+    h.formatEntityAttributeValue = (_s: unknown, a: string) => `fmt:${a}`;
+    const rendered = buildRenderHass(
+      h as never,
+      ["climate.home"],
+      { getStateAt: () => new Map() } as never,
+      false,
+      0,
+    );
+    expect(itemStateText(rendered, { entity: "climate.home", attribute: "current_temperature" }))
+      .toBe("fmt:current_temperature");
+  });
+
+  it("re-renders when HA rebuilds the attribute formatter", () => {
+    // A plan built only out of attribute readings never calls the state
+    // formatter, so its identity is not a signal that this plan's wording
+    // changed.
+    const base = climate() as unknown as Record<string, unknown>;
+    const prev = { ...base, formatEntityAttributeValue: () => "old" } as never;
+    const next = { ...base, formatEntityAttributeValue: () => "new" } as never;
+    expect(hassRenderInputsChanged(prev, next, ["climate.home"])).toBe(true);
   });
 });
 
@@ -5631,6 +5662,76 @@ describe("renderGlow (issue #6)", () => {
   });
 });
 
+describe("itemHiddenUntilZoomed (issue #222)", () => {
+  // A room across the top-left quadrant of a 1000x600 plan.
+  const living: Area = {
+    id: "a1",
+    name: "Living",
+    points: [
+      { x: 100, y: 100 },
+      { x: 500, y: 100 },
+      { x: 500, y: 400 },
+      { x: 100, y: 400 },
+    ],
+  };
+  const kitchen: Area = {
+    id: "a2",
+    name: "Kitchen",
+    points: [
+      { x: 600, y: 100 },
+      { x: 900, y: 100 },
+      { x: 900, y: 400 },
+      { x: 600, y: 400 },
+    ],
+  };
+  const inside = { showOnlyWhenZoomed: true, x: 300, y: 250 };
+  const outside = { showOnlyWhenZoomed: true, x: 800, y: 250 };
+
+  it("leaves an ordinary device alone at every zoom", () => {
+    expect(itemHiddenUntilZoomed({ x: 300, y: 250 }, undefined)).toBe(false);
+    expect(itemHiddenUntilZoomed({ x: 300, y: 250 }, living)).toBe(false);
+    // Explicitly off is the same as unset.
+    expect(itemHiddenUntilZoomed({ showOnlyWhenZoomed: false, x: 300, y: 250 }, living)).toBe(false);
+  });
+
+  it("hides a flagged device on the full plan", () => {
+    expect(itemHiddenUntilZoomed(inside, undefined)).toBe(true);
+  });
+
+  it("shows it in its own room and nowhere else", () => {
+    expect(itemHiddenUntilZoomed(inside, living)).toBe(false);
+    expect(itemHiddenUntilZoomed(inside, kitchen)).toBe(true);
+    expect(itemHiddenUntilZoomed(outside, living)).toBe(true);
+    expect(itemHiddenUntilZoomed(outside, kitchen)).toBe(false);
+  });
+
+  it("takes the room by id or by name when one is given", () => {
+    // A device drawn outside every polygon — the porch doorbell — is reachable
+    // only this way, which is the whole reason `area` exists.
+    const porch = { showOnlyWhenZoomed: true, area: "a1", x: 960, y: 560 };
+    expect(itemHiddenUntilZoomed(porch, living)).toBe(false);
+    expect(itemHiddenUntilZoomed(porch, kitchen)).toBe(true);
+    expect(itemHiddenUntilZoomed({ ...porch, area: "Living" }, living)).toBe(false);
+    expect(itemHiddenUntilZoomed({ ...porch, area: "Living" }, kitchen)).toBe(true);
+  });
+
+  it("lets the named room override where the device is drawn", () => {
+    // Sitting in the Living polygon but assigned to the Kitchen: the name wins,
+    // otherwise `area` could only ever add rooms and never correct one.
+    const assigned = { showOnlyWhenZoomed: true, area: "a2", x: 300, y: 250 };
+    expect(itemHiddenUntilZoomed(assigned, kitchen)).toBe(false);
+    expect(itemHiddenUntilZoomed(assigned, living)).toBe(true);
+  });
+
+  it("stays hidden when there is no room it could belong to", () => {
+    // Fails hidden rather than falling back to "always show": a degenerate
+    // polygon is not a room, and neither is a plan with no areas drawn on it.
+    const degenerate: Area = { id: "a3", points: [{ x: 0, y: 0 }, { x: 10, y: 0 }] };
+    expect(itemHiddenUntilZoomed(inside, degenerate)).toBe(true);
+    expect(itemHiddenUntilZoomed(inside, { id: "a4", points: [] })).toBe(true);
+  });
+});
+
 describe("itemHiddenWhenInactive (issue #55)", () => {
   it("hides only when asked to, and only while inactive", () => {
     expect(itemHiddenWhenInactive({ entity: "light.a", hideWhenInactive: true }, "off")).toBe(true);
@@ -6219,5 +6320,55 @@ describe("item label color (itemLabelColor)", () => {
 
   it("returns the custom color when both toggles are true", () => {
     expect(itemLabelColor({ disableLabelColor: true, useCustomLabelColor: true, labelCustomColor: "#00ff00" }, "#ff0000")).toBe("#00ff00");
+  });
+});
+describe("rotatePlanAngle — a bearing turns with the plan (issue #280)", () => {
+  // "Ripple direction stays in editing reference": the overlay is HTML and is
+  // never transformed as a whole, so a direction set in the editor kept
+  // pointing the same way on screen while the plan turned underneath it.
+  it("adds the rotation, so plan-up becomes screen-right at 90°", () => {
+    expect(rotatePlanAngle(0, 0)).toBe(0);
+    expect(rotatePlanAngle(0, 90)).toBe(90);
+    expect(rotatePlanAngle(0, 180)).toBe(180);
+    expect(rotatePlanAngle(0, 270)).toBe(270);
+  });
+
+  it("agrees with rotatePlanPoint about which way the plan turns", () => {
+    // The two must not disagree: the point mapping puts a device somewhere and
+    // this points its cone. Plan-up is (0,-1) in screen axes; at 90° the point
+    // mapping sends it to (1,0) — screen-right — which is a bearing of 90.
+    const W = 400;
+    const H = 200;
+    const centre = { x: W / 2, y: H / 2 };
+    const above = { x: W / 2, y: H / 2 - 50 }; // 50 units toward plan-north
+    for (const rot of [0, 90, 180, 270] as const) {
+      const c = rotatePlanPoint(centre.x, centre.y, W, H, rot);
+      const a = rotatePlanPoint(above.x, above.y, W, H, rot);
+      // Bearing of the mapped offset, clockwise from screen-up.
+      const bearing = ((Math.atan2(a.x - c.x, c.y - a.y) * 180) / Math.PI + 360) % 360;
+      expect(Math.round(bearing), `rot=${rot}`).toBe(rotatePlanAngle(0, rot));
+    }
+  });
+
+  it("carries whatever bearing was stored, not just the default", () => {
+    expect(rotatePlanAngle(45, 90)).toBe(135);
+    expect(rotatePlanAngle(200, 270)).toBe(110);
+  });
+
+  it("normalises into 0..360 so the value can go straight into CSS", () => {
+    expect(rotatePlanAngle(350, 90)).toBe(80);
+    expect(rotatePlanAngle(-90, 0)).toBe(270);
+    expect(rotatePlanAngle(720, 90)).toBe(90);
+  });
+
+  it("treats an unusable angle as 0 rather than poisoning the rotation", () => {
+    // cssNumber's job: a config carrying a string or NaN must not turn the
+    // whole expression into NaN and take the mask with it.
+    expect(rotatePlanAngle(NaN, 90)).toBe(90);
+    expect(rotatePlanAngle("nonsense" as unknown as number, 180)).toBe(180);
+  });
+
+  it("is the identity on an unrotated plan, which is every plan by default", () => {
+    for (const a of [0, 45, 180, 359]) expect(rotatePlanAngle(a, 0)).toBe(a);
   });
 });

@@ -251,7 +251,11 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         // here would only invite drawing one. A hand-written config may still
         // set it on a door, and the card draws that honestly as a sealed
         // panel — this is about what the editor suggests, not what it allows.
-        ...(o.type === "window" ? [opt("fixed", "Fixed (does not open)")] : [])
+        // Windows only, for the same reason `fixed` is (issue #272): a
+        // top-hung sash is a window, and a top-hung door is not a thing.
+        ...(o.type === "window"
+          ? [opt("fixed", "Fixed (does not open)"), opt("awning", "Top-hinged (awning)")]
+          : [])
       ),
     },
     { name: "length", label: "Length", required: true, selector: { number: { min: 1, mode: "box" } } },
@@ -620,8 +624,8 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         }
         else if (k === "motion") {
           const motion =
-            v === "slide" || v === "roll" || v === "fixed"
-              ? (v as "slide" | "roll" | "fixed")
+            v === "slide" || v === "roll" || v === "fixed" || v === "awning"
+              ? (v as "slide" | "roll" | "fixed" | "awning")
               : undefined;
           out.motion = motion;
           // sliderStyle only applies while sliding — drop it when switching
@@ -1167,6 +1171,13 @@ export function itemEffectsForm(it: FloorItem, deviceClass?: string): FormSpec |
 export function itemGroup7aForm(it: FloorItem): FormSpec {
   const fields: FormField[] = [
     {
+      name: "showOnlyWhenZoomed",
+      label: "Only show when zoomed into area",
+      helper:
+        "Hidden on the full plan, and shown once the room it sits in is zoomed into",
+      selector: { boolean: {} },
+    },
+    {
       name: "enableHideByEntity",
       label: "Hide by condition (Entire Object)",
       selector: { boolean: {} },
@@ -1379,6 +1390,7 @@ export function itemGroup7aForm(it: FloorItem): FormSpec {
   return {
     fields,
     data: {
+      showOnlyWhenZoomed: it.showOnlyWhenZoomed ?? false,
       enableHideByEntity: it.enableHideByEntity ?? false,
       hideEntity: it.hideEntity ?? "",
       hideAttribute: it.hideAttribute ?? "",
@@ -1406,7 +1418,20 @@ export function itemGroup7aForm(it: FloorItem): FormSpec {
       hideBadgeThreshold: it.hideBadgeThreshold ?? 0,
       hideBadgeInvert: it.hideBadgeInvert ?? false,
     },
-    toPatch: identity,
+    // Off is the default, so it leaves no key behind — an untouched device's
+    // YAML stays as short as it was before this switch existed.
+    //
+    // Only when the user actually touched it, though. `_renderForm` diffs the
+    // form against the event and passes on just the keys that changed, and
+    // `_updateItem` merges with a spread — so a key that is merely *present*
+    // and undefined overwrites what the config had. Writing it unconditionally
+    // meant every one of this group's two dozen other fields silently switched
+    // this one off. The sibling forms all prune inside a walk of
+    // `Object.entries(patch)`, which has the same guard built in.
+    toPatch: (patch) =>
+      "showOnlyWhenZoomed" in patch
+        ? { ...patch, showOnlyWhenZoomed: patch.showOnlyWhenZoomed || undefined }
+        : patch,
   };
 }
 /** Group 7: when the device is drawn at all, and what a press does. */

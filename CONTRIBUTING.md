@@ -6,7 +6,7 @@
 npm install
 npm run build         # bundles to dist/easy-floorplan-card.js
 npm run watch         # rebuild on change
-npm run typecheck     # tsc --noEmit
+npm run typecheck     # both projects: src, and everything outside it
 npm test              # node suite (jsdom where a test file asks for it)
 npm run test:browser  # editor gesture tests, in headless Chromium
 npm run ha            # a real Home Assistant in Docker — see docker/README.md
@@ -15,8 +15,29 @@ npm run ha            # a real Home Assistant in Docker — see docker/README.md
 Releases are built and attached automatically by GitHub Actions when a GitHub
 release is published.
 
-The rest of this file covers the one thing that is easy to get wrong: which test
-suite a change needs.
+The rest of this file covers the two things that are easy to get wrong: which
+test suite a change needs, and — first — which TypeScript project a new file
+lands in.
+
+## Two TypeScript projects
+
+`npm run typecheck` runs both. A file in neither is not checked at all, and
+nothing says so.
+
+| | covers | why it is separate |
+| --- | --- | --- |
+| `tsconfig.json` | `src` | The shipped card: browser lib, Vite's client types, no Node globals to reach for. |
+| `tsconfig.node.json` | `vite.config.ts`, `vitest.browser.config.ts`, `vitest.setup.ts`, `docker/*.mjs` | Runs under Node, imports Node builtins. `checkJs` is on for the `.mjs` scripts, with `noImplicitAny` off — they walk untyped JSON out of Home Assistant's `.storage`, and annotating every parameter would be a rewrite rather than a fix. |
+
+`@types/node` tracks the Node major the workflows run, so the type-check
+describes the runtime CI actually uses — bumping one without the other fails
+the same test. Adding a config file at the repo root means adding it to
+`tsconfig.node.json`'s `include`. `src/tsconfig-coverage.test.ts` fails if you
+forget, which is the point: before the second project existed, nothing checked
+the build config at all, and a merge that left two `test:` keys in
+`vite.config.ts` silently dropped `setupFiles` — and with it the `PointerEvent`
+polyfill a replay test depends on. TypeScript reports a duplicate key as
+`ts(1117)`; it had simply never been pointed at the file (issue #246).
 
 ## Two test suites
 

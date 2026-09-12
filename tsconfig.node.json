@@ -1,0 +1,44 @@
+// Everything outside `src/` (issue #246).
+//
+// `tsconfig.json` includes only `src`, so until this file existed nothing
+// type-checked the build and test configuration at all — `npm run typecheck`
+// was clean whatever those files contained. That is not theoretical: #212 and
+// #245 each added a `test:` block to `vite.config.ts`, git merged both without
+// a conflict, and the duplicate key silently dropped `setupFiles` along with
+// the PointerEvent polyfill a replay test depends on. TypeScript reports a
+// duplicate object key as ts(1117) — it simply never looked at the file.
+//
+// Separate from the app's config rather than a wider `include` there, because
+// these files live in a different world: they import Node builtins and run
+// under Node, while `src` is browser code bundled by Vite. Merging the two
+// would hand `src` the Node globals it must never reach for.
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    // DOM as well as Node: `vitest.setup.ts` runs in the test environment and
+    // patches `window`/`document`, so it needs both halves. Keeping it here
+    // rather than in the app config is deliberate — it is test scaffolding,
+    // not shipped code, and nothing in `src` should see it.
+    "lib": ["ES2022", "DOM"],
+    "types": ["node"],
+    "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "allowJs": true,
+    "checkJs": true,
+    // The docker scripts are plain `.mjs` that walk untyped JSON out of Home
+    // Assistant's `.storage`. Demanding an annotation on every parameter there
+    // would be a rewrite, and it is not the class of bug this exists to catch:
+    // everything else in `strict` stays on, so a real mistake — a property
+    // that is not on the object, arithmetic on a Date, a typo'd option — is
+    // still an error.
+    "noImplicitAny": false,
+    "noEmit": true
+  },
+  "include": ["vite.config.ts", "vitest.browser.config.ts", "vitest.setup.ts", "docker/*.mjs"]
+}

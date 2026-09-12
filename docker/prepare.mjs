@@ -68,7 +68,7 @@ try {
 } catch (error) {
   // Re-throw our own exit; anything else means no docker or no such
   // container, and there is nothing to collide with.
-  if (error?.code === "ERR_INVALID_ARG_TYPE") throw error;
+  if (/** @type {NodeJS.ErrnoException} */ (error)?.code === "ERR_INVALID_ARG_TYPE") throw error;
 }
 
 const storageDir = join(here, "config", ".storage");
@@ -95,6 +95,19 @@ const version = existsSync(bundle)
 const resourceUrl = version ? `${URL_PATH}?v=${version}` : URL_PATH;
 const resourceUrlFromBuild = version ? resourceUrl : `${URL_PATH}?v=${cacheBust}`;
 
+/**
+ * A Home Assistant `.storage` file, as far as this script cares: a versioned
+ * envelope around a list of records.
+ *
+ * Annotated because an empty `items: []` infers as `never[]`, so every push
+ * into it is an error the moment the file is type-checked at all (issue #246).
+ * The records themselves are HA's, not ours, so they stay loose.
+ *
+ * @typedef {{ version: number, minor_version: number, key: string,
+ *             data: { items: Record<string, any>[] } }} StorageFile
+ */
+
+/** @type {StorageFile} */
 let store = {
   version: 1,
   minor_version: 1,
@@ -177,6 +190,7 @@ const dashboardsFile = join(storageDir, "lovelace_dashboards");
 const dashConfigFile = join(storageDir, `lovelace.${DASH_ID}`);
 const reseed = process.argv.includes("--reseed");
 
+/** @type {StorageFile} */
 let dashboards = {
   version: 1,
   minor_version: 1,
@@ -223,7 +237,9 @@ if (!existsSync(dashConfigFile) || reseed) {
     );
     process.exit(1);
   }
-  const seed = yaml.load(readFileSync(join(here, "config", "floorplan-demo.yaml"), "utf8"));
+  const seed = /** @type {{ views: unknown[] }} */ (
+    yaml.load(readFileSync(join(here, "config", "floorplan-demo.yaml"), "utf8"))
+  );
   mkdirSync(storageDir, { recursive: true });
   writeFileSync(
     dashConfigFile,

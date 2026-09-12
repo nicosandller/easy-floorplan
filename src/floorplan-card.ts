@@ -98,6 +98,7 @@ import {
   offlineStyleOf,
   itemIsOffline,
   itemHiddenWhenInactive,
+  itemHiddenUntilZoomed,
   itemBadgeHidden,
   itemLabelSize,
   itemLabelColor,
@@ -121,6 +122,7 @@ import {
   resolvePlanRotation,
   subscribeOrientation,
   rotatedCanvasSize,
+  rotatePlanAngle,
   rotatePlanPoint,
   planRotationTransform,
   areaZoomTransform,
@@ -736,6 +738,22 @@ export class FloorplanCard extends LitElement {
     // stated explicitly, and only when the bulb actually reports a colour.
     const lightColor = lightBadgePaint(st);
     const activeColor = cssColor(item.activeColor) ?? lightColor;
+    // The off colour (issue #228): "users could specify separate colors for
+    // switches or doors when they are on/open and off/closed". Only painted
+    // while the device is actually inactive — `on` comes from entityIsActive,
+    // so this means off for a switch, closed for a cover and locked for a
+    // lock without the plan having to name each word.
+    //
+    // It stands down for an offline entity, and that is not a detail. An
+    // entity that has dropped out is not active either, so without this a dead
+    // cover would wear the same confident red as one that is genuinely shut —
+    // identical under `offlineStyle: none`, which draws no fading at all. That
+    // is exactly the picture issue #162 exists to prevent: "we have no
+    // reading" must not be told as "the reading is closed", least of all in
+    // the loudest colour on the plan. A device with no entity bound is not
+    // offline (issue #39's plain markers), so a shut window with no sensor
+    // still paints.
+    const inactiveColor = on || offline ? undefined : cssColor(item.inactiveColor);
     const rippleColor =
       item.rippleColor ?? stateColor ?? item.activeColor ?? lightColor ?? SKIN_ACCENT;
     // Ink that can actually be read on whatever the badge ended up painted
@@ -746,11 +764,25 @@ export class FloorplanCard extends LitElement {
     // stores a var(), which contrastText cannot read and would answer
     // undefined for — so moving a badge onto a named colour would quietly cost
     // it the ink it had as a literal hex.
+    // Ink follows whatever the badge actually ends up painted — which since
+    // issue #228 is the inactive colour when the device is off, not the active
+    // one it was never going to wear.
     const badgeInk = contrastText(
-      resolvePaletteColor(stateColor ?? activeColor, this._config?.palette)
+      resolvePaletteColor(
+        stateColor ?? (on ? activeColor : inactiveColor),
+        this._config?.palette
+      )
     );
     const rippleSize = item.rippleSize ?? DEFAULT_RIPPLE_SIZE;
-    const rippleDirection = item.rippleDirection ?? DEFAULT_RIPPLE_DIRECTION;
+    // Turned into the displayed frame (issue #280). The direction is a bearing
+    // in the room — which way the sensor looks — and the overlay it lives in is
+    // never rotated as a whole, so without this a rotated card aimed the cone
+    // at a different wall than the plan does. The shutter mark's normal has
+    // taken `rot` for the same reason since it existed.
+    const rippleDirection = rotatePlanAngle(
+      item.rippleDirection ?? DEFAULT_RIPPLE_DIRECTION,
+      rot
+    );
     const rippleWidth = item.rippleWidth ?? DEFAULT_RIPPLE_WIDTH;
 
     // Apply visibility hidden to keep the layout space intact for the label
@@ -791,7 +823,7 @@ export class FloorplanCard extends LitElement {
       <div
         class="item fp-item ${on ? "on" : "off"} ${offline ? "offline" : ""} ${stateColor
           ? "state-colored"
-          : ""} ${interactive ? "interactive" : ""}"
+          : ""} ${inactiveColor ? "inactive-colored" : ""} ${interactive ? "interactive" : ""}"
         data-id=${cssIdent(item.id) ?? nothing}
         data-entity=${cssEntityId(item.entity) ?? nothing}
         data-kind=${cssIdent(item.kind) ?? nothing}
@@ -799,6 +831,8 @@ export class FloorplanCard extends LitElement {
           ? `--fp-state:${stateColor};`
           : ""}${activeColor
           ? `--fp-active:${activeColor};`
+          : ""}${inactiveColor
+          ? `--fp-inactive:${inactiveColor};`
           : ""}${badgeInk ? `--fp-ink:${badgeInk};` : ""}"
         title=${this._label(item, renderHass)}
         role=${interactive ? "button" : nothing}
@@ -1253,6 +1287,19 @@ export class FloorplanCard extends LitElement {
                 : undefined;
               const symbol = renderOpening(o, {
                 color: SKIN_WALL,
+                // The closed tone (issue #228). Absent, the moving parts stay
+                // the wall colour, which is what a closed opening always was —
+                // and that is also what an opening whose contact has dropped
+                // out falls back to, so a dead sensor does not draw the same
+                // emphatic "shut" as a door that really is (issue #162).
+                // Guarded on `hass` for the same reason the device path is:
+                // before the first states arrive every opening would read as
+                // offline and the closed colour would flash off on load.
+                inactive:
+                  !!this.hass &&
+                  itemIsOffline(o, o.entity ? renderHass?.states[o.entity]?.state : undefined)
+                    ? undefined
+                    : o.inactiveColor,
                 open: amount > 0,
                 amount,
                 active: this._openingActive(o, renderHass),
@@ -1355,14 +1402,15 @@ export class FloorplanCard extends LitElement {
               // No entity filter: devices that exist physically but have no HA
               // entity still deserve their badge (issue #39). Keyed by id so a
               // floor switch builds fresh DOM (see the openings comment).
-              // "Only when active" devices drop out here (issue #55) — the
+              // "Only when active" devices drop out here (issue #55), and so do
+              // the ones that only show inside their own room (#222) — the
               // editor still draws them, dimmed, so they stay editable.
               active.items.filter(
                 (it) =>
                   !itemHiddenWhenInactive(
                     it,
                     it.entity ? renderHass?.states[it.entity]?.state : undefined
-                  )
+                  ) && !itemHiddenUntilZoomed(it, zoomedArea)
               ),
               (it, i) => it.id || i,
               (it) => this._renderItem(it, c, rot, scale, renderHass)
@@ -2101,6 +2149,15 @@ export class FloorplanCard extends LitElement {
          Assistant theme would otherwise take that theme's near-white text. */
       color: var(--fp-ink, var(--fp-skin-active-ink, var(--text-primary-color, #212121)));
     }
+    /* The off colour (issue #228). Its own class rather than a var() fallback
+       on the base .badge rule, so a plan that never sets one emits nothing new
+       and looks exactly as it did. Declared before .state-colored, which still
+       wins — a threshold rule is the more specific statement. */
+    .item.inactive-colored .badge {
+      background: var(--fp-inactive);
+      border-color: var(--fp-inactive);
+      color: var(--fp-ink, var(--text-primary-color, #212121));
+    }
     /* A resolved state colour paints the badge whatever the on/off state —
        thresholds exist for sensors, which are never "on". Declared *after* the
        .on rule (equal specificity) so state rules win over the active colour. */
@@ -2121,6 +2178,13 @@ export class FloorplanCard extends LitElement {
        entity is never entityIsActive, so it has already fallen back to the
        resting badge. What is added is the *fading*, which says "we have no
        reading" rather than "the reading is off".
+
+       That "already fallen back" is load-bearing, and issue #228 is the first
+       thing that could have broken it: inactiveColor paints on exactly the
+       not-active test an offline entity also fails. It is gated on this one
+       too, in _renderItem — otherwise a dead device would be drawn in the
+       loudest colour on the plan, and offline-none would make it identical to
+       a device that really is shut.
 
        offline-none declares nothing at all, which is the point of it. */
     .offline-dim .item.offline {

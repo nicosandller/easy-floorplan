@@ -32,8 +32,13 @@ export function buildRenderHass(
     states[entityId] = provider.getEntityState(entityId);
   }
 
+  // Every formatter the plan draws through, forwarded: what is not here is not
+  // missing, it is silently replaced by the raw attribute (issue #260).
   return {
     states,
     formatEntityState: (stateObj: HassEntity) => hass.formatEntityState(stateObj),
+    formatEntityAttributeValue: hass.formatEntityAttributeValue
+      ? (stateObj: HassEntity, attribute: string) => hass.formatEntityAttributeValue!(stateObj, attribute)
+      : undefined,
   };
 }

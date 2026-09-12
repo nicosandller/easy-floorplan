@@ -22,6 +22,14 @@ export interface HomeAssistant extends BaseHomeAssistant {
    */
   formatEntityState(stateObj: HassEntity, state?: string): string;
   /**
+   * The same, for one of an entity's attributes. Carried by HA since 2023.9
+   * and, like `formatEntityState`, the only thing that knows a cover position
+   * is a percentage or a temperature has a degree sign — the raw attribute is
+   * a bare number. Optional because a frontend older than that has none, which
+   * {@link entityAttributeText} falls back for.
+   */
+  formatEntityAttributeValue?(stateObj: HassEntity, attribute: string): string;
+  /**
    * The entity registry as the frontend exposes it. `custom-card-helpers` does
    * not declare it, though HA has handed it to cards since 2023.4. It carries
    * the user's per-entity icon override, which never appears in the state's
@@ -30,10 +38,19 @@ export interface HomeAssistant extends BaseHomeAssistant {
   entities?: Record<string, { icon?: string } | undefined>;
 }
 
-/** The slice of `hass` the card draws from. */
+/**
+ * The slice of `hass` the card draws from.
+ *
+ * Every wording HA owns has to be listed here, not just reachable off the real
+ * `hass`: this is what the card renders through, and anything missing silently
+ * degrades to whatever the raw state object says. A cover position left off
+ * this interface drew "50" on the card and "50%" in the editor, because the
+ * editor hands the real `hass` straight to the same helper (issue #260).
+ */
 export interface RenderHass {
   states: Record<string, HassEntity | undefined>;
   formatEntityState(stateObj: HassEntity): string;
+  formatEntityAttributeValue?(stateObj: HassEntity, attribute: string): string;
 }
 
 /** A straight wall segment in virtual coordinate space. */
@@ -113,8 +130,22 @@ export interface Opening {
    * but keeps everything else an opening has: it is still tappable, still
    * badges, and still glass to the light. What it never is, is a gap: see
    * {@link openingClearFraction}, which answers 0 for it whatever a sensor says.
+   *
+   * `awning` is the top-hinged window (issue #272): hinged at its head, swung
+   * out at the sill. A fifth motion for the same reason `fixed` is a fourth —
+   * it is a different way of moving, and in plan it is a different drawing
+   * entirely. A casement rotates *within* the plan and sweeps an arc across the
+   * floor; an awning rotates about a horizontal axis and leaves the plan
+   * altogether, so you see it edge-on projecting from the wall with the hinge
+   * knuckles left behind on the wall line.
+   *
+   * Calling it a hinge direction on `swing` was the alternative, and it would
+   * have made {@link sash} and {@link flipH} meaningless without saying so:
+   * an awning has no hinge jamb to pick and no second leaf to hang. {@link flipV}
+   * stays meaningful — it is which side of the wall the sash swings out to, so
+   * it is also how you draw a bottom-hinged hopper opening inward.
    */
-  motion?: "swing" | "slide" | "roll" | "fixed";
+  motion?: "swing" | "slide" | "roll" | "fixed" | "awning";
   /**
    * How much of the opening the operable sash actually covers, as a fraction
    * of `length` (0..1]. Default 1 — the sash fills the opening, which is what
@@ -173,6 +204,27 @@ export interface Opening {
   invert?: boolean;
   /** Color of the leaf/sash and swing arc while actively open. Falls back to the primary color. */
   activeColor?: string;
+  /**
+   * Color of the leaf/sash and swing arc while **closed** (issue #228). Falls
+   * back to the wall color, which is what every opening drew before this
+   * existed — a closed door has always been a line the same colour as the wall
+   * it sits in, and that is exactly the problem when the thing you need to
+   * notice is a door that is *shut*.
+   *
+   * The moving parts only: the jambs and the static frame stay the wall's
+   * colour whether the opening is open or closed, so the symbol still reads as
+   * a hole in a wall rather than a coloured shape. An external shutter follows
+   * this too when it is down, the way it follows {@link activeColor} when it
+   * is up.
+   *
+   * Applies while the leaf is **drawn shut**, which is not quite the same
+   * question as "its entity is not active". The two agree for anything with a
+   * contact on it; without one they part company, because a swing door with no
+   * sensor is drawn open by the plan convention (see {@link
+   * openingDefaultOpen}) and is never active. Each leaf of a double is asked
+   * separately, so a pair with one sash open and one shut shows both colours.
+   */
+  inactiveColor?: string;
   /**
    * Mirror the symbol left↔right in the opening's local frame. For a swing door
    * this moves the hinge to the other jamb; for a slider it reverses the slide
@@ -587,8 +639,24 @@ export interface FloorItem {
    * "Active" is the same domain-aware test the badge highlight uses
    * ({@link entityIsActive}), so a lock reads unlocked, a vacuum cleaning.
    */
-  // --- Extended hide logic for the entire item (Whole-Item) ---
   hideWhenInactive?: boolean;
+  /**
+   * Keep this device off the full plan and show it only while the room it
+   * belongs to is zoomed into (issue #222). Which room that is comes from the
+   * area polygon it sits inside, or from {@link area} when it is named.
+   *
+   * A device with this set and no room to be in never appears on the card. The
+   * editor still draws it, so it stays selectable and fixable.
+   */
+  showOnlyWhenZoomed?: boolean;
+  /**
+   * The room this device belongs to — an {@link Area} `id` or `name` — for
+   * {@link showOnlyWhenZoomed} to read instead of asking where the device is
+   * drawn. For the one that belongs to a room without sitting inside it: a
+   * doorbell on the porch, a thermostat out in the hall.
+   */
+  area?: string;
+  // --- Extended hide logic for the entire item (Whole-Item) ---
   enableHideByEntity?: boolean;
   hideEntity?: string;
   /** Attribute to read instead of the state for the hide condition. */
@@ -657,6 +725,22 @@ export interface FloorItem {
    * Same meaning as {@link Opening.activeColor}.
    */
   activeColor?: string;
+  /**
+   * Badge color while the entity is **not** active (issue #228) — off, closed,
+   * locked, docked, whatever this domain's word for it is. Falls back to the
+   * neutral badge every device has always shown when it is off.
+   *
+   * A {@link stateColor} rule can already paint a badge, and for a plain switch
+   * `state: "off"` would do the same job. This exists because that requires
+   * knowing the word: a lock says `locked`, a cover says `closed`, a vacuum
+   * says `docked`, and a rule written for one is silently wrong on another.
+   * `inactiveColor` is resolved through {@link entityIsActive}, which already
+   * knows each domain's answer — so it means "off" for every domain at once.
+   *
+   * Rules still win over it, as they win over {@link activeColor}: they are the
+   * more specific statement about what this device should look like right now.
+   */
+  inactiveColor?: string;
   /** Disables the state-driven color inheritance for the label, falling back to the default theme text color. */
   disableLabelColor?: boolean;
   /** Activates a custom color override for the label. Only applies when disableLabelColor is true. */
@@ -667,7 +751,14 @@ export interface FloorItem {
   rippleColor?: string;
   /** Max ripple ring diameter in pixels. Default 80. */
   rippleSize?: number;
-  /** Direction of the center of the ripple if its width is not 360° in degrees. Default 0° (top). */
+  /**
+   * Direction of the center of the ripple if its width is not 360°, in degrees.
+   * Default 0° (top).
+   *
+   * Measured on the **plan**, not on the screen: it says which way the sensor
+   * looks in the room, so a card drawn with `rotation` turns it with the
+   * drawing (issue #280). Stored unrotated, exactly as the editor shows it.
+   */
   rippleDirection?: number;
   /** Width of the ripple in degrees. Default 360° (all around). */
   rippleWidth?: number;
@@ -855,7 +946,9 @@ export type FurnitureType =
   | "sectional"
   | "fishTank"
   | "piano"
-  | "hotTub";
+  | "hotTub"
+  | "quarterTub"
+  | "cornerShowerCurved";
 
 /**
  * Which end of an L-shaped sectional the chaise sits on, facing the sofa from

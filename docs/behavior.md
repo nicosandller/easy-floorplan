@@ -105,6 +105,47 @@ anything.
 A room with an action bound announces itself as a button and takes a tab stop; a room that
 only zooms does not, exactly as before.
 
+## Devices that only appear up close
+
+A busy plan cannot show every minor sensor at full zoom and stay readable. `showOnlyWhenZoomed`
+keeps a device off the overview and brings it back when its room is zoomed into (issue #222):
+
+```yaml
+items:
+  - id: bath_humidity
+    entity: sensor.bathroom_humidity
+    kind: sensor
+    x: 300
+    y: 250
+    showOnlyWhenZoomed: true
+```
+
+Which room a device belongs to is answered from the plan itself: the area polygon it is drawn
+inside. Nothing to keep in step — move the device or redraw the room and the answer follows.
+
+For a device that belongs to a room without sitting inside it — a doorbell out on the porch, a
+thermostat in the hall — name the room with `area`, by its `id` or its `name`:
+
+```yaml
+  - id: doorbell
+    entity: binary_sensor.doorbell
+    x: 960
+    y: 560
+    showOnlyWhenZoomed: true
+    area: porch
+```
+
+`area` wins over where the device is drawn, so it also corrects a device that sits in the wrong
+polygon.
+
+Two things worth knowing before you use it:
+
+- A device with the flag and **no room to be in** — no `area`, and inside no polygon — never
+  appears on the card. The editor still draws it, so it stays selectable and fixable; the card
+  is simply doing what it was asked.
+- The way in is the room tap, so a room whose `tap_action` [replaces the zoom](#actions-on-rooms)
+  has no way to reveal its devices. Put that action on `hold_action` instead.
+
 ## Stairs that change floor
 
 A staircase already draws an arrow saying which way it goes. `goToFloor` makes that a
@@ -136,6 +177,78 @@ leave those out. It sits under **Behavior** in the furniture panel.
 
 This does not replace the floor switcher in the card's corner; the stairs are a second way
 up. Set `floors` and you get both.
+
+## Colors for on and off
+
+A device badge has always been able to say what colour it is when it is **on**,
+and nothing at all about when it is **off** — every off device is the same
+neutral badge. Same for an opening: a closed door is a line the same colour as
+the wall it sits in. Which is exactly backwards when the thing you need to
+notice is the door that is *shut*, or the valve that is *closed*.
+
+![The same plan twice: on the left every shut device is a neutral badge and every
+closed sash is a line the colour of the wall; on the right they are red](img/inactive-color.png)
+
+`inactiveColor` is the counterpart to `activeColor`, on both:
+
+```yaml
+items:
+  - id: garage
+    entity: cover.garage_door
+    activeColor: "#2e7d32"    # open — fine
+    inactiveColor: "#c62828"  # closed — look at me
+
+openings:
+  - id: front
+    type: door
+    entity: binary_sensor.front_door
+    activeColor: "#2e7d32"
+    inactiveColor: "#c62828"
+```
+
+### Why not just a state rule
+
+A `stateColor` rule can already paint a badge, and for a plain switch
+`{ state: "off", color: "#c62828" }` does the same job. The catch is that it
+requires knowing the word. A lock says `locked`, a cover says `closed`, a vacuum
+says `docked` — a rule written for one is silently wrong on the next, and the
+symptom is a badge that simply never changes colour.
+
+`inactiveColor` is resolved through the same domain table that decides whether a
+device is drawn as "on" at all, so it means off for every domain at once.
+
+Rules still win over it, exactly as they win over `activeColor`: a threshold or
+an exact state is the more specific statement about what this element should
+look like right now.
+
+### What it does not touch
+
+- **The jambs and frame of an opening.** Only the leaf, the sash and the swing
+  arc move — recolouring the frame would turn the symbol from a hole in a wall
+  into a coloured shape.
+- **Furniture and areas.** Both already have a static `color`, which *is* their
+  off colour: `activeColor` paints over it while the entity is on, and it shows
+  through the rest of the time.
+- **An entity that has dropped out.** `unavailable`, `unknown`, or an entity id
+  Home Assistant does not answer to falls back to the resting badge and the wall
+  colour, exactly as it did before this option existed. It is not active either,
+  so without that it would wear the same emphatic "shut" as a device that really
+  is — and under `offlineStyle: none`, which draws no fading, the two would be
+  the same picture. See [Offline devices](#offline-devices).
+
+An element with **no entity bound at all** is a different thing and does paint:
+there is nothing about a hand-drawn shut window that could be wrong.
+
+For an opening the question asked is whether it is *drawn shut*, not whether its
+sensor is quiet. The two agree for anything with a contact on it, and come apart
+without one: a swing door with no sensor is drawn **open** by the usual
+floor-plan convention, so it keeps the wall colour, while an unbound window
+renders shut and wears the closed one. Each leaf of a double is asked
+separately, so a pair with one sash open and one shut shows both colours.
+
+The editor's canvas follows the same rule. A preview that disagrees with the
+card is worse than no preview, because the plan gets tuned against a picture the
+dashboard will not draw.
 
 ## Offline devices
 
