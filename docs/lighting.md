@@ -87,7 +87,12 @@ gap moved the same way. So:
   because that wall's shade has the same gap cut in it — it simply does not start there
   and widen to the doorway's own width (issues #177 / #178);
 - a **shutter that is all the way down** stops the light whatever the glass says — that is
-  what a shutter is for, and a window behind a closed one is as dark as a wall;
+  what a shutter is for, and a window behind a closed one is as dark as a wall. That holds
+  for a roller shutter bound as the window's **own** entity too (a `cover` with
+  `device_class: shutter`, which the editor reads as `motion: roll`): it is a covering
+  standing in for the glass, not the glass itself, so it admits light only as far as it is
+  raised. A blind, shade or curtain defaults to `motion: slide` instead and is still read
+  as the glass behind it;
 - an opening with `sunlight: false` is **wall to the sun**: no patch of its own, and it
   stops a beam crossing it. That is the answer for a solid front door with no sensor bound
   — the plan draws such a door open, the light believes the drawing, and the corridor

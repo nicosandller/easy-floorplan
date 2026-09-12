@@ -33,6 +33,7 @@ import {
   openingAdmitsSun,
   sunReachesOpening,
   openingSunFraction,
+  openingGlassIsClear,
   openingIsGlazed,
   sunBeamPolygon,
   sunLightDirection,
@@ -2825,6 +2826,54 @@ describe("sunlight through the openings", () => {
     // …and out-of-range input cannot widen a gap past its own opening.
     expect(openingSunFraction({ type: "door" }, 4)).toBe(1);
     expect(openingSunFraction({ type: "door" }, -2)).toBe(0);
+  });
+
+  it("reads a roller shutter as the covering it is, not as the glass behind it", () => {
+    // A cover with device_class `shutter` binds as a window that rolls
+    // (openingFromDeviceClass). Glazed by the window default, it used to read
+    // as always-clear however far down it was — so a shutter closed over a
+    // window stopped a lamp's pool and let the midday sun straight through.
+    const shutter = { type: "window", motion: "roll" } as const;
+    expect(openingSunFraction(shutter, 0)).toBe(0);
+    expect(openingSunFraction(shutter, 0.5)).toBeCloseTo(0.5);
+    expect(openingSunFraction(shutter, 1)).toBe(1);
+    // A garage door is the same motion and was never glass to begin with.
+    expect(openingSunFraction({ type: "door", motion: "roll" }, 0)).toBe(0);
+    // Ordinary glass is untouched: only roll motion is the covering case.
+    expect(openingSunFraction({ type: "window", motion: "slide" }, 0)).toBe(1);
+    expect(openingSunFraction({ type: "window" }, 0)).toBe(1);
+    // Glass explicitly declared on a rolling opening still yields to it —
+    // the covering is in front of the glass, so what the glass says is moot.
+    expect(openingSunFraction({ type: "door", glazed: true, motion: "roll" }, 0)).toBe(0);
+  });
+
+  it("gives sunlight and a lamp's pool the same answer on every covered window", () => {
+    // The two layers read one rule (openingGlassIsClear), so they cannot
+    // drift apart again. device_class → {type, motion} per openingFromDeviceClass.
+    const bound = [
+      { dc: "window", o: { type: "window" } },
+      { dc: "shutter", o: { type: "window", motion: "roll" } },
+      { dc: "blind", o: { type: "window", motion: "slide" } },
+      { dc: "garage", o: { type: "door", motion: "roll" } },
+    ] as const;
+    for (const { dc, o } of bound) {
+      const sun = openingSunFraction(o, 0);
+      const glow = glowClearFraction(o as Opening, 0);
+      expect(`${dc}: sun=${sun}`).toBe(`${dc}: sun=${glow}`);
+    }
+  });
+
+  it("openingGlassIsClear is the one rule both light paths ask", () => {
+    expect(openingGlassIsClear({ type: "window" })).toBe(true);
+    expect(openingGlassIsClear({ type: "door" })).toBe(false);
+    expect(openingGlassIsClear({ type: "door", glazed: true })).toBe(true);
+    expect(openingGlassIsClear({ type: "window", glazed: false })).toBe(false);
+    // The covering exception.
+    expect(openingGlassIsClear({ type: "window", motion: "roll" })).toBe(false);
+    // Documented gap: a blind/shade/curtain defaults to `slide`, so a closed
+    // one still reads as clear glass. Pinned so the day it is fixed is a
+    // deliberate change to this line rather than a silent one.
+    expect(openingGlassIsClear({ type: "window", motion: "slide" })).toBe(true);
   });
 
   it("counts the gap a sliding style clears, not the distance a leaf travels", () => {
