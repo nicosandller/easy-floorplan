@@ -712,22 +712,13 @@ export function openingClearFraction(o: Opening, amount: number, secondAmount?: 
 
 /**
  * How much of an opening's gap a lamp's cast pool passes through — the same
- * question {@link openingClearFraction} answers, except glass admits its
- * whole gap however its sash is sitting, the same rule {@link
- * openingSunFraction} already applies to sunlight and by the same field:
- * {@link openingIsGlazed}. `glazed` means one thing — is this opening glass —
- * and a lamp's light passing through glass same as sunlight does is that one
- * fact read twice, not two different rules that happen to agree.
+ * question {@link openingClearFraction} answers, except that clear glass
+ * admits its whole gap however its sash is sitting.
  *
- * One exception sunlight doesn't need: a **roll-motion** window is a blind,
- * shutter, shade, curtain or awning bound as the opening's own entity (an
- * auto-detected `device_class`, see {@link openingFromDeviceClass}) — a
- * covering standing in for the glass behind it, not the glass itself. Glazed
- * by the same default every window gets, it would read as always-clear no
- * matter how far down it actually is, defeating the one thing binding it was
- * for. So it keeps {@link openingClearFraction}'s answer regardless of
- * `glazed` — the roll-up rule {@link openingClearFraction}'s own docs
- * describe, honoured here too.
+ * Which openings count as clear glass is {@link openingGlassIsClear}, the one
+ * rule sunlight reads too ({@link openingSunFraction}) — including its
+ * roll-motion exception, which sunlight was missing until that helper existed.
+ * Read its docs for the rule and for the blind/shade/curtain gap it leaves.
  *
  * A shutter — the separate `shutterEntity` layered over an opening — overrides
  * the glass, same priority {@link openingSunFraction} gives it: rolled down,
@@ -747,7 +738,7 @@ export function glowClearFraction(
   shutter?: number,
 ): number {
   if (shutter !== undefined && shutter <= 0) return 0;
-  if (openingIsGlazed(o) && openingMotion(o) !== "roll") return 1;
+  if (openingGlassIsClear(o)) return 1;
   return openingClearFraction(o, amount, secondAmount);
 }
 
@@ -767,7 +758,7 @@ export function glowClearSpan(
   shutter?: number,
 ): [number, number] {
   if (shutter !== undefined && shutter <= 0) return [0, 0];
-  if (openingIsGlazed(o) && openingMotion(o) !== "roll") return [0, 1];
+  if (openingGlassIsClear(o)) return [0, 1];
   return openingClearSpan(o, amount, secondAmount);
 }
 
@@ -2486,7 +2477,7 @@ export function kindFromEntity(entity: string): ItemKind {
  * plane), `fixed` (issue #218: it does not) or `awning` (issue #272: hinged at
  * the head, swung out at the sill). Defaults to `swing`.
  */
-export function openingMotion(o: Opening): "swing" | "slide" | "roll" | "fixed" | "awning" {
+export function openingMotion(o: Pick<Opening, "motion">): "swing" | "slide" | "roll" | "fixed" | "awning" {
   return o.motion ?? "swing";
 }
 
@@ -4195,10 +4186,12 @@ export function sunReachScale(elevation: unknown): number {
  * - a **shutter** that is all the way down stops everything, whatever the
  *   glass says — that is what a shutter is for, and a window behind a closed
  *   one is as dark as a wall;
- * - **glass** admits its whole gap however its sash is sitting, which is the
- *   reason this cannot reuse the lamp rule ({@link wallsLightPassesThrough}'s
- *   `openAmount`) unchanged: that one asks whether there is a *hole*, and a
- *   closed window is not a hole;
+ * - **clear glass** ({@link openingGlassIsClear}) admits its whole gap however
+ *   its sash is sitting, which is the reason this cannot reuse the lamp rule
+ *   ({@link wallsLightPassesThrough}'s `openAmount`) unchanged: that one asks
+ *   whether there is a *hole*, and a closed window is not a hole. A roller
+ *   shutter bound as the window's own entity is not clear glass, which is why
+ *   this asks that helper rather than {@link openingIsGlazed} directly;
  * - anything **opaque** admits exactly as far as it is open.
  *
  * Feed it a clear fraction rather than a raw `amount` ({@link
@@ -4206,7 +4199,7 @@ export function sunReachScale(elevation: unknown): number {
  * travel a leaf has is not the gap it clears.
  */
 export function openingSunFraction(
-  o: Pick<Opening, "type" | "glazed" | "sunlight">,
+  o: Pick<Opening, "type" | "glazed" | "sunlight" | "motion">,
   amount: number,
   /** How far the external shutter is open, or `undefined` when none is bound. */
   shutter?: number,
@@ -4216,7 +4209,7 @@ export function openingSunFraction(
   // however open, however glazed (issue #177).
   if (o.sunlight === false) return 0;
   if (shutter !== undefined && shutter <= 0) return 0;
-  if (openingIsGlazed(o)) return 1;
+  if (openingGlassIsClear(o)) return 1;
   return Math.max(0, Math.min(1, amount));
 }
 
@@ -4226,7 +4219,7 @@ export function openingSunFraction(
  * light in" is the question most callers are actually asking.
  */
 export function openingAdmitsSun(
-  o: Pick<Opening, "type" | "glazed" | "sunlight">,
+  o: Pick<Opening, "type" | "glazed" | "sunlight" | "motion">,
   amount: number,
   shutter?: number,
 ): boolean {
@@ -4241,6 +4234,41 @@ export function openingAdmitsSun(
  */
 export function openingIsGlazed(o: Pick<Opening, "type" | "glazed">): boolean {
   return o.glazed ?? o.type === "window";
+}
+
+/**
+ * Whether an opening's glass should be read as **clear whatever its sash is
+ * doing** — the one rule behind both natural and artificial light, so the two
+ * cannot drift apart.
+ *
+ * Glass admits its whole gap open or shut. That is the whole of the rule for
+ * an ordinary window or a patio door, and it is why neither {@link
+ * openingSunFraction} nor {@link glowClearFraction} can simply reuse {@link
+ * openingClearFraction}: that one asks whether there is a *hole*, and a closed
+ * window is not a hole.
+ *
+ * The exception is a **roll-motion** window. A roller shutter bound as the
+ * opening's own entity (an auto-detected `device_class`, see {@link
+ * openingFromDeviceClass}) is a covering standing in for the glass behind it,
+ * not the glass itself. Glazed by the same default every window gets, it would
+ * otherwise read as always-clear no matter how far down it actually is,
+ * defeating the one thing binding it was for.
+ *
+ * Both light paths ask this same question, because `glazed` means one thing —
+ * is this opening glass — and the sun and a lamp passing through it is that
+ * one fact read twice, not two rules that happen to agree. They diverged
+ * before this existed: a roller shutter closed over a window stopped a lamp's
+ * pool and let the midday sun straight through.
+ *
+ * **Known gap.** The covering test is `motion`, which is the only signal that
+ * survives to render time. A blind, shade or curtain defaults to `slide`
+ * rather than `roll` ({@link openingFromDeviceClass}), so a closed one still
+ * reads as clear glass to both layers. Fixing that needs a covering flag of
+ * its own on {@link Opening} rather than a motion the drawing also depends on,
+ * which is a change of its own.
+ */
+export function openingGlassIsClear(o: Pick<Opening, "type" | "glazed" | "motion">): boolean {
+  return openingIsGlazed(o) && openingMotion(o) !== "roll";
 }
 
 /** The two ends of an opening's gap, in plan coordinates. */
