@@ -835,7 +835,14 @@ export interface FloorItem {
   rippleColor?: string;
   /** Max ripple ring diameter in pixels. Default 80. */
   rippleSize?: number;
-  /** Direction of the center of the ripple if its width is not 360° in degrees. Default 0° (top). */
+  /**
+   * Direction of the center of the ripple if its width is not 360°, in degrees.
+   * Default 0° (top).
+   *
+   * Measured on the **plan**, not on the screen: it says which way the sensor
+   * looks in the room, so a card drawn with `rotation` turns it with the
+   * drawing (issue #280). Stored unrotated, exactly as the editor shows it.
+   */
   rippleDirection?: number;
   /** Width of the ripple in degrees. Default 360° (all around). */
   rippleWidth?: number;

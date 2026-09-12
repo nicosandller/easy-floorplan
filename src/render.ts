@@ -4072,6 +4072,26 @@ export function rotatedCanvasSize(
   return rot === 90 || rot === 270 ? { w: h, h: w } : { w, h };
 }
 
+/**
+ * Map a plan *direction* into the rotated (displayed) frame (issue #280).
+ *
+ * The overlay is HTML, so unlike the SVG it is never transformed as a whole —
+ * each anchor is remapped instead, which is what keeps badges and labels
+ * upright at any rotation. That is right for a glyph and wrong for a bearing:
+ * an angle like a motion sensor's ripple direction describes where the sensor
+ * looks *in the room*, so when the plan turns under it the angle has to turn
+ * too, or the cone points at a different wall than the one it was aimed at.
+ *
+ * Degrees clockwise from plan-north, matching how {@link rotatePlanPoint} turns
+ * the plan: at 90° the top of the plan becomes the right of the screen, so a
+ * bearing of 0 becomes 90. The result is normalised into 0..360 so callers can
+ * hand it straight to CSS.
+ */
+export function rotatePlanAngle(angle: number, rot: PlanRotation): number {
+  const a = cssNumber(angle, 0) + rot;
+  return ((a % 360) + 360) % 360;
+}
+
 /** Map a plan point into the rotated (displayed) frame. */
 export function rotatePlanPoint(
   x: number,

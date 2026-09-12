@@ -123,6 +123,7 @@ import {
   resolvePlanRotation,
   subscribeOrientation,
   rotatedCanvasSize,
+  rotatePlanAngle,
   rotatePlanPoint,
   planRotationTransform,
   areaZoomTransform,
@@ -774,7 +775,15 @@ export class FloorplanCard extends LitElement {
       )
     );
     const rippleSize = item.rippleSize ?? DEFAULT_RIPPLE_SIZE;
-    const rippleDirection = item.rippleDirection ?? DEFAULT_RIPPLE_DIRECTION;
+    // Turned into the displayed frame (issue #280). The direction is a bearing
+    // in the room — which way the sensor looks — and the overlay it lives in is
+    // never rotated as a whole, so without this a rotated card aimed the cone
+    // at a different wall than the plan does. The shutter mark's normal has
+    // taken `rot` for the same reason since it existed.
+    const rippleDirection = rotatePlanAngle(
+      item.rippleDirection ?? DEFAULT_RIPPLE_DIRECTION,
+      rot
+    );
     const rippleWidth = item.rippleWidth ?? DEFAULT_RIPPLE_WIDTH;
 
     // Apply visibility hidden to keep the layout space intact for the label
