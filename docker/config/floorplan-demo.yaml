@@ -80,6 +80,9 @@ views:
             # in configuration.yaml. If the plan looks unexpectedly dim, that is
             # this, and it is working.
             sunDimming: true
+            # Draw sunlight through openings so the roller shutter below can
+            # be checked with its cover position slider (PR #271).
+            sunlight: true
 
             # Two floors, so the card draws its switcher and issue #121 has
             # something to place. The ground floor is everything that was
@@ -111,6 +114,9 @@ views:
                     y: 100
                     length: 140
                     angle: 0
+                    # The demo cover has no shutter device_class, so state its
+                    # motion explicitly: a closed roller blocks sun and lamp glow.
+                    motion: roll
                     entity: cover.living_room_window
                   - { id: o2, type: door, x: 500, y: 500, length: 90, angle: 0 }
                   # The garage door is open/close only -- no position at all -- which
