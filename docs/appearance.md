@@ -377,6 +377,13 @@ In the editor: **Project → Display**, under *Rotate display*.
 
 Icons and labels stay upright at every angle, so a rotated plan is still readable.
 
+A **bearing** is the exception, and has to be: a ripple's `rippleDirection` says which way
+a sensor looks *in the room*, so it turns with the drawing rather than staying put on
+screen. Otherwise a cone aimed at a wall in the editor pointed at open space once the card
+was rotated (issue #280).
+
+![The same sensor at every rotation: before, the cone stays pointing up the screen while the wall moves; after, it follows the wall](img/ripple-direction-rotation.png)
+
 ## Styling hooks (card-mod)
 
 Every rendered element carries its config `id` as `data-id`, plus a type class, so

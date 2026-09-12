@@ -126,6 +126,7 @@ import {
   subscribeOrientation,
   rotatedCanvasSize,
   floorSwitcherAnchor,
+  rotatePlanAngle,
   rotatePlanPoint,
   planRotationTransform,
   polygonCentroid,
@@ -6308,5 +6309,56 @@ describe("floorSwitcherAnchor — where the floor switcher sits (issue #281)", (
     // A plan whose walls stop short of the canvas has real empty margin to
     // park the switcher in, and clamping would drag it back onto the drawing.
     expect(floorSwitcherAnchor({ floorSwitcher: { x: -40, y: 900 } })).toEqual({ x: -40, y: 900 });
+  });
+});
+
+describe("rotatePlanAngle — a bearing turns with the plan (issue #280)", () => {
+  // "Ripple direction stays in editing reference": the overlay is HTML and is
+  // never transformed as a whole, so a direction set in the editor kept
+  // pointing the same way on screen while the plan turned underneath it.
+  it("adds the rotation, so plan-up becomes screen-right at 90°", () => {
+    expect(rotatePlanAngle(0, 0)).toBe(0);
+    expect(rotatePlanAngle(0, 90)).toBe(90);
+    expect(rotatePlanAngle(0, 180)).toBe(180);
+    expect(rotatePlanAngle(0, 270)).toBe(270);
+  });
+
+  it("agrees with rotatePlanPoint about which way the plan turns", () => {
+    // The two must not disagree: the point mapping puts a device somewhere and
+    // this points its cone. Plan-up is (0,-1) in screen axes; at 90° the point
+    // mapping sends it to (1,0) — screen-right — which is a bearing of 90.
+    const W = 400;
+    const H = 200;
+    const centre = { x: W / 2, y: H / 2 };
+    const above = { x: W / 2, y: H / 2 - 50 }; // 50 units toward plan-north
+    for (const rot of [0, 90, 180, 270] as const) {
+      const c = rotatePlanPoint(centre.x, centre.y, W, H, rot);
+      const a = rotatePlanPoint(above.x, above.y, W, H, rot);
+      // Bearing of the mapped offset, clockwise from screen-up.
+      const bearing = ((Math.atan2(a.x - c.x, c.y - a.y) * 180) / Math.PI + 360) % 360;
+      expect(Math.round(bearing), `rot=${rot}`).toBe(rotatePlanAngle(0, rot));
+    }
+  });
+
+  it("carries whatever bearing was stored, not just the default", () => {
+    expect(rotatePlanAngle(45, 90)).toBe(135);
+    expect(rotatePlanAngle(200, 270)).toBe(110);
+  });
+
+  it("normalises into 0..360 so the value can go straight into CSS", () => {
+    expect(rotatePlanAngle(350, 90)).toBe(80);
+    expect(rotatePlanAngle(-90, 0)).toBe(270);
+    expect(rotatePlanAngle(720, 90)).toBe(90);
+  });
+
+  it("treats an unusable angle as 0 rather than poisoning the rotation", () => {
+    // cssNumber's job: a config carrying a string or NaN must not turn the
+    // whole expression into NaN and take the mask with it.
+    expect(rotatePlanAngle(NaN, 90)).toBe(90);
+    expect(rotatePlanAngle("nonsense" as unknown as number, 180)).toBe(180);
+  });
+
+  it("is the identity on an unrotated plan, which is every plan by default", () => {
+    for (const a of [0, 45, 180, 359]) expect(rotatePlanAngle(a, 0)).toBe(a);
   });
 });
