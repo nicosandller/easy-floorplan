@@ -175,8 +175,9 @@ The option is on **furniture generally**, not just the built-in `stairs` symbol 
 can [draw its own](configuration.md#drawing-your-own) staircase, and a rule keyed on one symbol id would
 leave those out. It sits under **Behavior** in the furniture panel.
 
-This does not replace the floor switcher in the card's corner; the stairs are a second way
-up. Set `floors` and you get both.
+This does not replace the floor switcher — by default in the plan's top-right corner, or
+[wherever you put it](appearance.md#where-the-floor-switcher-sits); the stairs are a second
+way up. Set `floors` and you get both.
 
 ## Colors for on and off
 

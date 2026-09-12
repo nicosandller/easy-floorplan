@@ -4608,7 +4608,10 @@ export class FloorplanCardEditor extends LitElement {
     const floors = c.floors ?? [];
     return html`
       <div
-        class="switcher-handle ${this._switcherDrag ? "dragging" : ""} ${placed ? "" : "default"}"
+        class="switcher-handle ${c.compactHeader === true ? "row" : ""} ${this
+          ._switcherDrag
+          ? "dragging"
+          : ""} ${placed ? "" : "default"}"
         style="left:${(at.x / w) * 100}%; top:${(at.y / h) * 100}%;"
         title=${placed
           ? "Drag to move the floor switcher"
@@ -7455,6 +7458,18 @@ export class FloorplanCardEditor extends LitElement {
     }
     .switcher-handle.dragging {
       cursor: grabbing;
+    }
+    /* Compact chrome lays the card's buttons across a row rather than down a
+       column (issue #152), and the handle has to agree: its whole job is to
+       show the footprint the block will have, and a column standing in for a
+       row can sit happily in a gap the real thing overflows. Wrapped and
+       centred for the same reason the card's is wrapped — eight floors is
+       exactly the case a row is worst at. */
+    .switcher-handle.row {
+      flex-direction: row;
+      flex-wrap: wrap;
+      justify-content: center;
+      max-width: 50%;
     }
     /* Dimmed until it has been placed, so the canvas does not claim a position
        is stored when none is. Its tooltip says the same thing in words. */

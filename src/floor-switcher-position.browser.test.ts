@@ -89,7 +89,7 @@ async function mountCard(extra: Partial<FloorplanCardConfig> = {}) {
       y: Math.round(((s.y + s.height / 2 - p.y) / p.height) * 100),
     };
   };
-  return { sw, centre, style: () => sw().getAttribute("style") };
+  return { card, sw, centre, style: () => sw().getAttribute("style") };
 }
 
 describe("the card draws the switcher where the plan says", () => {
@@ -149,6 +149,19 @@ describe("the card draws the switcher where the plan says", () => {
     expect(Math.round(plan.width)).toBeLessThan(Math.round(stage.width));
     expect(Math.round(sw.x + sw.width / 2)).toBe(Math.round(plan.x));
     expect(Math.round(sw.y + sw.height / 2)).toBe(Math.round(plan.y));
+  });
+
+  it("holds its place in the card when a room is zoomed into", async () => {
+    // Deliberate: the buttons are how you change floor, and a zoom can scale
+    // the plan well past the card — carried along, a switcher placed in the
+    // hall would leave the viewport the moment you tapped a room at the far
+    // end, with no way to change floor until you zoomed back out.
+    const t = await mountCard({ floorSwitcher: { x: 60, y: 100 } });
+    const before = t.centre();
+    // Zoom the card into a room the way a tap does.
+    (t.card as unknown as { _zoomedAreaId?: string })._zoomedAreaId = "zoomed";
+    await t.card.updateComplete;
+    expect(t.centre()).toEqual(before);
   });
 
   it("ignores half a position rather than jumping to a corner", async () => {
@@ -278,6 +291,78 @@ async function mountEditor(extra: Partial<FloorplanCardConfig> = {}) {
     canvasPoint,
   };
 }
+
+/** The coordinate fields sit behind the Project section and its own group. */
+async function openSwitcherPanel(ed: FloorplanCardEditor): Promise<HTMLInputElement[]> {
+  const root = ed.shadowRoot!;
+  root.querySelector<HTMLButtonElement>("button.section-toggle")?.click();
+  await ed.updateComplete;
+  [...root.querySelectorAll<HTMLButtonElement>(".cfg-group-title")]
+    .find((b) => b.textContent?.includes("Floor switcher"))
+    ?.click();
+  await ed.updateComplete;
+  return [...root.querySelectorAll<HTMLInputElement>("input[type=number]")];
+}
+
+/** Type into a field and commit it, the way a keyboard user would. */
+async function typeInto(ed: FloorplanCardEditor, field: HTMLInputElement, value: string) {
+  field.value = value;
+  field.dispatchEvent(new Event("change", { bubbles: true }));
+  await ed.updateComplete;
+}
+
+describe("the coordinate fields are a real way to place it", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  it("places an unplaced switcher from one axis, keeping the other where it is drawn", async () => {
+    // Typing one number has to invent the other half, and the only honest
+    // answer is where the handle is actually shown — which is what the field's
+    // placeholder has been saying all along.
+    const t = await mountEditor();
+    const [x, y] = await openSwitcherPanel(t.ed);
+    // Unplaced, so both fields are empty and show the handle's home as their
+    // placeholder. That Y is the half typing an X has to invent.
+    expect(x.value).toBe("");
+    const homeY = Number(y.placeholder);
+    expect(Number.isFinite(homeY)).toBe(true);
+
+    await typeInto(t.ed, x, "120");
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual({ x: 120, y: homeY });
+  });
+
+  it("moves an already-placed switcher on one axis without disturbing the other", async () => {
+    const t = await mountEditor({ floorSwitcher: { x: 60, y: 100 } });
+    const [, y] = await openSwitcherPanel(t.ed);
+    await typeInto(t.ed, y, "40");
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual({ x: 60, y: 40 });
+  });
+
+  it("returns to the corner when a field is emptied", async () => {
+    // `floorSwitcher` is a point or it is nothing — storing half of one is the
+    // state `floorSwitcherAnchor` refuses at the other end, so clearing a
+    // field has to mean "unset", not "x with no y".
+    const t = await mountEditor({ floorSwitcher: { x: 60, y: 100 } });
+    const [x] = await openSwitcherPanel(t.ed);
+    await typeInto(t.ed, x, "");
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toBeUndefined();
+  });
+
+  it("treats an unusable entry as clearing it rather than storing NaN", async () => {
+    const t = await mountEditor({ floorSwitcher: { x: 60, y: 100 } });
+    const [x] = await openSwitcherPanel(t.ed);
+    await typeInto(t.ed, x, "nonsense");
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toBeUndefined();
+  });
+
+  it("takes a negative coordinate, which is off-canvas margin", async () => {
+    const t = await mountEditor({ floorSwitcher: { x: 60, y: 100 } });
+    const [x] = await openSwitcherPanel(t.ed);
+    await typeInto(t.ed, x, "-30");
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual({ x: -30, y: 100 });
+  });
+});
 
 describe("the editor lets you drag the switcher anywhere on the canvas", () => {
   afterEach(() => {

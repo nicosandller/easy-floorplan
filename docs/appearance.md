@@ -217,6 +217,13 @@ tablet keeps the switcher in the same corner of the house.
 A point outside the canvas is kept rather than clamped — a plan whose walls stop short of
 the edge has real margin to park it in.
 
+**Zooming into a room does not carry the switcher with it.** The buttons are how you change
+floor, and a zoom can scale the plan well past the card, so a switcher that travelled with
+the drawing would leave the screen the moment you tapped a room at the far end — with no
+way to change floor until you zoomed back out. It holds its place in the card instead. The
+position you choose is measured against the unzoomed plan, which is the view it is looked
+at in.
+
 **Project → Floor switcher** carries X and Y fields and a *Back to the corner* button —
 the coordinates because a drag needs a pointer and is aimed by eye, and the button because
 returning to the default is the one thing a drag cannot express. Leave it alone and nothing changes: a plan

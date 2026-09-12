@@ -1429,6 +1429,15 @@ export class FloorplanCard extends LitElement {
               </button>`
             : nothing}
           ${compactTitle ? html`<div class="plan-title">${c.title}</div>` : nothing}
+          <!-- Outside the zoom wrapper on purpose, placed or not (issue #281).
+               The buttons are how you change floor, and zoom-to-room can scale
+               the plan well past the card: carried along, a switcher placed in
+               the hall would leave the viewport the moment you tapped a room at
+               the other end, and there would be no way to change floor until
+               you zoomed back out. A control you can lose is a worse failure
+               than one that overlaps the drawing for as long as a zoom lasts —
+               and the position is chosen against the view people spend their
+               time in, which is the unzoomed one. -->
           ${floors.length > 1
             ? this._renderFloorSwitcher(floors, active, compact, c, rot)
             : nothing}
