@@ -1,7 +1,7 @@
 import type { Area, AreaPoint, Opening } from "./types";
 import { SUN_ELEVATION_DAY, SUN_ELEVATION_NIGHT } from "./types";
 import { OPENING_ON_WALL_EPS } from "./dead-space";
-import { liveSunAttribute, openingIsGlazed, openingMotion } from "./render";
+import { liveSunAttribute, openingGlassIsClear } from "./render";
 
 /**
  * Room-aware diffuse daylight geometry.
@@ -227,13 +227,13 @@ export function ambientOpeningTransmission(
   shutterOpenFraction = 1,
 ): number {
   if (opening.sunlight === false) return 0;
-  // Carries glowClearFraction's roll-motion exception, read from the same two
-  // helpers. A `motion: "roll"` window is a blind, shade or awning bound as the
-  // opening's own entity — the covering standing in for the glass behind it,
-  // not the glass itself. Glazed by the default every window gets, it would
-  // pass full daylight with the blind all the way down, which is the one thing
-  // binding it was for.
-  const glass = openingIsGlazed(opening) && openingMotion(opening) !== "roll";
+  // openingGlassIsClear, not openingIsGlazed: that helper is the one rule both
+  // existing light paths ask, roll-motion exception included, and the sky is a
+  // third reader of the same fact rather than a fourth rule that happens to
+  // agree. Its known gap — a blind or curtain defaulting to `slide` rather than
+  // `roll` — is inherited here too, which is the right place for it to be fixed
+  // once rather than three times.
+  const glass = openingGlassIsClear(opening);
   const base = glass ? 1 : clamp01(openFraction, 0);
   return base * clamp01(shutterOpenFraction, 1);
 }
