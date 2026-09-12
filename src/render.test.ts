@@ -129,6 +129,7 @@ import {
   rotatePlanPoint,
   planRotationTransform,
   polygonCentroid,
+  areaLabelPoint,
   areaZoomTransform,
   resolveAreaZoom,
   zoomedOverlayScale,
@@ -3982,6 +3983,53 @@ describe("overlay size while zoomed (issue #222)", () => {
     expect(zoomedOverlayScale(4, 0)).toBeCloseTo(0.25);
     expect(zoomedOverlayScale(4, -2)).toBeCloseTo(0.25);
     expect(zoomedOverlayScale(NaN, 2)).toBe(1);
+  });
+});
+
+describe("areaLabelPoint", () => {
+  it("does not move a room name when an extra vertex splits a straight wall", () => {
+    const rect = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 20 }, { x: 0, y: 20 }];
+    const subdivided = [rect[0]!, { x: 3, y: 0 }, ...rect.slice(1)];
+    expect(areaLabelPoint(subdivided)).toEqual(areaLabelPoint(rect));
+    expect(polygonCentroid(subdivided)).not.toEqual(polygonCentroid(rect));
+  });
+
+  it("agrees with the vertex mean on a rectangle", () => {
+    const rect = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 20 }, { x: 0, y: 20 }];
+    expect(areaLabelPoint(rect)).toEqual({ x: 5, y: 10 });
+  });
+
+  it("centres on the floor of an L-shaped room, not on its corners", () => {
+    // The kitchen that surfaced this: four of six vertices sit on the right,
+    // so the vertex mean lands at x=300 — outside the room's visual middle.
+    const kitchen = [
+      { x: 80, y: 120 }, { x: 460, y: 120 }, { x: 460, y: 260 },
+      { x: 360, y: 260 }, { x: 360, y: 420 }, { x: 80, y: 420 },
+    ];
+    const p = areaLabelPoint(kitchen);
+    expect(p.x).toBeCloseTo(247.1, 1);
+    expect(p.y).toBeCloseTo(258.6, 1);
+    expect(polygonCentroid(kitchen).x).toBe(300);
+  });
+
+  it("does not care which way the polygon winds", () => {
+    const cw = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 20 }, { x: 0, y: 20 }];
+    expect(areaLabelPoint([...cw].reverse())).toEqual(areaLabelPoint(cw));
+  });
+
+  it("falls back to the vertex mean when the centroid escapes a U-shaped room", () => {
+    // Centre of mass sits in the notch between the arms, outside the polygon.
+    const u = [
+      { x: 0, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 30 }, { x: 20, y: 30 },
+      { x: 20, y: 10 }, { x: 10, y: 10 }, { x: 10, y: 30 }, { x: 0, y: 30 },
+    ];
+    expect(areaLabelPoint(u)).toEqual(polygonCentroid(u));
+  });
+
+  it("falls back for a polygon with no area", () => {
+    const line = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 20, y: 0 }];
+    expect(areaLabelPoint(line)).toEqual({ x: 10, y: 0 });
+    expect(areaLabelPoint([])).toEqual({ x: 0, y: 0 });
   });
 });
 

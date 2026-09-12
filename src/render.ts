@@ -4676,13 +4676,51 @@ export function renderWallMask(
 /**
  * Arithmetic-mean centroid of a polygon's vertices. Not an exact
  * center-of-mass for a non-convex shape, but that precision isn't needed
- * here — it's only used for name-label placement and marquee/click
+ * here — it's only used for approximate editor positions and marquee/click
  * hit-testing (see `elementsInRect` in editor-geometry.ts).
  */
 export function polygonCentroid(points: readonly AreaPoint[]): { x: number; y: number } {
   if (!points.length) return { x: 0, y: 0 };
   const sum = points.reduce((s, p) => ({ x: s.x + p.x, y: s.y + p.y }), { x: 0, y: 0 });
   return { x: sum.x / points.length, y: sum.y / points.length };
+}
+
+/**
+ * Area-weighted centroid — the polygon's centre of *mass* by the shoelace
+ * formula — or undefined when the polygon encloses no area (fewer than three
+ * points, or all of them collinear), where the quantity is not defined.
+ *
+ * Winding does not matter: signed area appears in both the numerator and the
+ * denominator, so a clockwise polygon and its counter-clockwise twin return
+ * the same point.
+ */
+function polygonAreaCentroid(points: readonly AreaPoint[]): { x: number; y: number } | undefined {
+  if (points.length < 3) return undefined;
+  let twiceArea = 0;
+  let x = 0;
+  let y = 0;
+  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
+    const pi = points[i]!;
+    const pj = points[j]!;
+    const cross = pj.x * pi.y - pi.x * pj.y;
+    twiceArea += cross;
+    x += (pj.x + pi.x) * cross;
+    y += (pj.y + pi.y) * cross;
+  }
+  if (twiceArea === 0) return undefined;
+  return { x: x / (3 * twiceArea), y: y / (3 * twiceArea) };
+}
+
+/**
+ * Centre room labels by floor area, rather than the number of vertices on each
+ * side. Keep the previous placement when the area centroid is outside a concave
+ * room or the polygon has no area. This fallback does not guarantee an interior
+ * label for every concave polygon.
+ */
+export function areaLabelPoint(points: readonly AreaPoint[]): { x: number; y: number } {
+  const centroid = polygonAreaCentroid(points);
+  if (centroid && pointInPolygon(points, centroid.x, centroid.y)) return centroid;
+  return polygonCentroid(points);
 }
 
 /** Neutral (unzoomed) result of {@link areaZoomTransform} — identity view. */
