@@ -83,7 +83,7 @@ import {
   wallsLightPassesThrough,
   openingClearFraction,
   glowClearSpan,
-  polygonCentroid,
+  areaLabelPoint,
   trackerSensorReading,
   entityIsActive,
   itemBadgeLabel,
@@ -874,7 +874,7 @@ export class FloorplanCard extends LitElement {
     scale: OverlayScale
   ): TemplateResult | typeof nothing {
     if (!a.name || (a.showName ?? true) === false) return nothing;
-    const centroid = polygonCentroid(a.points);
+    const centroid = areaLabelPoint(a.points);
     const p = rotatePlanPoint(centroid.x, centroid.y, c.width, c.height, rot);
     const d = rotatedCanvasSize(c.width, c.height, rot);
     // Empty unless the size has something to say the stylesheet doesn't — see
