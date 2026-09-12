@@ -188,6 +188,9 @@ async function mountEditor(extra: Partial<FloorplanCardConfig> = {}) {
         pointerId: 1,
         clientX: at.x,
         clientY: at.y,
+        // A real drag holds a button down. Left unset this is 0, which the
+        // editor reads as "the release never reached us" and cancels.
+        buttons: type === "pointerup" ? 0 : 1,
         bubbles: true,
         cancelable: true,
       });
@@ -215,6 +218,7 @@ async function mountEditor(extra: Partial<FloorplanCardConfig> = {}) {
         pointerId: 1,
         clientX: at.x,
         clientY: at.y,
+        buttons: type === "pointerup" ? 0 : 1,
         bubbles: true,
         cancelable: true,
       });
@@ -234,6 +238,9 @@ async function mountEditor(extra: Partial<FloorplanCardConfig> = {}) {
         pointerId: 1,
         clientX: at.x,
         clientY: at.y,
+        // A real drag holds a button down. Left unset this is 0, which the
+        // editor reads as "the release never reached us" and cancels.
+        buttons: type === "pointerup" ? 0 : 1,
         bubbles: true,
         cancelable: true,
       });
@@ -242,7 +249,34 @@ async function mountEditor(extra: Partial<FloorplanCardConfig> = {}) {
     h.dispatchEvent(ev("pointercancel", to));
     await ed.updateComplete;
   }
-  return { ed, handle, dragTo, dragThenCancel, clickWithoutMoving, emitted };
+  const ptr = (type: string, at: { x: number; y: number }, buttons = 1) =>
+    new PointerEvent(type, {
+      pointerId: 1,
+      clientX: at.x,
+      clientY: at.y,
+      buttons,
+      bubbles: true,
+      cancelable: true,
+    });
+  const handleCentre = () => {
+    const hb = handle().getBoundingClientRect();
+    return { x: hb.x + hb.width / 2, y: hb.y + hb.height / 2 };
+  };
+  const canvasPoint = (x: number, y: number) => {
+    const sb = root().querySelector("svg")!.getBoundingClientRect();
+    return { x: sb.x + sb.width * (x / 400), y: sb.y + sb.height * (y / 200) };
+  };
+  return {
+    ed,
+    handle,
+    dragTo,
+    dragThenCancel,
+    clickWithoutMoving,
+    emitted,
+    ptr,
+    handleCentre,
+    canvasPoint,
+  };
 }
 
 describe("the editor lets you drag the switcher anywhere on the canvas", () => {
@@ -310,6 +344,77 @@ describe("the editor lets you drag the switcher anywhere on the canvas", () => {
     (t.ed as unknown as { _undo(): void })._undo();
     await t.ed.updateComplete;
     expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toBeUndefined();
+  });
+
+  it("refuses to start while another gesture owns the pointer", async () => {
+    // The gate every other pointer path honours. Without it a second touch
+    // could start this on top of a live element drag or marquee.
+    const t = await mountEditor();
+    (t.ed as unknown as { _gesturePointer: number | null })._gesturePointer = 7;
+    const at = t.handleCentre();
+    t.handle().dispatchEvent(t.ptr("pointerdown", at));
+    t.handle().dispatchEvent(t.ptr("pointermove", t.canvasPoint(100, 120)));
+    t.handle().dispatchEvent(t.ptr("pointerup", t.canvasPoint(100, 120)));
+    await t.ed.updateComplete;
+    expect(t.emitted).toEqual([]);
+  });
+
+  it("ignores a jitter too small to be a drag", async () => {
+    // A browser delivering a one-pixel move on an ordinary click must not
+    // push history and store a position — that is the whole "a click does not
+    // place it" promise, and a zero-move test does not cover it.
+    const t = await mountEditor();
+    const at = t.handleCentre();
+    t.handle().dispatchEvent(t.ptr("pointerdown", at));
+    t.handle().dispatchEvent(t.ptr("pointermove", { x: at.x + 1, y: at.y + 1 }));
+    t.handle().dispatchEvent(t.ptr("pointerup", { x: at.x + 1, y: at.y + 1 }));
+    await t.ed.updateComplete;
+    expect(t.emitted).toEqual([]);
+  });
+
+  it("cancels when a move arrives with nothing held down", async () => {
+    // The release never reached us — alt-tab, a dialog taking the pointer.
+    // The other drags treat that as a cancel rather than letting the thing
+    // chase the hovering cursor.
+    const t = await mountEditor();
+    const at = t.handleCentre();
+    t.handle().dispatchEvent(t.ptr("pointerdown", at));
+    t.handle().dispatchEvent(t.ptr("pointermove", t.canvasPoint(100, 120)));
+    t.handle().dispatchEvent(t.ptr("pointermove", t.canvasPoint(140, 140), 0));
+    await t.ed.updateComplete;
+    expect(t.emitted).toEqual([]);
+    expect(t.handle().className).toContain("default");
+  });
+
+  it("rolls back on Escape, like every other canvas gesture", async () => {
+    // Free, because the rollback runs through `_cancelGesture` — the Escape
+    // cascade never has to name this drag.
+    const t = await mountEditor();
+    const at = t.handleCentre();
+    t.handle().dispatchEvent(t.ptr("pointerdown", at));
+    t.handle().dispatchEvent(t.ptr("pointermove", t.canvasPoint(100, 120)));
+    await t.ed.updateComplete;
+    // Dispatched from inside the editor, not on `window`: the keydown listener
+    // is window-level but ignores anything whose composed path does not run
+    // through the editor, so a stray key in HA's UI above cannot reach it.
+    t.handle().dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Escape", bubbles: true, composed: true }),
+    );
+    await t.ed.updateComplete;
+    expect(t.emitted).toEqual([]);
+    expect(t.handle().className).toContain("default");
+  });
+
+  it("hands the position over if the editor is torn down mid-drag", async () => {
+    // HA's dialog reparents the editor, and `_config` is the host's only copy
+    // of the edit — so a teardown emits rather than silently undoing it.
+    const t = await mountEditor();
+    const at = t.handleCentre();
+    t.handle().dispatchEvent(t.ptr("pointerdown", at));
+    t.handle().dispatchEvent(t.ptr("pointermove", t.canvasPoint(100, 120)));
+    await t.ed.updateComplete;
+    t.ed.remove();
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual({ x: 100, y: 120 });
   });
 
   it("draws no handle on a plan with one floor, which has no switcher", async () => {

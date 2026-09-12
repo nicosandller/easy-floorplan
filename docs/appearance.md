@@ -217,8 +217,9 @@ tablet keeps the switcher in the same corner of the house.
 A point outside the canvas is kept rather than clamped — a plan whose walls stop short of
 the edge has real margin to park it in.
 
-**Project → Floor switcher** says where it currently is and offers *Back to the corner*,
-which is the one thing a drag cannot express. Leave it alone and nothing changes: a plan
+**Project → Floor switcher** carries X and Y fields and a *Back to the corner* button —
+the coordinates because a drag needs a pointer and is aimed by eye, and the button because
+returning to the default is the one thing a drag cannot express. Leave it alone and nothing changes: a plan
 that stores no position emits no positioning at all and renders exactly as it always has.
 
 ## Overlay scale

@@ -230,6 +230,12 @@ const TOOL_META: Record<Tool, { icon: string; label: string }> = {
  */
 const switcherHandleHome = (w: number, h: number) => ({ x: w * 0.93, y: h * 0.08 });
 
+/**
+ * How far the pointer must travel, in canvas units, before a press on the
+ * floor-switcher handle counts as a drag rather than a click.
+ */
+const DRAG_SLOP = 4;
+
 const SEL_KIND_ICON: Record<SelKind, string> = {
   wall: "mdi:wall",
   opening: "mdi:door",
@@ -392,6 +398,8 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _switcherDrag?: {
     pointerId: number;
     moved: boolean;
+    /** Where the pointer went down, so a click can be told from a drag. */
+    at: { x: number; y: number };
     /** The config before the drag, so a cancel can put it back locally. */
     before: FloorplanCardConfig;
     /** The redo stack the first-movement history push cleared. */
@@ -523,6 +531,12 @@ export class FloorplanCardEditor extends LitElement {
     this._dragMoves.cancel();
     this._flushDrag();
     this._drag = null;
+    // Same reasoning for the switcher (issue #281): removal takes the capture
+    // with it, so the gesture is over either way. `_config` is the host's only
+    // copy of where it was dropped, so hand that over rather than rolling back
+    // — a reparent mid-drag should not silently undo the move.
+    if (this._switcherDrag?.moved) this._emit(this._config);
+    this._switcherDrag = undefined;
     this._gesturePointer = null;
     this._resetPinch();
     super.disconnectedCallback();
@@ -1136,7 +1150,14 @@ export class FloorplanCardEditor extends LitElement {
         this._addQuery = "";
         return;
       }
-      if (this._draft || this._draftTracker || this._draftArea || this._marquee || this._drag) {
+      if (
+        this._draft ||
+        this._draftTracker ||
+        this._draftArea ||
+        this._marquee ||
+        this._drag ||
+        this._switcherDrag
+      ) {
         ev.preventDefault();
         ev.stopPropagation();
         this._cancelGesture();
@@ -1309,6 +1330,10 @@ export class FloorplanCardEditor extends LitElement {
    * between — is dropped, so a canceled drag leaves no trace in undo.
    */
   private _cancelGesture(): void {
+    // The switcher's drag (issue #281) rolls back through here like every
+    // other gesture, which is what puts it on the Escape cascade and the
+    // no-buttons path without either of them naming it.
+    this._rollBackSwitcherDrag();
     // Whatever the drag accumulated is about to be replaced by its snapshot.
     this._dragMoves.cancel();
     this._dragDirty = false;
@@ -1353,7 +1378,10 @@ export class FloorplanCardEditor extends LitElement {
     // A gesture with no buttons held means pointerup never reached us
     // (alt-tab, dialog retarget) — treat it as canceled instead of letting
     // the element chase the hovering mouse.
-    if (ev.buttons === 0 && (this._drag || this._draft || this._draftTracker || this._marquee)) {
+    if (
+      ev.buttons === 0 &&
+      (this._drag || this._draft || this._draftTracker || this._marquee || this._switcherDrag)
+    ) {
       this._cancelGesture();
       return;
     }
@@ -4593,31 +4621,50 @@ export class FloorplanCardEditor extends LitElement {
 
   private _onSwitcherDown = (ev: PointerEvent): void => {
     if (this._tool !== "select") return;
+    // One gesture at a time, the same gate every other pointer path honours.
+    // Without it a second touch could start this drag on top of a live element
+    // drag or marquee, and two touches on the handle could overwrite each
+    // other's rollback state.
+    if (this._gesturePointer !== null) return;
     // Kept off the canvas: without this the pointerdown reaches the stage and
     // starts a marquee behind the thing being dragged.
     ev.stopPropagation();
     ev.preventDefault();
+    const handle = ev.currentTarget as Element;
     // The editor's guarded helper, not the DOM method: setPointerCapture
     // throws for a pointer that is not active, which a synthetic or
-    // re-targeted event can easily be — and thrown here it would abort before
-    // `_switcherDrag` is set, leaving a dead handle.
-    this._capturePointer(ev, ev.currentTarget as Element);
+    // re-targeted event can easily be.
     this._switcherDrag = {
       pointerId: ev.pointerId,
       moved: false,
+      at: this._toVirtual(ev, false),
       before: this._config,
       priorFuture: this._future,
     };
+    this._gesturePointer = ev.pointerId;
+    this._capturePointer(ev, handle);
   };
 
   private _onSwitcherMove = (ev: PointerEvent): void => {
     const d = this._switcherDrag;
     if (!d || d.pointerId !== ev.pointerId) return;
     ev.stopPropagation();
+    // A move with nothing held means the release never reached us (alt-tab, a
+    // dialog taking the pointer). The other drags treat that as a cancel
+    // rather than letting the element chase the hovering cursor.
+    if (ev.buttons === 0) {
+      this._cancelGesture();
+      return;
+    }
+    const raw = this._toVirtual(ev, false);
+    // Below the slop a press is a click, not a drag. Without this the browser
+    // delivering a zero- or one-pixel move on an ordinary click would push
+    // history and write a position — which is exactly what the "a click does
+    // not place it" rule promises it will not do.
+    if (!d.moved && Math.hypot(raw.x - d.at.x, raw.y - d.at.y) < DRAG_SLOP) return;
     // History once per drag, not once per frame, so undo steps back over the
     // whole move. The snapshot it pushes is the config as it stood before —
-    // which is what cancel needs to put back, and what it removes from the
-    // stack on the way.
+    // which is what a rollback puts back, and removes from the stack.
     if (!d.moved) {
       this._pushHistory();
       d.snapshot = this._history[this._history.length - 1];
@@ -4627,8 +4674,8 @@ export class FloorplanCardEditor extends LitElement {
     // Local, not emitted. Every other drag in this editor writes to `_config`
     // while it is live and emits once on release, and both halves matter: the
     // host is spared a `config-changed` (and the card-stack re-render behind
-    // it) per frame, and — because nothing has been emitted — a cancel can put
-    // the old config back locally instead of having to emit its way out.
+    // it) per frame, and — because nothing has been emitted — a rollback can
+    // put the old config back locally instead of emitting its way out.
     this._config = { ...this._config, floorSwitcher: { x: at.x, y: at.y } };
     this._watchedEntities = collectWatchedEntities(this._config);
   };
@@ -4639,39 +4686,54 @@ export class FloorplanCardEditor extends LitElement {
     ev.stopPropagation();
     this._releasePointer(ev, ev.currentTarget as Element);
     this._switcherDrag = undefined;
+    this._gesturePointer = null;
     // `_emit`, not `_commit`: the history entry was pushed at first movement,
     // and committing would push the finished position as a second one — so the
     // first undo would restore the config you are already looking at.
     //
-    // A click that never moved emits nothing: it would otherwise pin the
-    // switcher to wherever the corner happened to be, turning a stray tap into
-    // an edit.
+    // A press that never passed the slop emits nothing: it would otherwise pin
+    // the switcher to wherever the corner happened to be, turning a stray tap
+    // into an edit.
     if (d.moved) this._emit(this._config);
   };
 
   /**
-   * A drag that was taken away rather than finished — a touch interrupted, a
-   * dialog stealing the pointer, capture lost.
+   * A drag taken away rather than finished — a touch interrupted, a dialog
+   * stealing the pointer, capture lost, Escape.
    *
-   * Rolls back rather than saving where the pointer happened to be, which is
-   * what every other canvas gesture does (see `_cancelGesture`). Nothing was
-   * emitted while it was live, so the host still holds the pre-drag config and
-   * restoring it locally spares a round trip; the history entry pushed at first
-   * movement is removed by identity, and the redo stack that push cleared is
-   * put back, so a canceled drag is a complete no-op.
+   * The work is in `_rollBackSwitcherDrag` so that `_cancelGesture` can call it
+   * too: routing every abort through the editor's one cancel path is what puts
+   * this gesture on the Escape cascade and the no-buttons guard without either
+   * of them having to know it exists.
    */
   private _onSwitcherCancel = (ev: PointerEvent): void => {
     const d = this._switcherDrag;
     if (!d || d.pointerId !== ev.pointerId) return;
     ev.stopPropagation();
     this._releasePointer(ev, ev.currentTarget as Element);
+    this._rollBackSwitcherDrag();
+  };
+
+  /**
+   * Put the config back as it was before the switcher drag started.
+   *
+   * Nothing was emitted while it was live, so the host still holds the pre-drag
+   * config and restoring it locally spares a round trip. The history entry
+   * pushed at first movement is removed by identity, and the redo stack that
+   * push cleared is put back, so a canceled drag is a complete no-op — the same
+   * contract `_cancelGesture` keeps for an element drag.
+   */
+  private _rollBackSwitcherDrag(): void {
+    const d = this._switcherDrag;
+    if (!d) return;
     this._switcherDrag = undefined;
+    this._gesturePointer = null;
     if (!d.moved) return;
     this._history = this._history.filter((c) => c !== d.snapshot);
     this._config = d.before;
     this._watchedEntities = collectWatchedEntities(d.before);
     this._future = d.priorFuture;
-  };
+  }
 
   private _renderTextOverlay(
     t: FloorText,
@@ -5083,15 +5145,39 @@ export class FloorplanCardEditor extends LitElement {
   private _renderSwitcherPlacement(): TemplateResult {
     const at = floorSwitcherAnchor(this._config);
     const floors = this._config.floors ?? [];
+    const w = cssNumber(this._config.width, DEFAULT_WIDTH);
+    const h = cssNumber(this._config.height, DEFAULT_HEIGHT);
     return html`
       <div class="row col">
         <label>Position</label>
         ${floors.length > 1
           ? html`<span class="hint"
                 >${at
-                  ? `Placed at ${Math.round(at.x)}, ${Math.round(at.y)}. Drag it on the canvas to move it.`
-                  : "In the plan's top-right corner. Drag it on the canvas to move it."}</span
+                  ? "Drag it on the canvas, or type the point here."
+                  : "In the plan's top-right corner. Drag it on the canvas, or type a point here."}</span
               >
+              <!-- Coordinates as well as the drag, because the drag is the only
+                   way to place it and a pointer is not the only way people
+                   work: the handle takes no keyboard, so without these there
+                   would be no keyboard path to the feature at all. They are
+                   also the precise option, for a plan being nudged a few units
+                   rather than aimed by eye. -->
+              <div class="row wide">
+                <label>X</label>
+                <input
+                  type="number"
+                  .value=${at ? String(Math.round(at.x)) : ""}
+                  placeholder=${Math.round(switcherHandleHome(w, h).x)}
+                  @change=${(e: Event) => this._setSwitcherCoord("x", (e.target as HTMLInputElement).value)}
+                />
+                <label>Y</label>
+                <input
+                  type="number"
+                  .value=${at ? String(Math.round(at.y)) : ""}
+                  placeholder=${Math.round(switcherHandleHome(w, h).y)}
+                  @change=${(e: Event) => this._setSwitcherCoord("y", (e.target as HTMLInputElement).value)}
+                />
+              </div>
               ${at
                 ? html`<div class="row wide">
                     <button @click=${() => this._patchConfig({ floorSwitcher: undefined })}>
@@ -5105,6 +5191,32 @@ export class FloorplanCardEditor extends LitElement {
             >`}
       </div>
     `;
+  }
+
+  /**
+   * Set one coordinate from the panel's number fields.
+   *
+   * Typing into one of them while the switcher is still in its default corner
+   * has to place it, which means inventing the other half — and the only
+   * honest answer is where the handle is actually drawn, since that is what
+   * the field's placeholder has been showing.
+   *
+   * An emptied field returns the switcher to the corner rather than storing a
+   * half-position: `floorSwitcher` is a point or it is nothing, which is the
+   * rule `floorSwitcherAnchor` enforces at the other end.
+   */
+  private _setSwitcherCoord(axis: "x" | "y", raw: string): void {
+    const n = Number(raw);
+    if (raw.trim() === "" || !Number.isFinite(n)) {
+      this._patchConfig({ floorSwitcher: undefined });
+      return;
+    }
+    const w = cssNumber(this._config.width, DEFAULT_WIDTH);
+    const h = cssNumber(this._config.height, DEFAULT_HEIGHT);
+    const base = floorSwitcherAnchor(this._config) ?? switcherHandleHome(w, h);
+    this._patchConfig({
+      floorSwitcher: { ...base, [axis]: n },
+    });
   }
 
   private _renderSymbolsPanel(): TemplateResult {
