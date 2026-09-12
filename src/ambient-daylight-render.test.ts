@@ -169,9 +169,15 @@ describe("ambient daylight SVG composition", () => {
     // Blur first, clip second. The other order feathers the room boundary
     // itself and lets the wash bleed through the wall into the next room,
     // which is the one thing the Area polygon is here to prevent.
+    //
+    // Ordering alone would not say that: a patch painted *after* the clipped
+    // group is still unclipped. What matters is that it sits inside it, so the
+    // check is that no `</g>` closes between the group and the patch.
     const clippedGroup = svg.indexOf(`<g clip-path=url(#${clipId})`);
     expect(clippedGroup).toBeGreaterThan(-1);
-    expect(clippedGroup).toBeLessThan(svg.indexOf("fp-ambient-daylight-patch"));
+    const patchAt = svg.indexOf("fp-ambient-daylight-patch");
+    expect(patchAt).toBeGreaterThan(clippedGroup);
+    expect(svg.slice(clippedGroup, patchAt)).not.toContain("</g>");
   });
 
   it("carries the class the stylesheet guard protects, and stays inert to pointers", () => {

@@ -130,6 +130,14 @@ export function renderAmbientDaylight(
         <clipPath id=${model.clipId}>
           <polygon points=${model.clipPoints}></polygon>
         </clipPath>
+        <!-- The filter region is a proportion of the patch's own box, and a
+             Gaussian tail runs to roughly 3x its deviation, so the two are
+             coupled: the margin has to stay wider than the blur or the falloff
+             is cut off square at the region edge — a hard line exactly where
+             the softness was the point. It holds comfortably at the shipped
+             blur, since a patch fans most of the way across its room while the
+             blur stays in single digits. Worth sizing from the blur instead if
+             it ever becomes a public knob. -->
         <filter id=${model.filterId} x="-25%" y="-25%" width="150%" height="150%"
                 color-interpolation-filters="sRGB">
           <feGaussianBlur stdDeviation=${model.blur}></feGaussianBlur>

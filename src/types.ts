@@ -257,17 +257,26 @@ export interface Opening {
    * exception: a glass-brick panel, a hatch, a serving window with a solid
    * flap, all of which admit light only as far as they are open.
    *
-   * Only the sunlight reads this — it changes nothing about how the opening
-   * is drawn. See {@link openingIsGlazed}.
+   * Only the light reads this — it changes nothing about how the opening is
+   * drawn. All three layers ask the same question through the same helper:
+   * direct sunlight, a lamp's pool, and diffuse
+   * {@link FloorplanCardConfig.ambientDaylight}. See {@link openingIsGlazed},
+   * and {@link openingGlassIsClear} for the roll-motion exception they share.
    */
   glazed?: boolean;
   /**
-   * Whether this opening takes part in the sunlight at all (default `true`).
+   * Whether this opening takes part in the **natural** light at all (default
+   * `true`).
    *
-   * `false` makes it wall as far as the sun is concerned: no patch of its own,
-   * and it stops a beam crossing it like any other stretch of wall. Nothing
-   * else changes — it is still drawn, still tappable, still lets a lamp's pool
-   * through if it is open.
+   * `false` makes it wall as far as the sky is concerned: no patch of its own,
+   * and it stops a beam crossing it like any other stretch of wall. Both
+   * outdoor layers read it — direct {@link FloorplanCardConfig.sunlight} and
+   * diffuse {@link FloorplanCardConfig.ambientDaylight} — because a door the
+   * sun cannot get through is not one the sky gets through either, and one
+   * flag saying "shut to the outside" beats two that have to agree.
+   *
+   * Indoors nothing changes: it is still drawn, still tappable, and still lets
+   * a lamp's pool through if it is open.
    *
    * The case it exists for (issue #177): a **solid front door with no sensor
    * bound**. The plan draws such a door open, because that is the floor-plan

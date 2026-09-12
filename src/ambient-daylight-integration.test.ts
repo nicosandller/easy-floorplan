@@ -95,6 +95,40 @@ describe("ambient daylight host integration", () => {
     ).not.toBe(nothing);
   });
 
+  // Area ids are hand-authored and can collide. Keyed on the id alone, a window
+  // in the first room painted a patch into the second and the second resolved
+  // its clip to the first room's polygon — daylight in a room with no opening
+  // at all, shaped like a room somewhere else.
+  it("keeps two rooms that share an id from lighting each other", () => {
+    const twoRooms = floor();
+    twoRooms.areas = [
+      twoRooms.areas[0]!,
+      // Same id, far away, and with no opening of its own.
+      { id: "bedroom", name: "Other", points: [
+        { x: 1000, y: 0 },
+        { x: 1100, y: 0 },
+        { x: 1100, y: 100 },
+        { x: 1000, y: 100 },
+      ] },
+    ];
+
+    const layer = renderAmbientDaylightLayer(
+      twoRooms,
+      config({ ambientDaylight: true }),
+      hassWithElevation(25),
+      "card-a",
+      openingState,
+    );
+    const svg = serialize(layer);
+
+    // The windowed room is lit, and it is the only one: exactly one clip, one
+    // blur and one patch across the whole layer.
+    expect(svg.match(/<clipPath/g)?.length).toBe(1);
+    expect(svg.match(/fp-ambient-daylight-patch/g)?.length).toBe(1);
+    // And the far room contributed no geometry of its own.
+    expect(svg).not.toContain("1000,0");
+  });
+
   // Subscribing to `sun.sun` is only half the contract. During replay the card
   // builds its state from the replay scope, and history is fetched for exactly
   // the entities in it; anything absent falls back to the live entity instead.
@@ -161,3 +195,16 @@ describe("ambient daylight host integration", () => {
     ).toBe(nothing);
   });
 });
+
+/** Flatten a Lit template the way `render.opening.test.ts` does. */
+function serialize(node: unknown): string {
+  if (node == null || node === false) return "";
+  if (Array.isArray(node)) return node.map(serialize).join("");
+  if (typeof node === "object" && "strings" in (node as Record<string, unknown>)) {
+    const { strings, values } = node as { strings: string[]; values: unknown[] };
+    let out = strings[0]!;
+    for (let i = 0; i < values.length; i++) out += serialize(values[i]) + strings[i + 1]!;
+    return out;
+  }
+  return String(node);
+}
