@@ -2121,3 +2121,22 @@ describe("itemGroup7aForm - showOnlyWhenZoomed", () => {
     expect({ ...on, ...patch }.showOnlyWhenZoomed).toBeUndefined();
   });
 });
+
+
+describe("minimum overlay width in the display form", () => {
+  const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+  it("appears only with canvas-unit sizing", () => {
+    expect(projectDisplayForm(base).fields.map(f => f.name)).not.toContain("overlayMinWidth");
+    const form = projectDisplayForm({ ...base, overlayScale: "plan", overlayMinWidth: 800 });
+    expect(form.fields.map(f => f.name)).toContain("overlayMinWidth");
+    expect(form.data.overlayMinWidth).toBe(800);
+    expect(form.toPatch({ overlayMinWidth: 0 })).toEqual({ overlayMinWidth: undefined });
+    expect(form.toPatch({ overlayMinWidth: 800 })).toEqual({ overlayMinWidth: 800 });
+    expect(form.toPatch({ overlayMinWidth: 8000 })).toEqual({ overlayMinWidth: 4000 });
+  });
+  it("does not erase a saved minimum when switching modes", () => {
+    const form = projectDisplayForm({ ...base, overlayScale: "plan", overlayMinWidth: 800 });
+    expect(form.toPatch({ overlayScale: "fixed" })).toEqual({ overlayScale: "fixed" });
+    expect(projectDisplayForm({ ...base, overlayScale: "plan" }).data.overlayMinWidth).toBe(0);
+  });
+});

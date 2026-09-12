@@ -105,6 +105,7 @@ import {
   areaLabelFontSize,
   wallStrokeStyle,
   normalizeOverlayScale,
+  normalizeOverlayMinWidth,
   overlayLength,
   renderSunlight,
   sunLightDirection,
@@ -931,6 +932,7 @@ export class FloorplanCard extends LitElement {
     // Overlay sizing mode. --fp-plan-w is the canvas width *as displayed*, so a
     // rotated plan divides by the dimension 100cqw actually measures.
     const scale = normalizeOverlayScale(c.overlayScale);
+    const minW = scale === "plan" ? normalizeOverlayMinWidth(c.overlayMinWidth) : undefined;
     // Follow the real sun (issue #113). Elevation comes from the HA instance,
     // so every viewer sees the same picture regardless of their own timezone.
     const sunLevel = c.sunDimming
@@ -1054,6 +1056,7 @@ export class FloorplanCard extends LitElement {
             style="aspect-ratio: ${dims.w} / ${dims.h};
                    width: min(100%, calc(100cqh * ${dims.w} / ${dims.h}));
                    --fp-plan-w: ${dims.w};
+                   ${minW === undefined ? "" : `--fp-min-w: ${minW}px;`}
                    background:${cssColorOr(c.background, SKIN_PAPER)};"
           >
           <!-- preserveAspectRatio="none" is correct here, and it took a wrong
@@ -1584,7 +1587,9 @@ export class FloorplanCard extends LitElement {
     }
     @supports (container-type: inline-size) and (width: 1cqw) {
       .plan.scale-plan .items {
-        --fp-u: calc(100cqw / var(--fp-plan-w));
+        /* Clamp the shared unit so badges and their text keep their proportions.
+           The drawing and overlay positions still follow the actual plan size. */
+        --fp-u: calc(max(100cqw, var(--fp-min-w, 0px)) / var(--fp-plan-w));
       }
     }
     /* The measures that aren't config-driven, so they never reach an inline

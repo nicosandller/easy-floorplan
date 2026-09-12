@@ -1606,6 +1606,16 @@ export function normalizeOverlayScale(v: unknown): OverlayScale {
   return v === "plan" ? "plan" : "fixed";
 }
 
+/** Largest supported minimum card width, shared with the editor. */
+export const MAX_OVERLAY_MIN_WIDTH = 4000;
+
+/** Zero, empty and invalid settings leave overlay scaling unrestricted. */
+export function normalizeOverlayMinWidth(v: unknown): number | undefined {
+  if (typeof v !== "number" && typeof v !== "string") return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? Math.min(n, MAX_OVERLAY_MIN_WIDTH) : undefined;
+}
+
 /**
  * A CSS length for one overlay measure: screen px under `fixed`, canvas units
  * under `plan`. `units` is already coerced by the caller (cssNumber and the
