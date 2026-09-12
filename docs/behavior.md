@@ -146,6 +146,40 @@ Two things worth knowing before you use it:
 - The way in is the room tap, so a room whose `tap_action` [replaces the zoom](#actions-on-rooms)
   has no way to reveal its devices. Put that action on `hold_action` instead.
 
+## Actions on furniture
+
+Furniture used to have exactly one thing it could do when clicked: change floor. A room
+has had tap, hold and double-tap actions since issue #181, and a piece of furniture is
+just as reasonable a thing to press — a cabinet that opens its contact sensor's history, a
+TV that toggles the lamp beside it.
+
+```yaml
+furniture:
+  - id: tv
+    type: tv
+    entity: media_player.living
+    tap_action: { action: toggle }
+    hold_action: { action: more-info }
+```
+
+![The editor's Behavior group for a staircase: Go to floor, then Tap, Hold and Double-tap action](img/furniture-actions.png)
+
+`goToFloor` is to a piece what the zoom is to a room: the thing a tap does when nothing
+else is configured. So the two compose rather than competing —
+
+- **`goToFloor` alone** keeps changing floor on tap, exactly as before.
+- **a `tap_action`** replaces the floor change. Its tooltip stops promising a floor it will
+  no longer go to.
+- **`goToFloor` plus a hold or double-tap action** keeps both: tap still moves you, hold
+  does the other thing.
+- **`tap_action: { action: none }`** is how you say "this staircase should not move me" —
+  `none` is a configured action, not an absent one.
+
+An action that names no `entity` falls back to the piece's own, so binding a cabinet's
+contact sensor once is enough for `more-info` to know what to show. A piece with neither a
+floor to go to nor any action stays inert: no button role, no tab stop, nothing that
+announces itself and then does nothing.
+
 ## Stairs that change floor
 
 A staircase already draws an arrow saying which way it goes. `goToFloor` makes that a

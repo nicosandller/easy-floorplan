@@ -1587,6 +1587,28 @@ export function furnitureForm(
         helper: "Clicking this piece changes floor — for a staircase",
         selector: dropdown(opt("", "Nothing"), opt("up", "Up one floor"), opt("down", "Down one floor")),
       },
+      // Actions on the piece itself (issue #284), offered on every piece the
+      // way a room's are — furniture with no entity can still navigate or call
+      // a service, and requiring one first would rule that out.
+      //
+      // The tap helper names what it replaces, but only when there is
+      // something to replace: on an ordinary piece a tap does nothing today,
+      // and claiming it "replaces the floor change" would describe a staircase
+      // this piece is not.
+      {
+        name: "tap_action",
+        label: "Tap action",
+        helper: f.goToFloor
+          ? "Replaces the floor change. Put an action on hold or double-tap to keep both"
+          : undefined,
+        selector: { ui_action: { default_action: "none" } },
+      },
+      { name: "hold_action", label: "Hold action", selector: { ui_action: { default_action: "none" } } },
+      {
+        name: "double_tap_action",
+        label: "Double-tap action",
+        selector: { ui_action: { default_action: "none" } },
+      },
     ],
     data: {
       type: f.type,
@@ -1596,6 +1618,9 @@ export function furnitureForm(
       angle: f.angle ?? 0,
       entity: f.entity ?? "",
       goToFloor: f.goToFloor ?? "",
+      tap_action: f.tap_action,
+      hold_action: f.hold_action,
+      double_tap_action: f.double_tap_action,
     },
     // "" is the empty option, and means the piece is ordinary furniture.
     toPatch: (p) => ("goToFloor" in p && !p.goToFloor ? { ...p, goToFloor: undefined } : p),

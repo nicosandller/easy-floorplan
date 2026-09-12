@@ -313,7 +313,7 @@ there reads `—`, the same as a device's label.
 
 ## Furniture
 
-`{ id, type, x, y, w, h, angle?, hand?, color?, entity?, activeColor?, stateColor?, goToFloor?, locked? }`
+`{ id, type, x, y, w, h, angle?, hand?, color?, entity?, activeColor?, stateColor?, goToFloor?, tap_action?, hold_action?, double_tap_action?, locked? }`
 
 `type` names a **symbol** — one of the ~26 the card ships with (`table`, `sofa`, `bed`,
 `fridge`, `stairs`, …; the full set is [`furniture/`](../furniture), a file each), or one you
@@ -331,6 +331,12 @@ contact sensor is open.
 
 **`goToFloor`** (`up` / `down`) makes clicking the piece change floor — written for the
 `stairs` symbol. See [Stairs that change floor](behavior.md#stairs-that-change-floor).
+
+**`tap_action` / `hold_action` / `double_tap_action`** give a piece the same actions a room
+has (same shape as a device's). `goToFloor` is to furniture what the zoom is to a room: what
+a tap does when nothing else is set, so setting `tap_action` replaces it while hold and
+double-tap stay free. An action with no `entity` of its own uses the piece's. See
+[Actions on furniture](behavior.md#actions-on-furniture).
 
 ```yaml
 { id: plant1, type: plant, x: 300, y: 220, w: 40, h: 40,

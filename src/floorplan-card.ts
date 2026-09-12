@@ -8,6 +8,7 @@ import type {
   FloorItem,
   FloorText,
   Floor,
+  Furniture,
   Area,
   OverlayScale,
   RenderHass,
@@ -68,6 +69,7 @@ import {
   renderRipple,
   renderFurniture,
   furnitureColor,
+  furnitureActionForGesture,
   furnitureFloorTarget,
   renderTracker,
   renderArea,
@@ -628,6 +630,29 @@ export class FloorplanCard extends LitElement {
     executeAction(this, this.hass, { entity: press.entity }, press.config);
   }
 
+  /**
+   * A gesture on a piece of furniture (issue #284): its configured action, or —
+   * for a tap with nothing configured — the floor change it already did.
+   *
+   * The same shape as `_onAreaAction`, and for the same reason: every plan
+   * drawn before furniture had actions has three unset gestures, so a
+   * staircase still changes floor on tap and nothing else answers at all.
+   */
+  private _onFurnitureAction(
+    ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>,
+    f: Furniture,
+    floors: readonly Floor[],
+    to: string | undefined,
+  ): void {
+    const press = furnitureActionForGesture(f, ev.detail.action);
+    if (!press) {
+      if (ev.detail.action === "tap" && to) this._goToFloor(floors, to);
+      return;
+    }
+    if (!this.hass) return;
+    executeAction(this, this.hass, { entity: press.entity }, press.config);
+  }
+
   private _renderBadge(item: FloorItem, scale: OverlayScale, renderHass: RenderHass | undefined): TemplateResult {
     const size = cssNumber(item.size, DEFAULT_ITEM_SIZE);
     const box = overlayLength(size, scale);
@@ -1154,20 +1179,35 @@ export class FloorplanCard extends LitElement {
               // is still a staircase, but it takes no clicks rather than
               // offering a control that does nothing.
               const to = furnitureFloorTarget(f, floors, active.id);
-              if (!to) return drawn;
+              // …and anything else the piece was told to do (issue #284). Hold
+              // and double-tap are asked for separately because the handler
+              // needs to know whether to spend their timers: a staircase with
+              // only a floor change must still answer a tap immediately.
+              const hasHold = !!furnitureActionForGesture(f, "hold");
+              const hasDoubleClick = !!furnitureActionForGesture(f, "double_tap");
+              const hasTap = !!furnitureActionForGesture(f, "tap");
+              // An inert piece stays inert: no role, no tab stop, no listeners.
+              // A gray diagram that announces itself as a button and then does
+              // nothing is worse than one that says nothing at all.
+              if (!to && !hasTap && !hasHold && !hasDoubleClick) return drawn;
               const name = floors.find((x) => x.id === to)?.name;
+              // Names the gesture that actually runs. A configured tap replaces
+              // the floor change, so promising "Go to Upstairs" would be a lie
+              // on exactly the plans this feature was asked for.
+              const label = hasTap
+                ? undefined
+                : to
+                  ? name
+                    ? `Go to ${name}`
+                    : "Go to the next floor"
+                  : undefined;
               return svg`<g class="fp-furniture-link" role="button" tabindex="0"
-                    @action=${() => this._goToFloor(floors, to)}
-                    .actionHandler=${actionHandler({
-                      // A staircase has one gesture. Saying so keeps a tap from
-                      // sitting out the hold and double-tap timers before it
-                      // does anything.
-                      hasHold: false,
-                      hasDoubleClick: false,
-                    })}>
+                    @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
+                      this._onFurnitureAction(ev, f, floors, to)}
+                    .actionHandler=${actionHandler({ hasHold, hasDoubleClick })}>
                   <!-- An SVG tooltip is a <title> child, not a title=
                        attribute: the attribute does nothing here. -->
-                  <title>${name ? `Go to ${name}` : "Go to the next floor"}</title>
+                  ${label ? svg`<title>${label}</title>` : nothing}
                   ${drawn}
                 </g>`;
             })}

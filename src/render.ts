@@ -2803,6 +2803,26 @@ export function openingActionForGesture(
  * sensor can therefore say `tap_action: { action: toggle }` and mean it,
  * without naming the entity twice.
  */
+/**
+ * What a gesture on a piece of furniture should do (issue #284), or
+ * `undefined` for "whatever it did before actions existed".
+ *
+ * The mirror of {@link areaActionForGesture}, and deliberately so: a room's tap
+ * falls back to its zoom, a piece's falls back to its {@link
+ * Furniture.goToFloor}. Returning `undefined` rather than synthesising the
+ * fallback keeps that decision with the caller, which is the only place that
+ * knows whether a floor in that direction actually exists.
+ */
+export function furnitureActionForGesture(
+  f: Pick<Furniture, "entity" | "tap_action" | "hold_action" | "double_tap_action">,
+  gesture: "tap" | "hold" | "double_tap",
+): { entity?: string; config: ActionConfig } | undefined {
+  const configured =
+    gesture === "tap" ? f.tap_action : gesture === "hold" ? f.hold_action : f.double_tap_action;
+  if (!configured) return undefined;
+  return { entity: configured.entity ?? f.entity, config: configured };
+}
+
 export function areaActionForGesture(
   a: Pick<Area, "entity" | "tap_action" | "hold_action" | "double_tap_action">,
   gesture: "tap" | "hold" | "double_tap",

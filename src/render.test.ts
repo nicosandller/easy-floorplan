@@ -83,6 +83,7 @@ import {
   openingInMotion,
   openingIsActive,
   areaActionForGesture,
+  furnitureActionForGesture,
   areaHasActions,
   entityStateText,
   itemStateText,
@@ -6270,5 +6271,70 @@ describe("item label color (itemLabelColor)", () => {
 
   it("returns the custom color when both toggles are true", () => {
     expect(itemLabelColor({ disableLabelColor: true, useCustomLabelColor: true, labelCustomColor: "#00ff00" }, "#ff0000")).toBe("#00ff00");
+  });
+});
+describe("furnitureActionForGesture — a piece can do more than change floor (issue #284)", () => {
+  // "I would like the option to select either a floor or the tap actions like
+  // we have for areas."
+  const piece = (over: Partial<Furniture> = {}) =>
+    ({ id: "f1", type: "table", x: 0, y: 0, w: 40, h: 20, ...over }) as Furniture;
+
+  it("says nothing when no gesture is configured", () => {
+    // Which is what keeps every plan drawn before this unchanged: the caller
+    // reads `undefined` as "do whatever you did before".
+    for (const g of ["tap", "hold", "double_tap"] as const) {
+      expect(furnitureActionForGesture(piece(), g)).toBeUndefined();
+    }
+  });
+
+  it("returns the configured action for its own gesture and no other", () => {
+    const f = piece({ hold_action: { action: "more-info" } });
+    expect(furnitureActionForGesture(f, "hold")?.config).toEqual({ action: "more-info" });
+    expect(furnitureActionForGesture(f, "tap")).toBeUndefined();
+    expect(furnitureActionForGesture(f, "double_tap")).toBeUndefined();
+  });
+
+  it("falls back to the piece's own entity when the action names none", () => {
+    // Binding a cabinet's contact sensor once should be enough for more-info
+    // to know what to show.
+    const f = piece({ entity: "binary_sensor.cabinet", tap_action: { action: "more-info" } });
+    expect(furnitureActionForGesture(f, "tap")?.entity).toBe("binary_sensor.cabinet");
+  });
+
+  it("lets the action name its own target instead", () => {
+    const f = piece({
+      entity: "binary_sensor.cabinet",
+      tap_action: { action: "toggle", entity: "light.shelf" } as never,
+    });
+    expect(furnitureActionForGesture(f, "tap")?.entity).toBe("light.shelf");
+  });
+
+  it("is undefined-entity when neither names one, which is fine for navigate", () => {
+    const f = piece({ tap_action: { action: "navigate", navigation_path: "/lovelace/1" } as never });
+    expect(furnitureActionForGesture(f, "tap")?.entity).toBeUndefined();
+    expect(furnitureActionForGesture(f, "tap")?.config).toEqual({
+      action: "navigate",
+      navigation_path: "/lovelace/1",
+    });
+  });
+
+  it("reads `none` as a configured action, not as absence", () => {
+    // The difference matters on a staircase: `none` is how you say "stop
+    // changing floor on tap", and treating it as unset would keep the change.
+    const f = piece({ goToFloor: "up", tap_action: { action: "none" } });
+    expect(furnitureActionForGesture(f, "tap")?.config).toEqual({ action: "none" });
+  });
+
+  it("matches areaActionForGesture, which is the shape it was asked to copy", () => {
+    const shared = {
+      entity: "sensor.a",
+      tap_action: { action: "more-info" as const },
+      hold_action: { action: "toggle" as const },
+    };
+    for (const g of ["tap", "hold", "double_tap"] as const) {
+      expect(furnitureActionForGesture(piece(shared), g)).toEqual(
+        areaActionForGesture({ ...shared }, g),
+      );
+    }
   });
 });
