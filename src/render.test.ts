@@ -6332,7 +6332,10 @@ describe("furnitureActionForGesture — a piece can do more than change floor (i
     // paths and nothing else — so this is the only thing standing between an
     // action-only piece and an unnamed button.
     const hass = {
-      states: { "light.shelf": { state: "on", attributes: { friendly_name: "Shelf light" } } },
+      states: {
+        "light.shelf": { state: "on", attributes: { friendly_name: "Shelf light" } },
+        "light.lamp": { state: "on", attributes: { friendly_name: "Reading lamp" } },
+      },
     } as unknown as Parameters<typeof furnitureAccessibleName>[1];
     expect(furnitureAccessibleName(piece({ entity: "light.shelf" }), hass)).toBe("Shelf light");
     // An entity nothing has a friendly name for still beats the symbol id.
@@ -6343,6 +6346,71 @@ describe("furnitureActionForGesture — a piece can do more than change floor (i
     // And never the empty string, which would leave the button unnamed again.
     expect(furnitureAccessibleName({ type: "" }, hass)).toBe("Furniture");
     expect(furnitureAccessibleName({ type: "sofa" }, undefined)).toBe("sofa");
+  });
+
+  it("names the entity the gesture will act on, not the one the piece carries", () => {
+    const hass = {
+      states: {
+        "light.shelf": { state: "on", attributes: { friendly_name: "Shelf light" } },
+        "light.lamp": { state: "on", attributes: { friendly_name: "Reading lamp" } },
+      },
+    } as unknown as Parameters<typeof furnitureAccessibleName>[1];
+
+    // An action names its own target, and that is what the button does — so a
+    // plain box whose tap opens the light on it is the light, not the box.
+    expect(
+      furnitureAccessibleName(
+        piece({ type: "table", tap_action: { action: "more-info", entity: "light.shelf" } }),
+        hass,
+      ),
+    ).toBe("Shelf light");
+
+    // The action wins over the piece's own entity, because the action is what
+    // the gesture reaches.
+    expect(
+      furnitureAccessibleName(
+        piece({ entity: "light.lamp", tap_action: { action: "more-info", entity: "light.shelf" } }),
+        hass,
+      ),
+    ).toBe("Shelf light");
+
+    // An action with no entity of its own falls back to the piece's, exactly as
+    // furnitureActionForGesture resolves it.
+    expect(
+      furnitureAccessibleName(piece({ entity: "light.lamp", tap_action: { action: "toggle" } }), hass),
+    ).toBe("Reading lamp");
+
+    // Gestures disagreeing: tap first, then hold, then double-tap.
+    expect(
+      furnitureAccessibleName(
+        piece({
+          hold_action: { action: "more-info", entity: "light.lamp" },
+          tap_action: { action: "more-info", entity: "light.shelf" },
+        }),
+        hass,
+      ),
+    ).toBe("Shelf light");
+    expect(
+      furnitureAccessibleName(
+        piece({
+          hold_action: { action: "more-info", entity: "light.lamp" },
+          double_tap_action: { action: "more-info", entity: "light.shelf" },
+        }),
+        hass,
+      ),
+    ).toBe("Reading lamp");
+
+    // A `none` names nothing: it is configured, but the button never acts on it.
+    expect(
+      furnitureAccessibleName(
+        piece({
+          type: "table",
+          tap_action: { action: "none", entity: "light.shelf" } as never,
+          hold_action: { action: "more-info", entity: "light.lamp" },
+        }),
+        hass,
+      ),
+    ).toBe("Reading lamp");
   });
 
   it("matches areaActionForGesture, which is the shape it was asked to copy", () => {

@@ -224,8 +224,22 @@ describe("a piece of furniture answers the gestures it was given", () => {
     // `renderFurniture` contributes paths and nothing else, so without a name
     // this is an unnamed button — the piece is on screen for everyone else and
     // silent for anyone listening to it.
+    //
+    // The piece carries no entity of its own: the name has to come from the
+    // action's target, which is what the tap actually opens. Naming both would
+    // not tell the two apart.
     const t = await mount({
-      entity: "light.shelf",
+      type: "table",
+      tap_action: { action: "more-info", entity: "light.shelf" } as never,
+    });
+    expect(t.spoken()).toBe("Shelf light");
+  });
+
+  it("names the action's target over the piece's own entity", async () => {
+    // Both are set and they disagree. The button opens the shelf light, so
+    // announcing the piece's own sensor would name the wrong thing.
+    const t = await mount({
+      entity: "binary_sensor.cabinet",
       tap_action: { action: "more-info", entity: "light.shelf" } as never,
     });
     expect(t.spoken()).toBe("Shelf light");

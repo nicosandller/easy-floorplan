@@ -2828,20 +2828,33 @@ export function furnitureActionForGesture(
  *
  * A piece that answers gestures is a button, and `renderFurniture` contributes
  * paths and nothing else — so unless the floor-change tooltip happens to be
- * naming it, a screen reader is handed a button with no name at all. The
- * entity it drives is the most useful thing to call it, because that is what
- * the gesture will act on; failing that the symbol it is drawn as, because
- * that is what everyone else is looking at. Ids are hyphenated (`double-bed`),
+ * naming it, a screen reader is handed a button with no name at all.
+ *
+ * The entity the gesture will actually act on is the most useful thing to call
+ * it — which is the action's own `entity` where it names one, not the piece's:
+ * a shelf drawn as a plain box whose `tap_action` points at the light on it is
+ * "Shelf light", and calling it "box" would name the drawing instead of the
+ * thing the button does. Failing that the symbol it is drawn as, because that
+ * is what everyone else is looking at. Ids are hyphenated (`double-bed`),
  * which is not how anything should be read aloud.
+ *
+ * Gestures can disagree about their target, and then there is no right answer,
+ * only a predictable one: tap, then hold, then double-tap — named after the
+ * gesture people reach for first. Gestures that do nothing are skipped, so a
+ * `none` never supplies the name.
  */
 export function furnitureAccessibleName(
-  f: Pick<Furniture, "type" | "entity">,
+  f: Pick<Furniture, "type" | "entity" | "tap_action" | "hold_action" | "double_tap_action">,
   hass?: RenderHass,
 ): string {
-  const friendly = f.entity
-    ? (hass?.states[f.entity]?.attributes?.friendly_name as string | undefined)
+  const target =
+    (["tap", "hold", "double_tap"] as const)
+      .map((g) => furnitureActionForGesture(f, g))
+      .find((p) => p && hasAction(p.config))?.entity ?? f.entity;
+  const friendly = target
+    ? (hass?.states[target]?.attributes?.friendly_name as string | undefined)
     : undefined;
-  return friendly || f.entity || String(f.type ?? "").replace(/[-_]+/g, " ").trim() || "Furniture";
+  return friendly || target || String(f.type ?? "").replace(/[-_]+/g, " ").trim() || "Furniture";
 }
 
 export function areaActionForGesture(

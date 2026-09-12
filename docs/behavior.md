@@ -187,8 +187,10 @@ stop that swallows a keypress to do nothing is worse than no tab stop.
 
 A piece that *does* answer gestures is a button, and the drawing gives a screen reader
 nothing to call it by. Where the floor tooltip is not already naming it, the card names it
-after the entity it drives — its friendly name, or the entity id — and failing that after
-the symbol it is drawn as.
+after the entity the gesture will act on — the action's own `entity` where it names one,
+otherwise the piece's — using its friendly name, or the entity id. Failing that it falls
+back to the symbol the piece is drawn as. When gestures target different entities the tap
+wins, then the hold, then the double-tap; an action set to `none` never supplies the name.
 
 ## Stairs that change floor
 

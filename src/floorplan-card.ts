@@ -1224,7 +1224,17 @@ export class FloorplanCard extends LitElement {
               // With no floor label there is nothing naming this button, so
               // say what it is. Only in that case: an `aria-label` would
               // override the <title> that is already doing the job.
-              const spoken = label ? nothing : furnitureAccessibleName(f, renderHass);
+              //
+              // From the live hass, not `renderHass`, which is the one place
+              // in this template that wants it. `renderHass` is filtered to
+              // the entities the *drawing* watches, and an action's target is
+              // deliberately not one of them — a tap opening a light does not
+              // change how the room looks. Reading the name there would find
+              // nothing and fall back to the raw entity id. It is also what
+              // the gesture itself does: `_onFurnitureAction` hands the live
+              // hass to `executeAction`, so the button is named after the
+              // state it will actually act on, replay or no replay.
+              const spoken = label ? nothing : furnitureAccessibleName(f, this.hass);
               return svg`<g class="fp-furniture-link" role="button" tabindex="0"
                     aria-label=${spoken}
                     @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
