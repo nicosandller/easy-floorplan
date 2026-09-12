@@ -63,7 +63,7 @@ import {
   DEFAULT_RIPPLE_WIDTH,
 } from "./types";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, cssIcon } from "./css-safe";
-import { hasAction } from "./actions";
+import { actionTargetEntity, hasAction } from "./actions";
 import { SKIN_ACCENT, SKIN_PAPER, SKIN_WALL, MAX_SKIN_WALL_WIDTH } from "./skins";
 // The same tolerance #141 uses to decide an opening sits on a wall, so "this
 // door is in this wall" means one thing across the card.
@@ -121,6 +121,33 @@ export function hassRenderInputsChanged(
     if (prev.states[id] !== next.states[id]) return true;
   }
   return false;
+}
+
+/**
+ * Entities that appear in an accessible name but never in the drawing.
+ *
+ * A furniture action can name its own target, and `furnitureAccessibleName`
+ * reads that entity's friendly name to label the button. Nothing about it is
+ * drawn, so it has no business in `collectWatchedEntities`: that set is what
+ * `buildRenderHass` exposes, and a replay would start fetching history for an
+ * entity the plan never shows. But a card that never re-renders when it
+ * changes would go on announcing the name it first saw — or the raw entity id
+ * it fell back to while the entity did not exist yet.
+ *
+ * So: watched for the purpose of *updating*, absent from what gets *drawn*.
+ */
+export function collectNamedEntities(c: FloorplanCardConfig): Set<string> {
+  const ids = new Set<string>();
+  for (const f of getFloors(c)) {
+    for (const piece of f.furniture ?? []) {
+      for (const g of ["tap", "hold", "double_tap"] as const) {
+        const p = furnitureActionForGesture(piece, g);
+        const id = p && actionTargetEntity({ entity: p.entity }, p.config);
+        if (id) ids.add(id);
+      }
+    }
+  }
+  return ids;
 }
 
 /** Every entity id whose state can change what a plan draws (all floors). */
@@ -2794,6 +2821,16 @@ export function openingActionForGesture(
  * sensor can therefore say `tap_action: { action: toggle }` and mean it,
  * without naming the entity twice.
  */
+export function areaActionForGesture(
+  a: Pick<Area, "entity" | "tap_action" | "hold_action" | "double_tap_action">,
+  gesture: "tap" | "hold" | "double_tap",
+): { entity?: string; config: ActionConfig } | undefined {
+  const configured =
+    gesture === "tap" ? a.tap_action : gesture === "hold" ? a.hold_action : a.double_tap_action;
+  if (!configured) return undefined;
+  return { entity: configured.entity ?? a.entity, config: configured };
+}
+
 /**
  * What a gesture on a piece of furniture should do (issue #284), or
  * `undefined` for "whatever it did before actions existed".
@@ -2831,8 +2868,15 @@ export function furnitureActionForGesture(
  *
  * Gestures can disagree about their target, and then there is no right answer,
  * only a predictable one: tap, then hold, then double-tap — named after the
- * gesture people reach for first. Gestures that do nothing are skipped, so a
- * `none` never supplies the name.
+ * gesture people reach for first. Only gestures that could actually run are
+ * considered, and only the kinds that act on an entity: an unusable
+ * `more-info` with nothing to show must not win over a working hold, and a
+ * `navigate` acts on a path rather than on anything nameable.
+ *
+ * The piece's own `entity` is still the fallback, whatever its gestures do. It
+ * is what the drawing is bound to — the plant's soil sensor, the shelf's light
+ * — so it names the *thing*, which is the right answer for a button whose
+ * action has no subject of its own.
  */
 export function furnitureAccessibleName(
   f: Pick<Furniture, "type" | "entity" | "tap_action" | "hold_action" | "double_tap_action">,
@@ -2841,21 +2885,12 @@ export function furnitureAccessibleName(
   const target =
     (["tap", "hold", "double_tap"] as const)
       .map((g) => furnitureActionForGesture(f, g))
-      .find((p) => p && hasAction(p.config))?.entity ?? f.entity;
+      .map((p) => (p ? actionTargetEntity({ entity: p.entity }, p.config) : undefined))
+      .find((e) => e) ?? f.entity;
   const friendly = target
     ? (hass?.states[target]?.attributes?.friendly_name as string | undefined)
     : undefined;
   return friendly || target || String(f.type ?? "").replace(/[-_]+/g, " ").trim() || "Furniture";
-}
-
-export function areaActionForGesture(
-  a: Pick<Area, "entity" | "tap_action" | "hold_action" | "double_tap_action">,
-  gesture: "tap" | "hold" | "double_tap",
-): { entity?: string; config: ActionConfig } | undefined {
-  const configured =
-    gesture === "tap" ? a.tap_action : gesture === "hold" ? a.hold_action : a.double_tap_action;
-  if (!configured) return undefined;
-  return { entity: configured.entity ?? a.entity, config: configured };
 }
 
 /**

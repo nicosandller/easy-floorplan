@@ -108,6 +108,7 @@ import {
   normalizeOverlayScale,
   overlayLength,
   hassRenderInputsChanged,
+  collectNamedEntities,
   collectWatchedEntities,
   isEntityOn,
   entityIsActive,
@@ -1492,6 +1493,55 @@ describe("isEntityOn / resolveItemIcon", () => {
       expect(resolveItemIcon(battery, st("95"))).toBe("mdi:battery");
       expect(resolveItemIcon(battery, st("12"))).toBe("mdi:battery-alert");
     });
+  });
+});
+
+describe("collectNamedEntities — what names a button but draws nothing (issue #284)", () => {
+  const cfg = (furniture: unknown[]) =>
+    ({
+      type: "t",
+      width: 400,
+      height: 200,
+      floors: [
+        { id: "f1", name: "F1", walls: [], texts: [], openings: [], items: [], trackers: [],
+          areas: [], furniture },
+      ],
+    }) as unknown as Parameters<typeof collectNamedEntities>[0];
+
+  it("collects the entity an action names for itself", () => {
+    const c = cfg([
+      { id: "f", type: "table", x: 0, y: 0, w: 10, h: 10,
+        tap_action: { action: "more-info", entity: "light.shelf" } },
+    ]);
+    expect([...collectNamedEntities(c)]).toEqual(["light.shelf"]);
+    // …and it stays out of the drawing's set, which is what decides what a
+    // replay fetches history for. Nothing about that light is drawn.
+    expect(collectWatchedEntities(c).has("light.shelf")).toBe(false);
+  });
+
+  it("ignores actions that act on no entity, and ones that cannot run", () => {
+    expect([
+      ...collectNamedEntities(
+        cfg([
+          { id: "a", type: "table", x: 0, y: 0, w: 10, h: 10,
+            tap_action: { action: "navigate", navigation_path: "/x" } },
+          { id: "b", type: "table", x: 0, y: 0, w: 10, h: 10,
+            tap_action: { action: "more-info" } },
+          { id: "c", type: "table", x: 0, y: 0, w: 10, h: 10,
+            hold_action: { action: "none", entity: "light.no" } },
+        ]),
+      ),
+    ]).toEqual([]);
+  });
+
+  it("leaves a piece's own entity to the drawing's set", () => {
+    // Already watched because the drawing goes live off it (issue #82), so
+    // naming adds nothing.
+    const c = cfg([
+      { id: "f", type: "plant", x: 0, y: 0, w: 10, h: 10, entity: "sensor.soil",
+        tap_action: { action: "toggle" } },
+    ]);
+    expect(collectWatchedEntities(c).has("sensor.soil")).toBe(true);
   });
 });
 
@@ -6448,6 +6498,39 @@ describe("furnitureActionForGesture — a piece can do more than change floor (i
         hass,
       ),
     ).toBe("Reading lamp");
+
+    // An unusable gesture cannot win. A `more-info` with nothing to show is
+    // configured and non-`none`, but it will not run — so the working hold
+    // behind it is what the button is named after.
+    expect(
+      furnitureAccessibleName(
+        piece({
+          type: "table",
+          tap_action: { action: "more-info" },
+          hold_action: { action: "more-info", entity: "light.lamp" },
+        }),
+        hass,
+      ),
+    ).toBe("Reading lamp");
+
+    // `navigate` runs, but it acts on a path rather than on an entity, so it
+    // supplies no name and the piece's own binding answers instead.
+    expect(
+      furnitureAccessibleName(
+        piece({
+          entity: "light.lamp",
+          tap_action: { action: "navigate", navigation_path: "/lovelace/0" },
+        }),
+        hass,
+      ),
+    ).toBe("Reading lamp");
+    // …and with nothing bound, the symbol.
+    expect(
+      furnitureAccessibleName(
+        piece({ type: "coffee-table", tap_action: { action: "navigate", navigation_path: "/x" } }),
+        hass,
+      ),
+    ).toBe("coffee table");
 
     // A `none` names nothing: it is configured, but the button never acts on it.
     expect(

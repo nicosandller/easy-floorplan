@@ -96,6 +96,7 @@ async function mount(piece: Partial<Furniture>) {
   const root = () => card.shadowRoot!;
   const link = () => root().querySelector(".fp-furniture-link");
   return {
+    card,
     link,
     role: () => link()?.getAttribute("role") ?? undefined,
     spoken: () => link()?.getAttribute("aria-label") ?? undefined,
@@ -198,6 +199,28 @@ describe("a piece of furniture answers the gestures it was given", () => {
     }
   });
 
+  it("gives no affordance to an action that cannot run", async () => {
+    // Configured and not `none`, but `more-info` with nothing to show does
+    // nothing when it fires. A button and a tab stop here promise an action
+    // that will not happen, and the hold timer makes every tap wait for it.
+    const t = await mount({ type: "table", hold_action: { action: "more-info" } as never });
+    expect(t.link()).toBeNull();
+    // Same config, now with something to show: a real gesture again.
+    const ok = await mount({
+      type: "table",
+      hold_action: { action: "more-info", entity: "light.shelf" } as never,
+    });
+    expect(ok.role()).toBe("button");
+  });
+
+  it("keeps changing floor when its tap action is one that cannot run", async () => {
+    // An unusable tap is still a *configured* tap, so it suppresses the floor
+    // fallback — the same rule `none` follows. With nothing else to answer,
+    // the piece goes back to being a drawing.
+    const t = await mount({ goToFloor: "up", tap_action: { action: "navigate" } as never });
+    expect(t.link()).toBeNull();
+  });
+
   it("carries a configured hold through to the action itself", async () => {
     // The resolver tests only inspect the config that comes back. Nothing there
     // would notice `_onFurnitureAction` dropping it on the floor between the
@@ -243,6 +266,34 @@ describe("a piece of furniture answers the gestures it was given", () => {
       tap_action: { action: "more-info", entity: "light.shelf" } as never,
     });
     expect(t.spoken()).toBe("Shelf light");
+  });
+
+  it("keeps the name current when the entity it names changes", async () => {
+    // The label reads live state, but a hass tick only re-renders this card
+    // when a *watched* entity moves — and an action's target is deliberately
+    // not one, because nothing about it is drawn. Without that dependency in
+    // the update path the button keeps announcing whatever it found first: the
+    // raw id for an entity that did not exist yet, or a stale friendly name.
+    const t = await mount({
+      type: "table",
+      tap_action: { action: "more-info", entity: "light.hall" } as never,
+    });
+    // Nothing by that id yet, so the id is the best name available.
+    expect(t.spoken()).toBe("light.hall");
+
+    t.card.hass = {
+      ...hass,
+      states: {
+        ...(hass as unknown as { states: Record<string, unknown> }).states,
+        "light.hall": {
+          entity_id: "light.hall",
+          state: "on",
+          attributes: { friendly_name: "Hall light" },
+        },
+      },
+    } as unknown as FloorplanCard["hass"];
+    await t.card.updateComplete;
+    expect(t.spoken()).toBe("Hall light");
   });
 
   it("falls back to the symbol it is drawn as", async () => {

@@ -180,17 +180,22 @@ contact sensor once is enough for `more-info` to know what to show. A piece with
 floor to go to nor any action stays inert: no button role, no tab stop, nothing that
 announces itself and then does nothing.
 
-`none` counts as "nothing to do" for that last rule. A piece whose only action is
-`{ action: none }` is inert, and so is a staircase whose `goToFloor` has been switched off
-by a `tap_action: none` — there is nothing left for either of them to answer, and a tab
-stop that swallows a keypress to do nothing is worse than no tab stop.
+"Any action" means one that could actually run, not merely one that is written down. A
+`more-info` with no entity to show, a `navigate` with no path, a `call-service` with no
+service and anything set to `none` all count as nothing to do: the piece stays inert, and
+its hold and double-tap timers are never armed — otherwise every tap would wait out a hold
+that was never going to fire. A staircase whose `goToFloor` is switched off by a
+`tap_action` that cannot run is inert too; an unusable tap is still a configured one, so it
+suppresses the floor change the same way `none` does.
 
 A piece that *does* answer gestures is a button, and the drawing gives a screen reader
 nothing to call it by. Where the floor tooltip is not already naming it, the card names it
-after the entity the gesture will act on — the action's own `entity` where it names one,
-otherwise the piece's — using its friendly name, or the entity id. Failing that it falls
-back to the symbol the piece is drawn as. When gestures target different entities the tap
-wins, then the hold, then the double-tap; an action set to `none` never supplies the name.
+after the entity the gesture will act on — the action's own `entity` where it names one —
+using its friendly name, or the entity id. Only `toggle` and `more-info` act on an entity,
+so a `navigate` or a `url` supplies no name; the piece's own `entity` answers instead,
+since that is what the drawing is bound to. Failing both, the symbol the piece is drawn as.
+When gestures target different entities the tap wins, then the hold, then the double-tap,
+and a gesture that could not run never supplies the name.
 
 ## Stairs that change floor
 

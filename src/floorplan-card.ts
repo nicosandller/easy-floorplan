@@ -118,6 +118,7 @@ import {
   SUN_LIGHT_COLOR,
   SUN_SHADE_COLOR,
   hassRenderInputsChanged,
+  collectNamedEntities,
   collectWatchedEntities,
   resolveItemIcon,
   resolveIconAnimation,
@@ -146,7 +147,13 @@ import {
   SKIN_TEXT,
   SKIN_WALL,
 } from "./skins";
-import { actionForGesture, executeAction, hasAction, itemIsInteractive } from "./actions";
+import {
+  actionForGesture,
+  executeAction,
+  gestureDoesSomething,
+  hasAction,
+  itemIsInteractive,
+} from "./actions";
 import { actionHandler } from "./action-handler";
 import { ReplayControllerImpl } from "./replay-history/replay-controller";
 import { createReplayPanelProps, renderReplayPanel } from "./replay-history/replay-panel";
@@ -184,6 +191,11 @@ export class FloorplanCard extends LitElement {
   private readonly _glowIdBase = `fp-glow-${FloorplanCard._nextGlowId++}`;
   /** Entity ids this plan actually displays; used to skip irrelevant hass updates. */
   private _watchedEntities: Set<string> = new Set();
+  /**
+   * Entities that only appear in an accessible name (issue #284). Kept apart
+   * from `_watchedEntities` on purpose — see `collectNamedEntities`.
+   */
+  private _nameEntities: Set<string> = new Set();
   private readonly _replayController = new ReplayControllerImpl({
     getConfig: () => this._config,
     getHass: () => this.hass,
@@ -267,6 +279,7 @@ export class FloorplanCard extends LitElement {
       furniture: config.furniture ?? [],
     };
     this._watchedEntities = collectWatchedEntities(this._config);
+    this._nameEntities = collectNamedEntities(this._config);
     this._syncHistoryServiceContext();
     this._replayController.clearConfigColorCache();
     // HA calls setConfig on every keystroke in the config box. Clearing the
@@ -306,7 +319,16 @@ export class FloorplanCard extends LitElement {
     if (!(changed.size === 1 && changed.has("hass"))) return true;
     const prev = changed.get("hass") as HomeAssistant | undefined;
     if (!prev || !this.hass) return true;
-    return hassRenderInputsChanged(prev, this.hass, this._watchedEntities);
+    if (hassRenderInputsChanged(prev, this.hass, this._watchedEntities)) return true;
+    // Entities that name a button but draw nothing. They have to invalidate a
+    // render — a renamed entity, or one that did not exist at first paint,
+    // otherwise leaves the label stuck at the name it first found — but they
+    // stay out of `_watchedEntities` so `buildRenderHass` never asks a replay
+    // for the history of something the plan does not show.
+    for (const id of this._nameEntities) {
+      if (prev.states[id] !== this.hass.states[id]) return true;
+    }
+    return false;
   }
 
   /**
@@ -1194,15 +1216,23 @@ export class FloorplanCard extends LitElement {
               // needs to know whether to spend their timers: a staircase with
               // only a floor change must still answer a tap immediately.
               //
-              // `hasAction`, not a bare existence check — the same test the
-              // rooms above apply. `{ action: "none" }` is a gesture someone
-              // configured to do nothing, and counting it as real would spend
-              // the hold and double-tap timers on a piece that answers to
-              // neither, and hand a tab stop and a button role to one that
-              // answers to nothing at all.
-              const hasHold = hasAction(furnitureActionForGesture(f, "hold")?.config);
-              const hasDoubleClick = hasAction(furnitureActionForGesture(f, "double_tap")?.config);
-              const hasTap = hasAction(furnitureActionForGesture(f, "tap")?.config);
+              // Whether the gesture could actually *run*, which is a stricter
+              // question than whether one is configured. `hasAction` only says
+              // "present and not `none`", and the guards `executeAction`
+              // applies go further: a `more-info` with no entity to show, a
+              // `navigate` with no path, a `call-service` with no service all
+              // pass it and then do nothing. Asking the weaker question hands
+              // a tab stop and a button role to a piece that answers to
+              // nothing, and spends the hold and double-tap timers on gestures
+              // that cannot fire — so every tap waits out a hold that was
+              // never going to happen.
+              const runs = (g: "tap" | "hold" | "double_tap"): boolean => {
+                const p = furnitureActionForGesture(f, g);
+                return !!p && gestureDoesSomething({ entity: p.entity }, p.config);
+              };
+              const hasHold = runs("hold");
+              const hasDoubleClick = runs("double_tap");
+              const hasTap = runs("tap");
               // Configured at all, `none` included — a separate question from
               // whether it does anything. Writing `tap_action: none` on a
               // staircase is how a plan says "draw the stairs, but do not let
