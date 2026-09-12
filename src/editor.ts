@@ -74,6 +74,7 @@ import {
   openingHasTwoLeaves,
   secondLeafOf,
   renderGlowMask,
+  floorSwitcherAnchor,
   openingDefaultOpen,
   openingMotion,
   shutterStyleOf,
@@ -218,6 +219,17 @@ const TOOL_META: Record<Tool, { icon: string; label: string }> = {
 };
 
 /** Icon shown in the Element header per selected element kind. */
+/**
+ * Where the editor draws the switcher handle before it has been placed.
+ *
+ * An unplaced switcher sits 8px from the plan's top-right — a screen
+ * measurement, which the editor cannot turn into canvas units without knowing
+ * the rendered size. This is the same corner said in canvas units instead:
+ * close enough to reach for, and the moment it is dragged the stored position
+ * is exact. It is only ever a starting grip, never written to the config.
+ */
+const switcherHandleHome = (w: number, h: number) => ({ x: w * 0.93, y: h * 0.08 });
+
 const SEL_KIND_ICON: Record<SelKind, string> = {
   wall: "mdi:wall",
   opening: "mdi:door",
@@ -376,6 +388,8 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _symbolDraft = "";
   @state() private _symbolError = "";
   @state() private _paletteError = "";
+  /** The switcher's own drag (issue #281); see `_renderSwitcherHandle`. */
+  @state() private _switcherDrag?: { pointerId: number; moved: boolean };
   /** Project section expanded? Collapsed by default — page settings are touched rarely. */
   @state() private _projectOpen = false;
   /**
@@ -3571,6 +3585,7 @@ export class FloorplanCardEditor extends LitElement {
             </svg>`
             )}
             <div class="items">
+              ${(c.floors ?? []).length > 1 ? this._renderSwitcherHandle(c) : nothing}
               ${floor.texts.map((t) => this._renderTextOverlay(t, c, overlay))}
               ${floor.openings
                 .filter((o) => hasShutterMark(o))
@@ -4522,6 +4537,86 @@ export class FloorplanCardEditor extends LitElement {
     `;
   }
 
+  /**
+   * The floor switcher, draggable on the canvas (issue #281) — "the most
+   * flexible solution would be to make this part freely movable, like a piece
+   * of furniture", and the maintainer's "lets start with full freedom".
+   *
+   * Deliberately **not** a {@link SelKind}. Every kind in that union names a
+   * per-floor array of things with ids, and the editor's machinery reads it
+   * that way throughout: snapshots, group drags, locking, duplicate, delete,
+   * the selection summary and its icon. The switcher is one card-level thing
+   * with no id, and none of those operations mean anything for it — adding a
+   * kind would have put a special case in each of them, which is a lot of
+   * places to be wrong in.
+   *
+   * So it carries its own small drag instead: three handlers and one field,
+   * touching nothing the selection model owns.
+   */
+  private _renderSwitcherHandle(c: FloorplanCardConfig): TemplateResult {
+    // (see switcherHandleHome for where an unplaced handle sits)
+    const w = cssNumber(c.width, DEFAULT_WIDTH);
+    const h = cssNumber(c.height, DEFAULT_HEIGHT);
+    const at = floorSwitcherAnchor(c) ?? switcherHandleHome(w, h);
+    const placed = !!floorSwitcherAnchor(c);
+    const floors = c.floors ?? [];
+    return html`
+      <div
+        class="switcher-handle ${this._switcherDrag ? "dragging" : ""} ${placed ? "" : "default"}"
+        style="left:${(at.x / w) * 100}%; top:${(at.y / h) * 100}%;"
+        title=${placed
+          ? "Drag to move the floor switcher"
+          : "Drag to move the floor switcher off the corner"}
+        @pointerdown=${this._onSwitcherDown}
+        @pointermove=${this._onSwitcherMove}
+        @pointerup=${this._onSwitcherUp}
+        @pointercancel=${this._onSwitcherUp}
+      >
+        ${floors.map(
+          (f: Floor) => html`<span class="sh-btn ${f.id === this._activeFloorId ? "active" : ""}"
+            >${f.short || f.name}</span
+          >`
+        )}
+      </div>
+    `;
+  }
+
+  private _onSwitcherDown = (ev: PointerEvent): void => {
+    if (this._tool !== "select") return;
+    // Kept off the canvas: without this the pointerdown reaches the stage and
+    // starts a marquee behind the thing being dragged.
+    ev.stopPropagation();
+    ev.preventDefault();
+    (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
+    this._switcherDrag = { pointerId: ev.pointerId, moved: false };
+  };
+
+  private _onSwitcherMove = (ev: PointerEvent): void => {
+    const d = this._switcherDrag;
+    if (!d || d.pointerId !== ev.pointerId) return;
+    ev.stopPropagation();
+    // History once per drag, not once per frame — the same burst rule the
+    // element drags follow, so undo steps back over the whole move.
+    if (!d.moved) {
+      this._pushHistory();
+      d.moved = true;
+    }
+    const at = this._toVirtual(ev);
+    this._emit({ ...this._config, floorSwitcher: { x: at.x, y: at.y } });
+  };
+
+  private _onSwitcherUp = (ev: PointerEvent): void => {
+    const d = this._switcherDrag;
+    if (!d || d.pointerId !== ev.pointerId) return;
+    ev.stopPropagation();
+    (ev.currentTarget as HTMLElement).releasePointerCapture?.(ev.pointerId);
+    this._switcherDrag = undefined;
+    // A click that never moved is not a placement: it would otherwise pin the
+    // switcher to wherever the corner happened to be, turning a stray tap into
+    // an edit.
+    if (d.moved) this._commit(this._config);
+  };
+
   private _renderTextOverlay(
     t: FloorText,
     c: FloorplanCardConfig,
@@ -4625,6 +4720,13 @@ export class FloorplanCardEditor extends LitElement {
           // other panels reach back into.
           "Named colors",
           this._renderPalettePanel()
+        )}
+        ${this._renderGroup(
+          // Where the floor switcher sits (issue #281). Under Project because
+          // it is one control for the whole card, not a property of a floor —
+          // and next to the plan's own look, which is what it sits on.
+          "Floor switcher",
+          this._renderSwitcherPlacement()
         )}
         ${this._renderGroup(
           // Per floor, not per project — but it is the floor's paper, so it
@@ -4912,6 +5014,41 @@ export class FloorplanCardEditor extends LitElement {
   private _slugStillResolves(slug: string, config: FloorplanCardConfig): boolean {
     if (!slug) return false;
     return paletteEntries(config.palette).some((p) => paletteSlug(p.name) === slug);
+  }
+
+  /**
+   * Says where the switcher is and offers the way back (issue #281).
+   *
+   * Placing is a drag on the canvas, so this is not a second way to set the
+   * position — it is the half a drag cannot express: returning to the corner.
+   * Without it, dropping the switcher once would be irreversible except by
+   * hand-editing YAML.
+   */
+  private _renderSwitcherPlacement(): TemplateResult {
+    const at = floorSwitcherAnchor(this._config);
+    const floors = this._config.floors ?? [];
+    return html`
+      <div class="row col">
+        <label>Position</label>
+        ${floors.length > 1
+          ? html`<span class="hint"
+                >${at
+                  ? `Placed at ${Math.round(at.x)}, ${Math.round(at.y)}. Drag it on the canvas to move it.`
+                  : "In the plan's top-right corner. Drag it on the canvas to move it."}</span
+              >
+              ${at
+                ? html`<div class="row wide">
+                    <button @click=${() => this._patchConfig({ floorSwitcher: undefined })}>
+                      Back to the corner
+                    </button>
+                  </div>`
+                : nothing}`
+          : html`<span class="hint"
+              >A plan with one floor draws no switcher. Add a second floor and it appears
+              here.</span
+            >`}
+      </div>
+    `;
   }
 
   private _renderSymbolsPanel(): TemplateResult {
@@ -7096,6 +7233,53 @@ export class FloorplanCardEditor extends LitElement {
       background: var(--fp-inactive);
       border-color: var(--fp-inactive);
       color: var(--fp-ink, var(--text-primary-color, #212121));
+    }
+    /* The floor switcher's drag handle (issue #281). Drawn as the switcher it
+       stands for rather than as a generic grip, so what you drag looks like
+       what you are placing — and centred on its anchor, which is what makes
+       the drop land where the pointer is. */
+    .switcher-handle {
+      position: absolute;
+      /* The overlay it sits in is pointer-events:none so clicks reach the
+         canvas underneath; anything in there that is meant to be grabbed has
+         to turn them back on for itself. Without this the handle drew
+         perfectly and could not be picked up at all. */
+      pointer-events: auto;
+      transform: translate(-50%, -50%);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      cursor: grab;
+      touch-action: none;
+      z-index: 4;
+    }
+    .switcher-handle.dragging {
+      cursor: grabbing;
+    }
+    /* Dimmed until it has been placed, so the canvas does not claim a position
+       is stored when none is. Its tooltip says the same thing in words. */
+    .switcher-handle.default {
+      opacity: 0.55;
+    }
+    .switcher-handle .sh-btn {
+      border: 1px solid var(--divider-color, #ccc);
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+      border-radius: 6px;
+      padding: 3px 7px;
+      font-size: 11px;
+      line-height: 1;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      max-width: 110px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .switcher-handle .sh-btn.active {
+      background: var(--primary-color, #03a9f4);
+      color: var(--text-primary-color, #fff);
+      border-color: var(--primary-color, #03a9f4);
     }
     .state-color-rule select {
       flex: 0 0 96px;

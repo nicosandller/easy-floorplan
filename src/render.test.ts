@@ -125,6 +125,7 @@ import {
   resolvePlanRotation,
   subscribeOrientation,
   rotatedCanvasSize,
+  floorSwitcherAnchor,
   rotatePlanPoint,
   planRotationTransform,
   polygonCentroid,
@@ -6270,5 +6271,42 @@ describe("item label color (itemLabelColor)", () => {
 
   it("returns the custom color when both toggles are true", () => {
     expect(itemLabelColor({ disableLabelColor: true, useCustomLabelColor: true, labelCustomColor: "#00ff00" }, "#ff0000")).toBe("#00ff00");
+  });
+});
+describe("floorSwitcherAnchor — where the floor switcher sits (issue #281)", () => {
+  it("reads a position", () => {
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: 60, y: 100 } })).toEqual({ x: 60, y: 100 });
+  });
+
+  it("says nothing when none is set, which is the corner it always used", () => {
+    expect(floorSwitcherAnchor({})).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: undefined })).toBeUndefined();
+  });
+
+  it("refuses half a point rather than implying the other half", () => {
+    // `{ x: 100 }` is not a position. Reading the missing half as 0 would drop
+    // the switcher in the top-left corner with nothing on screen saying why.
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: 100 } as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { y: 100 } as never })).toBeUndefined();
+  });
+
+  it("refuses anything that is not a pair of real numbers", () => {
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: NaN, y: 10 } })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: 10, y: Infinity } })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: "top-right" as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: null as never })).toBeUndefined();
+  });
+
+  it("takes a numeric string, since YAML hands those over freely", () => {
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: "60", y: "100" } as never })).toEqual({
+      x: 60,
+      y: 100,
+    });
+  });
+
+  it("keeps a point outside the canvas instead of clamping it", () => {
+    // A plan whose walls stop short of the canvas has real empty margin to
+    // park the switcher in, and clamping would drag it back onto the drawing.
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: -40, y: 900 } })).toEqual({ x: -40, y: 900 });
   });
 });

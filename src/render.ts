@@ -3828,6 +3828,24 @@ export function subscribeOrientation(
   return () => {};
 }
 
+/**
+ * Where the floor switcher should be anchored (issue #281), or `undefined` for
+ * the top-right corner it has always used.
+ *
+ * A position is only usable if both halves are real numbers — a half-written
+ * `floorSwitcher: { x: 100 }` is not a point, and placing it at an implied 0
+ * would drop the switcher in the top-left corner with nothing saying why.
+ */
+export function floorSwitcherAnchor(
+  c: Pick<FloorplanCardConfig, "floorSwitcher">,
+): { x: number; y: number } | undefined {
+  const p = c.floorSwitcher;
+  if (!p || typeof p !== "object") return undefined;
+  const x = Number(p.x);
+  const y = Number(p.y);
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : undefined;
+}
+
 /** Canvas size as displayed: 90°/270° swap width and height. */
 export function rotatedCanvasSize(
   w: number,

@@ -1775,6 +1775,26 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   floors?: Floor[];
   /** Id of the floor shown first. Falls back to the first floor. */
   defaultFloor?: string;
+  /**
+   * Where the floor switcher sits on the plan (issue #281), in canvas units —
+   * the point the block of buttons is centred on.
+   *
+   * Unset it stays pinned to the plan's top-right corner, which is where it has
+   * always been and is right until the plan has something there: *"they often
+   * end up right in the middle of the floor plan on smaller screens."* The
+   * corner is a guess about the drawing, and only the author knows which corner
+   * of their plan is empty.
+   *
+   * Canvas units rather than screen pixels or a percentage of the card, because
+   * the switcher lives inside the plan box and this is a statement about the
+   * *drawing*: put it in the hall, not 12px from an edge whose position depends
+   * on the phone. It follows `rotation` the way every other anchor does, so a
+   * rotated card keeps it in the same corner of the house.
+   *
+   * Off-canvas coordinates are honoured rather than clamped — a plan whose
+   * walls stop short of the canvas has legitimate empty margin to park it in.
+   */
+  floorSwitcher?: { x: number; y: number };
   /** Optional history replay controls and playback defaults. */
   historyReplay?: HistoryReplayConfig;
   walls?: Wall[];
