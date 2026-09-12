@@ -6362,3 +6362,32 @@ describe("rotatePlanAngle — a bearing turns with the plan (issue #280)", () =>
     for (const a of [0, 45, 180, 359]) expect(rotatePlanAngle(a, 0)).toBe(a);
   });
 });
+
+describe("floorSwitcherAnchor — what Number() would have let through (issue #281 review)", () => {
+  // `Number()` answers 0 for all of these, so coercing before checking the
+  // type accepted them and parked the switcher on the left edge — while the
+  // function's own contract said both halves had to be real numbers.
+  it("refuses a key written with no value, which YAML reads as null", () => {
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: null, y: 100 } as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: 100, y: null } as never })).toBeUndefined();
+  });
+
+  it("refuses a blank string", () => {
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: "", y: 100 } as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: "   ", y: 100 } as never })).toBeUndefined();
+  });
+
+  it("refuses values that are not numbers at all", () => {
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: false, y: 100 } as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: [], y: 100 } as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: {}, y: 100 } as never })).toBeUndefined();
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: "left", y: 100 } as never })).toBeUndefined();
+  });
+
+  it("still takes 0, which is a real coordinate", () => {
+    // The point of checking the type rather than the value: the top-left
+    // corner of the canvas is a legitimate place to put it.
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: 0, y: 0 } })).toEqual({ x: 0, y: 0 });
+    expect(floorSwitcherAnchor({ floorSwitcher: { x: "0", y: "0" } as never })).toEqual({ x: 0, y: 0 });
+  });
+});

@@ -126,6 +126,31 @@ describe("the card draws the switcher where the plan says", () => {
     expect(t.centre()).toEqual({ x: 100, y: 0 });
   });
 
+  it("measures against the plan, not the stage it is centred in", async () => {
+    // A card whose box is not the canvas's ratio letterboxes .plan inside
+    // .stage — here 600 wide inside a 900 stage, so the two disagree by 150px
+    // a side. The anchor has to resolve against the drawing: (0,0) is the
+    // plan's top-left corner, not the card's.
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    host.style.height = "300px";
+    document.body.appendChild(host);
+    const card = document.createElement("easy-floorplan-card") as FloorplanCard;
+    card.setConfig(config({ floorSwitcher: { x: 0, y: 0 } }));
+    card.hass = hass;
+    host.appendChild(card);
+    await card.updateComplete;
+
+    const root = card.shadowRoot!;
+    const sw = root.querySelector(".floor-switcher")!.getBoundingClientRect();
+    const plan = root.querySelector(".plan")!.getBoundingClientRect();
+    const stage = root.querySelector(".stage")!.getBoundingClientRect();
+    // The fixture is only meaningful if the two really are different boxes.
+    expect(Math.round(plan.width)).toBeLessThan(Math.round(stage.width));
+    expect(Math.round(sw.x + sw.width / 2)).toBe(Math.round(plan.x));
+    expect(Math.round(sw.y + sw.height / 2)).toBe(Math.round(plan.y));
+  });
+
   it("ignores half a position rather than jumping to a corner", async () => {
     const t = await mountCard({ floorSwitcher: { x: 100 } as never });
     expect(t.style()).toBeNull();
@@ -167,7 +192,17 @@ async function mountEditor(extra: Partial<FloorplanCardConfig> = {}) {
         cancelable: true,
       });
     h.dispatchEvent(ev("pointerdown", from));
-    h.dispatchEvent(ev("pointermove", to));
+    // Several frames, not one: a drag that moved once cannot tell "emits per
+    // frame" apart from "emits on release", and that difference is the point
+    // of the batching.
+    for (let i = 1; i <= 4; i++) {
+      h.dispatchEvent(
+        ev("pointermove", {
+          x: from.x + ((to.x - from.x) * i) / 4,
+          y: from.y + ((to.y - from.y) * i) / 4,
+        }),
+      );
+    }
     h.dispatchEvent(ev("pointerup", to));
     await ed.updateComplete;
   }
@@ -187,7 +222,27 @@ async function mountEditor(extra: Partial<FloorplanCardConfig> = {}) {
     h.dispatchEvent(ev("pointerup"));
     await ed.updateComplete;
   }
-  return { ed, handle, dragTo, clickWithoutMoving, emitted };
+  /** Start a drag, move, then have the pointer taken away instead of released. */
+  async function dragThenCancel(x: number, y: number) {
+    const h = handle();
+    const hb = h.getBoundingClientRect();
+    const sb = root().querySelector("svg")!.getBoundingClientRect();
+    const from = { x: hb.x + hb.width / 2, y: hb.y + hb.height / 2 };
+    const to = { x: sb.x + sb.width * (x / 400), y: sb.y + sb.height * (y / 200) };
+    const ev = (type: string, at: { x: number; y: number }) =>
+      new PointerEvent(type, {
+        pointerId: 1,
+        clientX: at.x,
+        clientY: at.y,
+        bubbles: true,
+        cancelable: true,
+      });
+    h.dispatchEvent(ev("pointerdown", from));
+    h.dispatchEvent(ev("pointermove", to));
+    h.dispatchEvent(ev("pointercancel", to));
+    await ed.updateComplete;
+  }
+  return { ed, handle, dragTo, dragThenCancel, clickWithoutMoving, emitted };
 }
 
 describe("the editor lets you drag the switcher anywhere on the canvas", () => {
@@ -222,6 +277,39 @@ describe("the editor lets you drag the switcher anywhere on the canvas", () => {
     const t = await mountEditor({ floorSwitcher: { x: 20, y: 20 } });
     await t.dragTo(300, 160);
     expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual({ x: 300, y: 160 });
+  });
+
+  it("emits once, on release, not on every frame", async () => {
+    // Every other drag in this editor writes locally while it is live and
+    // emits when it ends. Emitting per pointermove would hand Home Assistant a
+    // config-changed — and a card-stack re-render — for each frame of a drag.
+    const t = await mountEditor();
+    await t.dragTo(100, 120);
+    expect(t.emitted).toHaveLength(1);
+  });
+
+  it("rolls back when the pointer is taken away mid-drag", async () => {
+    // A touch interrupted, a dialog stealing the pointer, capture lost. The
+    // other canvas gestures cancel rather than saving wherever the pointer
+    // happened to be, and this one has to agree.
+    const t = await mountEditor();
+    await t.dragThenCancel(100, 120);
+    expect(t.emitted).toEqual([]);
+    // …and the handle is back in its unplaced corner, not stranded mid-plan.
+    expect(t.handle().className).toContain("default");
+  });
+
+  it("leaves exactly one history entry, so one undo puts it back", async () => {
+    // Pushing at first movement *and* committing at the end would leave two:
+    // the first undo would restore the config already on screen, and only the
+    // second would move the switcher.
+    const t = await mountEditor();
+    await t.dragTo(100, 120);
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual({ x: 100, y: 120 });
+
+    (t.ed as unknown as { _undo(): void })._undo();
+    await t.ed.updateComplete;
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toBeUndefined();
   });
 
   it("draws no handle on a plan with one floor, which has no switcher", async () => {

@@ -389,7 +389,16 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _symbolError = "";
   @state() private _paletteError = "";
   /** The switcher's own drag (issue #281); see `_renderSwitcherHandle`. */
-  @state() private _switcherDrag?: { pointerId: number; moved: boolean };
+  @state() private _switcherDrag?: {
+    pointerId: number;
+    moved: boolean;
+    /** The config before the drag, so a cancel can put it back locally. */
+    before: FloorplanCardConfig;
+    /** The redo stack the first-movement history push cleared. */
+    priorFuture: FloorplanCardConfig[];
+    /** The entry that push added, removed by identity on cancel. */
+    snapshot?: FloorplanCardConfig;
+  };
   /** Project section expanded? Collapsed by default — page settings are touched rarely. */
   @state() private _projectOpen = false;
   /**
@@ -4570,7 +4579,8 @@ export class FloorplanCardEditor extends LitElement {
         @pointerdown=${this._onSwitcherDown}
         @pointermove=${this._onSwitcherMove}
         @pointerup=${this._onSwitcherUp}
-        @pointercancel=${this._onSwitcherUp}
+        @pointercancel=${this._onSwitcherCancel}
+        @lostpointercapture=${this._onSwitcherCancel}
       >
         ${floors.map(
           (f: Floor) => html`<span class="sh-btn ${f.id === this._activeFloorId ? "active" : ""}"
@@ -4587,34 +4597,80 @@ export class FloorplanCardEditor extends LitElement {
     // starts a marquee behind the thing being dragged.
     ev.stopPropagation();
     ev.preventDefault();
-    (ev.currentTarget as HTMLElement).setPointerCapture(ev.pointerId);
-    this._switcherDrag = { pointerId: ev.pointerId, moved: false };
+    // The editor's guarded helper, not the DOM method: setPointerCapture
+    // throws for a pointer that is not active, which a synthetic or
+    // re-targeted event can easily be — and thrown here it would abort before
+    // `_switcherDrag` is set, leaving a dead handle.
+    this._capturePointer(ev, ev.currentTarget as Element);
+    this._switcherDrag = {
+      pointerId: ev.pointerId,
+      moved: false,
+      before: this._config,
+      priorFuture: this._future,
+    };
   };
 
   private _onSwitcherMove = (ev: PointerEvent): void => {
     const d = this._switcherDrag;
     if (!d || d.pointerId !== ev.pointerId) return;
     ev.stopPropagation();
-    // History once per drag, not once per frame — the same burst rule the
-    // element drags follow, so undo steps back over the whole move.
+    // History once per drag, not once per frame, so undo steps back over the
+    // whole move. The snapshot it pushes is the config as it stood before —
+    // which is what cancel needs to put back, and what it removes from the
+    // stack on the way.
     if (!d.moved) {
       this._pushHistory();
+      d.snapshot = this._history[this._history.length - 1];
       d.moved = true;
     }
     const at = this._toVirtual(ev);
-    this._emit({ ...this._config, floorSwitcher: { x: at.x, y: at.y } });
+    // Local, not emitted. Every other drag in this editor writes to `_config`
+    // while it is live and emits once on release, and both halves matter: the
+    // host is spared a `config-changed` (and the card-stack re-render behind
+    // it) per frame, and — because nothing has been emitted — a cancel can put
+    // the old config back locally instead of having to emit its way out.
+    this._config = { ...this._config, floorSwitcher: { x: at.x, y: at.y } };
+    this._watchedEntities = collectWatchedEntities(this._config);
   };
 
   private _onSwitcherUp = (ev: PointerEvent): void => {
     const d = this._switcherDrag;
     if (!d || d.pointerId !== ev.pointerId) return;
     ev.stopPropagation();
-    (ev.currentTarget as HTMLElement).releasePointerCapture?.(ev.pointerId);
+    this._releasePointer(ev, ev.currentTarget as Element);
     this._switcherDrag = undefined;
-    // A click that never moved is not a placement: it would otherwise pin the
+    // `_emit`, not `_commit`: the history entry was pushed at first movement,
+    // and committing would push the finished position as a second one — so the
+    // first undo would restore the config you are already looking at.
+    //
+    // A click that never moved emits nothing: it would otherwise pin the
     // switcher to wherever the corner happened to be, turning a stray tap into
     // an edit.
-    if (d.moved) this._commit(this._config);
+    if (d.moved) this._emit(this._config);
+  };
+
+  /**
+   * A drag that was taken away rather than finished — a touch interrupted, a
+   * dialog stealing the pointer, capture lost.
+   *
+   * Rolls back rather than saving where the pointer happened to be, which is
+   * what every other canvas gesture does (see `_cancelGesture`). Nothing was
+   * emitted while it was live, so the host still holds the pre-drag config and
+   * restoring it locally spares a round trip; the history entry pushed at first
+   * movement is removed by identity, and the redo stack that push cleared is
+   * put back, so a canceled drag is a complete no-op.
+   */
+  private _onSwitcherCancel = (ev: PointerEvent): void => {
+    const d = this._switcherDrag;
+    if (!d || d.pointerId !== ev.pointerId) return;
+    ev.stopPropagation();
+    this._releasePointer(ev, ev.currentTarget as Element);
+    this._switcherDrag = undefined;
+    if (!d.moved) return;
+    this._history = this._history.filter((c) => c !== d.snapshot);
+    this._config = d.before;
+    this._watchedEntities = collectWatchedEntities(d.before);
+    this._future = d.priorFuture;
   };
 
   private _renderTextOverlay(

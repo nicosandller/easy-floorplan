@@ -3841,9 +3841,27 @@ export function floorSwitcherAnchor(
 ): { x: number; y: number } | undefined {
   const p = c.floorSwitcher;
   if (!p || typeof p !== "object") return undefined;
-  const x = Number(p.x);
-  const y = Number(p.y);
-  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : undefined;
+  const x = switcherCoord(p.x);
+  const y = switcherCoord(p.y);
+  return x === undefined || y === undefined ? undefined : { x, y };
+}
+
+/**
+ * One coordinate, or `undefined` if it is not a number anyone wrote on purpose.
+ *
+ * Checks the type before coercing, because `Number()` is far too willing:
+ * `null`, `""`, `false` and `[]` all come back as 0. YAML produces the first
+ * two for a key written with no value — `floorSwitcher: { x:, y: 100 }` — and
+ * reading that as 0 would silently park the switcher on the left edge while
+ * the guard above claimed to have rejected it. A numeric *string* is still
+ * accepted: YAML hands those over freely and they are a real number someone
+ * typed.
+ */
+function switcherCoord(v: unknown): number | undefined {
+  if (typeof v === "number") return Number.isFinite(v) ? v : undefined;
+  if (typeof v !== "string" || v.trim() === "") return undefined;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : undefined;
 }
 
 /** Canvas size as displayed: 90°/270° swap width and height. */
