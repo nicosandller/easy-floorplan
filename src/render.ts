@@ -2877,10 +2877,17 @@ export function furnitureActionForGesture(
  * is what the drawing is bound to — the plant's soil sensor, the shelf's light
  * — so it names the *thing*, which is the right answer for a button whose
  * action has no subject of its own.
+ *
+ * Failing both, the symbol — by the name its own definition carries, not by
+ * its id. The ids are written for configs, not for reading aloud
+ * (`cornerShowerCurved`), and the catalogue already holds the words for them
+ * ("curved corner shower"), user-contributed symbols included. Only an id
+ * nothing in the catalogue answers to falls back to unpicking the id itself.
  */
 export function furnitureAccessibleName(
   f: Pick<Furniture, "type" | "entity" | "tap_action" | "hold_action" | "double_tap_action">,
   hass?: RenderHass,
+  catalog: SymbolCatalog = BUILTIN_SYMBOLS,
 ): string {
   const target =
     (["tap", "hold", "double_tap"] as const)
@@ -2890,7 +2897,25 @@ export function furnitureAccessibleName(
   const friendly = target
     ? (hass?.states[target]?.attributes?.friendly_name as string | undefined)
     : undefined;
-  return friendly || target || String(f.type ?? "").replace(/[-_]+/g, " ").trim() || "Furniture";
+  return (
+    friendly || target || findSymbol(catalog, f.type)?.name || humanSymbolId(f.type) || "Furniture"
+  );
+}
+
+/**
+ * An unknown symbol id, said as close to English as an id can be got.
+ *
+ * Only for a `type` the catalogue has no definition for — a symbol from a
+ * config that has since been removed, or a typo. Separators become spaces and
+ * camelCase is split at the hump, because `fishTank` read out verbatim is not
+ * a name.
+ */
+function humanSymbolId(type: unknown): string {
+  return String(type ?? "")
+    .replace(/[-_]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .trim();
 }
 
 /**

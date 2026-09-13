@@ -1278,7 +1278,7 @@ export class FloorplanCard extends LitElement {
               // the gesture itself does: `_onFurnitureAction` hands the live
               // hass to `executeAction`, so the button is named after the
               // state it will actually act on, replay or no replay.
-              const spoken = tappable && !label ? furnitureAccessibleName(f, this.hass) : nothing;
+              const spoken = tappable && !label ? furnitureAccessibleName(f, this.hass, symbolCatalog(c.symbols)) : nothing;
               return svg`<g class="fp-furniture-link"
                     role=${tappable ? "button" : nothing}
                     tabindex=${tappable ? "0" : nothing}

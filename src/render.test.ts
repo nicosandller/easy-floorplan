@@ -6439,12 +6439,29 @@ describe("furnitureActionForGesture — a piece can do more than change floor (i
     expect(furnitureAccessibleName(piece({ entity: "light.shelf" }), hass)).toBe("Shelf light");
     // An entity nothing has a friendly name for still beats the symbol id.
     expect(furnitureAccessibleName(piece({ entity: "light.spare" }), hass)).toBe("light.spare");
-    // No entity at all: what it is drawn as, said the way a person would.
+    // No entity at all: what it is drawn as, by the name its own definition
+    // carries — which beats anything unpicking the id could produce, since the
+    // ids are written for configs rather than for reading aloud.
+    expect(furnitureAccessibleName({ type: "roundTable" }, hass)).toBe("round table");
+    expect(furnitureAccessibleName({ type: "fishTank" }, hass)).toBe("fish tank");
+    expect(furnitureAccessibleName({ type: "cornerShowerCurved" }, hass)).toBe(
+      "curved corner shower",
+    );
+    // A symbol this install does not have: the id, said as close to English as
+    // an id gets. camelCase split at the hump, because `fishTank` read out
+    // verbatim is not a name.
     expect(furnitureAccessibleName({ type: "coffee-table" }, hass)).toBe("coffee table");
     expect(furnitureAccessibleName({ type: "double_bed" }, hass)).toBe("double bed");
+    expect(furnitureAccessibleName({ type: "wineRackTall" }, hass)).toBe("wine rack tall");
     // And never the empty string, which would leave the button unnamed again.
     expect(furnitureAccessibleName({ type: "" }, hass)).toBe("Furniture");
     expect(furnitureAccessibleName({ type: "sofa" }, undefined)).toBe("sofa");
+    // A config's own symbol brings its own name with it.
+    expect(
+      furnitureAccessibleName({ type: "myDesk" }, hass, {
+        myDesk: { id: "myDesk", name: "standing desk" },
+      } as unknown as Parameters<typeof furnitureAccessibleName>[2]),
+    ).toBe("standing desk");
   });
 
   it("names the entity the gesture will act on, not the one the piece carries", () => {

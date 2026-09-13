@@ -27,7 +27,10 @@ import type { Furniture, FloorplanCardConfig } from "./types";
  */
 let planSeq = 0;
 
-function config(piece: Partial<Furniture>): FloorplanCardConfig {
+function config(
+  piece: Partial<Furniture>,
+  extra: Partial<FloorplanCardConfig> = {},
+): FloorplanCardConfig {
   const seq = planSeq++;
   const floor = (id: string, name: string, extra: Partial<Furniture>[]) => ({
     id,
@@ -53,6 +56,7 @@ function config(piece: Partial<Furniture>): FloorplanCardConfig {
     type: "custom:easy-floorplan-card",
     width: 400,
     height: 200,
+    ...extra,
     floors: [floor(`ground-${seq}`, "Ground", [piece]), floor(`upstairs-${seq}`, "Upstairs", [])],
   } as unknown as FloorplanCardConfig;
 }
@@ -76,14 +80,14 @@ const hass = {
   formatEntityState: (st: { state: string }) => st.state,
 } as unknown as FloorplanCard["hass"];
 
-async function mount(piece: Partial<Furniture>) {
+async function mount(piece: Partial<Furniture>, extra: Partial<FloorplanCardConfig> = {}) {
   const host = document.createElement("div");
   host.style.width = "800px";
   host.style.height = "400px";
   document.body.appendChild(host);
 
   const card = document.createElement("easy-floorplan-card") as FloorplanCard;
-  card.setConfig(config(piece));
+  card.setConfig(config(piece, extra));
   card.hass = hass;
   host.appendChild(card);
   await card.updateComplete;
@@ -328,11 +332,43 @@ describe("a piece of furniture answers the gestures it was given", () => {
   });
 
   it("falls back to the symbol it is drawn as", async () => {
+    // The catalogue's own word for the symbol, which means the card has to
+    // hand the catalogue over — `roundTable` is in it, and reading the id out
+    // verbatim is what this is here to catch.
     const t = await mount({
+      type: "roundTable",
+      tap_action: { action: "navigate", navigation_path: "/lovelace/0" } as never,
+    });
+    expect(t.spoken()).toBe("round table");
+
+    // A symbol this install does not have still gets a readable name.
+    const unknown = await mount({
       type: "coffee-table",
       tap_action: { action: "navigate", navigation_path: "/lovelace/0" } as never,
     });
-    expect(t.spoken()).toBe("coffee table");
+    expect(unknown.spoken()).toBe("coffee table");
+  });
+
+  it("uses a name the config defined itself", async () => {
+    // The built-ins would be found by the resolver's own default, so only a
+    // symbol from this config proves the card hands its catalogue over.
+    const t = await mount(
+      {
+        type: "myDesk",
+        tap_action: { action: "navigate", navigation_path: "/lovelace/0" } as never,
+      },
+      {
+        symbols: {
+          myDesk: {
+            id: "myDesk",
+            name: "standing desk",
+            size: { w: 100, h: 50 },
+            parts: [{ rect: [0, 0, 100, 50], role: "body" }],
+          },
+        },
+      },
+    );
+    expect(t.spoken()).toBe("standing desk");
   });
 
   it("leaves the naming to the tooltip when there is one", async () => {

@@ -200,7 +200,9 @@ nothing to call it by. Where the floor tooltip is not already naming it, the car
 after the entity the gesture will act on — the action's own `entity` where it names one —
 using its friendly name, or the entity id. Only `toggle` and `more-info` act on an entity,
 so a `navigate` or a `url` supplies no name; the piece's own `entity` answers instead,
-since that is what the drawing is bound to. Failing both, the symbol the piece is drawn as.
+since that is what the drawing is bound to. Failing both, the symbol the piece is drawn as,
+by the name its definition carries rather than its id — `cornerShowerCurved` is announced as
+"curved corner shower", and a symbol your own config defines brings its own name with it.
 When gestures target different entities the tap wins, then the hold, then the double-tap,
 and a gesture that could not run never supplies the name.
 
