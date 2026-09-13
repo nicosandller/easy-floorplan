@@ -8,6 +8,7 @@ import type {
   FloorItem,
   FloorText,
   Floor,
+  Furniture,
   Area,
   OverlayScale,
   RenderHass,
@@ -68,6 +69,8 @@ import {
   renderRipple,
   renderFurniture,
   furnitureColor,
+  furnitureAccessibleName,
+  furnitureActionForGesture,
   furnitureFloorTarget,
   renderTracker,
   renderArea,
@@ -115,6 +118,7 @@ import {
   SUN_LIGHT_COLOR,
   SUN_SHADE_COLOR,
   hassRenderInputsChanged,
+  collectNamedEntities,
   collectWatchedEntities,
   resolveItemIcon,
   resolveIconAnimation,
@@ -143,7 +147,13 @@ import {
   SKIN_TEXT,
   SKIN_WALL,
 } from "./skins";
-import { actionForGesture, executeAction, hasAction, itemIsInteractive } from "./actions";
+import {
+  actionForGesture,
+  executeAction,
+  gestureDoesSomething,
+  hasAction,
+  itemIsInteractive,
+} from "./actions";
 import { actionHandler } from "./action-handler";
 import { renderAmbientDaylightLayer } from "./ambient-daylight-integration";
 import { ReplayControllerImpl } from "./replay-history/replay-controller";
@@ -182,6 +192,11 @@ export class FloorplanCard extends LitElement {
   private readonly _glowIdBase = `fp-glow-${FloorplanCard._nextGlowId++}`;
   /** Entity ids this plan actually displays; used to skip irrelevant hass updates. */
   private _watchedEntities: Set<string> = new Set();
+  /**
+   * Entities that only appear in an accessible name (issue #284). Kept apart
+   * from `_watchedEntities` on purpose — see `collectNamedEntities`.
+   */
+  private _nameEntities: Set<string> = new Set();
   private readonly _replayController = new ReplayControllerImpl({
     getConfig: () => this._config,
     getHass: () => this.hass,
@@ -265,6 +280,7 @@ export class FloorplanCard extends LitElement {
       furniture: config.furniture ?? [],
     };
     this._watchedEntities = collectWatchedEntities(this._config);
+    this._nameEntities = collectNamedEntities(this._config);
     this._syncHistoryServiceContext();
     this._replayController.clearConfigColorCache();
     // HA calls setConfig on every keystroke in the config box. Clearing the
@@ -304,7 +320,16 @@ export class FloorplanCard extends LitElement {
     if (!(changed.size === 1 && changed.has("hass"))) return true;
     const prev = changed.get("hass") as HomeAssistant | undefined;
     if (!prev || !this.hass) return true;
-    return hassRenderInputsChanged(prev, this.hass, this._watchedEntities);
+    if (hassRenderInputsChanged(prev, this.hass, this._watchedEntities)) return true;
+    // Entities that name a button but draw nothing. They have to invalidate a
+    // render — a renamed entity, or one that did not exist at first paint,
+    // otherwise leaves the label stuck at the name it first found — but they
+    // stay out of `_watchedEntities` so `buildRenderHass` never asks a replay
+    // for the history of something the plan does not show.
+    for (const id of this._nameEntities) {
+      if (prev.states[id] !== this.hass.states[id]) return true;
+    }
+    return false;
   }
 
   /**
@@ -624,6 +649,29 @@ export class FloorplanCard extends LitElement {
     const press = areaActionForGesture(a, ev.detail.action);
     if (!press) {
       if (ev.detail.action === "tap") this._onAreaClick(a);
+      return;
+    }
+    if (!this.hass) return;
+    executeAction(this, this.hass, { entity: press.entity }, press.config);
+  }
+
+  /**
+   * A gesture on a piece of furniture (issue #284): its configured action, or —
+   * for a tap with nothing configured — the floor change it already did.
+   *
+   * The same shape as `_onAreaAction`, and for the same reason: every plan
+   * drawn before furniture had actions has three unset gestures, so a
+   * staircase still changes floor on tap and nothing else answers at all.
+   */
+  private _onFurnitureAction(
+    ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>,
+    f: Furniture,
+    floors: readonly Floor[],
+    to: string | undefined,
+  ): void {
+    const press = furnitureActionForGesture(f, ev.detail.action);
+    if (!press) {
+      if (ev.detail.action === "tap" && to) this._goToFloor(floors, to);
       return;
     }
     if (!this.hass) return;
@@ -1178,20 +1226,84 @@ export class FloorplanCard extends LitElement {
               // is still a staircase, but it takes no clicks rather than
               // offering a control that does nothing.
               const to = furnitureFloorTarget(f, floors, active.id);
-              if (!to) return drawn;
+              // …and anything else the piece was told to do (issue #284). Hold
+              // and double-tap are asked for separately because the handler
+              // needs to know whether to spend their timers: a staircase with
+              // only a floor change must still answer a tap immediately.
+              //
+              // Whether the gesture could actually *run*, which is a stricter
+              // question than whether one is configured. `hasAction` only says
+              // "present and not `none`", and the guards `executeAction`
+              // applies go further: a `more-info` with no entity to show, a
+              // `navigate` with no path, a `call-service` with no service all
+              // pass it and then do nothing. Asking the weaker question hands
+              // a tab stop and a button role to a piece that answers to
+              // nothing, and spends the hold and double-tap timers on gestures
+              // that cannot fire — so every tap waits out a hold that was
+              // never going to happen.
+              const runs = (g: "tap" | "hold" | "double_tap"): boolean => {
+                const p = furnitureActionForGesture(f, g);
+                return !!p && gestureDoesSomething({ entity: p.entity }, p.config);
+              };
+              const hasHold = runs("hold");
+              const hasDoubleClick = runs("double_tap");
+              const hasTap = runs("tap");
+              // Configured at all, `none` included — a separate question from
+              // whether it does anything. Writing `tap_action: none` on a
+              // staircase is how a plan says "draw the stairs, but do not let
+              // them navigate", so a configured tap suppresses the floor
+              // fallback whether or not it is a no-op. `_onFurnitureAction`
+              // decides the same way, by asking whether a tap was configured
+              // rather than whether it does anything.
+              const tapConfigured = !!furnitureActionForGesture(f, "tap");
+              const goesToFloor = !!to && !tapConfigured;
+              // An inert piece stays inert: no role, no tab stop, no listeners.
+              // A gray diagram that announces itself as a button and then does
+              // nothing is worse than one that says nothing at all.
+              if (!goesToFloor && !hasTap && !hasHold && !hasDoubleClick) return drawn;
+              // The button role and the tab stop are earned by the *tap*, not by
+              // any gesture at all. `actionHandler` turns Enter and Space into
+              // a tap and nothing else, so a piece whose only action sits on
+              // hold or double-tap would take focus, announce itself as a
+              // button, and then do nothing when a keyboard user pressed it —
+              // a promise this card cannot keep.
+              //
+              // Such a piece keeps its listeners, so the hold still works under
+              // a pointer; it just stops advertising a control that cannot be
+              // operated. Hold and double-tap being pointer-only is not new
+              // here — it is true of every item and room on the plan, because
+              // the keyboard has one activation and they are the second and
+              // third gestures on it.
+              const tappable = hasTap || goesToFloor;
               const name = floors.find((x) => x.id === to)?.name;
-              return svg`<g class="fp-furniture-link" role="button" tabindex="0"
-                    @action=${() => this._goToFloor(floors, to)}
-                    .actionHandler=${actionHandler({
-                      // A staircase has one gesture. Saying so keeps a tap from
-                      // sitting out the hold and double-tap timers before it
-                      // does anything.
-                      hasHold: false,
-                      hasDoubleClick: false,
-                    })}>
+              // Names the gesture that actually runs. A configured tap replaces
+              // the floor change, so promising "Go to Upstairs" would be a lie
+              // on exactly the plans this feature was asked for.
+              const label = goesToFloor ? (name ? `Go to ${name}` : "Go to the next floor") : undefined;
+              // With no floor label there is nothing naming this button, so
+              // say what it is. Only in that case: an `aria-label` would
+              // override the <title> that is already doing the job.
+              //
+              // From the live hass, not `renderHass`, which is the one place
+              // in this template that wants it. `renderHass` is filtered to
+              // the entities the *drawing* watches, and an action's target is
+              // deliberately not one of them — a tap opening a light does not
+              // change how the room looks. Reading the name there would find
+              // nothing and fall back to the raw entity id. It is also what
+              // the gesture itself does: `_onFurnitureAction` hands the live
+              // hass to `executeAction`, so the button is named after the
+              // state it will actually act on, replay or no replay.
+              const spoken = tappable && !label ? furnitureAccessibleName(f, this.hass, symbolCatalog(c.symbols)) : nothing;
+              return svg`<g class="fp-furniture-link"
+                    role=${tappable ? "button" : nothing}
+                    tabindex=${tappable ? "0" : nothing}
+                    aria-label=${spoken}
+                    @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
+                      this._onFurnitureAction(ev, f, floors, to)}
+                    .actionHandler=${actionHandler({ hasHold, hasDoubleClick })}>
                   <!-- An SVG tooltip is a <title> child, not a title=
                        attribute: the attribute does nothing here. -->
-                  <title>${name ? `Go to ${name}` : "Go to the next floor"}</title>
+                  ${label ? svg`<title>${label}</title>` : nothing}
                   ${drawn}
                 </g>`;
             })}

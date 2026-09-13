@@ -1005,10 +1005,27 @@ export interface Furniture {
    */
   goToFloor?: "up" | "down";
   /**
+   * What a gesture on this piece does (issue #284): "I would like the option to
+   * select either a floor or the tap actions like we have for areas."
+   *
+   * Same shape as {@link Area.tap_action}, and the same relationship to the
+   * behaviour the piece already had. {@link goToFloor} is to furniture what the
+   * zoom is to a room: the thing a tap does when nothing else is configured. A
+   * `tap_action` replaces it; hold and double-tap are free either way, so a
+   * staircase can keep changing floor on tap and still open more-info on hold.
+   *
+   * An action with no `entity` of its own falls back to this piece's
+   * {@link entity}, exactly as a room's does — so binding a cabinet's contact
+   * sensor once is enough for `more-info` to know what to show.
+   */
+  tap_action?: ActionConfig;
+  hold_action?: ActionConfig;
+  double_tap_action?: ActionConfig;
+  /**
    * Optional entity that makes the drawing live (issue #82) — a soil sensor on
    * a plant, a water temperature sensor on a fish tank, a contact sensor on a
-   * cabinet. Drives {@link stateColor} and {@link activeColor}; furniture has
-   * no click action, so an unbound piece is still just a gray diagram.
+   * cabinet. Drives {@link stateColor} and {@link activeColor}, and stands in
+   * as the target for any action that names none of its own (issue #284).
    */
   entity?: string;
   /**

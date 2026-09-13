@@ -63,7 +63,7 @@ import {
   DEFAULT_RIPPLE_WIDTH,
 } from "./types";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, cssIcon } from "./css-safe";
-import { hasAction } from "./actions";
+import { actionTargetEntity, hasAction } from "./actions";
 import { SKIN_ACCENT, SKIN_PAPER, SKIN_WALL, MAX_SKIN_WALL_WIDTH } from "./skins";
 // The same tolerance #141 uses to decide an opening sits on a wall, so "this
 // door is in this wall" means one thing across the card.
@@ -121,6 +121,33 @@ export function hassRenderInputsChanged(
     if (prev.states[id] !== next.states[id]) return true;
   }
   return false;
+}
+
+/**
+ * Entities that appear in an accessible name but never in the drawing.
+ *
+ * A furniture action can name its own target, and `furnitureAccessibleName`
+ * reads that entity's friendly name to label the button. Nothing about it is
+ * drawn, so it has no business in `collectWatchedEntities`: that set is what
+ * `buildRenderHass` exposes, and a replay would start fetching history for an
+ * entity the plan never shows. But a card that never re-renders when it
+ * changes would go on announcing the name it first saw — or the raw entity id
+ * it fell back to while the entity did not exist yet.
+ *
+ * So: watched for the purpose of *updating*, absent from what gets *drawn*.
+ */
+export function collectNamedEntities(c: FloorplanCardConfig): Set<string> {
+  const ids = new Set<string>();
+  for (const f of getFloors(c)) {
+    for (const piece of f.furniture ?? []) {
+      for (const g of ["tap", "hold", "double_tap"] as const) {
+        const p = furnitureActionForGesture(piece, g);
+        const id = p && actionTargetEntity({ entity: p.entity }, p.config);
+        if (id) ids.add(id);
+      }
+    }
+  }
+  return ids;
 }
 
 /** Every entity id whose state can change what a plan draws (all floors). */
@@ -2803,6 +2830,93 @@ export function areaActionForGesture(
     gesture === "tap" ? a.tap_action : gesture === "hold" ? a.hold_action : a.double_tap_action;
   if (!configured) return undefined;
   return { entity: configured.entity ?? a.entity, config: configured };
+}
+
+/**
+ * What a gesture on a piece of furniture should do (issue #284), or
+ * `undefined` for "whatever it did before actions existed".
+ *
+ * The mirror of {@link areaActionForGesture}, and deliberately so: a room's tap
+ * falls back to its zoom, a piece's falls back to its {@link
+ * Furniture.goToFloor}. Returning `undefined` rather than synthesising the
+ * fallback keeps that decision with the caller, which is the only place that
+ * knows whether a floor in that direction actually exists.
+ */
+export function furnitureActionForGesture(
+  f: Pick<Furniture, "entity" | "tap_action" | "hold_action" | "double_tap_action">,
+  gesture: "tap" | "hold" | "double_tap",
+): { entity?: string; config: ActionConfig } | undefined {
+  const configured =
+    gesture === "tap" ? f.tap_action : gesture === "hold" ? f.hold_action : f.double_tap_action;
+  if (!configured) return undefined;
+  return { entity: configured.entity ?? f.entity, config: configured };
+}
+
+/**
+ * What to call a piece of furniture out loud.
+ *
+ * A piece that answers gestures is a button, and `renderFurniture` contributes
+ * paths and nothing else — so unless the floor-change tooltip happens to be
+ * naming it, a screen reader is handed a button with no name at all.
+ *
+ * The entity the gesture will actually act on is the most useful thing to call
+ * it — which is the action's own `entity` where it names one, not the piece's:
+ * a shelf drawn as a plain box whose `tap_action` points at the light on it is
+ * "Shelf light", and calling it "box" would name the drawing instead of the
+ * thing the button does. Failing that the symbol it is drawn as, because that
+ * is what everyone else is looking at. Ids are hyphenated (`double-bed`),
+ * which is not how anything should be read aloud.
+ *
+ * Gestures can disagree about their target, and then there is no right answer,
+ * only a predictable one: tap, then hold, then double-tap — named after the
+ * gesture people reach for first. Only gestures that could actually run are
+ * considered, and only the kinds that act on an entity: an unusable
+ * `more-info` with nothing to show must not win over a working hold, and a
+ * `navigate` acts on a path rather than on anything nameable.
+ *
+ * The piece's own `entity` is still the fallback, whatever its gestures do. It
+ * is what the drawing is bound to — the plant's soil sensor, the shelf's light
+ * — so it names the *thing*, which is the right answer for a button whose
+ * action has no subject of its own.
+ *
+ * Failing both, the symbol — by the name its own definition carries, not by
+ * its id. The ids are written for configs, not for reading aloud
+ * (`cornerShowerCurved`), and the catalogue already holds the words for them
+ * ("curved corner shower"), user-contributed symbols included. Only an id
+ * nothing in the catalogue answers to falls back to unpicking the id itself.
+ */
+export function furnitureAccessibleName(
+  f: Pick<Furniture, "type" | "entity" | "tap_action" | "hold_action" | "double_tap_action">,
+  hass?: RenderHass,
+  catalog: SymbolCatalog = BUILTIN_SYMBOLS,
+): string {
+  const target =
+    (["tap", "hold", "double_tap"] as const)
+      .map((g) => furnitureActionForGesture(f, g))
+      .map((p) => (p ? actionTargetEntity({ entity: p.entity }, p.config) : undefined))
+      .find((e) => e) ?? f.entity;
+  const friendly = target
+    ? (hass?.states[target]?.attributes?.friendly_name as string | undefined)
+    : undefined;
+  return (
+    friendly || target || findSymbol(catalog, f.type)?.name || humanSymbolId(f.type) || "Furniture"
+  );
+}
+
+/**
+ * An unknown symbol id, said as close to English as an id can be got.
+ *
+ * Only for a `type` the catalogue has no definition for — a symbol from a
+ * config that has since been removed, or a typo. Separators become spaces and
+ * camelCase is split at the hump, because `fishTank` read out verbatim is not
+ * a name.
+ */
+function humanSymbolId(type: unknown): string {
+  return String(type ?? "")
+    .replace(/[-_]+/g, " ")
+    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
+    .toLowerCase()
+    .trim();
 }
 
 /**

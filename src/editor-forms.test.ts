@@ -1006,6 +1006,81 @@ describe("textForm / furnitureForm / trackerForm", () => {
     expect(form.data).toMatchObject({ hand: "right", entity: "binary_sensor.x" });
   });
 
+  // Issue #284: furniture answers tap, hold and double-tap like a room does.
+  it("furniture offers all three action fields, on every piece", () => {
+    // Not gated on an entity or on `goToFloor`: a piece with neither can still
+    // navigate or call a service, and requiring one first would rule that out.
+    const form = furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10 } as never);
+    const names = form.fields.map((x) => x.name);
+    for (const n of ["tap_action", "hold_action", "double_tap_action"]) {
+      expect(names).toContain(n);
+      // `none` as the stated default, so the field never claims the card will
+      // do something a piece with no action configured does not do.
+      expect(form.fields.find((x) => x.name === n)!.selector).toEqual({
+        ui_action: { default_action: "none" },
+      });
+    }
+  });
+
+  it("furniture warns that a tap replaces the floor change, but only on a staircase", () => {
+    const helper = (extra: Record<string, unknown>) =>
+      furnitureForm({ id: "f", type: "stairs", x: 0, y: 0, w: 10, h: 10, ...extra } as never)
+        .fields.find((x) => x.name === "tap_action")!.helper;
+    // Nothing to replace on an ordinary piece — saying otherwise would
+    // describe a staircase this is not.
+    expect(helper({})).toBeUndefined();
+    expect(helper({ goToFloor: "up" })).toContain("Replaces the floor change");
+  });
+
+  it("furniture leaves an unconfigured action unset rather than inventing one", () => {
+    // `undefined` is what `furnitureActionForGesture` reads as "whatever it did
+    // before actions existed" — a default written into the form here would turn
+    // every ordinary piece into a configured one on the first save.
+    const d = furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10 } as never).data;
+    expect(d.tap_action).toBeUndefined();
+    expect(d.hold_action).toBeUndefined();
+    expect(d.double_tap_action).toBeUndefined();
+  });
+
+  it("furniture carries stored actions back into the form", () => {
+    const d = furnitureForm({
+      id: "f",
+      type: "stairs",
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+      goToFloor: "up",
+      tap_action: { action: "more-info", entity: "light.shelf" },
+      hold_action: { action: "toggle" },
+      double_tap_action: { action: "none" },
+    } as never).data;
+    expect(d).toMatchObject({
+      goToFloor: "up",
+      tap_action: { action: "more-info", entity: "light.shelf" },
+      hold_action: { action: "toggle" },
+      // `none` round-trips as itself: it is a configured action, and the card
+      // reads it as "stop changing floor on tap".
+      double_tap_action: { action: "none" },
+    });
+  });
+
+  it("furniture keeps an action through the patch that clears goToFloor", () => {
+    // `toPatch` rewrites the empty floor option to `undefined`; it must not
+    // take the actions with it.
+    const { toPatch } = furnitureForm({
+      id: "f",
+      type: "stairs",
+      x: 0,
+      y: 0,
+      w: 10,
+      h: 10,
+    } as never);
+    const out = toPatch({ goToFloor: "", tap_action: { action: "toggle" } } as never);
+    expect(out.goToFloor).toBeUndefined();
+    expect(out.tap_action).toEqual({ action: "toggle" });
+  });
+
   it("non-sectional furniture has no chaise-side field or data", () => {
     const form = furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10 } as never);
     expect(form.fields.map((x) => x.name)).not.toContain("hand");
@@ -1911,7 +1986,11 @@ describe("every field lands in exactly one panel group", () => {
     ["showIcon", "icon"],
     ["tapTarget", "tap_action", "hold_action", "double_tap_action"],
   ];
-  const FURNITURE_GROUPS = [["type", "hand", "w", "h", "angle"], ["entity"], ["goToFloor"]];
+  const FURNITURE_GROUPS = [
+    ["type", "hand", "w", "h", "angle"],
+    ["entity"],
+    ["goToFloor", "tap_action", "hold_action", "double_tap_action"],
+  ];
   const TRACKER_GROUPS = [["w", "h", "x", "y", "angle"], ["dotSize"]];
   const AREA_GROUPS = [
     ["showName", "labelSize"],

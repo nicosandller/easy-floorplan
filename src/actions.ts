@@ -40,7 +40,7 @@ export function actionForGesture(
  * question: a `toggle` with no entity, a `navigate` with no path and a
  * `call-service` with no service all pass it and then do nothing.
  */
-function gestureDoesSomething(
+export function gestureDoesSomething(
   item: { entity?: string },
   config: ActionConfig | undefined
 ): boolean {
@@ -62,6 +62,31 @@ function gestureDoesSomething(
       return true;
     default:
       return false;
+  }
+}
+
+/**
+ * The entity a gesture will actually act on, or `undefined` when it acts on
+ * none.
+ *
+ * Not every action consumes one: `navigate` goes to a path, `url` opens a
+ * page, `fire-dom-event` announces itself. Only `toggle` and `more-info` reach
+ * for an entity, and only those can speak for one — which matters wherever an
+ * action's target is used to say what a control *is*, rather than to act.
+ * An action that could not run names nothing at all.
+ */
+export function actionTargetEntity(
+  item: { entity?: string },
+  config: ActionConfig | undefined
+): string | undefined {
+  if (!config || !gestureDoesSomething(item, config)) return undefined;
+  switch (config.action) {
+    case "toggle":
+      return item.entity;
+    case "more-info":
+      return config.entity ?? item.entity;
+    default:
+      return undefined;
   }
 }
 

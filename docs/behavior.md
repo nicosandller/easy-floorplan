@@ -146,6 +146,66 @@ Two things worth knowing before you use it:
 - The way in is the room tap, so a room whose `tap_action` [replaces the zoom](#actions-on-rooms)
   has no way to reveal its devices. Put that action on `hold_action` instead.
 
+## Actions on furniture
+
+Furniture used to have exactly one thing it could do when clicked: change floor. A room
+has had tap, hold and double-tap actions since issue #181, and a piece of furniture is
+just as reasonable a thing to press — a cabinet that opens its contact sensor's history, a
+TV that toggles the lamp beside it.
+
+```yaml
+furniture:
+  - id: tv
+    type: tv
+    entity: media_player.living
+    tap_action: { action: toggle }
+    hold_action: { action: more-info }
+```
+
+![The editor's Behavior group for a staircase: Go to floor, then Tap, Hold and Double-tap action](img/furniture-actions.png)
+
+`goToFloor` is to a piece what the zoom is to a room: the thing a tap does when nothing
+else is configured. So the two compose rather than competing —
+
+- **`goToFloor` alone** keeps changing floor on tap, exactly as before.
+- **a `tap_action`** replaces the floor change. Its tooltip stops promising a floor it will
+  no longer go to.
+- **`goToFloor` plus a hold or double-tap action** keeps both: tap still moves you, hold
+  does the other thing.
+- **`tap_action: { action: none }`** is how you say "this staircase should not move me" —
+  `none` is a configured action, not an absent one.
+
+An action that names no `entity` falls back to the piece's own, so binding a cabinet's
+contact sensor once is enough for `more-info` to know what to show. A piece with neither a
+floor to go to nor any action stays inert: no button role, no tab stop, nothing that
+announces itself and then does nothing.
+
+"Any action" means one that could actually run, not merely one that is written down. A
+`more-info` with no entity to show, a `navigate` with no path, a `call-service` with no
+service and anything set to `none` all count as nothing to do: the piece stays inert, and
+its hold and double-tap timers are never armed — otherwise every tap would wait out a hold
+that was never going to fire. A staircase whose `goToFloor` is switched off by a
+`tap_action` that cannot run is inert too; an unusable tap is still a configured one, so it
+suppresses the floor change the same way `none` does.
+
+The button role and the tab stop are earned by the **tap** specifically, not by any gesture.
+Enter and Space are the keyboard's only activation and the card turns both into a tap, so a
+piece whose sole action sits on hold or double-tap would take focus, announce itself as a
+button, and then do nothing when pressed. Such a piece still answers a pointer hold; it
+just does not advertise a control nobody can operate from a keyboard. (Hold and double-tap
+are pointer gestures everywhere on the plan, on items and rooms too, for the same reason.)
+
+A piece that *does* answer a tap is a button, and the drawing gives a screen reader
+nothing to call it by. Where the floor tooltip is not already naming it, the card names it
+after the entity the gesture will act on — the action's own `entity` where it names one —
+using its friendly name, or the entity id. Only `toggle` and `more-info` act on an entity,
+so a `navigate` or a `url` supplies no name; the piece's own `entity` answers instead,
+since that is what the drawing is bound to. Failing both, the symbol the piece is drawn as,
+by the name its definition carries rather than its id — `cornerShowerCurved` is announced as
+"curved corner shower", and a symbol your own config defines brings its own name with it.
+When gestures target different entities the tap wins, then the hold, then the double-tap,
+and a gesture that could not run never supplies the name.
+
 ## Stairs that change floor
 
 A staircase already draws an arrow saying which way it goes. `goToFloor` makes that a
