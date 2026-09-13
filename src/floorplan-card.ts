@@ -155,6 +155,7 @@ import {
   itemIsInteractive,
 } from "./actions";
 import { actionHandler } from "./action-handler";
+import { renderAmbientDaylightLayer } from "./ambient-daylight-integration";
 import { ReplayControllerImpl } from "./replay-history/replay-controller";
 import { createReplayPanelProps, renderReplayPanel } from "./replay-history/replay-panel";
 
@@ -1168,6 +1169,20 @@ export class FloorplanCard extends LitElement {
                   ${renderArea(a, areaColor(a, a.entity ? renderHass?.states[a.entity]?.state : undefined))}
                 </g>`;
             })}
+            <!-- Diffuse sky light (PR #204). Reads its opening travel, shutter
+                 state and sun elevation through the same replay-aware state
+                 source as every other light layer, so a replayed plan shows the
+                 daylight of the moment being replayed rather than of now. -->
+            ${renderAmbientDaylightLayer(
+              active,
+              c,
+              renderHass,
+              `${this._wallMaskId}-ambient`,
+              {
+                amount: (o) => this._openingAmount(o, renderHass),
+                secondAmount: (o) => this._openingSecond(o, renderHass)?.amount,
+              }
+            )}
             <!-- Dead spaces (issue #88): the regions the walls seal off that no
                  door or window reaches, hatched. Above the room fills, so a
                  region someone has also drawn an area over still reads as
