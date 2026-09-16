@@ -520,8 +520,10 @@ function paint(style: PartStyle, color: string) {
   return { fill, stroke, style };
 }
 
-function partTemplate(p: SymbolPart, m: Mapper, color: string): SVGTemplateResult {
+function partTemplate(p: SymbolPart, m: Mapper, color: string, fillColor?: string): SVGTemplateResult {
   const { fill, stroke, style } = paint(p.style, color);
+  const fillC = fillColor ? fillColor : fill;
+
   // Omitted rather than defaulted: `opacity="1"` and `stroke-dasharray="none"`
   // on every part would triple the markup a large plan carries for no effect.
   const op = style.opacity < 1 ? style.opacity : nothing;
@@ -539,23 +541,23 @@ function partTemplate(p: SymbolPart, m: Mapper, color: string): SVGTemplateResul
       return svg`<rect x=${fmt(m.x(p.x))} y=${fmt(m.y(p.y))}
                        width=${fmt(m.sx(p.w))} height=${fmt(m.sy(p.h))}
                        rx=${p.rx > 0 ? fmt(m.len(p.rx)) : nothing}
-                       fill=${fill} fill-opacity=${fillOp}
+                       fill=${fillC} fill-opacity=${fillOp}
                        stroke=${stroke} stroke-width=${sw}
                        stroke-dasharray=${dash} opacity=${op} />`;
     case "circle":
       return svg`<circle cx=${fmt(m.x(p.cx))} cy=${fmt(m.y(p.cy))} r=${fmt(m.len(p.r))}
-                         fill=${fill} fill-opacity=${fillOp}
+                         fill=${fillC} fill-opacity=${fillOp}
                          stroke=${stroke} stroke-width=${sw} opacity=${op} />`;
     case "ellipse":
       return svg`<ellipse cx=${fmt(m.x(p.cx))} cy=${fmt(m.y(p.cy))}
                           rx=${fmt(m.sx(p.rx))} ry=${fmt(m.sy(p.ry))}
-                          fill=${fill} fill-opacity=${fillOp}
+                          fill=${fillC} fill-opacity=${fillOp}
                           stroke=${stroke} stroke-width=${sw} opacity=${op} />`;
     case "poly": {
       const pts = p.pts.map(([x, y]) => `${fmt(m.x(x))},${fmt(m.y(y))}`).join(" ");
       return p.closed
         ? svg`<polygon points=${pts}
-                       fill=${fill} fill-opacity=${fillOp}
+                       fill=${fillC} fill-opacity=${fillOp}
                        stroke=${stroke} stroke-width=${sw}
                        stroke-linejoin="round" opacity=${op} />`
         : svg`<polyline points=${pts} fill="none"
@@ -589,9 +591,10 @@ export function renderSymbolParts(
   def: SymbolDef,
   w: number,
   h: number,
-  color: string
+  color: string,
+  fillColor?: string,
 ): SVGTemplateResult[] {
   const box = mapper(def, w, h, "box");
   const square = mapper(def, w, h, "square");
-  return def.parts.map((p) => partTemplate(p, p.space === "square" ? square : box, color));
+  return def.parts.map((p) => partTemplate(p, p.space === "square" ? square : box, color, fillColor));
 }

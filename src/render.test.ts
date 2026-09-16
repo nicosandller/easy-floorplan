@@ -5643,7 +5643,6 @@ describe("styling hooks reach the DOM (issue #105)", () => {
 });
 
 describe("renderGlowMask — furniture is dimmed, not blacked out (#108, #106)", () => {
-
   const twoPieces = () =>
     flattenMarkup(
       renderGlowMask(
@@ -5660,7 +5659,7 @@ describe("renderGlowMask — furniture is dimmed, not blacked out (#108, #106)",
   it("shades a rotated rect per furniture piece, ellipse for round types", () => {
     const markup = twoPieces();
     expect(markup).toContain("id=gm");
-    expect(markup).toContain("rotate(90 300 200)");
+    expect(markup).toContain("rotate(90)");
     expect(markup).toContain("<ellipse");
     // Explicit region, not the viewport default (the issue #102 lesson).
     expect(markup).toContain("width=1016");

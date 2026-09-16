@@ -104,6 +104,10 @@ Check it at its default size *and* stretched: a glyph can be right by the number
 on screen. `npm run ha` (see [`docker/README.md`](../docker/README.md)) gets you
 an editor to drop it into and resize.
 
+### Lighting
+
+If you create your own furniture, be careful which primitives you use for what. For correct displaying of the lighting mask, always use at least a closed shape as the outermost line. For example, if you draw a hexagonal table, do not draw the outer lines as separate `line` objects, use a `polygon` instead.
+
 ## What gets merged
 
 Symbols that a lot of people would place. A fitted wardrobe, a kitchen island, a treadmill —
