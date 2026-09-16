@@ -5,6 +5,7 @@
  * the editor owns rendering, history routing, and hass-dependent side
  * effects (device-class inference, grid/snap rescale).
  */
+import { MAX_FOCUS_INTERVAL, normalizeRoomFocus } from "./room-focus";
 import type {
   Area,
   Floor,
@@ -74,6 +75,7 @@ import {
   defaultSash,
   openingIsGlazed,
 } from "./render";
+import { normalizeProjection, normalizeWallHeight, normalizeWallOpacity, MAX_WALL_HEIGHT } from "./projection";
 import { defaultItemAction } from "./actions";
 import { DEFAULT_SKIN, SKINS, findSkin, MAX_SKIN_WALL_WIDTH } from "./skins";
 
@@ -2203,6 +2205,26 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
   return {
     fields: [
       {
+        name: "view",
+        label: "View",
+        helper: "3D shows standing walls and openings. Editing stays in 2D",
+        selector: dropdown(opt("2d", "2D plan"), opt("3d", "3D isometric")),
+      },
+      ...(normalizeProjection(c.view ?? c.projection) === "iso" ? [
+        {
+          name: "wallHeight",
+          label: "Wall height",
+          helper: "Canvas units. Lower walls reveal more of each room",
+          selector: { number: { min: 0, max: MAX_WALL_HEIGHT, step: 1, mode: "slider" } },
+        },
+        {
+          name: "wallOpacity",
+          label: "Wall opacity",
+          helper: "1 is solid; lower values reveal the floor behind walls",
+          selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
+        },
+      ] : []),
+      {
         name: "rotation",
         label: "Rotate display",
         helper: "Rotates the live card only — editing stays as drawn",
@@ -2264,11 +2286,32 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
         selector: { boolean: {} },
       },
       {
+        name: "zoomedOverlayAuto",
+        label: "Grow badges with the room",
+        helper:
+          "Badges and labels scale with the drawing while zoomed, so a focused room reads bigger without its devices crowding each other any worse than at full plan",
+        selector: { boolean: {} },
+      },
+      ...(c.zoomedOverlayScale === "auto" ? [] : [{
         name: "zoomedOverlayScale",
         label: "Zoomed badge size",
         helper:
           "Badges, labels and text while zoomed in to a room, as a multiple of their size at full plan. 1 keeps them the same",
         selector: { number: { min: 0.5, max: 3, step: 0.1, mode: "slider" } },
+      }]),
+      {
+        name: "roomFocusControls",
+        label: "Room arrows",
+        helper:
+          "Previous/next controls that walk the zoom from room to room. They also let the arrow keys do it, which is otherwise impossible — a room that only zooms is not a tab stop",
+        selector: { boolean: {} },
+      },
+      {
+        name: "roomFocusInterval",
+        label: "Cycle rooms every",
+        helper:
+          "Seconds on each room before moving to the next. 0 only ever moves when asked; any tap or key press starts the count again, so it never moves under someone using the card",
+        selector: { number: { min: 0, max: MAX_FOCUS_INTERVAL, step: 1, mode: "box", unit_of_measurement: "s" } },
       },
       {
         name: "offlineStyle",
@@ -2282,6 +2325,9 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
       },
     ],
     data: {
+      view: normalizeProjection(c.view ?? c.projection) === "iso" ? "3d" : "2d",
+      wallHeight: normalizeWallHeight(c.wallHeight),
+      wallOpacity: normalizeWallOpacity(c.wallOpacity),
       rotation: String(normalizePlanRotation(c.rotation)),
       // "" is "same as above" — the absence of an override, not an angle.
       // `== null` for the same reason resolvePlanRotation uses it: a key
@@ -2296,11 +2342,19 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
       overlayScale: normalizeOverlayScale(c.overlayScale),
       overlayMinWidth: normalizeOverlayMinWidth(c.overlayMinWidth) ?? 0,
       compactHeader: c.compactHeader ?? false,
-      zoomedOverlayScale: c.zoomedOverlayScale ?? DEFAULT_ZOOMED_OVERLAY_SCALE,
+      zoomedOverlayAuto: c.zoomedOverlayScale === "auto",
+      zoomedOverlayScale:
+        typeof c.zoomedOverlayScale === "number"
+          ? c.zoomedOverlayScale
+          : DEFAULT_ZOOMED_OVERLAY_SCALE,
+      roomFocusControls: normalizeRoomFocus(c.roomFocus)?.controls ?? false,
+      roomFocusInterval: (normalizeRoomFocus(c.roomFocus)?.intervalMs ?? 0) / 1000,
       offlineStyle: offlineStyleOf(c),
     },
     toPatch: (p) => {
       let out = p;
+      // A deliberate 2D selection must also clear the prototype alias.
+      if ("view" in out) out = { ...out, projection: undefined };
       if ("rotation" in out)
         // Stored as a number; 0 means "not rotated", so keep it out of the YAML.
         out = { ...out, rotation: out.rotation === "0" ? undefined : Number(out.rotation) };
@@ -2330,6 +2384,43 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
       // which is what every plan did before this existed (issue #222).
       if ("zoomedOverlayScale" in out && out.zoomedOverlayScale === DEFAULT_ZOOMED_OVERLAY_SCALE)
         out = { ...out, zoomedOverlayScale: undefined };
+      // The toggle owns the same key: on, it is the word; off, it falls back
+      // to the default rather than to whatever multiplier was there before,
+      // so the slider that reappears and the config agree.
+      if ("zoomedOverlayAuto" in out)
+        out = {
+          ...out,
+          zoomedOverlayScale: out.zoomedOverlayAuto ? "auto" : undefined,
+          zoomedOverlayAuto: undefined,
+        };
+      // Two controls over one key (issue #261): the arrows and the dwell are
+      // separate choices, and either can arrive on its own, so the half that
+      // did not change is read back off the config rather than reset. A tour
+      // written in YAML is carried through — the panel has no field for it,
+      // and editing the dwell must not quietly discard it.
+      if ("roomFocusControls" in out || "roomFocusInterval" in out) {
+        const current = normalizeRoomFocus(c.roomFocus);
+        const controls =
+          "roomFocusControls" in out ? !!out.roomFocusControls : (current?.controls ?? false);
+        const asked =
+          "roomFocusInterval" in out
+            ? Number(out.roomFocusInterval)
+            : (current?.intervalMs ?? 0) / 1000;
+        const interval = Number.isFinite(asked) && asked > 0 ? asked : 0;
+        const rooms = current?.rooms;
+        out = {
+          ...out,
+          roomFocus:
+            !controls && !interval
+              ? undefined
+              : controls && !interval && !rooms?.length
+                ? // The plain case says so plainly.
+                  true
+                : { controls, ...(interval ? { interval } : {}), ...(rooms?.length ? { rooms } : {}) },
+          roomFocusControls: undefined,
+          roomFocusInterval: undefined,
+        };
+      }
       return out;
     },
   };

@@ -248,7 +248,9 @@ has not reached, which is where the light is actually coming through.
 For the roof **hatch** — a loft door, a smoke vent, a lantern with a solid flap
 — set `glazed: false` and the sash itself becomes what lets the light in.
 
-See [Skylights](lighting.md#skylights) for where that light lands.
+See [Skylights](lighting.md#skylights) for where that light lands. In the
+[3D view](#3d-view) the same skylight lies at the wall tops and tilts open from
+its hinge, with the blind drawn flat beneath the glass.
 
 ## Balcony railings
 
@@ -495,6 +497,157 @@ screen. Otherwise a cone aimed at a wall in the editor pointed at open space onc
 was rotated (issue #280).
 
 ![The same sensor at every rotation: before, the cone stays pointing up the screen while the wall moves; after, it follows the wall](img/ripple-direction-rotation.png)
+
+<a id="isometric-view"></a>
+
+## 3D view
+
+Choose **Project → Display → View → 3D isometric** to see the plan from a corner.
+The editor stays flat; all stored coordinates and entity bindings stay the same.
+
+```yaml
+view: 3d          # 2d is the default
+wallHeight: 60    # canvas units, adjustable from 0 to 400
+wallOpacity: 0.65 # 0 = invisible, 1 = solid (default)
+rotation: 90     # optional: choose the viewing corner
+```
+
+The prototype's `projection: iso` still works. An explicit `view` takes precedence;
+selecting a view in the editor removes the old alias.
+
+- Walls stand above the floor and leave gaps for doors and windows. Swinging leaves,
+  sliding panels, roll-up curtains and awning windows now stand in those gaps and
+  update with their entities, including partial positions, independent second leaves,
+  and external shutters. The same opening actions work in either view. A panel
+  eases to its new position over half a second, the same travel the flat view's
+  leaf uses, and goes straight there for viewers whose system asks for reduced
+  motion. Scrubbing history steps from state to state without easing.
+- A [roof window](#roof-windows) lies in the roof plane at the wall tops, the
+  rectangle it is, and tilts up out of the roof from its hinge as the sash opens.
+  Its blind is drawn flat under the glass, as far down as the cover reports. It
+  cuts no wall, in this view as in the flat one.
+- Furniture stands as a block with its usual glyph on top. Furniture actions and
+  staircase navigation continue to work.
+- Rooms, light pools, direct sunlight, ambient daylight and background images stay
+  on the floor. Lighting reads the same opening/shutter state in both views,
+  including during history replay. This is floor lighting, not a simulation of
+  light striking the vertical faces.
+- Badges and labels stay upright. Their positions follow the projected floor,
+  including on narrow cards and after rotation. Room zoom reserves space for wall
+  tops, and the canvas includes a margin for wall caps at its edges.
+- Lower **Wall height** or **Wall opacity** to reveal more of a room. Everything
+  standing in the wall plane fades together, doors and shutters included, while
+  glass keeps its own tint and furniture stays solid inside the room. Height remains
+  a fixed 60 canvas units by default while we experiment with different plan sizes.
+  Zero height gives an isometric floor with the flat opening symbols.
+
+Screenshots from the standalone preview with simulated entities and placeholder
+icons (`wallHeight: 60`, `wallOpacity: 0.65`):
+
+| Doors and windows closed | Doors and windows open |
+| --- | --- |
+| ![3D view with closed doors and windows](img/3d-view-closed.png) | ![3D view with open doors and windows](img/3d-view-open.png) |
+
+![Night view with a lit reading lamp](img/3d-view-night.png)
+
+The repository's own demo plan, with its two roof windows: the blind down on
+one, the hatch open on the other.
+
+![The demo plan in 3D](img/3d-view-demo.png)
+
+A casement window closing, sampled by frame number from the moment its sensor
+changed. The panels ease to the new position rather than arriving in one frame:
+
+![Window sashes easing shut over five frames](img/3d-view-panel-travel.png)
+
+This remains an isometric 2.5D view. Depth ordering uses a
+painter's sort and can misorder diagonal walls or large objects. Furniture still
+uses a shared height. Pin-shaped device markers and per-symbol heights are also
+follow-ups.
+
+For a local preview with simulated entities and view, height, opacity and state
+controls, see [the development preview](../docker/README.md#3d-development-preview).
+
+## Moving between rooms
+
+Tapping a room zooms the plan to it, and tapping it again zooms back out. `roomFocus`
+adds a way to move *between* rooms without aiming at each one:
+
+```yaml
+roomFocus: true        # previous/next controls, and the arrow keys
+```
+
+```yaml
+roomFocus:
+  controls: true       # the arrows; on unless you turn them off
+  interval: 10         # seconds per room before it moves on
+  rooms: [kitchen, living]   # the visiting order, defaulting to the floor's own
+```
+
+The controls step forwards and backwards through the rooms of the floor on show,
+wrapping at both ends. From the whole plan, forwards goes to the first room and
+backwards to the last, so either arrow is a way in. With the controls present the plan
+is also a tab stop: **←/→** (or **↑/↓**) move between rooms and **Escape** returns to the
+whole plan. That is worth having on its own — a room only becomes keyboard-reachable
+when it is given an explicit action, so a room that merely zooms could not be reached
+without a pointer at all.
+
+`interval` turns it into a slow tour for a wall tablet: each room is held for that many
+seconds, then the plan moves on. Any tap or key press starts the count again, so the
+view never moves out from under someone using the card. Set `controls: false` with an
+interval for a display nobody touches. The move itself is the zoom's own transition, so
+it travels rather than cutting — and in the [3D view](#3d-view) it frames each room
+where it is drawn, which makes the tour read as a camera crossing the house.
+
+Two steps of a tour through the demo plan in 3D, taken with the next control:
+
+![Whole plan, then the living room, then the kitchen](img/room-focus-steps.png)
+
+Per-room `zoom` and `zoomedOverlayScale` apply exactly as they do to a tapped room, and
+a device set to [only appear up close](behavior.md#devices-that-only-appear-up-close)
+appears as the tour reaches its room.
+
+### What focusing a room does to the badges
+
+Worth being precise about, because it is not what "zoom in" suggests: by default
+focusing a room does **not** draw the badges any bigger. `zoomedOverlayScale` is `1`,
+which holds the overlay at the size it has at full plan while the drawing grows
+underneath it — so the badges stay put and move *apart*. On the demo plan in a 420px
+card, focusing a room left the badges at 36px and opened the gap between their centres
+from 27px to 36px, in step with the 1.32× zoom. That is why focusing helps a crowded
+plan: more space between the same badges, not larger ones.
+
+If what you wanted from zooming was **bigger icons**, that is `zoomedOverlayScale` — but
+a fixed multiplier is the wrong shape for it. At `2` those badges are drawn 72px wide
+with the same 36px between them, so they overlap *worse* than at full plan. The safe
+ceiling is the room's own zoom factor, and that is fitted per room: the `2` that suits a
+small bathroom overshoots a living room that only zooms 1.3×.
+
+`auto` is that ceiling, named:
+
+```yaml
+zoomedOverlayScale: auto   # badges grow with the room, and no further
+```
+
+Badges then ride the zoom transform instead of being counter-scaled against it, so they
+grow by exactly the factor the room grew by. On the same 420px card:
+
+| | Badge width | Gap between centres | Gap ÷ badge |
+| --- | --- | --- | --- |
+| Full plan | 36px | 27.4px | 0.76 |
+| Focused, default `1` | 36px | 36.1px | 1.00 |
+| Focused, `auto` | 47.4px | 36.1px | 0.76 |
+| Focused, `2` | 72px | 36.1px | 0.50 |
+
+The same 420px card, unfocused and then focused both ways:
+
+![Full plan, focused with the default, and focused with auto](img/zoomed-badge-size.png)
+
+`auto` is a third larger and crowds exactly as the full plan did; `2` is twice the size
+and crowds half again as much. Use `auto` when you zoom to read a device, the default
+`1` when you zoom to separate devices that sit on top of each other, and a fixed
+multiplier when a wall tablet is read from across the room and you want to say precisely
+how big.
 
 ## Styling hooks (card-mod)
 
