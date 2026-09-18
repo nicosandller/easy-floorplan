@@ -1604,6 +1604,11 @@ export function wallStrokeStyle(thickness: unknown, kind?: WallKind): string {
     : `stroke-width:${weight};`;
 }
 
+/** Shared divider style for rectangle room side walls. */
+export function dividerStrokeStyle(): string {
+  return "stroke-width:2; stroke-dasharray:2 12; opacity:0.7;";
+}
+
 /**
  * A railing's stroke as a share of the wall weight it would otherwise have
  * (issue #182) — thin enough to read as a barrier rather than structure next

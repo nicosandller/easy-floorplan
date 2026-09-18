@@ -60,6 +60,8 @@ export interface Wall {
   y1: number;
   x2: number;
   y2: number;
+  /** Divider line, drawn with the wall styling but dashed to read as a cut. */
+  divider?: boolean;
   /**
    * Stroke width in virtual units. Defaults to {@link WALL_THICKNESS}
    * (render.ts) when unset, and clamped there (`wallThickness`) to at most
@@ -1234,6 +1236,18 @@ export interface AreaPoint {
   y: number;
 }
 
+export const RECT_AREA_SIDES = ["top", "right", "bottom", "left"] as const;
+export type RectAreaSide = (typeof RECT_AREA_SIDES)[number];
+export type RectAreaSideWallState = "none" | "wall" | "divider";
+
+/**
+ * Rectangle room side walls: each side can be left alone, turned into a wall,
+ * or drawn as a divider line (toggled by double-clicking the edge in the
+ * editor). The object is optional so polygon room areas and older YAML
+ * remain unchanged.
+ */
+export type RectAreaSideWalls = Partial<Record<RectAreaSide, RectAreaSideWallState>>;
+
 /**
  * A named room polygon, drawn point-by-point in the editor and closed by
  * clicking back on the starting vertex. Distinct from a {@link Floor} (a
@@ -1282,6 +1296,13 @@ export interface Area {
    * {@link filterEntities}.
    */
   haArea?: string;
+  /**
+   * Per-side wall/divider override for rectangle rooms, toggled by
+   * double-clicking an edge in the editor. Persisted like any other field —
+   * the rendered wall/divider comes from this, not from a separate `walls`
+   * entry.
+   */
+  sideWalls?: RectAreaSideWalls;
   /**
    * With `haArea` linked, scope the entity picker (for devices placed inside
    * this polygon) to that HA area's entities. Default true. Has no effect

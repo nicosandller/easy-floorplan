@@ -335,11 +335,13 @@ openings:
 
 An **area** is a colored, named room polygon traced on top of your walls.
 
-Pick the **Area** tool and click each corner — points snap onto nearby wall corners and
-onto other areas' corners, so adjoining rooms share an exact boundary. After 3+ points,
-click the **first** point to close the shape (**Backspace** drops the last point,
+Choose the **Area** tool and either press-drag to make a finished rectangle in one
+gesture or click each corner for a custom polygon — points snap onto nearby wall corners
+and onto other areas' corners, so adjoining rooms share an exact boundary. After 3+
+points, click the **first** point to close the shape (**Backspace** drops the last point,
 **Escape** discards the outline). Drag inside the fill to move the room, or a corner
-handle to reshape it.
+handle to reshape it. Double-click a rectangle room's edge to cycle it through
+**wall → divider → none**.
 
 Selected, an area offers **Name** / **Show name**, a **color** and **Fill opacity**, and —
 once it's live — the same conditional coloring devices get: **Entity**, **Active color**,
@@ -473,10 +475,11 @@ Everything the card does beyond placing elements, in four guides:
 
 ```bash
 npm install
-npm run build   # bundles to dist/easy-floorplan-card.js
-npm run watch   # rebuild on change
-npm test        # node suite
-npm run ha      # a real Home Assistant in Docker, with a seeded demo plan
+npm run build         # bundles to dist/easy-floorplan-card.js
+npm run watch         # rebuild on change
+npm test              # node suite
+npm run test:browser  # browser suite
+npm run ha            # a real Home Assistant in Docker, with a seeded demo plan
 ```
 
 Build and test commands, and which of the two test suites a change needs, are in

@@ -19,6 +19,7 @@ import type {
   Area,
   AreaPoint,
   HaAreaInfo,
+  RectAreaSide,
   StateColorRule,
   OverlayScale,
   PaletteColor,
@@ -59,6 +60,7 @@ import {
   trackerPresenceDetected,
   uid,
   DEFAULT_GLOW_RADIUS,
+  RECT_AREA_SIDES,
 } from "./types";
 import {
   WALL_THICKNESS,
@@ -131,6 +133,7 @@ import {
   collectWatchedEntities,
   hassRenderInputsChanged,
   wallStrokeStyle,
+  dividerStrokeStyle,
   normalizeOverlayScale,
   normalizeOverlayMinWidth,
   overlayLength,
@@ -162,6 +165,18 @@ import {
   layoutPointsInPolygon,
   nearestAreaSnapPoint,
   nearestCorner,
+  rectAreaSideWallNext,
+  rectAreaClamp,
+  rectAreaEdgeResize,
+  rectAreaHasMinimumSize,
+  rectAreaPoints,
+  rectAreaVertexResize,
+  RECT_AREA_EPSILON,
+  rectAreaWallId,
+  rectAreaSharedEdgeCouple,
+  rectAreaSharedSides,
+  rectAreaSideWalls,
+  isRectArea,
   snapWallEnd,
   type AttachedCorner,
   type OrigPos,
@@ -225,7 +240,7 @@ const TOOL_META: Record<Tool, { icon: string; label: string }> = {
   // sit next to each other and have to be told apart at a glance.
   skylight: { icon: "mdi:home-roof", label: "Skylight" },
   tracker: { icon: "mdi:crosshairs-gps", label: "Tracker" },
-  area: { icon: "mdi:vector-polygon", label: "Area" },
+  area: { icon: "mdi:vector-polygon", label: "Area" }
 };
 
 /**
@@ -249,6 +264,7 @@ const switcherHandleHome = (w: number, h: number) => ({ x: w * 0.93, y: h * 0.08
  * drag for the switcher.
  */
 const DRAG_SLOP = 4;
+const AREA_DRAG_HOLD_MS = 200;
 
 /** Icon shown in the Element header per selected element kind. */
 const SEL_KIND_ICON: Record<SelKind, string> = {
@@ -272,6 +288,8 @@ interface Drag {
   endpoint?: 1 | 2;
   /** Set when dragging a single Area vertex handle (index into its `points`). */
   areaVertex?: number;
+  /** Set when dragging a single Area edge handle (index into its edges). */
+  areaEdge?: number;
   /**
    * Endpoints of *other* walls that coincide with the dragged wall's
    * corner(s) and stretch along with it (issue #30). Hold Alt to detach and
@@ -392,8 +410,14 @@ export class FloorplanCardEditor extends LitElement {
    * Closed by clicking back on `points[0]` once at least 3 points are placed.
    */
   @state() private _draftArea: { points: AreaPoint[] } | null = null;
-  /** Live cursor position while drawing an Area, for the rubber-band preview segment. */
+  /** Live cursor position while continuing a polygon draft. */
   @state() private _areaHover: AreaPoint | null = null;
+  /** Anchor point for the current Area-tool gesture. */
+  @state() private _areaDragStart: { x: number; y: number } | null = null;
+  private _areaDragCurrent: AreaPoint | null = null;
+  private _areaDragTimer: ReturnType<typeof setTimeout> | null = null;
+  /** True once the Area gesture has been held after movement for 200 ms. */
+  @state() private _areaDragMoved = false;
   /** When true, walls are drawn freely (no horizontal/vertical or corner gravity). */
   @state() private _freeWalls = false;
   /** Default length applied to a freshly placed door/window. User-editable from the context bar. */
@@ -591,6 +615,13 @@ export class FloorplanCardEditor extends LitElement {
     root.removeEventListener("pointerup", this._onSwitcherUp as EventListener, true);
     root.removeEventListener("pointercancel", this._onSwitcherCancel as EventListener, true);
     if (this._applyResetTimer !== null) clearTimeout(this._applyResetTimer);
+    // The area-drag timer is outside the main drag loop and can outlive the
+    // element if the editor is torn down mid-hold. Clear it here so a
+    // detached editor cannot keep mutating stale draft state after reconnect.
+    this._clearAreaDragTimer();
+    this._areaDragStart = null;
+    this._areaDragCurrent = null;
+    this._areaDragMoved = false;
     // HA's dialog reparents the editor, so this can land mid-drag. Removal
     // takes the pointer capture with it, so the gesture is over either way:
     // hand the host what the drag accumulated (_config is otherwise its only
@@ -1381,22 +1412,17 @@ export class FloorplanCardEditor extends LitElement {
       return;
     }
     if (this._tool === "area") {
-      // Discrete clicks, like door/window — no drag capture/gesture pointer.
       const pt = this._snapAreaPoint(raw.x, raw.y);
-      if (!this._draftArea) {
-        this._draftArea = { points: [pt] };
+      if (this._draftArea) {
+        this._addAreaPoint(pt);
+        this._areaHover = null;
         return;
       }
-      const pts = this._draftArea.points;
-      const first = pts[0]!;
-      if (pts.length >= 3 && Math.hypot(pt.x - first.x, pt.y - first.y) <= ENDPOINT_SNAP) {
-        this._finishArea();
-        return;
-      }
-      const last = pts[pts.length - 1]!;
-      if (pt.x !== last.x || pt.y !== last.y) {
-        this._draftArea = { points: [...pts, pt] };
-      }
+      this._areaDragStart = { x: pt.x, y: pt.y };
+      this._areaDragCurrent = null;
+      this._areaDragMoved = false;
+      this._gesturePointer = ev.pointerId;
+      this._capturePointer(ev);
       return;
     }
     // Select tool, empty canvas: start a marquee (rubber-band) selection.
@@ -1426,7 +1452,10 @@ export class FloorplanCardEditor extends LitElement {
     this._draft = null;
     this._draftTracker = null;
     this._draftArea = null;
-    this._areaHover = null;
+    this._areaDragStart = null;
+    this._areaDragCurrent = null;
+    this._clearAreaDragTimer();
+    this._areaDragMoved = false;
     this._marquee = null;
     const drag = this._drag;
     this._drag = null;
@@ -1465,7 +1494,7 @@ export class FloorplanCardEditor extends LitElement {
     // the element chase the hovering mouse.
     if (
       ev.buttons === 0 &&
-      (this._drag || this._draft || this._draftTracker || this._marquee)
+      (this._drag || this._draft || this._draftTracker || this._marquee || this._areaDragStart)
     ) {
       this._cancelGesture();
       return;
@@ -1483,6 +1512,26 @@ export class FloorplanCardEditor extends LitElement {
         x1: this._snap(raw.x),
         y1: this._snap(raw.y),
       };
+      return;
+    }
+    if (this._tool === "area" && this._areaDragStart) {
+      const raw = this._toVirtual(ev, false);
+      const start = this._areaDragStart;
+      const current = { x: raw.x, y: raw.y };
+      this._areaDragCurrent = current;
+      if (this._areaDragMoved) {
+        this._updateAreaRectangleDraft(current);
+        return;
+      }
+      if (!this._areaDragMoved && this._areaDragTimer === null && (current.x !== start.x || current.y !== start.y)) {
+        this._areaDragTimer = setTimeout(() => {
+          this._areaDragTimer = null;
+          const target = this._areaDragCurrent;
+          if (!this._areaDragStart || !target || (target.x === start.x && target.y === start.y)) return;
+          this._areaDragMoved = true;
+          this._updateAreaRectangleDraft(target);
+        }, AREA_DRAG_HOLD_MS);
+      }
       return;
     }
     if (this._tool === "area" && this._draftArea) {
@@ -1527,6 +1576,37 @@ export class FloorplanCardEditor extends LitElement {
       if (w >= this.grid / 2 && h >= this.grid / 2) {
         this._addTracker(x, y, w, h);
       }
+      return;
+    }
+    if (this._tool === "area" && this._areaDragStart) {
+      const start = this._areaDragStart;
+      const wasDrag = this._areaDragMoved;
+      const draft = this._draftArea;
+      this._clearAreaDragTimer();
+      this._areaDragStart = null;
+      this._areaDragCurrent = null;
+      this._areaDragMoved = false;
+      this._releasePointer(ev);
+
+      if (wasDrag && draft) {
+        const width = Math.abs(draft.points[1]!.x - draft.points[0]!.x);
+        const height = Math.abs(draft.points[3]!.y - draft.points[0]!.y);
+        if (width > 0 && height > 0) {
+          const points = rectAreaClamp(draft.points, this._floor().areas ?? [], { dx: 0, dy: 0 });
+          if (!rectAreaHasMinimumSize(points) || (this._floor().areas ?? []).some((other) => this._rectAreasOverlap({ id: "draft-area", points, showName: true }, other))) {
+            this._draftArea = null;
+            return;
+          }
+          const rect: Area = { id: uid("area"), points, showName: true };
+          this._commitFloor({ areas: [...(this._floor().areas ?? []), rect] });
+          this._selection = [{ kind: "area", id: rect.id }];
+          this._tool = "select";
+        }
+        this._draftArea = null;
+        return;
+      }
+
+      this._addAreaPoint(start);
       return;
     }
     if (this._marquee) {
@@ -1586,14 +1666,20 @@ export class FloorplanCardEditor extends LitElement {
     return cyclePick(candidates, this._selection, sameSpot) ?? sel;
   }
 
-  private _startDrag(ev: PointerEvent, sel: Sel, endpoint?: 1 | 2, areaVertex?: number): void {
+  private _startDrag(
+    ev: PointerEvent,
+    sel: Sel,
+    endpoint?: 1 | 2,
+    areaVertex?: number,
+    areaEdge?: number
+  ): void {
     if (this._tool !== "select") return;
     ev.stopPropagation();
     if (this._gesturePointer !== null) return;
     this._canvasWrap?.focus({ preventScroll: true });
-    // Endpoint/vertex handles always operate on that single element; every
+    // Endpoint/vertex/edge handles always operate on that single element; every
     // other click goes through the overlap-aware picker (issue #52).
-    const explicitHandle = endpoint != null || areaVertex != null;
+    const explicitHandle = endpoint != null || areaVertex != null || areaEdge != null;
     const pick = explicitHandle ? sel : this._resolvePick(ev, sel);
     if (explicitHandle) this._selectOne(pick);
     else this._selectForPointer(ev, pick);
@@ -1612,6 +1698,7 @@ export class FloorplanCardEditor extends LitElement {
       orig: this._snapshotSelection(),
       endpoint,
       areaVertex,
+      areaEdge,
     };
     if (pick.kind === "wall") this._drag.attached = this._attachedCorners(pick.id, endpoint);
     this._gesturePointer = ev.pointerId;
@@ -1659,6 +1746,106 @@ export class FloorplanCardEditor extends LitElement {
       }
     }
     return m;
+  }
+
+  /**
+   * Keep full-side-adjacent rectangle rooms synchronized while one side moves.
+   *
+   * Returns the updated `areas` array plus the ids of rooms that actually
+   * coupled to the primary room during this move.
+   */
+  private _coupleRectAreaSharedEdges(
+    primaryId: string,
+    points: AreaPoint[],
+    delta: { dx: number; dy: number },
+    areas: readonly Area[],
+    movingSide?: RectAreaSide
+  ): { areas: Area[]; coupledIds: Set<string> } {
+    let primaryPoints = points;
+    const sharedReference = points;
+    const updated = new Map<string, AreaPoint[]>();
+    const coupledIds = new Set<string>();
+
+    for (const other of areas) {
+      if (other.id === primaryId) continue;
+      const otherPoints = updated.get(other.id) ?? other.points;
+      // Every neighbor is compared with the same pre-drag boundary. This is
+      // important when one long edge abuts two shorter edges: after the first
+      // neighbor moves, the primary boundary is no longer at its old position.
+      if (other.locked) continue;
+      const coupled = rectAreaSharedEdgeCouple(sharedReference, otherPoints, delta, movingSide);
+      if (!coupled) continue;
+      primaryPoints = coupled.points;
+      updated.set(other.id, coupled.other);
+      coupledIds.add(other.id);
+    }
+
+    const result = {
+      areas: areas.map((a) => {
+        if (a.id === primaryId) return { ...a, points: primaryPoints };
+        const next = updated.get(a.id);
+        return next ? { ...a, points: next } : a;
+      }),
+      coupledIds,
+    };
+
+    return result;
+  }
+
+  private _rectAreasOverlap(a: Area, b: Area): boolean {
+    const aXs = a.points.map((p) => p.x);
+    const aYs = a.points.map((p) => p.y);
+    const bXs = b.points.map((p) => p.x);
+    const bYs = b.points.map((p) => p.y);
+    return (
+      Math.max(...aXs) > Math.min(...bXs) &&
+      Math.min(...aXs) < Math.max(...bXs) &&
+      Math.max(...aYs) > Math.min(...bYs) &&
+      Math.min(...aYs) < Math.max(...bYs)
+    );
+  }
+
+  /**
+   * Limit a shared-edge resize against rooms that are not part of the current
+   * shared component. A coupled neighbor can encounter a new room after the
+   * drag starts, so clamping only the primary room is insufficient.
+   */
+  private _coupledEdgeResize(
+    primaryId: string,
+    moving: Area,
+    delta: { dx: number; dy: number },
+    areas: readonly Area[],
+    movingSide: RectAreaSide
+  ): { areas: Area[]; coupledIds: Set<string>; delta: { dx: number; dy: number } } {
+    const requested = this._coupleRectAreaSharedEdges(primaryId, moving.points, delta, areas, movingSide);
+    if (!requested.coupledIds.size) return { ...requested, delta };
+
+    const componentIds = new Set([primaryId, ...requested.coupledIds]);
+    const obstacles = areas.filter((a) => !componentIds.has(a.id));
+    const collides = (candidate: { areas: Area[] }): boolean =>
+      candidate.areas.some(
+        (a) =>
+          componentIds.has(a.id) &&
+          (!rectAreaHasMinimumSize(a.points) || obstacles.some((other) => this._rectAreasOverlap(a, other)))
+      );
+
+    if (!collides(requested)) return { ...requested, delta };
+
+    let low = 0;
+    let high = 1;
+    for (let i = 0; i < 18; i++) {
+      const scale = (low + high) / 2;
+      const candidateDelta = { dx: delta.dx * scale, dy: delta.dy * scale };
+      const candidate = this._coupleRectAreaSharedEdges(primaryId, moving.points, candidateDelta, areas, movingSide);
+      if (collides(candidate)) high = scale;
+      else low = scale;
+    }
+
+    const safeDelta = { dx: delta.dx * low, dy: delta.dy * low };
+    return {
+      ...this._coupleRectAreaSharedEdges(primaryId, moving.points, safeDelta, areas, movingSide),
+      delta: safeDelta,
+    };
   }
 
   private _applyDrag(p: DragMove): void {
@@ -1715,12 +1902,81 @@ export class FloorplanCardEditor extends LitElement {
     if (drag.primary.kind === "area" && drag.areaVertex != null) {
       const idx = drag.areaVertex;
       const target = this._snapAreaPoint(p.x, p.y, { areaId: drag.primary.id, vertexIndex: idx });
-      const areas = (f.areas ?? []).map((a) =>
-        a.id === drag.primary.id
-          ? { ...a, points: a.points.map((pt, i) => (i === idx ? target : pt)) }
-          : a
+      const moving = (f.areas ?? []).find((a) => a.id === drag.primary.id)!;
+      let points = isRectArea(moving.points)
+        ? rectAreaVertexResize(moving.points, idx, target)
+        : moving.points.map((pt, i) => (i === idx ? target : pt));
+      const delta = { dx: target.x - moving.points[idx]!.x, dy: target.y - moving.points[idx]!.y };
+      const vertexSides: RectAreaSide[] = isRectArea(moving.points)
+        ? [RECT_AREA_SIDES[(idx + 3) % 4], RECT_AREA_SIDES[idx]]
+        : [];
+      let coupled = { areas: f.areas ?? [], coupledIds: new Set<string>() };
+      for (const side of vertexSides) {
+        const next = this._coupleRectAreaSharedEdges(drag.primary.id, moving.points, delta, coupled.areas, side);
+        coupled = {
+          areas: next.areas,
+          coupledIds: new Set([...coupled.coupledIds, ...next.coupledIds]),
+        };
+      }
+      if (isRectArea(moving.points) && !rectAreaHasMinimumSize(points)) {
+        this._emitFloor({
+          areas: (f.areas ?? []).map((a) => (a.id === drag.primary.id ? { ...a, points: moving.points } : a)),
+        });
+        return;
+      }
+      this._emitFloor({
+        areas: coupled.areas.map((a) => (a.id === drag.primary.id ? { ...a, points } : a)),
+      });
+      return;
+    }
+
+    // Single Area edge handle: move one wall of a rectangle while the opposite
+    // wall stays fixed, so the room can be pushed or pulled without moving the
+    // whole shape.
+    if (drag.primary.kind === "area" && drag.areaEdge != null) {
+      const idx = drag.areaEdge;
+      const target = { x: this._snap(p.x), y: this._snap(p.y) };
+      const moving = (f.areas ?? []).find((a) => a.id === drag.primary.id)!;
+      let points = rectAreaEdgeResize(moving.points, idx, target);
+      const edgeStart = moving.points[idx % 4]!;
+      const edgeEnd = moving.points[(idx + 1) % 4]!;
+      const horizontal = Math.abs(edgeStart.y - edgeEnd.y) < RECT_AREA_EPSILON;
+      const movedEdgeStart = points[idx % 4]!;
+      const delta = horizontal
+        ? { dx: 0, dy: movedEdgeStart.y - edgeStart.y }
+        : { dx: movedEdgeStart.x - edgeStart.x, dy: 0 };
+
+      // The coupling helper applies delta to the live room. Passing points
+      // here would apply the same edge movement twice and make the shared
+      // boundary drift between pointer frames. The coupled resize also checks
+      // every room moved by the shared component against new obstacles.
+      const coupled = this._coupledEdgeResize(
+        drag.primary.id,
+        moving,
+        delta,
+        f.areas ?? [],
+        RECT_AREA_SIDES[idx]!
       );
-      this._emitFloor({ areas });
+      const uncoupled = (coupled.areas ?? []).filter(
+        (a) => a.id !== drag.primary.id && !coupled.coupledIds.has(a.id)
+      );
+      const sharedPoints = coupled.coupledIds.size
+        ? coupled.areas.find((a) => a.id === drag.primary.id)?.points ?? points
+        : points;
+      points = rectAreaClamp(
+        sharedPoints,
+        uncoupled,
+        coupled.delta
+      );
+      if (!rectAreaHasMinimumSize(points)) {
+        this._emitFloor({
+          areas: coupled.areas.map((a) => (a.id === drag.primary.id ? { ...a, points: moving.points } : a)),
+        });
+        return;
+      }
+      this._emitFloor({
+        areas: coupled.areas.map((a) => (a.id === drag.primary.id ? { ...a, points } : a)),
+      });
       return;
     }
 
@@ -1919,6 +2175,49 @@ export class FloorplanCardEditor extends LitElement {
     this._draftArea = null;
     this._areaHover = null;
     this._tool = "select";
+  }
+
+  private _clearAreaDragTimer(): void {
+    if (this._areaDragTimer === null) return;
+    clearTimeout(this._areaDragTimer);
+    this._areaDragTimer = null;
+  }
+
+  private _roomWallSegments(floor: Floor): Wall[] {
+    return (floor.areas ?? []).flatMap((area) =>
+      rectAreaSideWalls(area.id, area.points, area.sideWalls ?? {}).filter((wall) => !wall.divider)
+    );
+  }
+
+  private _updateAreaRectangleDraft(target: AreaPoint): void {
+    const start = this._areaDragStart;
+    if (!start) return;
+    const snapped = { x: this._snap(target.x), y: this._snap(target.y) };
+    this._draftArea = {
+      points: rectAreaClamp(
+        rectAreaPoints({ x0: start.x, y0: start.y, x1: snapped.x, y1: snapped.y }),
+        this._floor().areas ?? [],
+        { dx: snapped.x - start.x, dy: snapped.y - start.y }
+      ),
+    };
+  }
+
+  /** Add one polygon vertex, or close the draft when clicking its start. */
+  private _addAreaPoint(pt: AreaPoint): void {
+    if (!this._draftArea) {
+      this._draftArea = { points: [pt] };
+      return;
+    }
+    const pts = this._draftArea.points;
+    const first = pts[0]!;
+    if (pts.length >= 3 && Math.hypot(pt.x - first.x, pt.y - first.y) <= ENDPOINT_SNAP) {
+      this._finishArea();
+      return;
+    }
+    const last = pts[pts.length - 1]!;
+    if (pt.x !== last.x || pt.y !== last.y) {
+      this._draftArea = { points: [...pts, pt] };
+    }
   }
 
   private _addText(): void {
@@ -3317,6 +3616,14 @@ export class FloorplanCardEditor extends LitElement {
     const c = this._config;
     const floor = this._floor();
     const floors = c.floors ?? [];
+    const generatedWallSegments = this._roomWallSegments(floor);
+    const blockingWallSegments = wallsThatBlock([...floor.walls, ...generatedWallSegments]);
+    const sideWallLookup = new Map<string, { area: Area; side: RectAreaSide; edgeIndex: number }>();
+    for (const area of floor.areas ?? []) {
+      for (const [edgeIndex, side] of RECT_AREA_SIDES.entries()) {
+        sideWallLookup.set(rectAreaWallId(area.id, side), { area, side, edgeIndex });
+      }
+    }
     // How the card will size this plan's badges and labels. The canvas honours
     // it so the editor previews the drawing rather than a version of it with
     // fixed-size furniture on top (issue #192): set a badge to 34 on a plan
@@ -3332,14 +3639,14 @@ export class FloorplanCardEditor extends LitElement {
     // Dead spaces (issue #88) — derived from the walls and openings, so they
     // follow every edit without anything being stored.
     const deadSpaceRings = c.showDeadSpaces
-      ? deadSpacesCached(wallsThatBlock(floor.walls), floor.openings)
+      ? deadSpacesCached(blockingWallSegments, floor.openings)
       : [];
     // Walls as light meets them (issue #143), same as the card — so dropping a
     // door into a wall spills the pool through it while you are still drawing.
     // Skipped entirely on a floor with no cast light, which is most of them:
     // this sits on the path of every keystroke and drag in the editor.
     const lightWalls = floor.items.some((it) => it.glow)
-      ? wallsLightPassesThrough(wallsThatBlock(floor.walls), floor.openings, (o) => {
+      ? wallsLightPassesThrough(blockingWallSegments, floor.openings, (o) => {
           const amt = (id?: string) =>
             resolveOpeningAmount(o, id ? this.hass?.states[id] : undefined);
           // Same reading as the card, second leaf included (issue #145),
@@ -3357,7 +3664,7 @@ export class FloorplanCardEditor extends LitElement {
             o.shutterEntity ? shutterAmount(this.hass?.states[o.shutterEntity], o.shutterInvert) : undefined
           );
         })
-      : wallsThatBlock(floor.walls);
+      : blockingWallSegments;
     const floorEmpty =
       !floor.walls.length &&
       !floor.openings.length &&
@@ -3399,6 +3706,10 @@ export class FloorplanCardEditor extends LitElement {
                     this._draftTracker = null;
                     this._draftArea = null;
                     this._areaHover = null;
+                    this._areaDragStart = null;
+                    this._areaDragCurrent = null;
+                    this._clearAreaDragTimer();
+                    this._areaDragMoved = false;
                   }}
                 >
                   <ha-icon icon=${TOOL_META[t].icon}></ha-icon>${TOOL_META[t].label}
@@ -3747,7 +4058,13 @@ export class FloorplanCardEditor extends LitElement {
               }
               ${floor.furniture.map((f) => this._renderFurnitureSel(f))}
               ${renderWallMask(floor.openings, c.width, c.height, this._wallMaskId)}
-              ${floor.walls.map((w) => this._renderWall(w))}
+              ${(() => {
+                const renderWall = (
+                  w: Wall,
+                  sideWallInfo?: { area: Area; side: RectAreaSide; edgeIndex: number }
+                ) => this._renderWall(w, sideWallInfo);
+                return [...floor.walls, ...generatedWallSegments].map((w) => renderWall(w, sideWallLookup.get(w.id)));
+              })()}
               <!-- Room outlines, same layer position as the card so what you
                    place is what you get. Only a static borderColor draws here,
                    there being no hass to resolve a live color from — but the
@@ -4344,22 +4661,44 @@ export class FloorplanCardEditor extends LitElement {
     `;
   }
 
-  private _renderWall(w: Wall): TemplateResult {
+  private _renderWall(
+    w: Wall,
+    sideWallInfo?: { area: Area; side: RectAreaSide; edgeIndex: number }
+  ): TemplateResult {
     const selected = this._isSel("wall", w.id);
     // A pinned wall still *looks* selected — it is — but shows no endpoint
     // handles (issue #191): they would be drawn as grab targets that refuse
     // to grab, and their absence is the clearest signal on the canvas that
     // the wall is pinned.
     const handles = selected && !w.locked;
+    const sideWallSide = sideWallInfo?.side;
+    const sideWallIndex = sideWallInfo?.edgeIndex ?? -1;
+    const sideWallToggle = !!sideWallInfo && !sideWallInfo.area.locked;
+    const sideState = sideWallInfo?.area.sideWalls?.[sideWallSide!];
+    const sideIsHorizontal = Math.abs(w.y1 - w.y2) < RECT_AREA_EPSILON;
+    const edgeCursorClass = sideIsHorizontal ? "ns" : "ew";
+    const style = w.divider ? dividerStrokeStyle() : wallStrokeStyle(w.thickness, w.kind);
     return svg`
       <g>
         <line x1=${w.x1} y1=${w.y1} x2=${w.x2} y2=${w.y2}
-              class="wall-hit"
-              @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "wall", id: w.id })} />
+              class=${["wall-hit", sideWallInfo ? "side-wall-edge" : "", edgeCursorClass].filter(Boolean).join(" ")}
+              @pointerdown=${(e: PointerEvent) => {
+                if (sideWallInfo) {
+                  this._startDrag(e, { kind: "area", id: sideWallInfo.area.id }, undefined, undefined, sideWallIndex);
+                  return;
+                }
+                this._startDrag(e, { kind: "wall", id: w.id });
+              }}
+              @dblclick=${(e: PointerEvent) => {
+                if (!sideWallInfo) return;
+                e.preventDefault();
+                e.stopPropagation();
+                this._toggleRectAreaSide(sideWallInfo.area, sideWallIndex);
+              }} />
         <g class="fp-wall-neon"><line x1=${w.x1} y1=${w.y1} x2=${w.x2} y2=${w.y2}
-              class="wall ${selected ? "selected" : ""} ${isRailing(w) ? "railing" : ""}"
+            class="wall ${selected ? "selected" : ""} ${isRailing(w) ? "railing" : ""} ${sideWallInfo ? "side-wall-edge" : ""} ${edgeCursorClass}"
               mask=${`url(#${this._wallMaskId})`}
-              style=${wallStrokeStyle(w.thickness, w.kind)} stroke-linecap="round" /></g>
+              style=${style} stroke-linecap="round" /></g>
         ${
           handles
             ? svg`
@@ -4369,6 +4708,25 @@ export class FloorplanCardEditor extends LitElement {
                 <circle cx=${w.x2} cy=${w.y2} r="9" class="handle"
                         @pointerdown=${(e: PointerEvent) =>
                           this._startDrag(e, { kind: "wall", id: w.id }, 2)} />`
+            : nothing
+        }
+        ${
+          sideWallToggle
+            ? svg`
+                <path
+                  d=${(() => {
+                    const cx = (w.x1 + w.x2) / 2;
+                    const cy = (w.y1 + w.y2) / 2;
+                    const s = 7;
+                    return `M ${cx} ${cy - s} L ${cx + s} ${cy} L ${cx} ${cy + s} L ${cx - s} ${cy} Z`;
+                  })()}
+                  class=${["area-wall-toggle", sideState ?? "none"].join(" ")}
+                  title=${sideState ? `Double-click to cycle this ${sideWallSide} wall: ${sideState}` : `Double-click to add a wall on the ${sideWallSide} side`}
+                  @dblclick=${(e: PointerEvent) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this._toggleRectAreaSide(sideWallInfo!.area, sideWallIndex);
+                  }} />`
             : nothing
         }
       </g>`;
@@ -4502,10 +4860,24 @@ export class FloorplanCardEditor extends LitElement {
     </p>`;
   }
 
+  private _toggleRectAreaSide(a: Area, edgeIndex: number): void {
+    if (a.locked) return;
+    const side = RECT_AREA_SIDES[edgeIndex % RECT_AREA_SIDES.length];
+    const next = rectAreaSideWallNext(a.sideWalls?.[side]);
+    const sideWalls = { ...(a.sideWalls ?? {}) };
+    if (next === "none") delete sideWalls[side];
+    else sideWalls[side] = next;
+    this._updateArea(a.id, { sideWalls: Object.keys(sideWalls).length ? sideWalls : undefined });
+  }
+
   private _renderAreaSel(a: Area, scopingId?: string): TemplateResult {
     const selected = this._isSel("area", a.id);
     const scoping = a.id === scopingId;
     const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
+    const sharedSides = (this._floor().areas ?? [])
+      .filter((other) => other.id !== a.id)
+      .flatMap((other) => rectAreaSharedSides(a.points, other.points).map((side) => ({ side, otherId: other.id })))
+      .filter(({ otherId }) => a.id.localeCompare(otherId) < 0);
     return svg`
       <g class="area-hit ${selected ? "selected" : ""} ${scoping ? "scoping" : ""}">
         ${scoping ? svg`<polygon points=${pts} class="area-scoping" />` : nothing}
@@ -4513,28 +4885,90 @@ export class FloorplanCardEditor extends LitElement {
         <polygon points=${pts} class="area-hit-shape"
                  @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "area", id: a.id })} />
         ${selected ? svg`<polygon points=${pts} class="area-outline" />` : nothing}
+        ${sharedSides.map(({ side }) => {
+          const index = RECT_AREA_SIDES.indexOf(side);
+          const start = a.points[index]!;
+          const end = a.points[(index + 1) % a.points.length]!;
+          const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
+          const s = 8;
+          const d =
+            side === "top" || side === "bottom"
+              ? `M ${mid.x - s} ${mid.y - s} L ${mid.x + s} ${mid.y + s} M ${mid.x - s} ${mid.y + s} L ${mid.x + s} ${mid.y - s}`
+              : `M ${mid.x - s} ${mid.y + s} L ${mid.x + s} ${mid.y - s} M ${mid.x - s} ${mid.y - s} L ${mid.x + s} ${mid.y + s}`;
+          return svg`<path d=${d} class="area-shared-wall" />`;
+        })}
         ${
-          // Outline yes, vertex handles no, for a pinned room — same reasoning
-          // as the wall's endpoints (issue #191): still visibly selected, with
-          // nothing on it that pretends to be draggable.
+          // Outline yes, vertex and edge handles no, for a pinned room — same
+          // reasoning as the wall's endpoints (issue #191): still visibly
+          // selected, with nothing on it that pretends to be draggable.
           selected && !a.locked
-            ? a.points.map(
-                (p, i) => svg`
-                  <circle cx=${p.x} cy=${p.y} r="7" class="handle"
-                          @pointerdown=${(e: PointerEvent) =>
-                            this._startDrag(e, { kind: "area", id: a.id }, undefined, i)} />`
-              )
+            ? [
+                ...a.points.map(
+                  (p, i) => svg`
+                    <circle cx=${p.x} cy=${p.y} r="7" class="handle"
+                            @pointerdown=${(e: PointerEvent) =>
+                              this._startDrag(e, { kind: "area", id: a.id }, undefined, i)} />`
+                ),
+                ...(isRectArea(a.points)
+                  ? [
+                      ...a.points.map((p, i) => {
+                        const next = a.points[(i + 1) % a.points.length];
+                        const isHorizontal = Math.abs(p.y - next.y) < RECT_AREA_EPSILON;
+                        const cursorClass = isHorizontal ? "ns" : "ew";
+                        return svg`
+                          <line
+                            x1=${p.x} y1=${p.y} x2=${next.x} y2=${next.y}
+                            class=${["area-edge-hit", cursorClass].join(" ")}
+                            @pointerdown=${(e: PointerEvent) => {
+                              this._startDrag(e, { kind: "area", id: a.id }, undefined, undefined, i);
+                            }}
+                            @dblclick=${(e: PointerEvent) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              this._toggleRectAreaSide(a, i);
+                            }} />`;
+                      }),
+                      ...a.points.map((p, i) => {
+                        const next = a.points[(i + 1) % a.points.length];
+                        const mid = { x: (p.x + next.x) / 2, y: (p.y + next.y) / 2 };
+                        const isHorizontal = Math.abs(p.y - next.y) < RECT_AREA_EPSILON;
+                        const side = RECT_AREA_SIDES[i]!;
+                        const sideState = a.sideWalls?.[side];
+                        return svg`
+                          <circle
+                            cx=${mid.x}
+                            cy=${mid.y}
+                            r="5"
+                            class=${[
+                              "handle",
+                              "area-edge-handle",
+                              isHorizontal ? "ns" : "ew",
+                              sideState ? "side-wall-toggle" : "",
+                            ]
+                              .filter(Boolean)
+                              .join(" ")}
+                            title=${sideState ? `Double-click to cycle this ${side} wall: ${sideState}` : `Double-click to add a wall on the ${side} side`}
+                            @pointerdown=${(e: PointerEvent) =>
+                              this._startDrag(e, { kind: "area", id: a.id }, undefined, undefined, i)}
+                            @dblclick=${(e: PointerEvent) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              this._toggleRectAreaSide(a, i);
+                            }} />`;
+                      }),
+                    ]
+                  : []),
+              ]
             : nothing
         }
       </g>`;
   }
 
   /**
-   * The in-progress Area draft: committed vertices as dots, straight segments
-   * between them, and — while a live pointer position is known — a dashed
-   * "rubber band" segment from the last vertex to the cursor. Once 3+ points
-   * are down the starting vertex is drawn larger/hollow so it's visually
-   * obvious that clicking it closes the polygon (see `_onCanvasDown`).
+  * The in-progress Area draft: committed vertices as dots and straight
+  * segments between them. Once 3+ points are down the starting vertex is
+  * drawn larger/hollow so it's visually obvious that clicking it closes the
+  * polygon (see `_onCanvasDown`).
    */
   private _renderAreaDraft(): TemplateResult | typeof nothing {
     const draft = this._draftArea;
@@ -6486,6 +6920,14 @@ export class FloorplanCardEditor extends LitElement {
       stroke-width: 22;
       cursor: move;
     }
+    .wall-hit.side-wall-edge.ns,
+    .wall.side-wall-edge.ns {
+      cursor: ns-resize;
+    }
+    .wall-hit.side-wall-edge.ew,
+    .wall.side-wall-edge.ew {
+      cursor: ew-resize;
+    }
     .opening-hit {
       cursor: move;
     }
@@ -6739,6 +7181,50 @@ export class FloorplanCardEditor extends LitElement {
       stroke: var(--card-background-color, #fff);
       stroke-width: 1.5;
       cursor: grab;
+    }
+    .area-shared-wall {
+      fill: none;
+      stroke: var(--secondary-text-color, #666);
+      stroke-width: 1;
+      stroke-linecap: round;
+      stroke-dasharray: 3 4;
+      opacity: 0.22;
+      pointer-events: none;
+      vector-effect: non-scaling-stroke;
+    }
+    .area-edge-hit {
+      stroke: transparent;
+      stroke-width: 18;
+      cursor: pointer;
+      pointer-events: stroke;
+    }
+    .area-edge-hit.ew,
+    .area-edge-handle.ew,
+    .area-wall-toggle.ew {
+      cursor: ew-resize;
+    }
+    .area-edge-hit.ns,
+    .area-edge-handle.ns,
+    .area-wall-toggle.ns {
+      cursor: ns-resize;
+    }
+    .area-edge-handle.side-wall-toggle.ew,
+    .area-edge-handle.side-wall-toggle.ns,
+    .area-wall-toggle {
+      cursor: pointer;
+      fill: var(--card-background-color, #fff);
+      stroke: var(--fp-skin-wall, var(--primary-text-color));
+      stroke-width: 2;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+    }
+    .area-wall-toggle.wall {
+      fill: var(--fp-skin-wall, var(--primary-text-color));
+      stroke: var(--fp-skin-wall, var(--primary-text-color));
+    }
+    .area-wall-toggle.divider {
+      fill: var(--card-background-color, #fff);
+      stroke-dasharray: 2 2;
     }
     .items {
       position: absolute;

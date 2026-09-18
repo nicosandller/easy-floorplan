@@ -424,6 +424,9 @@ animated inside a rectangular tracked area:
   inline and takes over.
 - `color` / `opacity` — the room's fill; theme primary and `0.25` by default.
 - `haArea` — id of a linked Home Assistant area, set by the editor when `name` matches one.
+- `sideWalls` — rectangle-room edge overrides: keys `top`, `right`, `bottom`, `left` and
+  values `wall`, `divider` or `none`. Double-click a room edge in the editor to cycle it;
+  a `divider` draws a dashed line instead of a full wall.
 - `filterEntities` — with `haArea` set, scopes the entity picker for devices inside this
   polygon to that HA area's entities. Default `true`.
 - `entity` — makes the room live, driving `stateColor` and `activeColor` the same way

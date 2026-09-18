@@ -13,6 +13,15 @@ import {
   isLocked,
   movableSelection,
   cyclePick,
+  rectAreaPoints,
+  rectAreaVertexResize,
+  rectAreaEdgeResize,
+  rectAreaHasMinimumSize,
+  rectAreaSideWalls,
+  rectAreaSideWallNext,
+  rectAreaClamp,
+  rectAreaSharedEdgeCouple,
+  rectAreaSharedSides,
 } from "./editor-geometry";
 import type { OrigPos } from "./editor-geometry";
 import type { Area, Floor, RenderHass, Wall } from "./types";
@@ -314,6 +323,419 @@ describe("areaContainingPoint", () => {
   it("overlapping areas: last-drawn (array order) wins", () => {
     expect(areaContainingPoint({ areas: [a1, a2] }, 7, 7)?.id).toBe("a2");
     expect(areaContainingPoint({ areas: [a2, a1] }, 7, 7)?.id).toBe("a1");
+  });
+});
+
+describe("rectAreaPoints", () => {
+  it("creates a closed rectangle from opposite corners in clockwise order", () => {
+    expect(rectAreaPoints({ x0: 10, y0: 20, x1: 40, y1: 60 })).toEqual([
+      { x: 10, y: 20 },
+      { x: 40, y: 20 },
+      { x: 40, y: 60 },
+      { x: 10, y: 60 },
+    ]);
+  });
+
+  it("normalizes inverted corners and preserves the rectangle area", () => {
+    expect(rectAreaPoints({ x0: 80, y0: 30, x1: 20, y1: 70 })).toEqual([
+      { x: 20, y: 30 },
+      { x: 80, y: 30 },
+      { x: 80, y: 70 },
+      { x: 20, y: 70 },
+    ]);
+  });
+
+  it("normalizes a drag that starts in the lower-right and ends in the upper-left", () => {
+    expect(rectAreaPoints({ x0: 35, y0: 80, x1: 5, y1: 20 })).toEqual([
+      { x: 5, y: 20 },
+      { x: 35, y: 20 },
+      { x: 35, y: 80 },
+      { x: 5, y: 80 },
+    ]);
+  });
+});
+
+describe("rectAreaVertexResize", () => {
+  it("keeps the opposite corner fixed while dragging a room corner", () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    expect(rectAreaVertexResize(pts, 2, { x: 25, y: 25 })).toEqual([
+      { x: 0, y: 0 },
+      { x: 25, y: 0 },
+      { x: 25, y: 25 },
+      { x: 0, y: 25 },
+    ]);
+  });
+});
+
+describe("rectAreaEdgeResize", () => {
+  it("moves one wall while the opposite wall stays fixed", () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    expect(rectAreaEdgeResize(pts, 2, { x: 10, y: 20 })).toEqual([
+      { x: 0, y: 0 },
+      { x: 10, y: 0 },
+      { x: 10, y: 20 },
+      { x: 0, y: 20 },
+    ]);
+  });
+
+  it("shrinks the rectangle when a wall is dragged inward", () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    expect(rectAreaEdgeResize(pts, 1, { x: 5, y: 5 })).toEqual([
+      { x: 0, y: 0 },
+      { x: 5, y: 0 },
+      { x: 5, y: 10 },
+      { x: 0, y: 10 },
+    ]);
+  });
+});
+
+describe("rectAreaHasMinimumSize", () => {
+  it("rejects a rectangle that has collapsed to a line", () => {
+    expect(rectAreaHasMinimumSize([
+      { x: 0, y: 0 },
+      { x: 0, y: 0 },
+      { x: 0, y: 10 },
+      { x: 0, y: 10 },
+    ])).toBe(false);
+  });
+
+  it("accepts a positive-size rectangle", () => {
+    expect(rectAreaHasMinimumSize([
+      { x: 0, y: 0 },
+      { x: 1, y: 0 },
+      { x: 1, y: 10 },
+      { x: 0, y: 10 },
+    ])).toBe(true);
+  });
+});
+
+describe("rectAreaClamp", () => {
+  it("stops a rectangle at a neighbor edge instead of intersecting it", () => {
+    const moving = [{ x: 30, y: 0 }, { x: 60, y: 0 }, { x: 60, y: 20 }, { x: 30, y: 20 }];
+    const other: Area[] = [{ id: "other", points: [{ x: 50, y: 0 }, { x: 80, y: 0 }, { x: 80, y: 20 }, { x: 50, y: 20 }] }];
+    expect(rectAreaClamp(moving, other, { dx: 20, dy: 0 })).toEqual([
+      { x: 30, y: 0 },
+      { x: 50, y: 0 },
+      { x: 50, y: 20 },
+      { x: 30, y: 20 },
+    ]);
+  });
+
+  it("keeps a shared wall coincident when a rectangle is dragged up to its neighbor", () => {
+    const moving = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const other: Area[] = [{ id: "other", points: [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 10 }, { x: 20, y: 10 }] }];
+    expect(rectAreaClamp(moving, other, { dx: 10, dy: 0 })).toEqual([
+      { x: 0, y: 0 },
+      { x: 20, y: 0 },
+      { x: 20, y: 10 },
+      { x: 0, y: 10 },
+    ]);
+  });
+});
+
+describe("rectAreaSharedSides", () => {
+  it("finds the shared side between exactly adjacent rectangles", () => {
+    const left = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const right = [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 10 }, { x: 20, y: 10 }];
+    expect(rectAreaSharedSides(left, right)).toEqual(["right"]);
+    expect(rectAreaSharedSides(right, left)).toEqual(["left"]);
+  });
+
+  it("ignores partial overlap and diagonal touch as a shared edge", () => {
+    const a = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const overlap = [{ x: 10, y: 0 }, { x: 30, y: 0 }, { x: 30, y: 10 }, { x: 10, y: 10 }];
+    const diagonal = [{ x: 20, y: 10 }, { x: 40, y: 10 }, { x: 40, y: 20 }, { x: 20, y: 20 }];
+    expect(rectAreaSharedSides(a, overlap)).toEqual([]);
+    expect(rectAreaSharedSides(a, diagonal)).toEqual([]);
+  });
+
+  it("finds a shared side when only part of the two edges overlaps", () => {
+    const a = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const partial = [{ x: 20, y: 5 }, { x: 40, y: 5 }, { x: 40, y: 15 }, { x: 20, y: 15 }];
+    expect(rectAreaSharedSides(a, partial)).toEqual(["right"]);
+    expect(rectAreaSharedSides(partial, a)).toEqual(["left"]);
+  });
+
+  it("ignores non-rectangle areas", () => {
+    const rectangle = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const polygon = [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 30, y: 5 }, { x: 40, y: 10 }, { x: 20, y: 10 }];
+    expect(rectAreaSharedSides(rectangle, polygon)).toEqual([]);
+  });
+});
+
+describe("rectAreaSharedEdgeCouple", () => {
+  it("keeps two touching rooms aligned when one grows through the shared edge", () => {
+    const left = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const right = [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 10 }, { x: 20, y: 10 }];
+    expect(rectAreaSharedEdgeCouple(left, right, { dx: 10, dy: 0 })).toEqual({
+      points: [
+        { x: 0, y: 0 },
+        { x: 30, y: 0 },
+        { x: 30, y: 10 },
+        { x: 0, y: 10 },
+      ],
+      other: [
+        { x: 30, y: 0 },
+        { x: 40, y: 0 },
+        { x: 40, y: 10 },
+        { x: 30, y: 10 },
+      ],
+    });
+  });
+
+  it("couples all four edge directions without creating a phantom shared boundary", () => {
+    const top = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const above = [{ x: 0, y: -10 }, { x: 20, y: -10 }, { x: 20, y: 0 }, { x: 0, y: 0 }];
+    expect(rectAreaSharedEdgeCouple(top, above, { dx: 0, dy: -5 })).toEqual({
+      points: [
+        { x: 0, y: -5 },
+        { x: 20, y: -5 },
+        { x: 20, y: 10 },
+        { x: 0, y: 10 },
+      ],
+      other: [
+        { x: 0, y: -10 },
+        { x: 20, y: -10 },
+        { x: 20, y: -5 },
+        { x: 0, y: -5 },
+      ],
+    });
+  });
+
+  it("keeps a shared edge coupled when the wall is dragged in either direction", () => {
+    const left = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const right = [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 10 }, { x: 20, y: 10 }];
+    expect(rectAreaSharedEdgeCouple(left, right, { dx: -5, dy: 0 })).toEqual({
+      points: [
+        { x: 0, y: 0 },
+        { x: 15, y: 0 },
+        { x: 15, y: 10 },
+        { x: 0, y: 10 },
+      ],
+      other: [
+        { x: 15, y: 0 },
+        { x: 40, y: 0 },
+        { x: 40, y: 10 },
+        { x: 15, y: 10 },
+      ],
+    });
+  });
+
+  it("keeps a shared right edge coupled when the room grows or shrinks horizontally", () => {
+    const left = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const right = [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 10 }, { x: 20, y: 10 }];
+
+    expect(rectAreaSharedEdgeCouple(left, right, { dx: 10, dy: 0 })).toEqual({
+      points: [
+        { x: 0, y: 0 },
+        { x: 30, y: 0 },
+        { x: 30, y: 10 },
+        { x: 0, y: 10 },
+      ],
+      other: [
+        { x: 30, y: 0 },
+        { x: 40, y: 0 },
+        { x: 40, y: 10 },
+        { x: 30, y: 10 },
+      ],
+    });
+
+    expect(rectAreaSharedEdgeCouple(left, right, { dx: -5, dy: 0 })).toEqual({
+      points: [
+        { x: 0, y: 0 },
+        { x: 15, y: 0 },
+        { x: 15, y: 10 },
+        { x: 0, y: 10 },
+      ],
+      other: [
+        { x: 15, y: 0 },
+        { x: 40, y: 0 },
+        { x: 40, y: 10 },
+        { x: 15, y: 10 },
+      ],
+    });
+  });
+
+  it("keeps a shared top edge coupled when the room grows or shrinks vertically", () => {
+    const top = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const above = [{ x: 0, y: -10 }, { x: 20, y: -10 }, { x: 20, y: 0 }, { x: 0, y: 0 }];
+
+    expect(rectAreaSharedEdgeCouple(top, above, { dx: 0, dy: -5 })).toEqual({
+      points: [
+        { x: 0, y: -5 },
+        { x: 20, y: -5 },
+        { x: 20, y: 10 },
+        { x: 0, y: 10 },
+      ],
+      other: [
+        { x: 0, y: -10 },
+        { x: 20, y: -10 },
+        { x: 20, y: -5 },
+        { x: 0, y: -5 },
+      ],
+    });
+
+    expect(rectAreaSharedEdgeCouple(top, above, { dx: 0, dy: 5 })).toEqual({
+      points: [
+        { x: 0, y: 5 },
+        { x: 20, y: 5 },
+        { x: 20, y: 10 },
+        { x: 0, y: 10 },
+      ],
+      other: [
+        { x: 0, y: -10 },
+        { x: 20, y: -10 },
+        { x: 20, y: 5 },
+        { x: 0, y: 5 },
+      ],
+    });
+  });
+
+  it("returns undefined when rectangles are merely nearby but not sharing an edge", () => {
+    const a = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    const b = [{ x: 20, y: 5 }, { x: 30, y: 5 }, { x: 30, y: 15 }, { x: 20, y: 15 }];
+    expect(rectAreaSharedEdgeCouple(a, b, { dx: 5, dy: 0 })).toBeUndefined();
+    expect(rectAreaSharedEdgeCouple(a, b, { dx: 0, dy: 5 })).toBeUndefined();
+  });
+
+  it("does not couple a rectangle to a polygon sharing its bounds", () => {
+    const rectangle = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const polygon = [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 30, y: 5 }, { x: 40, y: 10 }, { x: 20, y: 10 }];
+    expect(rectAreaSharedEdgeCouple(rectangle, polygon, { dx: 5, dy: 0 })).toBeUndefined();
+  });
+
+  it("does not couple a shared edge when there is no effective movement", () => {
+    const a = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const b = [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 10 }, { x: 20, y: 10 }];
+    expect(rectAreaSharedEdgeCouple(a, b, { dx: 0, dy: 0 })).toBeUndefined();
+  });
+
+  it("does not couple a vertical shared wall during a vertical resize", () => {
+    const a = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }];
+    const b = [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 20 }, { x: 20, y: 20 }];
+    expect(rectAreaSharedEdgeCouple(a, b, { dx: 0, dy: 5 })).toBeUndefined();
+  });
+
+  it("does not couple a horizontal shared wall during a horizontal resize", () => {
+    const a = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }];
+    const b = [{ x: 0, y: 20 }, { x: 20, y: 20 }, { x: 20, y: 40 }, { x: 0, y: 40 }];
+    expect(rectAreaSharedEdgeCouple(a, b, { dx: 5, dy: 0 })).toBeUndefined();
+  });
+
+  it("couples rectangles whose shared vertical edges overlap only partially", () => {
+    const a = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 10 }, { x: 0, y: 10 }];
+    const partial = [{ x: 20, y: 5 }, { x: 40, y: 5 }, { x: 40, y: 15 }, { x: 20, y: 15 }];
+    expect(rectAreaSharedEdgeCouple(a, partial, { dx: 5, dy: 0 })).toEqual({
+      points: [
+        { x: 0, y: 0 },
+        { x: 25, y: 0 },
+        { x: 25, y: 10 },
+        { x: 0, y: 10 },
+      ],
+      other: [
+        { x: 25, y: 5 },
+        { x: 40, y: 5 },
+        { x: 40, y: 15 },
+        { x: 25, y: 15 },
+      ],
+    });
+  });
+
+  it("only couples the edge that is being resized", () => {
+    const center = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }];
+    const left = [{ x: -20, y: 0 }, { x: 0, y: 0 }, { x: 0, y: 20 }, { x: -20, y: 20 }];
+    const right = [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 20 }, { x: 20, y: 20 }];
+
+    expect(rectAreaSharedEdgeCouple(center, left, { dx: 5, dy: 0 }, "right")).toBeUndefined();
+    expect(rectAreaSharedEdgeCouple(center, right, { dx: 5, dy: 0 }, "right")).toBeDefined();
+  });
+
+  it("couples a long edge to two shorter adjacent rectangles", () => {
+    const center = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }];
+    const upper = [{ x: 20, y: 0 }, { x: 40, y: 0 }, { x: 40, y: 10 }, { x: 20, y: 10 }];
+    const lower = [{ x: 20, y: 10 }, { x: 40, y: 10 }, { x: 40, y: 20 }, { x: 20, y: 20 }];
+
+    const first = rectAreaSharedEdgeCouple(center, upper, { dx: 5, dy: 0 });
+    expect(first).toBeDefined();
+    expect(first?.points[1].x).toBe(25);
+    expect(first?.other[0].x).toBe(25);
+    expect(first?.other[3].x).toBe(25);
+
+    const second = rectAreaSharedEdgeCouple(center, lower, { dx: 5, dy: 0 });
+    expect(second).toBeDefined();
+    expect(second?.points[2].x).toBe(25);
+    expect(second?.other[0].x).toBe(25);
+    expect(second?.other[3].x).toBe(25);
+  });
+
+  it("couples unequal horizontal spans when pushing or pulling a shared edge", () => {
+    const top = [{ x: 0, y: 0 }, { x: 15, y: 0 }, { x: 15, y: 20 }, { x: 0, y: 20 }];
+    const bottom = [{ x: 5, y: 20 }, { x: 25, y: 20 }, { x: 25, y: 35 }, { x: 5, y: 35 }];
+
+    for (const dy of [5, -5]) {
+      const coupled = rectAreaSharedEdgeCouple(top, bottom, { dx: 0, dy });
+      expect(coupled).toBeDefined();
+      expect(coupled?.points[2].y).toBe(20 + dy);
+      expect(coupled?.other[0].y).toBe(20 + dy);
+      expect(coupled?.other[1].y).toBe(20 + dy);
+    }
+  });
+
+  it("pushes and pulls all four edges against unequal adjacent rectangles", () => {
+    const center = [{ x: 0, y: 0 }, { x: 20, y: 0 }, { x: 20, y: 20 }, { x: 0, y: 20 }];
+    const left = [{ x: -20, y: 5 }, { x: 0, y: 5 }, { x: 0, y: 25 }, { x: -20, y: 25 }];
+    const right = [{ x: 20, y: -5 }, { x: 40, y: -5 }, { x: 40, y: 10 }, { x: 20, y: 10 }];
+    const top = [{ x: 5, y: -20 }, { x: 25, y: -20 }, { x: 25, y: 0 }, { x: 5, y: 0 }];
+    const bottom = [{ x: -10, y: 20 }, { x: 10, y: 20 }, { x: 10, y: 40 }, { x: -10, y: 40 }];
+
+    for (const dx of [5, -5]) {
+      const leftResult = rectAreaSharedEdgeCouple(center, left, { dx, dy: 0 });
+      expect(leftResult?.points[0].x).toBe(dx);
+      expect(leftResult?.other[1].x).toBe(dx);
+      expect(leftResult?.other[2].x).toBe(dx);
+
+      const rightResult = rectAreaSharedEdgeCouple(center, right, { dx, dy: 0 });
+      expect(rightResult?.points[1].x).toBe(20 + dx);
+      expect(rightResult?.other[0].x).toBe(20 + dx);
+      expect(rightResult?.other[3].x).toBe(20 + dx);
+    }
+
+    for (const dy of [5, -5]) {
+      const topResult = rectAreaSharedEdgeCouple(center, top, { dx: 0, dy });
+      expect(topResult?.points[0].y).toBe(dy);
+      expect(topResult?.other[2].y).toBe(dy);
+      expect(topResult?.other[3].y).toBe(dy);
+
+      const bottomResult = rectAreaSharedEdgeCouple(center, bottom, { dx: 0, dy });
+      expect(bottomResult?.points[2].y).toBe(20 + dy);
+      expect(bottomResult?.other[0].y).toBe(20 + dy);
+      expect(bottomResult?.other[1].y).toBe(20 + dy);
+    }
+  });
+});
+
+describe("rectAreaSideWallNext", () => {
+  it("cycles edge states none → wall → divider → none", () => {
+    expect(rectAreaSideWallNext(undefined)).toBe("wall");
+    expect(rectAreaSideWallNext("wall")).toBe("divider");
+    expect(rectAreaSideWallNext("divider")).toBe("none");
+    expect(rectAreaSideWallNext("none")).toBe("wall");
+  });
+});
+
+describe("rectAreaSideWalls", () => {
+  it("creates wall or divider segments for configured rectangle edges", () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    expect(rectAreaSideWalls("room", pts, { top: "wall", right: "divider" })).toEqual([
+      { id: "area-wall-room-top", x1: 0, y1: 0, x2: 10, y2: 0, thickness: 8 },
+      { id: "area-wall-room-right", x1: 10, y1: 0, x2: 10, y2: 10, thickness: 8, divider: true },
+    ]);
+  });
+
+  it("scopes generated wall IDs to the owning room", () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    expect(rectAreaSideWalls("kitchen", pts, { top: "wall" })[0]?.id).toBe("area-wall-kitchen-top");
+    expect(rectAreaSideWalls("hall", pts, { top: "wall" })[0]?.id).toBe("area-wall-hall-top");
   });
 });
 

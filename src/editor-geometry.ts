@@ -1,6 +1,24 @@
-import type { Area, AreaPoint, Floor, RenderHass, Wall } from "./types";
-import { polygonCentroid, pointInPolygon, skylightWidth, textLabel } from "./render";
-import { openingIsSkylight } from "./types";
+import { 
+  WALL_THICKNESS, 
+  pointInPolygon, 
+  polygonCentroid, 
+  textLabel, 
+  skylightWidth 
+} from "./render";
+import { 
+  AreaPoint, 
+  Area, 
+  RectAreaSide, 
+  RectAreaSideWallState, 
+  RectAreaSideWalls, 
+  Wall, 
+  RECT_AREA_SIDES, 
+  Floor, 
+  RenderHass, 
+  openingIsSkylight 
+} from "./types";
+
+export const RECT_AREA_EPSILON = 0.001;
 
 /** Element kinds addressable by the editor's selection model. */
 export type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker" | "area";
@@ -22,6 +40,273 @@ export interface Rect {
   y0: number;
   x1: number;
   y1: number;
+}
+
+/**
+ * Convert a pair of opposite corners into a normalized axis-aligned room polygon.
+ * Used as the geometric primitive for drag-to-draw rectangle rooms and room
+ * resizing, before the editor applies any room-specific snap or attach rules.
+ */
+export function rectAreaPoints(rect: Rect): AreaPoint[] {
+  const minX = Math.min(rect.x0, rect.x1);
+  const maxX = Math.max(rect.x0, rect.x1);
+  const minY = Math.min(rect.y0, rect.y1);
+  const maxY = Math.max(rect.y0, rect.y1);
+  return [
+    { x: minX, y: minY },
+    { x: maxX, y: minY },
+    { x: maxX, y: maxY },
+    { x: minX, y: maxY },
+  ];
+}
+
+/** Whether points use the normalized four-corner rectangle representation. */
+export function isRectArea(points: readonly AreaPoint[]): boolean {
+  if (points.length !== 4) return false;
+  const bounds = rectBounds(points);
+  return rectAreaPoints({
+    x0: bounds.minX,
+    y0: bounds.minY,
+    x1: bounds.maxX,
+    y1: bounds.maxY,
+  }).every((point, index) => point.x === points[index]!.x && point.y === points[index]!.y);
+}
+
+/** Smallest legal width or height for a rectangle room in virtual units. */
+export const MIN_RECT_AREA_SIZE = 1;
+
+export function rectAreaHasMinimumSize(
+  points: readonly AreaPoint[],
+  minimum = MIN_RECT_AREA_SIZE
+): boolean {
+  if (!isRectArea(points)) return false;
+  const bounds = rectBounds(points);
+  return bounds.maxX - bounds.minX >= minimum && bounds.maxY - bounds.minY >= minimum;
+}
+
+/** Resize a rectangle area by moving one corner and keeping the opposite corner fixed. */
+export function rectAreaVertexResize(points: readonly AreaPoint[], vertexIndex: number, target: AreaPoint): AreaPoint[] {
+  const fixedCorner = points[(vertexIndex + 2) % 4];
+  return fixedCorner
+    ? rectAreaPoints({ x0: fixedCorner.x, y0: fixedCorner.y, x1: target.x, y1: target.y })
+    : points.map((point) => ({ ...point }));
+}
+
+/** Resize a rectangle area by moving one edge and keeping the opposite edge fixed. */
+export function rectAreaEdgeResize(points: readonly AreaPoint[], edgeIndex: number, target: AreaPoint): AreaPoint[] {
+  const current = points.map((p) => ({ ...p }));
+  const start = edgeIndex % 4;
+  const end = (edgeIndex + 1) % 4;
+  const isHorizontal = Math.abs(current[start]!.y - current[end]!.y) < RECT_AREA_EPSILON;
+  const next = current.map((p, i) => {
+    if (i === start || i === end) {
+      return isHorizontal ? { ...p, y: target.y } : { ...p, x: target.x };
+    }
+    return p;
+  });
+  const minX = Math.min(...next.map((p) => p.x));
+  const maxX = Math.max(...next.map((p) => p.x));
+  const minY = Math.min(...next.map((p) => p.y));
+  const maxY = Math.max(...next.map((p) => p.y));
+  return rectAreaPoints({ x0: minX, y0: minY, x1: maxX, y1: maxY });
+}
+
+function rectBounds(points: readonly AreaPoint[]): { minX: number; maxX: number; minY: number; maxY: number } {
+  const xs = points.map((p) => p.x);
+  const ys = points.map((p) => p.y);
+  return {
+    minX: Math.min(...xs),
+    maxX: Math.max(...xs),
+    minY: Math.min(...ys),
+    maxY: Math.max(...ys),
+  };
+}
+
+export function rectAreaClamp(
+  points: readonly AreaPoint[],
+  areas: readonly Area[],
+  delta: { dx: number; dy: number } = { dx: 0, dy: 0 }
+): AreaPoint[] {
+  let box = rectBounds(points);
+
+  for (const other of areas) {
+    const otherBox = rectBounds(other.points);
+    const overlaps =
+      box.maxX > otherBox.minX &&
+      box.minX < otherBox.maxX &&
+      box.maxY > otherBox.minY &&
+      box.minY < otherBox.maxY;
+
+    if (!overlaps) continue;
+
+    const width = box.maxX - box.minX;
+    const height = box.maxY - box.minY;
+    if (delta.dx > 0) {
+      box = { ...box, maxX: Math.min(box.maxX, otherBox.minX) };
+    } else if (delta.dx < 0) {
+      box = { ...box, minX: Math.max(box.minX, otherBox.maxX) };
+    } else if (delta.dy > 0) {
+      box = { ...box, maxY: Math.min(box.maxY, otherBox.minY) };
+    } else if (delta.dy < 0) {
+      box = { ...box, minY: Math.max(box.minY, otherBox.maxY) };
+    } else if (width >= height) {
+      if (box.minX < otherBox.maxX) box = { ...box, maxX: otherBox.minX };
+      else box = { ...box, minX: otherBox.maxX };
+    } else {
+      if (box.minY < otherBox.maxY) box = { ...box, maxY: otherBox.minY };
+      else box = { ...box, minY: otherBox.maxY };
+    }
+  }
+
+  return [
+    { x: box.minX, y: box.minY },
+    { x: box.maxX, y: box.minY },
+    { x: box.maxX, y: box.maxY },
+    { x: box.minX, y: box.maxY },
+  ];
+}
+
+export function rectAreaSharedSides(
+  points: readonly AreaPoint[],
+  other: readonly AreaPoint[],
+  epsilon = RECT_AREA_EPSILON
+): RectAreaSide[] {
+  if (!isRectArea(points) || !isRectArea(other)) return [];
+  const box = rectBounds(points);
+  const otherBox = rectBounds(other);
+  const overlapY = Math.min(box.maxY, otherBox.maxY) - Math.max(box.minY, otherBox.minY);
+  const overlapX = Math.min(box.maxX, otherBox.maxX) - Math.max(box.minX, otherBox.minX);
+  const out: RectAreaSide[] = [];
+
+  if (Math.abs(box.maxX - otherBox.minX) < epsilon && overlapY > epsilon) out.push("right");
+  if (Math.abs(box.minX - otherBox.maxX) < epsilon && overlapY > epsilon) out.push("left");
+  if (Math.abs(box.maxY - otherBox.minY) < epsilon && overlapX > epsilon) out.push("bottom");
+  if (Math.abs(box.minY - otherBox.maxY) < epsilon && overlapX > epsilon) out.push("top");
+
+  return out;
+}
+
+export function rectAreaSharedEdgeCouple(
+  points: readonly AreaPoint[],
+  other: readonly AreaPoint[],
+  delta: { dx: number; dy: number },
+  movingSide?: RectAreaSide
+): { points: AreaPoint[]; other: AreaPoint[] } | undefined {
+  if (!isRectArea(points) || !isRectArea(other)) return undefined;
+  const box = rectBounds(points);
+  const otherBox = rectBounds(other);
+  const overlapY = Math.min(box.maxY, otherBox.maxY) - Math.max(box.minY, otherBox.minY);
+  const overlapX = Math.min(box.maxX, otherBox.maxX) - Math.max(box.minX, otherBox.minX);
+
+  const movingHorizontally = Math.abs(delta.dx) > RECT_AREA_EPSILON;
+  const movingVertically = Math.abs(delta.dy) > RECT_AREA_EPSILON;
+  const shareLeft =
+    (movingSide === undefined || movingSide === "right") &&
+    Math.abs(box.maxX - otherBox.minX) < RECT_AREA_EPSILON &&
+    overlapY > RECT_AREA_EPSILON &&
+    movingHorizontally;
+  const shareRight =
+    (movingSide === undefined || movingSide === "left") &&
+    Math.abs(box.minX - otherBox.maxX) < RECT_AREA_EPSILON &&
+    overlapY > RECT_AREA_EPSILON &&
+    movingHorizontally;
+  const shareTop =
+    (movingSide === undefined || movingSide === "bottom") &&
+    Math.abs(box.maxY - otherBox.minY) < RECT_AREA_EPSILON &&
+    overlapX > RECT_AREA_EPSILON &&
+    movingVertically;
+  const shareBottom =
+    (movingSide === undefined || movingSide === "top") &&
+    Math.abs(box.minY - otherBox.maxY) < RECT_AREA_EPSILON &&
+    overlapX > RECT_AREA_EPSILON &&
+    movingVertically;
+
+  if (!shareLeft && !shareRight && !shareTop && !shareBottom) return undefined;
+
+  const next = points.map((p) => ({ ...p }));
+  const coupled = other.map((p) => ({ ...p }));
+
+  if (shareLeft) {
+    const boundary = box.maxX + delta.dx;
+    next[1] = { x: boundary, y: next[1]!.y };
+    next[2] = { x: boundary, y: next[2]!.y };
+    coupled[0] = { x: boundary, y: coupled[0]!.y };
+    coupled[3] = { x: boundary, y: coupled[3]!.y };
+  }
+
+  if (shareRight) {
+    const boundary = box.minX + delta.dx;
+    next[0] = { x: boundary, y: next[0]!.y };
+    next[3] = { x: boundary, y: next[3]!.y };
+    coupled[1] = { x: boundary, y: coupled[1]!.y };
+    coupled[2] = { x: boundary, y: coupled[2]!.y };
+  }
+
+  if (shareTop) {
+    const boundary = box.maxY + delta.dy;
+    next[2] = { x: next[2]!.x, y: boundary };
+    next[3] = { x: next[3]!.x, y: boundary };
+    coupled[0] = { x: coupled[0]!.x, y: boundary };
+    coupled[1] = { x: coupled[1]!.x, y: boundary };
+  }
+
+  if (shareBottom) {
+    const boundary = box.minY + delta.dy;
+    next[0] = { x: next[0]!.x, y: boundary };
+    next[1] = { x: next[1]!.x, y: boundary };
+    coupled[2] = { x: coupled[2]!.x, y: boundary };
+    coupled[3] = { x: coupled[3]!.x, y: boundary };
+  }
+
+  return { points: next, other: coupled };
+}
+
+export function rectAreaSideWallNext(
+  state: RectAreaSideWallState | undefined
+): RectAreaSideWallState {
+  switch (state) {
+    case undefined:
+    case "none":
+      return "wall";
+    case "wall":
+      return "divider";
+    case "divider":
+      return "none";
+    default:
+      return "wall";
+  }
+}
+
+export function rectAreaSideWalls(
+  areaId: string,
+  points: readonly AreaPoint[],
+  sideWalls: RectAreaSideWalls = {}
+): Wall[] {
+  if (!isRectArea(points)) return [];
+  const [topLeft, topRight, bottomRight, bottomLeft] = points;
+  const sides: Record<RectAreaSide, { x1: number; y1: number; x2: number; y2: number }> = {
+    top: { x1: topLeft.x, y1: topLeft.y, x2: topRight.x, y2: topRight.y },
+    right: { x1: topRight.x, y1: topRight.y, x2: bottomRight.x, y2: bottomRight.y },
+    bottom: { x1: bottomRight.x, y1: bottomRight.y, x2: bottomLeft.x, y2: bottomLeft.y },
+    left: { x1: bottomLeft.x, y1: bottomLeft.y, x2: topLeft.x, y2: topLeft.y },
+  };
+
+  return RECT_AREA_SIDES
+    .filter((side) => sideWalls[side] === "wall" || sideWalls[side] === "divider")
+    .map((side) => {
+      const base = {
+        id: rectAreaWallId(areaId, side),
+        ...sides[side],
+        thickness: WALL_THICKNESS,
+      };
+      return sideWalls[side] === "divider"
+        ? { ...base, divider: true }
+        : base;
+    });
+}
+
+export function rectAreaWallId(areaId: string, side: RectAreaSide): string {
+  return `area-wall-${areaId}-${side}`;
 }
 
 type WallSegment = Pick<Wall, "x1" | "y1" | "x2" | "y2">;
