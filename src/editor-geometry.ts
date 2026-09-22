@@ -9,7 +9,9 @@ import {
   AreaPoint, 
   Area, 
   RectAreaSide, 
-  RectAreaSideWallState, 
+  RectAreaSideWallState,
+  RectAreaSideWallValue,
+  RectAreaSideWallSegment,
   RectAreaSideWalls, 
   Wall, 
   RECT_AREA_SIDES, 
@@ -227,7 +229,9 @@ export function rectAreaSharedEdgeCouple(
   const coupled = other.map((p) => ({ ...p }));
 
   if (shareLeft) {
-    const boundary = box.maxX + delta.dx;
+    const minPrimary = box.minX + MIN_RECT_AREA_SIZE;
+    const maxOther = otherBox.maxX - MIN_RECT_AREA_SIZE;
+    const boundary = Math.min(Math.max(box.maxX + delta.dx, minPrimary), maxOther);
     next[1] = { x: boundary, y: next[1]!.y };
     next[2] = { x: boundary, y: next[2]!.y };
     coupled[0] = { x: boundary, y: coupled[0]!.y };
@@ -235,7 +239,9 @@ export function rectAreaSharedEdgeCouple(
   }
 
   if (shareRight) {
-    const boundary = box.minX + delta.dx;
+    const minOther = otherBox.minX + MIN_RECT_AREA_SIZE;
+    const maxPrimary = box.maxX - MIN_RECT_AREA_SIZE;
+    const boundary = Math.max(Math.min(box.minX + delta.dx, maxPrimary), minOther);
     next[0] = { x: boundary, y: next[0]!.y };
     next[3] = { x: boundary, y: next[3]!.y };
     coupled[1] = { x: boundary, y: coupled[1]!.y };
@@ -243,7 +249,9 @@ export function rectAreaSharedEdgeCouple(
   }
 
   if (shareTop) {
-    const boundary = box.maxY + delta.dy;
+    const minPrimary = box.minY + MIN_RECT_AREA_SIZE;
+    const maxOther = otherBox.maxY - MIN_RECT_AREA_SIZE;
+    const boundary = Math.min(Math.max(box.maxY + delta.dy, minPrimary), maxOther);
     next[2] = { x: next[2]!.x, y: boundary };
     next[3] = { x: next[3]!.x, y: boundary };
     coupled[0] = { x: coupled[0]!.x, y: boundary };
@@ -251,7 +259,9 @@ export function rectAreaSharedEdgeCouple(
   }
 
   if (shareBottom) {
-    const boundary = box.minY + delta.dy;
+    const minOther = otherBox.minY + MIN_RECT_AREA_SIZE;
+    const maxPrimary = box.maxY - MIN_RECT_AREA_SIZE;
+    const boundary = Math.max(Math.min(box.minY + delta.dy, maxPrimary), minOther);
     next[0] = { x: next[0]!.x, y: boundary };
     next[1] = { x: next[1]!.x, y: boundary };
     coupled[2] = { x: coupled[2]!.x, y: boundary };
