@@ -1241,12 +1241,28 @@ export type RectAreaSide = (typeof RECT_AREA_SIDES)[number];
 export type RectAreaSideWallState = "none" | "wall" | "divider";
 
 /**
+ * A wall/divider fragment along one edge of a rectangle room. The `start` and
+ * `end` values are normalized to the open interval [0, 1] along the edge, so a
+ * segment can cover the full edge or a subset of it while keeping the rest of
+ * that edge untouched.
+ */
+export interface RectAreaSideWallSegment {
+  start: number;
+  end: number;
+  state: RectAreaSideWallState;
+}
+
+export type RectAreaSideWallValue = RectAreaSideWallState | RectAreaSideWallSegment[];
+
+/**
  * Rectangle room side walls: each side can be left alone, turned into a wall,
  * or drawn as a divider line (toggled by double-clicking the edge in the
  * editor). The object is optional so polygon room areas and older YAML
- * remain unchanged.
+ * remain unchanged. A side may also carry multiple adjacent segments, which
+ * allows a single edge to hold a wall segment, a divider segment, and an open
+ * segment in any combination.
  */
-export type RectAreaSideWalls = Partial<Record<RectAreaSide, RectAreaSideWallState>>;
+export type RectAreaSideWalls = Partial<Record<RectAreaSide, RectAreaSideWallValue>>;
 
 /**
  * A named room polygon, drawn point-by-point in the editor and closed by

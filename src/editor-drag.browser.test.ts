@@ -600,6 +600,416 @@ describe("editor drag", () => {
     document.body.innerHTML = "";
   });
 
+  it("ctrl-clicking an edge turns it into a wall segment without replacing the rest of the edge", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "room1",
+              points: [
+                { x: 100, y: 100 },
+                { x: 200, y: 100 },
+                { x: 200, y: 200 },
+                { x: 100, y: 200 },
+              ],
+              sideWalls: { top: [{ start: 0, end: 0.5, state: "wall" }] },
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [{ kind: "area", id: "room1" }];
+    await ed.updateComplete;
+
+    const edgeTop = ed.shadowRoot!.querySelectorAll<SVGLineElement>(".area-edge-hit")[0]!;
+    edgeTop.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, ctrlKey: true })
+    );
+    await ed.updateComplete;
+
+    const sideWalls = (ed as any)._floor().areas[0].sideWalls?.top;
+    expect(Array.isArray(sideWalls)).toBe(true);
+    expect(sideWalls).toEqual([
+      { start: 0, end: 0.5, state: "wall" },
+      { start: 0.5, end: 1, state: "wall" },
+    ]);
+
+    document.body.innerHTML = "";
+  });
+
+  it("shift-clicking a shared edge between matching rectangles joins them into one rectilinear polygon", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "left",
+              haArea: "shared",
+              points: [
+                { x: 0, y: 0 },
+                { x: 20, y: 0 },
+                { x: 20, y: 20 },
+                { x: 0, y: 20 },
+              ],
+            },
+            {
+              id: "right",
+              haArea: "shared",
+              points: [
+                { x: 20, y: 0 },
+                { x: 40, y: 0 },
+                { x: 40, y: 20 },
+                { x: 20, y: 20 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [{ kind: "area", id: "left" }];
+    await ed.updateComplete;
+
+    const edges = ed.shadowRoot!.querySelectorAll<SVGLineElement>(".area-edge-hit");
+    const shared = [...edges].find((el) => Number.parseFloat(el.getAttribute("x1") ?? "0") >= 20) ?? edges[0];
+    shared.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, shiftKey: true })
+    );
+    await ed.updateComplete;
+
+    expect((ed as any)._floor().areas).toHaveLength(1);
+    expect((ed as any)._floor().areas[0].points).toEqual([
+      { x: 0, y: 0 },
+      { x: 40, y: 0 },
+      { x: 40, y: 20 },
+      { x: 0, y: 20 },
+    ]);
+
+    document.body.innerHTML = "";
+  });
+
+  it("shift-clicking a shared edge still joins when the selected room is on the right", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "left",
+              haArea: "shared",
+              points: [
+                { x: 0, y: 0 },
+                { x: 20, y: 0 },
+                { x: 20, y: 20 },
+                { x: 0, y: 20 },
+              ],
+            },
+            {
+              id: "right",
+              haArea: "shared",
+              points: [
+                { x: 20, y: 0 },
+                { x: 40, y: 0 },
+                { x: 40, y: 20 },
+                { x: 20, y: 20 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [{ kind: "area", id: "right" }];
+    await ed.updateComplete;
+
+    const edges = ed.shadowRoot!.querySelectorAll<SVGLineElement>(".area-edge-hit");
+    const shared = [...edges].find((el) => Number.parseFloat(el.getAttribute("x1") ?? "0") <= 20) ?? edges[0];
+    shared.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, shiftKey: true })
+    );
+    await ed.updateComplete;
+
+    expect((ed as any)._floor().areas).toHaveLength(1);
+    expect((ed as any)._floor().areas[0].points).toEqual([
+      { x: 0, y: 0 },
+      { x: 40, y: 0 },
+      { x: 40, y: 20 },
+      { x: 0, y: 20 },
+    ]);
+
+    document.body.innerHTML = "";
+  });
+
+  it("prefers the actual shared-side match when the chosen area is on the right side of the pair", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "left",
+              haArea: "shared",
+              points: [
+                { x: 0, y: 0 },
+                { x: 20, y: 0 },
+                { x: 20, y: 20 },
+                { x: 0, y: 20 },
+              ],
+            },
+            {
+              id: "right",
+              haArea: "shared",
+              points: [
+                { x: 20, y: 0 },
+                { x: 40, y: 0 },
+                { x: 40, y: 20 },
+                { x: 20, y: 20 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [{ kind: "area", id: "right" }];
+    await ed.updateComplete;
+
+    const right = (ed as any)._floor().areas.find((area: any) => area.id === "right");
+    expect(right).toBeTruthy();
+
+    (ed as any)._mergeRectAreaSide(right, 3);
+    await ed.updateComplete;
+
+    expect((ed as any)._floor().areas).toHaveLength(1);
+    expect((ed as any)._floor().areas[0].id).toBe("right");
+    expect((ed as any)._floor().areas[0].points).toEqual([
+      { x: 0, y: 0 },
+      { x: 40, y: 0 },
+      { x: 40, y: 20 },
+      { x: 0, y: 20 },
+    ]);
+
+    document.body.innerHTML = "";
+  });
+
+  it("shows a ready join cursor on the shared left edge when the selected room is on the right", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "left",
+              haArea: "shared",
+              points: [
+                { x: 0, y: 0 },
+                { x: 20, y: 0 },
+                { x: 20, y: 20 },
+                { x: 0, y: 20 },
+              ],
+            },
+            {
+              id: "right",
+              haArea: "shared",
+              points: [
+                { x: 20, y: 0 },
+                { x: 40, y: 0 },
+                { x: 40, y: 20 },
+                { x: 20, y: 20 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [{ kind: "area", id: "right" }];
+    (ed as any)._areaEdgeModifier = "join";
+    await ed.updateComplete;
+
+    const right = (ed as any)._floor().areas.find((area: any) => area.id === "right");
+    expect((ed as any)._rectAreaEdgeModifierClass(right, 3)).toBe("modifier-ready");
+
+    const leftEdge = [...ed.shadowRoot!.querySelectorAll<SVGLineElement>(".area-edge-hit")].find(
+      (el) => el.dataset.edgeSide === "left"
+    );
+    expect(leftEdge).toBeTruthy();
+    expect(leftEdge?.classList.contains("modifier-ready")).toBe(true);
+
+    document.body.innerHTML = "";
+  });
+
+  it("keeps a merged rectilinear polygon edge drag aligned after the join", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "left",
+              haArea: "shared",
+              points: [
+                { x: 0, y: 0 },
+                { x: 20, y: 0 },
+                { x: 20, y: 20 },
+                { x: 0, y: 20 },
+              ],
+            },
+            {
+              id: "right",
+              haArea: "shared",
+              points: [
+                { x: 20, y: 0 },
+                { x: 40, y: 0 },
+                { x: 40, y: 20 },
+                { x: 20, y: 20 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [{ kind: "area", id: "left" }];
+    await ed.updateComplete;
+
+    const edges = ed.shadowRoot!.querySelectorAll<SVGLineElement>(".area-edge-hit");
+    const shared = [...edges].find((el) => Number.parseFloat(el.getAttribute("x1") ?? "0") >= 20) ?? edges[0];
+    shared.dispatchEvent(
+      new MouseEvent("click", { bubbles: true, composed: true, cancelable: true, shiftKey: true })
+    );
+    await ed.updateComplete;
+
+    const merged = (ed as any)._floor().areas[0];
+    (ed as any)._selection = [{ kind: "area", id: merged.id }];
+    await ed.updateComplete;
+
+    const dragEdge = ed.shadowRoot!.querySelectorAll<SVGLineElement>(".area-edge-hit")[0]!;
+    const from = center(dragEdge);
+    pointer(dragEdge, "pointerdown", from.x, from.y);
+    pointer(dragEdge, "pointermove", from.x, from.y + 15);
+    pointer(dragEdge, "pointerup", from.x, from.y + 15);
+    await ed.updateComplete;
+
+    const moved = (ed as any)._floor().areas[0].points;
+    expect(moved.some((p: { x: number; y: number }) => p.y >= 20)).toBe(true);
+    expect(moved[0].x).toBeLessThanOrEqual(40);
+
+    document.body.innerHTML = "";
+  });
+
+  it("shows valid and invalid join cursors while the shift modifier is active", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "left",
+              haArea: "shared",
+              points: [
+                { x: 0, y: 0 },
+                { x: 20, y: 0 },
+                { x: 20, y: 20 },
+                { x: 0, y: 20 },
+              ],
+            },
+            {
+              id: "right",
+              haArea: "shared",
+              points: [
+                { x: 20, y: 0 },
+                { x: 40, y: 0 },
+                { x: 40, y: 20 },
+                { x: 20, y: 20 },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [{ kind: "area", id: "left" }];
+    window.dispatchEvent(new KeyboardEvent("keydown", { shiftKey: true, bubbles: true }));
+    await ed.updateComplete;
+
+    const edges = [...ed.shadowRoot!.querySelectorAll<SVGLineElement>(".area-edge-hit")];
+    const shared = edges.find((el) => Number.parseFloat(el.getAttribute("x1") ?? "0") >= 20) ?? edges[0];
+    const invalid = edges.find((el) => Number.parseFloat(el.getAttribute("x1") ?? "0") < 10) ?? edges[0];
+
+    expect(shared.classList.contains("modifier-ready")).toBe(true);
+    expect(invalid.classList.contains("modifier-invalid")).toBe(true);
+
+    document.body.innerHTML = "";
+  });
+
   it("ignores wall toggles on a locked room", async () => {
     const host = document.createElement("div");
     host.style.width = "900px";

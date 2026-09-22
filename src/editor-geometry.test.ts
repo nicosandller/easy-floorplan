@@ -732,6 +732,35 @@ describe("rectAreaSideWalls", () => {
     ]);
   });
 
+  it("supports multiple wall and divider segments on the same edge", () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    expect(
+      rectAreaSideWalls("room", pts, {
+        top: [
+          { start: 0, end: 0.4, state: "wall" },
+          { start: 0.4, end: 0.8, state: "divider" },
+          { start: 0.8, end: 1, state: "wall" },
+        ],
+      })
+    ).toEqual([
+      { id: "area-wall-room-top-0", x1: 0, y1: 0, x2: 4, y2: 0, thickness: 8 },
+      { id: "area-wall-room-top-1", x1: 4, y1: 0, x2: 8, y2: 0, thickness: 8, divider: true },
+      { id: "area-wall-room-top-2", x1: 8, y1: 0, x2: 10, y2: 0, thickness: 8 },
+    ]);
+  });
+
+  it("keeps mixed wall and open ranges on one edge while ignoring the open subrange", () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
+    expect(
+      rectAreaSideWalls("room", pts, {
+        top: [
+          { start: 0, end: 0.6, state: "wall" },
+          { start: 0.6, end: 1, state: "none" },
+        ],
+      })
+    ).toEqual([{ id: "area-wall-room-top-0", x1: 0, y1: 0, x2: 6, y2: 0, thickness: 8 }]);
+  });
+
   it("scopes generated wall IDs to the owning room", () => {
     const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
     expect(rectAreaSideWalls("kitchen", pts, { top: "wall" })[0]?.id).toBe("area-wall-kitchen-top");

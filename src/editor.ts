@@ -138,7 +138,7 @@ import {
   normalizeOverlayMinWidth,
   overlayLength,
 } from "./render";
-import { deadSpacesCached } from "./dead-space";
+import { deadSpacesCached, signedArea } from "./dead-space";
 import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
 import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
 import {
@@ -437,6 +437,8 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _history: FloorplanCardConfig[] = [];
   @state() private _future: FloorplanCardConfig[] = [];
   @state() private _zoom = 1;
+  /** Area-edge modifier feedback for Ctrl/Cmd or Shift actions while hovered. */
+  @state() private _areaEdgeModifier: "join" | "split" | null = null;
   /** Floor gear popover (rename / delete floor) visibility. */
   @state() private _floorMenuOpen = false;
   /** "+ Add" popover (device / text / furniture glyphs) visibility. */
@@ -561,6 +563,9 @@ export class FloorplanCardEditor extends LitElement {
   private _marqueeAdd = false;
   private _clipboard: Clipboard | null = null;
   private _onKeyDown = (ev: KeyboardEvent) => this._handleKeyDown(ev);
+  private _onKeyUp = (ev: KeyboardEvent) => {
+    if (!ev.shiftKey && !(ev.ctrlKey || ev.metaKey)) this._areaEdgeModifier = null;
+  };
   private _onHostKeyDown = (ev: KeyboardEvent) => {
     // Bubble-phase backstop for Escape typed in a form field while fullscreen.
     // The capture listener above lets those through so an open picker/select
@@ -587,6 +592,7 @@ export class FloorplanCardEditor extends LitElement {
     super.connectedCallback();
     // Capture phase so HA's dialog can't swallow the arrow keys before we see them.
     window.addEventListener("keydown", this._onKeyDown, true);
+    window.addEventListener("keyup", this._onKeyUp, true);
     // Bubble phase on the host: fires only after the editor's own form
     // overlays had their chance to absorb the key (see _onHostKeyDown).
     this.addEventListener("keydown", this._onHostKeyDown);
@@ -608,6 +614,7 @@ export class FloorplanCardEditor extends LitElement {
 
   public disconnectedCallback(): void {
     window.removeEventListener("keydown", this._onKeyDown, true);
+    window.removeEventListener("keyup", this._onKeyUp, true);
     this.removeEventListener("keydown", this._onHostKeyDown);
     window.removeEventListener("focusin", this._onFocusIn);
     const root = this.renderRoot as EventTarget;
@@ -1158,6 +1165,7 @@ export class FloorplanCardEditor extends LitElement {
   // ---- keyboard nudging ---------------------------------------------------
 
   private _handleKeyDown(ev: KeyboardEvent): void {
+    this._areaEdgeModifier = ev.shiftKey ? "join" : ev.ctrlKey || ev.metaKey ? "split" : null;
     // The listener is on `window` (capture phase) so HA's dialog can't swallow
     // arrow keys before we see them — the canvas itself isn't focusable. But
     // that also means a hidden/background editor instance would otherwise react,
@@ -1489,6 +1497,11 @@ export class FloorplanCardEditor extends LitElement {
 
   private _onCanvasMove(ev: PointerEvent): void {
     if (this._foreignPointer(ev)) return;
+    const target = ev.target as Element | null;
+    if (this._areaEdgeModifier === "join") {
+      const edge = target?.closest(".area-edge-hit, .area-edge-handle");
+      void edge;
+    }
     // A gesture with no buttons held means pointerup never reached us
     // (alt-tab, dialog retarget) — treat it as canceled instead of letting
     // the element chase the hovering mouse.
@@ -1951,25 +1964,34 @@ export class FloorplanCardEditor extends LitElement {
       const idx = drag.areaEdge;
       const target = { x: this._snap(p.x), y: this._snap(p.y) };
       const moving = (f.areas ?? []).find((a) => a.id === drag.primary.id)!;
-      let points = rectAreaEdgeResize(moving.points, idx, target);
-      const edgeStart = moving.points[idx % 4]!;
-      const edgeEnd = moving.points[(idx + 1) % 4]!;
+      const edgeStart = moving.points[idx % moving.points.length]!;
+      const edgeEnd = moving.points[(idx + 1) % moving.points.length]!;
       const horizontal = Math.abs(edgeStart.y - edgeEnd.y) < RECT_AREA_EPSILON;
-      const movedEdgeStart = points[idx % 4]!;
+
+      let points: AreaPoint[];
+      if (isRectArea(moving.points)) {
+        points = rectAreaEdgeResize(moving.points, idx, target);
+      } else {
+        const delta = horizontal ? target.y - edgeStart.y : target.x - edgeStart.x;
+        const axis = horizontal ? "y" : "x";
+        const key = axis === "y" ? edgeStart.y : edgeStart.x;
+        points = moving.points.map((pt, i) => {
+          const sameAxis = Math.abs((axis === "y" ? pt.y : pt.x) - key) < RECT_AREA_EPSILON;
+          if (!sameAxis || i === moving.points.length - 1) return { ...pt };
+          return axis === "y" ? { ...pt, y: pt.y + delta } : { ...pt, x: pt.x + delta };
+        });
+      }
+
+      const movedEdgeStart = points[idx % points.length]!;
       const delta = horizontal
         ? { dx: 0, dy: movedEdgeStart.y - edgeStart.y }
         : { dx: movedEdgeStart.x - edgeStart.x, dy: 0 };
-
-      // The coupling helper applies delta to the live room. Passing points
-      // here would apply the same edge movement twice and make the shared
-      // boundary drift between pointer frames. The coupled resize also checks
-      // every room moved by the shared component against new obstacles.
       const coupled = this._coupledEdgeResize(
         drag.primary.id,
         moving,
         delta,
         f.areas ?? [],
-        RECT_AREA_SIDES[idx]!
+        RECT_AREA_SIDES[idx % RECT_AREA_SIDES.length]!
       );
       const uncoupled = (coupled.areas ?? []).filter(
         (a) => a.id !== drag.primary.id && !coupled.coupledIds.has(a.id)
@@ -1977,15 +1999,7 @@ export class FloorplanCardEditor extends LitElement {
       const sharedPoints = coupled.coupledIds.size
         ? coupled.areas.find((a) => a.id === drag.primary.id)?.points ?? points
         : points;
-      points = rectAreaClamp(
-        sharedPoints,
-        uncoupled,
-        coupled.delta
-      );
-      // Rejected: roll the whole resize back, not just the primary.
-      // `coupled.areas` carries the neighbours this frame moved to follow the
-      // shared edge; emitting it with only the primary restored tears that
-      // boundary, which the previous frame had kept coincident.
+      points = rectAreaClamp(sharedPoints, uncoupled, coupled.delta);
       if (!rectAreaHasMinimumSize(points)) {
         this._emitFloor({ areas: f.areas ?? [] });
         return;
@@ -4878,12 +4892,174 @@ export class FloorplanCardEditor extends LitElement {
 
   private _toggleRectAreaSide(a: Area, edgeIndex: number): void {
     if (a.locked) return;
-    const side = RECT_AREA_SIDES[edgeIndex % RECT_AREA_SIDES.length];
+    const side = this._rectAreaEdgeSide(a, edgeIndex);
     const next = rectAreaSideWallNext(a.sideWalls?.[side]);
     const sideWalls = { ...(a.sideWalls ?? {}) };
     if (next === "none") delete sideWalls[side];
     else sideWalls[side] = next;
     this._updateArea(a.id, { sideWalls: Object.keys(sideWalls).length ? sideWalls : undefined });
+  }
+
+  private _splitRectAreaSide(a: Area, edgeIndex: number, _ev: PointerEvent): void {
+    if (a.locked) return;
+    const side = this._rectAreaEdgeSide(a, edgeIndex);
+    const current = { ...(a.sideWalls ?? {}) };
+    const prev = current[side];
+    const segments = prev
+      ? (Array.isArray(prev) ? prev.map((segment) => ({ ...segment })) : [{ start: 0, end: 1, state: prev }])
+      : [];
+    const tail = segments.length ? Math.max(...segments.map((segment) => segment.end)) : 0;
+    const add = { start: Math.min(Math.max(tail, 0), 1), end: 1, state: "wall" as const };
+    if (add.start >= add.end) return;
+
+    const next = [...segments, add]
+      .filter((segment) => segment.start < segment.end && segment.state !== "none")
+      .sort((x, y) => x.start - y.start);
+
+    current[side] = next.length === 1 && next[0]!.start <= RECT_AREA_EPSILON && next[0]!.end >= 1 - RECT_AREA_EPSILON
+      ? next[0]!.state
+      : next;
+    this._updateArea(a.id, { sideWalls: Object.keys(current).length ? current : undefined });
+  }
+
+  private _mergeRectAreaSide(a: Area, edgeIndex: number): void {
+    if (a.locked) return;
+
+    const clickedSide = this._rectAreaEdgeSide(a, edgeIndex);
+    const candidates = (this._floor().areas ?? []).filter(
+      (candidate) =>
+        candidate.id !== a.id &&
+        !!a.haArea &&
+        a.haArea === candidate.haArea &&
+        rectAreaSharedSides(a.points, candidate.points).length > 0
+    );
+    const other = candidates.find((candidate) => {
+      const sharedSides = rectAreaSharedSides(a.points, candidate.points);
+      return sharedSides.includes(clickedSide) || sharedSides.includes(this._rectAreaOppositeSide(clickedSide));
+    }) ?? candidates[0];
+    if (!other) {
+      return;
+    }
+
+    const sharedSides = rectAreaSharedSides(a.points, other.points);
+    const side = sharedSides.includes(clickedSide)
+      ? clickedSide
+      : sharedSides.includes(this._rectAreaOppositeSide(clickedSide))
+        ? this._rectAreaOppositeSide(clickedSide)
+        : sharedSides[0];
+    if (!side) {
+      return;
+    }
+
+    const boundsA = {
+      minX: Math.min(...a.points.map((p) => p.x)),
+      maxX: Math.max(...a.points.map((p) => p.x)),
+      minY: Math.min(...a.points.map((p) => p.y)),
+      maxY: Math.max(...a.points.map((p) => p.y)),
+    };
+    const boundsB = {
+      minX: Math.min(...other.points.map((p) => p.x)),
+      maxX: Math.max(...other.points.map((p) => p.x)),
+      minY: Math.min(...other.points.map((p) => p.y)),
+      maxY: Math.max(...other.points.map((p) => p.y)),
+    };
+    const minX = Math.min(boundsA.minX, boundsB.minX);
+    const maxX = Math.max(boundsA.maxX, boundsB.maxX);
+    const minY = Math.min(boundsA.minY, boundsB.minY);
+    const maxY = Math.max(boundsA.maxY, boundsB.maxY);
+
+    const merged = [
+      { x: minX, y: minY },
+      { x: maxX, y: minY },
+      { x: maxX, y: maxY },
+      { x: minX, y: maxY },
+    ];
+
+    const beforeArea = Math.abs(signedArea(a.points)) + Math.abs(signedArea(other.points));
+    const afterArea = Math.abs(signedArea(merged));
+    const valid = Math.abs(afterArea - beforeArea) < 0.01;
+
+    if (!valid) {
+      return;
+    }
+
+    const areas = (this._floor().areas ?? []).filter((candidate) => candidate.id !== a.id && candidate.id !== other.id);
+    this._commitFloor({
+      areas: [...areas, { ...a, points: merged, sideWalls: a.sideWalls ?? {} }],
+    });
+  }
+
+  private _rectAreaOppositeSide(side: RectAreaSide): RectAreaSide {
+    switch (side) {
+      case "top":
+        return "bottom";
+      case "bottom":
+        return "top";
+      case "left":
+        return "right";
+      case "right":
+        return "left";
+    }
+  }
+
+  private _rectAreaEdgeSide(a: Area, edgeIndex: number): RectAreaSide {
+    const p = a.points[edgeIndex];
+    const next = a.points[(edgeIndex + 1) % a.points.length];
+    if (!p || !next) return RECT_AREA_SIDES[edgeIndex % RECT_AREA_SIDES.length];
+    const bounds = {
+      minX: Math.min(...a.points.map((point) => point.x)),
+      maxX: Math.max(...a.points.map((point) => point.x)),
+      minY: Math.min(...a.points.map((point) => point.y)),
+      maxY: Math.max(...a.points.map((point) => point.y)),
+    };
+    const horizontal = Math.abs(p.y - next.y) < RECT_AREA_EPSILON;
+    if (horizontal) {
+      return Math.abs(p.y - bounds.minY) < RECT_AREA_EPSILON ? "top" : "bottom";
+    }
+    return Math.abs(p.x - bounds.minX) < RECT_AREA_EPSILON ? "left" : "right";
+  }
+
+  private _clickRectAreaSide(ev: PointerEvent, a: Area, edgeIndex: number): void {
+    if (this._tool !== "select") return;
+    ev.preventDefault();
+    ev.stopPropagation();
+    if (ev.ctrlKey || ev.metaKey) {
+      this._splitRectAreaSide(a, edgeIndex, ev);
+      return;
+    }
+    if (ev.shiftKey) {
+      this._mergeRectAreaSide(a, edgeIndex);
+    }
+  }
+
+  private _rectAreaEdgeModifierClass(a: Area, edgeIndex: number): string {
+    if (this._areaEdgeModifier === "join") {
+      const side = this._rectAreaEdgeSide(a, edgeIndex);
+      const shared = (this._floor().areas ?? []).map((candidate) => ({
+        id: candidate.id,
+        haArea: candidate.haArea,
+        shared: rectAreaSharedSides(a.points, candidate.points),
+      }));
+      const hasMatch = shared.some(
+        (candidate) =>
+          candidate.id !== a.id &&
+          !!a.haArea &&
+          a.haArea === candidate.haArea &&
+          (candidate.shared.includes(side) || candidate.shared.includes(this._rectAreaOppositeSide(side)))
+      );
+      const className = hasMatch ? "modifier-ready" : "modifier-invalid";
+      return className;
+    }
+    if (this._areaEdgeModifier === "split") return "modifier-split";
+    return "";
+  }
+
+  private _rectAreaEdgeCursor(a: Area, edgeIndex: number, modifierClass: string): string {
+    if (modifierClass === "modifier-ready") return "copy";
+    if (modifierClass === "modifier-invalid") return "not-allowed";
+    const side = this._rectAreaEdgeSide(a, edgeIndex);
+    const isHorizontal = side === "top" || side === "bottom";
+    return isHorizontal ? "ns-resize" : "ew-resize";
   }
 
   private _renderAreaSel(a: Area, scopingId?: string): TemplateResult {
@@ -4925,18 +5101,36 @@ export class FloorplanCardEditor extends LitElement {
                             @pointerdown=${(e: PointerEvent) =>
                               this._startDrag(e, { kind: "area", id: a.id }, undefined, i)} />`
                 ),
-                ...(isRectArea(a.points)
+                ...((isRectArea(a.points) || a.points.length >= 4)
                   ? [
                       ...a.points.map((p, i) => {
                         const next = a.points[(i + 1) % a.points.length];
                         const isHorizontal = Math.abs(p.y - next.y) < RECT_AREA_EPSILON;
                         const cursorClass = isHorizontal ? "ns" : "ew";
+                        const modifierClass = this._rectAreaEdgeModifierClass(a, i);
+                        const cursor = this._rectAreaEdgeCursor(a, i, modifierClass);
                         return svg`
                           <line
                             x1=${p.x} y1=${p.y} x2=${next.x} y2=${next.y}
-                            class=${["area-edge-hit", cursorClass].join(" ")}
+                            class=${["area-edge-hit", cursorClass, modifierClass].filter(Boolean).join(" ")}
+                            style=${`cursor: ${cursor};`}
+                            data-area-id=${a.id}
+                            data-edge-index=${i}
+                            data-edge-side=${this._rectAreaEdgeSide(a, i)}
+                            @pointermove=${(e: PointerEvent) => {
+                              if (this._areaEdgeModifier !== "join") return;
+                              const target = e.target as Element | null;
+                              void target;
+                            }}
                             @pointerdown=${(e: PointerEvent) => {
+                              if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                                this._clickRectAreaSide(e, a, i);
+                                return;
+                              }
                               this._startDrag(e, { kind: "area", id: a.id }, undefined, undefined, i);
+                            }}
+                            @click=${(e: PointerEvent) => {
+                              this._clickRectAreaSide(e, a, i);
                             }}
                             @dblclick=${(e: PointerEvent) => {
                               e.preventDefault();
@@ -4948,8 +5142,10 @@ export class FloorplanCardEditor extends LitElement {
                         const next = a.points[(i + 1) % a.points.length];
                         const mid = { x: (p.x + next.x) / 2, y: (p.y + next.y) / 2 };
                         const isHorizontal = Math.abs(p.y - next.y) < RECT_AREA_EPSILON;
-                        const side = RECT_AREA_SIDES[i]!;
+                        const side = this._rectAreaEdgeSide(a, i);
                         const sideState = a.sideWalls?.[side];
+                        const modifierClass = this._rectAreaEdgeModifierClass(a, i);
+                        const cursor = this._rectAreaEdgeCursor(a, i, modifierClass);
                         return svg`
                           <circle
                             cx=${mid.x}
@@ -4959,13 +5155,28 @@ export class FloorplanCardEditor extends LitElement {
                               "handle",
                               "area-edge-handle",
                               isHorizontal ? "ns" : "ew",
+                              modifierClass,
                               sideState ? "side-wall-toggle" : "",
                             ]
                               .filter(Boolean)
                               .join(" ")}
+                            style=${`cursor: ${cursor};`}
+                            data-area-id=${a.id}
+                            data-edge-index=${i}
+                            data-edge-side=${this._rectAreaEdgeSide(a, i)}
                             title=${sideState ? `Double-click to cycle this ${side} wall: ${sideState}` : `Double-click to add a wall on the ${side} side`}
-                            @pointerdown=${(e: PointerEvent) =>
-                              this._startDrag(e, { kind: "area", id: a.id }, undefined, undefined, i)}
+                            @pointermove=${(e: PointerEvent) => {
+                              if (this._areaEdgeModifier !== "join") return;
+                              const target = e.target as Element | null;
+                              void target;
+                            }}
+                            @pointerdown=${(e: PointerEvent) => {
+                              if (e.ctrlKey || e.metaKey || e.shiftKey) {
+                                this._clickRectAreaSide(e, a, i);
+                                return;
+                              }
+                              this._startDrag(e, { kind: "area", id: a.id }, undefined, undefined, i);
+                            }}
                             @dblclick=${(e: PointerEvent) => {
                               e.preventDefault();
                               e.stopPropagation();
@@ -7223,6 +7434,14 @@ export class FloorplanCardEditor extends LitElement {
     .area-edge-handle.ns,
     .area-wall-toggle.ns {
       cursor: ns-resize;
+    }
+    .area-edge-hit.modifier-ready.ew,
+    .area-edge-hit.modifier-ready.ns,
+    .area-edge-handle.modifier-ready.ew,
+    .area-edge-handle.modifier-ready.ns,
+    .area-edge-hit.modifier-ready,
+    .area-edge-handle.modifier-ready {
+      cursor: copy;
     }
     .area-edge-handle.side-wall-toggle.ew,
     .area-edge-handle.side-wall-toggle.ns,

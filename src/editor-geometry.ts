@@ -277,12 +277,33 @@ export function rectAreaSideWallNext(
   }
 }
 
-export function rectAreaSideWalls(
-  areaId: string,
+export function rectAreaSideWallSegments(
+  side: RectAreaSideWallValue | undefined
+): RectAreaSideWallSegment[] {
+  if (side === undefined) return [];
+  if (typeof side === "string") {
+    return side === "none" ? [] : [{ start: 0, end: 1, state: side }];
+  }
+  return side
+    .map((segment) => ({ ...segment }))
+    .filter(
+      (segment) =>
+        Number.isFinite(segment.start) &&
+        Number.isFinite(segment.end) &&
+        segment.start >= 0 &&
+        segment.end <= 1 &&
+        segment.start < segment.end &&
+        (segment.state === "wall" || segment.state === "divider" || segment.state === "none")
+    )
+    .filter((segment) => segment.state !== "none")
+    .sort((a, b) => a.start - b.start);
+}
+
+function rectAreaSideWallSegmentBounds(
+  side: RectAreaSide,
   points: readonly AreaPoint[],
-  sideWalls: RectAreaSideWalls = {}
-): Wall[] {
-  if (!isRectArea(points)) return [];
+  segment: RectAreaSideWallSegment
+): { x1: number; y1: number; x2: number; y2: number } {
   const [topLeft, topRight, bottomRight, bottomLeft] = points;
   const sides: Record<RectAreaSide, { x1: number; y1: number; x2: number; y2: number }> = {
     top: { x1: topLeft.x, y1: topLeft.y, x2: topRight.x, y2: topRight.y },
@@ -291,18 +312,65 @@ export function rectAreaSideWalls(
     left: { x1: bottomLeft.x, y1: bottomLeft.y, x2: topLeft.x, y2: topLeft.y },
   };
 
-  return RECT_AREA_SIDES
-    .filter((side) => sideWalls[side] === "wall" || sideWalls[side] === "divider")
-    .map((side) => {
-      const base = {
-        id: rectAreaWallId(areaId, side),
-        ...sides[side],
+  const base = sides[side];
+  const dx = base.x2 - base.x1;
+  const dy = base.y2 - base.y1;
+  const startFrac = segment.start;
+  const endFrac = segment.end;
+
+  if (Math.abs(base.x2 - base.x1) < RECT_AREA_EPSILON) {
+    return {
+      x1: base.x1,
+      y1: base.y1 + dy * startFrac,
+      x2: base.x2,
+      y2: base.y1 + dy * endFrac,
+    };
+  }
+
+  if (Math.abs(base.y2 - base.y1) < RECT_AREA_EPSILON) {
+    return {
+      x1: base.x1 + dx * startFrac,
+      y1: base.y1,
+      x2: base.x1 + dx * endFrac,
+      y2: base.y2,
+    };
+  }
+
+  return {
+    x1: base.x1 + dx * startFrac,
+    y1: base.y1 + dy * startFrac,
+    x2: base.x1 + dx * endFrac,
+    y2: base.y1 + dy * endFrac,
+  };
+}
+
+export function rectAreaSideWalls(
+  areaId: string,
+  points: readonly AreaPoint[],
+  sideWalls: RectAreaSideWalls = {}
+): Wall[] {
+  if (!isRectArea(points)) return [];
+
+  const out: Wall[] = [];
+  for (const side of RECT_AREA_SIDES) {
+    const raw = sideWalls[side];
+    const segments = rectAreaSideWallSegments(raw);
+    if (!segments.length) continue;
+
+    segments.forEach((segment, index) => {
+      const base = rectAreaSideWallSegmentBounds(side, points, segment);
+      const keepLegacyId = segments.length === 1 && segment.start === 0 && segment.end === 1;
+      const id = keepLegacyId ? rectAreaWallId(areaId, side) : `${rectAreaWallId(areaId, side)}-${index}`;
+      out.push({
+        id,
+        ...base,
         thickness: WALL_THICKNESS,
-      };
-      return sideWalls[side] === "divider"
-        ? { ...base, divider: true }
-        : base;
+        ...(segment.state === "divider" ? { divider: true } : {}),
+      });
     });
+  }
+
+  return out;
 }
 
 export function rectAreaWallId(areaId: string, side: RectAreaSide): string {
