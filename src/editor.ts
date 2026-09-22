@@ -71,6 +71,7 @@ import {
   renderGlow,
   resolveOpeningAmount,
   openingIsActive,
+  openingIsPassage,
   openingIsSkylight,
   openingHitSize,
   skylightWidth,
@@ -226,7 +227,7 @@ import {
 const formLabel = (s: FormField): string => s.label;
 const formHelper = (s: FormField): string | undefined => s.helper;
 
-type Tool = "select" | "wall" | "door" | "window" | "skylight" | "tracker" | "area";
+type Tool = "select" | "wall" | "door" | "passage" | "window" | "skylight" | "tracker" | "area";
 type OverlaySel = { kind: "item" | "text"; id: string };
 
 /** Toolbar metadata per tool: mdi icon + label (icons make the modes scannable). */
@@ -234,6 +235,9 @@ const TOOL_META: Record<Tool, { icon: string; label: string }> = {
   select: { icon: "mdi:cursor-default", label: "Select" },
   wall: { icon: "mdi:wall", label: "Wall" },
   door: { icon: "mdi:door", label: "Door" },
+  // Two jambs and the span between them — which is all a passage is, and the
+  // one number it is placed by (issue #309).
+  passage: { icon: "mdi:arrow-expand-horizontal", label: "Passage" },
   window: { icon: "mdi:window-closed-variant", label: "Window" },
   // A roof seen from outside, which is the one thing in the icon set that says
   // "this is overhead" without saying "window" a second time — the two tools
@@ -1399,7 +1403,12 @@ export class FloorplanCardEditor extends LitElement {
       this._capturePointer(ev);
       return;
     }
-    if (this._tool === "door" || this._tool === "window" || this._tool === "skylight") {
+    if (
+      this._tool === "door" ||
+      this._tool === "passage" ||
+      this._tool === "window" ||
+      this._tool === "skylight"
+    ) {
       this._addOpening(this._tool, this._snap(raw.x), this._snap(raw.y));
       return;
     }
@@ -3368,7 +3377,8 @@ export class FloorplanCardEditor extends LitElement {
         // reads as half an answer.
         if (openingIsSkylight(o))
           return `Skylight · ${Math.round(o.length)}×${Math.round(skylightWidth(o))}`;
-        return `${o.type === "door" ? "Door" : "Window"} · ${Math.round(o.length)} units`;
+        const name = o.type === "door" ? "Door" : openingIsPassage(o) ? "Passage" : "Window";
+        return `${name} · ${Math.round(o.length)} units`;
       }
       case "item": {
         const it = f.items.find((x) => x.id === sel.id);
@@ -3517,8 +3527,8 @@ export class FloorplanCardEditor extends LitElement {
           ceiling, so it snaps to no wall.</span
         >
       `;
-    } else if (t === "door" || t === "window") {
-      label = t === "door" ? "Door" : "Window";
+    } else if (t === "door" || t === "passage" || t === "window") {
+      label = TOOL_META[t].label;
       // Length input here so the user can size openings BEFORE placing them
       // (every new opening defaults to this; previously it was hardcoded).
       body = html`
@@ -3709,7 +3719,7 @@ export class FloorplanCardEditor extends LitElement {
           <!-- Tools — modes; exactly one is active at a time -->
           <div class="seg" role="group" aria-label="Tool">
             ${(
-              ["select", "wall", "door", "window", "skylight", "tracker", "area"] as Tool[]
+              ["select", "wall", "door", "passage", "window", "skylight", "tracker", "area"] as Tool[]
             ).map(
               (t) => html`
                 <button
@@ -4750,11 +4760,12 @@ export class FloorplanCardEditor extends LitElement {
 
   private _renderOpeningSel(o: Opening): TemplateResult {
     const selected = this._isSel("opening", o.id);
+    const color = selected ? "var(--primary-color, #03a9f4)" : SKIN_WALL;
     return svg`
       <g class="opening-hit"
          @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "opening", id: o.id })}>
         ${renderOpening(o, {
-          color: selected ? "var(--primary-color, #03a9f4)" : SKIN_WALL,
+          color,
           // The closed colour previews here too (issue #228) — unless this is
           // the selected opening, whose whole symbol goes blue to show that.
           inactive: selected ? undefined : o.inactiveColor,
@@ -4785,6 +4796,26 @@ export class FloorplanCardEditor extends LitElement {
                     x=${o.x - hit.width / 2} y=${o.y - hit.height / 2}
                     width=${hit.width} height=${hit.height}
                     transform="rotate(${o.angle} ${o.x} ${o.y})" />`;
+              })()
+            : nothing
+        }
+        ${
+          // A passage draws nothing on the card — the gap in the wall is the
+          // whole symbol (issue #309) — which here would leave nothing to see
+          // and nothing to grab. So the editor alone marks it: the gap itself
+          // as the target, and a dashed line across it that turns blue with
+          // the selection the way a door's own symbol does.
+          openingIsPassage(o)
+            ? (() => {
+                const hit = openingHitSize(o);
+                const half = o.length / 2;
+                return svg`<g transform="translate(${o.x} ${o.y}) rotate(${o.angle})">
+                    <rect class="passage-hit"
+                        x=${-hit.width / 2} y=${-hit.height / 2}
+                        width=${hit.width} height=${hit.height} />
+                    <line class="passage-mark" x1=${-half} y1="0" x2=${half} y2="0"
+                        stroke=${color} stroke-width="1.5" stroke-dasharray="4 3" />
+                  </g>`;
               })()
             : nothing
         }
@@ -6051,7 +6082,8 @@ export class FloorplanCardEditor extends LitElement {
             ? group(
                 title,
                 names,
-                o.entity
+                // Both colours paint the leaf, and a passage has none.
+                o.entity && !openingIsPassage(o)
                   ? html`${this._renderColorRow({
                       label: "Open color",
                       title: "Leaf, sash and swing arc while this opening is open",
@@ -6950,7 +6982,8 @@ export class FloorplanCardEditor extends LitElement {
     /* The skylight's grab area — invisible, but painted, which is what makes
        it hit-testable at all: a fill of none would leave the rectangle as empty
        as the floor under it. */
-    .skylight-hit {
+    .skylight-hit,
+    .passage-hit {
       fill: transparent;
     }
     .furn-hit {

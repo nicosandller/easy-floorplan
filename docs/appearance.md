@@ -250,6 +250,37 @@ For the roof **hatch** — a loft door, a smoke vent, a lantern with a solid fla
 
 See [Skylights](lighting.md#skylights) for where that light lands.
 
+## Passages
+
+*An open doorway, an archway, the frame an internal door was taken out of.*
+
+A `passage` is a gap in a wall with nothing in it. It is placed like a door —
+it snaps onto the nearest wall and takes one number, its width — but the card
+draws only the gap: no leaf, no swing arc, no jambs.
+
+```yaml
+openings:
+  - id: dining_arch
+    type: passage
+    x: 428
+    y: 1532
+    length: 82
+    angle: -90
+```
+
+It is always open. Lamps and the sun pass through its whole width, and it is a
+way into a [dead space](behavior.md#dead-spaces) exactly as a door is. Nothing
+can shut it: `invert` does not reach it, a bound `entity` only gives it a badge
+and tap actions, and binding one never turns it back into a door, whatever the
+entity's device class. A `shutterEntity` still hangs over the gap — a roller
+grille across a serving hatch — and stops the light when it is down.
+
+On the card there is nothing to press unless an entity is bound. In the editor
+a dashed line marks the gap, so there is something to see and pick up. Pick
+**Passage** from the toolbar, or turn an existing door into one with **Type**,
+which drops the settings only a leaf had: leaves, sliding style, glazing and
+`invert`.
+
 ## Balcony railings
 
 *"Allow a wall in the floor plan to be marked as belonging to a balcony, rather than being
@@ -508,7 +539,7 @@ it by something stable.
 | Dead space | `fp-dead-space` (hatch lines: `fp-dead-space-line`) | — |
 | Area (outline) | `fp-area-border` | `data-id`, `data-entity` |
 | Furniture | `fp-furniture`, `fp-furniture-<type>` | `data-id`, `data-entity` |
-| Door / window | `fp-opening`, `fp-opening-door` \| `fp-opening-window` | `data-id`, `data-entity` |
+| Door / window / skylight / passage | `fp-opening`, `fp-opening-door` \| `fp-opening-window` \| `fp-opening-skylight` \| `fp-opening-passage` | `data-id`, `data-entity` |
 | Wall | `wall`, `fp-wall` | `data-id` |
 | Device | `item`, `fp-item` (plus `offline` while its entity has dropped out) | `data-id`, `data-entity`, `data-kind` |
 | Text | `text`, `fp-text` | `data-id` |
