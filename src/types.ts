@@ -1943,6 +1943,22 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    */
   skylightDrop?: number;
   /**
+   * Where to read the sky's cloud cover (issue #201): a `weather` entity,
+   * whose `cloud_coverage` attribute is used, or any entity whose state is a
+   * percentage. Met.no — the weather integration a new Home Assistant sets
+   * up for you — reports it.
+   *
+   * Clouds take the direct light down to {@link CLOUD_DIRECT_MIN} of itself
+   * at full cover, and the diffuse {@link ambientDaylight} only to
+   * {@link CLOUD_DIFFUSE_MIN}: an overcast sky hides the sun but is itself
+   * about as bright as a clear one. Unset or unreadable, nothing is dimmed.
+   *
+   * Read only while something reads the real sky — a pinned
+   * {@link sunBearing} states a picture, so it ignores the weather just as it
+   * ignores the sun's height.
+   */
+  cloudCoverEntity?: string;
+  /**
    * What a device does when you press it (issue #134). Tapping used to change
    * nothing on screen until the entity itself came back — which on a cover or
    * a slow bulb is long enough to wonder whether the tap registered at all.

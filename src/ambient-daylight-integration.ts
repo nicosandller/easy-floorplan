@@ -1,7 +1,15 @@
 import { nothing, svg, type SVGTemplateResult } from "lit";
 import type { Area, Floor, FloorplanCardConfig, Opening, RenderHass } from "./types";
-import { openingClearFraction, shutterAmount } from "./render";
 import {
+  CLOUD_DIFFUSE_MIN,
+  cloudCover,
+  cloudCoverEntityOf,
+  cloudFactor,
+  openingClearFraction,
+  shutterAmount,
+} from "./render";
+import {
+  DEFAULT_AMBIENT_DAYLIGHT_STRENGTH,
   ambientDaylightPatches,
   ambientOpeningSources,
   ambientOpeningTransmission,
@@ -92,8 +100,13 @@ export function renderAmbientDaylightLayer(
   };
 
   const elevation = hass?.states["sun.sun"]?.attributes?.elevation;
+  // Clouds thin the sky light far less than the sun's (issue #201) — see
+  // CLOUD_DIFFUSE_MIN — and not at all when there is no reading.
+  const strength =
+    DEFAULT_AMBIENT_DAYLIGHT_STRENGTH *
+    cloudFactor(cloudCover(cloudCoverEntityOf(config), hass), CLOUD_DIFFUSE_MIN);
   const rendered = areas.map((area) => {
-    const patches = ambientDaylightPatches(area, sources, elevation, transmission);
+    const patches = ambientDaylightPatches(area, sources, elevation, transmission, { strength });
     return patches.length
       ? renderAmbientDaylight(area, patches, { idPrefix })
       : nothing;

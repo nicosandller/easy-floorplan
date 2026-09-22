@@ -222,3 +222,38 @@ beside the direct-sun rows it is independent of. V1 keeps
 strength, spread, tint and blur as implementation defaults rather than exposing unstable
 calibration knobs. See [Diffuse ambient daylight](ambient-daylight.md) for the geometry and
 renderer contract.
+
+## Clouds
+
+Point **`cloudCoverEntity`** at your weather and the light thins as the sky clouds over:
+
+```yaml
+type: custom:easy-floorplan-card
+sunlight: true
+ambientDaylight: true
+cloudCoverEntity: weather.forecast_home
+```
+
+A `weather` entity is read from its `cloud_coverage` attribute; Met.no, the integration a
+new Home Assistant sets up for you, reports it. Anything else is read from its state as a
+percentage, for weather integrations that split their readings into sensors.
+
+- **Direct sunlight** goes down to a quarter of itself at full cover, patches and shade
+  together. Not to nothing, although thick overcast does hide the sun: a cover reading
+  cannot tell that overcast from a veil of high cirrus, which the sun still throws a patch
+  through.
+- **Ambient daylight** keeps most of itself, 70% at full cover. Clouds hide the sun, not
+  the sky, and an overcast sky is roughly as bright as a clear one away from the sun. What
+  makes a grey day read dim is the missing sun patches, and the direct layer already takes
+  those away.
+- Between clear and overcast the light scales linearly.
+- **No reading dims nothing.** An unset, missing or unreadable entity leaves the light as
+  it was before the card knew about the weather.
+- A **pinned `sunBearing`** ignores the clouds, just as it ignores the sun's height: it
+  states a picture rather than reading the sky. Ambient daylight never pins, so it keeps
+  reading them.
+- While ambient daylight is on, the cloud entity joins `sun.sun` in the replay scope, so a
+  replayed afternoon is dimmed by that afternoon's weather.
+
+Set it in the editor under **Project → Sunlight → Clouds**, which appears once either
+layer reads the real sky.

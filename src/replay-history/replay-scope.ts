@@ -1,6 +1,6 @@
 import type { FloorplanCardConfig } from "../types";
 import { getFloors } from "../types";
-import { itemReadings } from "../render";
+import { cloudCoverEntityOf, itemReadings } from "../render";
 
 export class ReplayScopeService {
   public static currentFloorEntityIds(config: FloorplanCardConfig | undefined, activeFloorId?: string): string[] {
@@ -18,6 +18,10 @@ export class ReplayScopeService {
     // the scope for them is a change to their own behaviour and belongs with
     // them, so this stays scoped to the layer that claims to be replay-aware.
     if (config?.ambientDaylight) ids.add("sun.sun");
+    // Its clouds too (issue #201), under the same rule: a replayed afternoon
+    // is dimmed by that afternoon's weather, not by this evening's.
+    const cloud = config?.ambientDaylight ? cloudCoverEntityOf(config) : undefined;
+    if (cloud) ids.add(cloud);
     for (const opening of activeFloor.openings) {
       if (opening.entity) ids.add(opening.entity);
       if (opening.secondaryEntity) ids.add(opening.secondaryEntity);

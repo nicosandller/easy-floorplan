@@ -177,6 +177,9 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
   // sunBearing reads neither (see sunBearingOf and sunlightStrengthOf), so it
   // needs no subscription.
   if (c.sunDimming || c.ambientDaylight || (c.sunlight && !sunIsPinned(c))) ids.add("sun.sun");
+  // The clouds over that sun (issue #201), for the layers that read them.
+  const cloud = cloudCoverEntityOf(c);
+  if (cloud) ids.add(cloud);
   for (const f of getFloors(c)) {
     for (const o of f.openings) {
       if (o.entity) ids.add(o.entity);
@@ -4585,12 +4588,89 @@ export function sunIsPinned(cfg: Pick<FloorplanCardConfig, "sunBearing">): boole
  * Fading such a plan out at dusk would half-follow a sun it had already
  * declined to follow, and leave a plan that is simply dark all evening with
  * no control on screen that explains why.
+ *
+ * The clouds are part of the sky's answer (issue #201), so a pinned plan
+ * ignores them too: `cover` is what {@link cloudCover} read, and undefined
+ * dims nothing.
  */
 export function sunlightStrengthOf(
   cfg: Pick<FloorplanCardConfig, "sunBearing">,
   elevation: unknown,
+  cover?: number,
 ): number {
-  return sunIsPinned(cfg) ? 1 : sunlightStrength(elevation);
+  return sunIsPinned(cfg) ? 1 : sunlightStrength(elevation) * cloudFactor(cover, CLOUD_DIRECT_MIN);
+}
+
+// ---- clouds -----------------------------------------------------------------
+
+/**
+ * What full cloud cover leaves of the **direct** light (issue #201).
+ *
+ * Not zero, although a thick overcast does hide the sun outright. A cover
+ * reading cannot tell that overcast from a veil of high cirrus, which Met.no
+ * reports as cover just the same and which the sun still throws an edged
+ * patch through. Drawn as no sun at all, a plan would be wrong on exactly the
+ * days it is most often looked at. A quarter still reads as "not much sun
+ * today" at a glance.
+ */
+export const CLOUD_DIRECT_MIN = 0.25;
+
+/**
+ * What full cloud cover leaves of the **diffuse** sky light — far more than
+ * the direct light keeps. Clouds hide the sun, not the sky, and an overcast
+ * sky is roughly as bright as a clear one away from the sun. What makes a grey
+ * day read dim is the missing sun patches, and the direct layer already takes
+ * those away.
+ */
+export const CLOUD_DIFFUSE_MIN = 0.7;
+
+/**
+ * Cloud cover, 0..1, from {@link FloorplanCardConfig.cloudCoverEntity} — or
+ * `undefined` when there is no reading.
+ *
+ * A `weather` entity carries it as the `cloud_coverage` attribute; its state
+ * is the condition ("rainy"), not a number. Anything else is read from its
+ * state, which is how integrations that split the weather into sensors report
+ * it. Both are percentages. Through {@link liveSunAttribute} for the reason
+ * that function exists: `Number(null)` is 0, and 0 here is a confidently clear
+ * sky.
+ */
+export function cloudCover(
+  entityId: string | undefined,
+  hass: Pick<RenderHass, "states"> | undefined,
+): number | undefined {
+  if (typeof entityId !== "string" || !entityId) return undefined;
+  const st = hass?.states[entityId];
+  if (!st) return undefined;
+  const pct = liveSunAttribute(
+    entityId.startsWith("weather.") ? st.attributes?.cloud_coverage : st.state
+  );
+  return pct === undefined ? undefined : Math.max(0, Math.min(100, pct)) / 100;
+}
+
+/**
+ * How much of a light the clouds leave, 0..1: all of it under a clear sky,
+ * `min` of it under full cover, and linear between — the share of the day the
+ * sun spends behind a cloud grows with the share of the sky that is cloud.
+ *
+ * No reading dims nothing. Each layer keeps its own policy for a *sun* it
+ * cannot read; an unreadable weather only means the plan does not know about
+ * the clouds, and drawing it as it was before it knew is the honest answer.
+ */
+export function cloudFactor(cover: number | undefined, min: number): number {
+  return cover === undefined ? 1 : 1 - (1 - min) * cover;
+}
+
+/**
+ * The cloud entity, when a layer is going to read it. Direct sunlight reads
+ * the sky only while it follows the real sun; ambient daylight always does.
+ */
+export function cloudCoverEntityOf(
+  c: Pick<FloorplanCardConfig, "cloudCoverEntity" | "sunlight" | "sunBearing" | "ambientDaylight">,
+): string | undefined {
+  const id = typeof c.cloudCoverEntity === "string" ? c.cloudCoverEntity.trim() : "";
+  if (!id) return undefined;
+  return c.ambientDaylight || (c.sunlight && !sunIsPinned(c)) ? id : undefined;
 }
 
 // ---- sunlight through the openings ----------------------------------------

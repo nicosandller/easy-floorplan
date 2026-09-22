@@ -115,6 +115,8 @@ import {
   normalizeOverlayMinWidth,
   overlayLength,
   renderSunlight,
+  cloudCover,
+  cloudCoverEntityOf,
   sunLightDirection,
   sunlightStrengthOf,
   sunReachScale,
@@ -1349,14 +1351,16 @@ export class FloorplanCard extends LitElement {
                       // the plan follows it: the azimuth says where the light
                       // comes from, the elevation whether there is any at all.
                       // A plan that pins its own angle keeps its light on —
-                      // see sunlightStrengthOf.
+                      // see sunlightStrengthOf. The clouds (issue #201) thin
+                      // it, and are ignored by a pinned plan the same way.
                       dir: sunLightDirection(
                         c,
                         renderHass?.states["sun.sun"]?.attributes?.azimuth
                       ),
                       strength: sunlightStrengthOf(
                         c,
-                        renderHass?.states["sun.sun"]?.attributes?.elevation
+                        renderHass?.states["sun.sun"]?.attributes?.elevation,
+                        cloudCover(cloudCoverEntityOf(c), renderHass)
                       ),
                       // How far a patch carries, shortened as the sun climbs
                       // (issue #185): a midday sun drops its light almost
