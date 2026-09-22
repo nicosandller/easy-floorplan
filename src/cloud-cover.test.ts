@@ -7,7 +7,10 @@ import {
   cloudCoverEntityOf,
   cloudFactor,
   collectWatchedEntities,
-  sunlightStrengthOf,
+  renderSunlight,
+  SUN_PATCH_OPACITY,
+  SUN_SHADE,
+  sunThroughCloud,
 } from "./render";
 import { renderAmbientDaylightLayer } from "./ambient-daylight-integration";
 import { DEFAULT_AMBIENT_DAYLIGHT_STRENGTH } from "./ambient-daylight";
@@ -95,15 +98,42 @@ describe("how much light the clouds leave", () => {
   });
 
   it("thins direct sunlight that follows the real sun", () => {
-    expect(sunlightStrengthOf({}, 50, 1)).toBe(CLOUD_DIRECT_MIN);
-    expect(sunlightStrengthOf({}, 50, 0)).toBe(1);
-    expect(sunlightStrengthOf({}, 50)).toBe(1);
-    // Night is still night, cloud or no cloud.
-    expect(sunlightStrengthOf({}, -40, 0)).toBe(0);
+    expect(sunThroughCloud({}, 1)).toBe(CLOUD_DIRECT_MIN);
+    expect(sunThroughCloud({}, 0)).toBe(1);
+    expect(sunThroughCloud({}, undefined)).toBe(1);
   });
 
   it("leaves a pinned sun alone, as it leaves the sun's height alone", () => {
-    expect(sunlightStrengthOf({ sunBearing: 225 }, 50, 1)).toBe(1);
+    expect(sunThroughCloud({ sunBearing: 225 }, 1)).toBe(1);
+  });
+
+  // Clouds hide the sun; they do not lift the shade it left. Scaled together
+  // with the patches, the shade went too and an overcast plan read brighter
+  // than a sunny one.
+  it("thins the patches and their holes in the shade, but keeps the shade", () => {
+    const layer = (direct?: number) =>
+      serialize(
+        renderSunlight([], [{ id: "w", type: "window", x: 50, y: 0, length: 20, angle: 0 }], 100, 100, "sun", {
+          dir: { x: 0, y: 1 },
+          openAmount: () => 0,
+          shutterOpen: () => undefined,
+          direct,
+        }),
+      );
+    const clear = layer();
+    const overcast = layer(CLOUD_DIRECT_MIN);
+    // Lit leaves interpolated attribute values unquoted in the template.
+    const shadeOpacity = (svg: string) => Number(/opacity="?([\d.]+)"? mask="?url\(#sun-shade\)/.exec(svg)?.[1]);
+    const patchOpacity = (svg: string) => Number(/mask="?url\(#sun-shadow\)"? opacity="?([\d.]+)/.exec(svg)?.[1]);
+    // The first stop of the hole this beam cuts in the shade mask.
+    const holeDepth = (svg: string) => Number(/id="?sun-s0"?[\s\S]*?stop-opacity="?([\d.]+)/.exec(svg)?.[1]);
+
+    expect(shadeOpacity(overcast)).toBe(shadeOpacity(clear));
+    expect(shadeOpacity(clear)).toBeCloseTo(SUN_SHADE, 6);
+    expect(patchOpacity(clear)).toBeCloseTo(SUN_PATCH_OPACITY, 6);
+    expect(patchOpacity(overcast)).toBeCloseTo(SUN_PATCH_OPACITY * CLOUD_DIRECT_MIN, 6);
+    expect(holeDepth(clear)).toBe(1);
+    expect(holeDepth(overcast)).toBeCloseTo(CLOUD_DIRECT_MIN, 6);
   });
 });
 

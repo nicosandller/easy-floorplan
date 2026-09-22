@@ -2,7 +2,7 @@ import { afterEach, expect, it } from "vitest";
 import "./floorplan-card";
 import type { FloorplanCard } from "./floorplan-card";
 import type { FloorplanCardConfig } from "./types";
-import { CLOUD_DIRECT_MIN, SUN_PATCH_OPACITY } from "./render";
+import { CLOUD_DIRECT_MIN, SUN_PATCH_OPACITY, SUN_SHADE } from "./render";
 
 afterEach(() => { document.body.innerHTML = ""; });
 
@@ -34,10 +34,27 @@ async function patchOpacity(card: FloorplanCard): Promise<number | null> {
   return beam ? Number(beam.parentElement!.getAttribute("opacity")) : null;
 }
 
+/** The opacity of the shade over everywhere the light does not reach. */
+async function shadeOpacity(card: FloorplanCard): Promise<number | null> {
+  await card.updateComplete;
+  const shade = card.shadowRoot!.querySelector(".fp-sunlight > rect[mask]");
+  return shade ? Number(shade.getAttribute("opacity")) : null;
+}
+
 it("thins the sun patches under cloud (issue #201)", async () => {
   const cloud = { cloudCoverEntity: "weather.forecast_home" };
   expect(await patchOpacity(mount(cloud, sky(0)))).toBeCloseTo(SUN_PATCH_OPACITY, 6);
   expect(await patchOpacity(mount(cloud, sky(100)))).toBeCloseTo(SUN_PATCH_OPACITY * CLOUD_DIRECT_MIN, 6);
+});
+
+// Clouds hide the sun; they do not lift the shade it left. With the shade
+// thinned alongside the patches, an overcast plan read brighter than a sunny
+// one.
+it("keeps the shade under cloud, so an overcast plan is not brighter than a sunny one", async () => {
+  const cloud = { cloudCoverEntity: "weather.forecast_home" };
+  const clear = await shadeOpacity(mount(cloud, sky(0)));
+  expect(clear).toBeCloseTo(SUN_SHADE, 6);
+  expect(await shadeOpacity(mount(cloud, sky(100)))).toBeCloseTo(clear!, 6);
 });
 
 // The sun is the same state object throughout, so only the weather moves: the

@@ -4588,17 +4588,30 @@ export function sunIsPinned(cfg: Pick<FloorplanCardConfig, "sunBearing">): boole
  * Fading such a plan out at dusk would half-follow a sun it had already
  * declined to follow, and leave a plan that is simply dark all evening with
  * no control on screen that explains why.
- *
- * The clouds are part of the sky's answer (issue #201), so a pinned plan
- * ignores them too: `cover` is what {@link cloudCover} read, and undefined
- * dims nothing.
  */
 export function sunlightStrengthOf(
   cfg: Pick<FloorplanCardConfig, "sunBearing">,
   elevation: unknown,
-  cover?: number,
 ): number {
-  return sunIsPinned(cfg) ? 1 : sunlightStrength(elevation) * cloudFactor(cover, CLOUD_DIRECT_MIN);
+  return sunIsPinned(cfg) ? 1 : sunlightStrength(elevation);
+}
+
+/**
+ * How much of the sun gets through the clouds for this plan (issue #201):
+ * `cover` is what {@link cloudCover} read, and no reading dims nothing.
+ *
+ * Separate from {@link sunlightStrengthOf} because it does a different job.
+ * That one says whether it is day at all and fades the whole layer, shade
+ * included, since a plan does not keep its shadows after sunset. Clouds only
+ * hide the sun, so they fade what the sun lights and leave the shade where it
+ * was — see {@link SunlightOptions.direct}. A pinned plan ignores them, as it
+ * ignores the sun's height: both are readings of a sky it declined to follow.
+ */
+export function sunThroughCloud(
+  cfg: Pick<FloorplanCardConfig, "sunBearing">,
+  cover: number | undefined,
+): number {
+  return sunIsPinned(cfg) ? 1 : cloudFactor(cover, CLOUD_DIRECT_MIN);
 }
 
 // ---- clouds -----------------------------------------------------------------
@@ -5317,6 +5330,17 @@ export interface SunlightOptions {
    */
   strength?: number;
   /**
+   * How much of that light reaches the floor as direct sun, 0..1 — what the
+   * clouds leave of it (see {@link sunThroughCloud}). Default 1.
+   *
+   * It fades the patches and the holes they cut in the shade, and leaves the
+   * shade itself alone. That is the difference from `strength`: clouds hide
+   * the sun, they do not lift the shade it left. Scaling the shade with them
+   * made an overcast plan read *brighter* than a sunny one — the shade went
+   * with the sun, and nothing darker came in its place.
+   */
+  direct?: number;
+  /**
    * How far the light carries, as a fraction of the plan's shorter side.
    * Defaults to {@link SUN_REACH}; the card scales it by the sun's height
    * (see {@link sunReachScale}).
@@ -5347,6 +5371,10 @@ export function renderSunlight(
   opts: SunlightOptions,
 ): SVGTemplateResult | typeof nothing {
   const { dir, openAmount, shutterOpen, strength = 1 } = opts;
+  const direct =
+    typeof opts.direct === "number" && Number.isFinite(opts.direct)
+      ? Math.max(0, Math.min(1, opts.direct))
+      : 1;
   const paint = {
     light: opts.light ?? SUN_LIGHT_COLOR,
     // `?? ` would swallow the explicit null that means "no shade at all".
@@ -5590,6 +5618,9 @@ export function renderSunlight(
     gid: string,
     color: string,
     kind: "beam" | "core" | "halo" = "beam",
+    // Scales every stop — how deep a hole this cuts when it is drawn into the
+    // shade mask, which is how clouds thin a patch there too.
+    depth = 1,
   ) => svg`<radialGradient id=${gid} gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1"
               gradientTransform=${`translate(${b.cx} ${b.cy}) rotate(${b.angle}) scale(${b.along} ${b.across})`}>
           ${
@@ -5597,18 +5628,18 @@ export function renderSunlight(
               ? // Even, corner to corner: the ellipse circumscribes the
                 // rectangle, so what ends this patch is the rectangle's own
                 // outline. See SKYLIGHT_CORE.
-                svg`<stop offset="0" stop-color=${color} stop-opacity="1" />
-          <stop offset="0.66" stop-color=${color} stop-opacity="0.92" />
-          <stop offset="1" stop-color=${color} stop-opacity="0.62" />`
+                svg`<stop offset="0" stop-color=${color} stop-opacity=${depth} />
+          <stop offset="0.66" stop-color=${color} stop-opacity=${0.92 * depth} />
+          <stop offset="1" stop-color=${color} stop-opacity=${0.62 * depth} />`
               : kind === "halo"
                 ? // …and the spill past it, which is what keeps that outline
                   // from reading as a cut. Never full strength: it is the
                   // light around the patch, not the patch.
-                  svg`<stop offset="0" stop-color=${color} stop-opacity="0.5" />
-          <stop offset="0.48" stop-color=${color} stop-opacity="0.38" />
+                  svg`<stop offset="0" stop-color=${color} stop-opacity=${0.5 * depth} />
+          <stop offset="0.48" stop-color=${color} stop-opacity=${0.38 * depth} />
           <stop offset="1" stop-color=${color} stop-opacity="0" />`
-                : svg`<stop offset="0" stop-color=${color} stop-opacity="1" />
-          <stop offset="0.45" stop-color=${color} stop-opacity="0.55" />
+                : svg`<stop offset="0" stop-color=${color} stop-opacity=${depth} />
+          <stop offset="0.45" stop-color=${color} stop-opacity=${0.55 * depth} />
           <stop offset="1" stop-color=${color} stop-opacity="0" />`
           }
         </radialGradient>`;
@@ -5624,10 +5655,10 @@ export function renderSunlight(
       <mask id=${shadeId} maskUnits="userSpaceOnUse" x=${x} y=${y} width=${w} height=${h}>
         ${cover("#fff")}
         ${beams.map((b) =>
-          b ? fade(b, b.shadeId, "#000", b.sky ? "core" : "beam") : nothing
+          b ? fade(b, b.shadeId, "#000", b.sky ? "core" : "beam", direct) : nothing
         )}
         ${beams.map((b) =>
-          b && b.halo ? fade(b.halo, b.haloShadeId, "#000", "halo") : nothing
+          b && b.halo ? fade(b.halo, b.haloShadeId, "#000", "halo", direct) : nothing
         )}
         ${beams.map((b) =>
           b && !b.sky
@@ -5711,7 +5742,7 @@ export function renderSunlight(
           ? fade(b.halo, b.haloLightId, cssColorOr(paint.light, SUN_LIGHT_COLOR), "halo")
           : nothing
       )}
-      <g mask=${`url(#${shadowId})`} opacity=${SUN_PATCH_OPACITY * strength}>
+      <g mask=${`url(#${shadowId})`} opacity=${SUN_PATCH_OPACITY * strength * direct}>
         ${beams.map((b) =>
           b && !b.sky
             ? svg`<polygon class="fp-sunbeam" points=${b.points}
@@ -5723,7 +5754,7 @@ export function renderSunlight(
            downwind of it and no others — the reason spelled out above. -->
       ${beams.map((b) =>
         b && b.sky
-          ? svg`<g mask=${`url(#${b.shadowMaskId})`} opacity=${SUN_PATCH_OPACITY * strength}>
+          ? svg`<g mask=${`url(#${b.shadowMaskId})`} opacity=${SUN_PATCH_OPACITY * strength * direct}>
               <polygon class="fp-sunbeam fp-skylight-halo" points=${b.haloPoints}
                        fill=${`url(#${b.haloLightId})`} />
               <polygon class="fp-sunbeam fp-skylight-patch" points=${b.points}

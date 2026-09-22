@@ -238,10 +238,12 @@ A `weather` entity is read from its `cloud_coverage` attribute; Met.no, the inte
 new Home Assistant sets up for you, reports it. Anything else is read from its state as a
 percentage, for weather integrations that split their readings into sensors.
 
-- **Direct sunlight** goes down to a quarter of itself at full cover, patches and shade
-  together. Not to nothing, although thick overcast does hide the sun: a cover reading
-  cannot tell that overcast from a veil of high cirrus, which the sun still throws a patch
-  through.
+- **Direct sunlight's patches** go down to a quarter of themselves at full cover. Not to
+  nothing, although thick overcast does hide the sun: a cover reading cannot tell that
+  overcast from a veil of high cirrus, which the sun still throws a patch through.
+- **The shade stays.** Clouds hide the sun; they do not lift the shade it left. So an
+  overcast plan reads evenly shaded with faint patches, darker and flatter than a sunny
+  one, rather than brighter for having lost its shadows.
 - **Ambient daylight** keeps most of itself, 70% at full cover. Clouds hide the sun, not
   the sky, and an overcast sky is roughly as bright as a clear one away from the sun. What
   makes a grey day read dim is the missing sun patches, and the direct layer already takes

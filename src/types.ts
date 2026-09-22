@@ -1948,10 +1948,11 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * percentage. Met.no — the weather integration a new Home Assistant sets
    * up for you — reports it.
    *
-   * Clouds take the direct light down to {@link CLOUD_DIRECT_MIN} of itself
-   * at full cover, and the diffuse {@link ambientDaylight} only to
-   * {@link CLOUD_DIFFUSE_MIN}: an overcast sky hides the sun but is itself
-   * about as bright as a clear one. Unset or unreadable, nothing is dimmed.
+   * Clouds take the sun's patches down to {@link CLOUD_DIRECT_MIN} of
+   * themselves at full cover and leave the shade where it was, and take the
+   * diffuse {@link ambientDaylight} only to {@link CLOUD_DIFFUSE_MIN}: an
+   * overcast sky hides the sun but is itself about as bright as a clear one.
+   * Unset or unreadable, nothing is dimmed.
    *
    * Read only while something reads the real sky — a pinned
    * {@link sunBearing} states a picture, so it ignores the weather just as it
