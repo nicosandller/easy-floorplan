@@ -195,6 +195,46 @@ instead, admitting light only as far as it is actually open.
 
 Skins can restyle both through `--fp-skin-sunlight` and `--fp-skin-sunshade`.
 
+## Moonlight
+
+Once the sun is down, **`moonlight: true`** lets the moon in through the same openings:
+
+```yaml
+type: custom:easy-floorplan-card
+sunlight: true
+moonlight: true
+sunDimming: true   # optional, but it is what makes the night dark enough to see it
+```
+
+It is the same light as [Sunlight](lighting.md#sunlight), through the same windows, doors,
+shutters and skylights by the same rules, with three differences:
+
+- **It comes from the moon.** Home Assistant has no entity for the moon's position (the
+  `moon` integration only names the phase), so the card works it out from your instance's
+  latitude and longitude and the clock. It is accurate to about half a degree, and during
+  [replay](configuration.md#history-replay) it is the replayed moment's moon.
+- **It is as bright as the moon is full.** A full moon high in a dark sky draws at 60% of
+  the sun's strength, a thin crescent a trace of that, a new moon nothing. It climbs out of
+  the horizon the way the sun's light does, and shortens as it rises the same way too. Set
+  a [cloud entity](lighting.md#clouds) and cloud thins it as it thins the sun.
+- **It holds the night back.** With [Follow the sun](lighting.md#follow-the-sun) on, a moonlit
+  patch clears the dimming where it lands, as a lit lamp's pool does, so it reads as light
+  on the floor rather than as a tint under the dark. It draws no shade of its own: the
+  night already is one.
+
+The moon takes over from the sun as dusk deepens: none while the sun is up, all of it once
+the sun is 6° down, where Follow the sun reaches its night brightness. Sunrise hands the
+light back the same way. An unreadable `sun.sun` shows no moon: the direct sun fails bright,
+so an outage already looks like day.
+
+It needs `sunlight` on and following the real sun. A pinned `sunBearing` keeps its light on
+all night, so there is no night for the moon to light. Since nothing in Home Assistant
+changes when the moon moves, the card redraws itself every four minutes while moonlight is
+on (about a degree of the moon's travel).
+
+Toggle it under **Project → Sunlight → Moonlight**, which appears while the light follows
+the real sun. Skins can restyle its colour through `--fp-skin-moonlight`.
+
 ## Ambient daylight
 
 Set **`ambientDaylight: true`** for soft room-aware daylight from the sky, independently
@@ -238,9 +278,10 @@ A `weather` entity is read from its `cloud_coverage` attribute; Met.no, the inte
 new Home Assistant sets up for you, reports it. Anything else is read from its state as a
 percentage, for weather integrations that split their readings into sensors.
 
-- **Direct sunlight's patches** go down to a quarter of themselves at full cover. Not to
-  nothing, although thick overcast does hide the sun: a cover reading cannot tell that
-  overcast from a veil of high cirrus, which the sun still throws a patch through.
+- **Direct sunlight's patches** go down to a quarter of themselves at full cover, and so
+  does [moonlight](lighting.md#moonlight). Not to nothing, although thick overcast does
+  hide the sun: a cover reading cannot tell that overcast from a veil of high cirrus, which
+  the sun still throws a patch through.
 - **The shade stays.** Clouds hide the sun; they do not lift the shade it left. So an
   overcast plan reads evenly shaded with faint patches, darker and flatter than a sunny
   one, rather than brighter for having lost its shadows.
@@ -254,8 +295,8 @@ percentage, for weather integrations that split their readings into sensors.
 - A **pinned `sunBearing`** ignores the clouds, just as it ignores the sun's height: it
   states a picture rather than reading the sky. Ambient daylight never pins, so it keeps
   reading them.
-- While ambient daylight is on, the cloud entity joins `sun.sun` in the replay scope, so a
-  replayed afternoon is dimmed by that afternoon's weather.
+- While ambient daylight or moonlight is on, the cloud entity joins `sun.sun` in the replay
+  scope, so a replayed afternoon is dimmed by that afternoon's weather.
 
 Set it in the editor under **Project → Sunlight → Clouds**, which appears once either
 layer reads the real sky.

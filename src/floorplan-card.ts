@@ -118,6 +118,11 @@ import {
   cloudCover,
   cloudCoverEntityOf,
   sunThroughCloud,
+  moonlightOf,
+  moonlightOn,
+  MOON_LIGHT_COLOR,
+  MOON_TICK_MS,
+  type SunlightOptions,
   sunLightDirection,
   sunlightStrengthOf,
   sunReachScale,
@@ -251,6 +256,7 @@ export class FloorplanCard extends LitElement {
 
   public connectedCallback(): void {
     super.connectedCallback();
+    this._syncMoonClock();
     // Subscribed unconditionally rather than only when an override is set:
     // the config can change under a live card, and a query that is listened
     // to but never read costs nothing.
@@ -291,6 +297,7 @@ export class FloorplanCard extends LitElement {
     };
     this._watchedEntities = collectWatchedEntities(this._config);
     this._nameEntities = collectNamedEntities(this._config);
+    this._syncMoonClock();
     this._syncHistoryServiceContext();
     this._replayController.clearConfigColorCache();
     // HA calls setConfig on every keystroke in the config box. Clearing the
@@ -457,7 +464,31 @@ export class FloorplanCard extends LitElement {
     // replace this one — taking the replay loop's cleanup with it.
     this._unsubscribeOrientation?.();
     this._unsubscribeOrientation = undefined;
+    // Not connected any more, so this stops it.
+    this._syncMoonClock();
     super.disconnectedCallback();
+  }
+
+  /**
+   * The moon's clock (issue #201). Nothing in Home Assistant changes when the
+   * moon moves — it has no entity — so while moonlight is on the card redraws
+   * itself every {@link MOON_TICK_MS}. `sun.sun` does step through the night,
+   * but only every twenty minutes, which leaves the moon's light jumping five
+   * degrees at a time.
+   *
+   * Only while connected, and only while moonlight is on: a plan without it
+   * keeps drawing on state changes alone, as it always has.
+   */
+  private _moonClock?: ReturnType<typeof setInterval>;
+
+  private _syncMoonClock(): void {
+    const wanted = this.isConnected && !!this._config && moonlightOn(this._config);
+    if (wanted && this._moonClock === undefined) {
+      this._moonClock = setInterval(() => this.requestUpdate(), MOON_TICK_MS);
+    } else if (!wanted && this._moonClock !== undefined) {
+      clearInterval(this._moonClock);
+      this._moonClock = undefined;
+    }
   }
 
   private _handleItemAction(
@@ -1042,6 +1073,63 @@ export class FloorplanCard extends LitElement {
           )
         )
       : blockingWallSegments;
+    // What each opening lets through, for every light that comes in by them —
+    // the sun, and after dark the moon.
+    const openingLight: Pick<SunlightOptions, "openAmount" | "shutterOpen" | "drop"> = {
+      // The gap each style actually clears, both leaves included — the same
+      // reading the lamps get above, and for the same reason (#145): `entity`
+      // alone leaves a door whose *second* panel is open reading as shut, and
+      // a converging pair reading as twice as clear as it draws. Glazing and
+      // shutters are applied on top of this, inside openingSunFraction.
+      openAmount: (o) =>
+        openingClearFraction(
+          o,
+          this._openingAmount(o, renderHass),
+          this._openingSecond(o, renderHass)?.amount
+        ),
+      // A shutter that is all the way down stops the light, as one does.
+      // Undefined where none is bound, so an opening without a shutter is
+      // judged on itself alone.
+      shutterOpen: (o) =>
+        o.shutterEntity
+          ? shutterAmount(renderHass?.states[o.shutterEntity], o.shutterInvert)
+          : undefined,
+      // How far a skylight's patch slides from the roof light before it
+      // lands. Handed on raw: it is a fraction of the reach, which already
+      // carries the light's height, so scaling it here would apply 1/tan
+      // twice and pin every patch under its own skylight at noon. Bounded at
+      // the sink, in skylightDropFraction.
+      drop: c.skylightDrop,
+    };
+    // The moon (issue #201), where it is at the moment being drawn: the
+    // replayed one during replay, so a replayed night shows that night's moon.
+    // Home Assistant has no entity for its position, so it comes from the
+    // instance's own latitude and longitude.
+    const moon = moonlightOn(c)
+      ? moonlightOf(
+          c,
+          replayState.enabled ? replayState.currentTime : Date.now(),
+          this.hass?.config,
+          renderHass?.states["sun.sun"]?.attributes?.elevation,
+          cloudCover(cloudCoverEntityOf(c), renderHass)
+        )
+      : undefined;
+    // Drawn twice: once in colour under the walls, where the sun's light
+    // goes, and once in black into the sun-dim mask below, where it holds
+    // the night back the way a lamp's pool does.
+    const moonLayer = (id: string, light: string) =>
+      moon
+        ? renderSunlight(blockingWallSegments, active.openings, c.width, c.height, id, {
+            ...openingLight,
+            dir: moon.dir,
+            strength: moon.strength,
+            // Shortened as the moon climbs, exactly as the sun's is.
+            reach: cssNumber(c.sunReach, SUN_REACH) * sunReachScale(moon.altitude),
+            light,
+            // The night is the shade; a second one would darken it twice.
+            shade: null,
+          })
+        : nothing;
     // Lit rooms hold back the night (issue #113): without this the flat dim
     // multiplies the lit-vs-unlit contrast too, and a lamp ends up *less*
     // visible after dark than at noon.
@@ -1053,7 +1141,8 @@ export class FloorplanCard extends LitElement {
           c.width,
           c.height,
           sunDimMaskId,
-          lightWalls
+          lightWalls,
+          moonLayer(`${this._wallMaskId}-moondim`, "#000")
         )
       : nothing;
     // Zoom-to-room (tap an area). Both the SVG and the HTML overlay live
@@ -1380,39 +1469,18 @@ export class FloorplanCard extends LitElement {
                         (sunIsPinned(c)
                           ? 1
                           : sunReachScale(renderHass?.states["sun.sun"]?.attributes?.elevation)),
-                      // The gap each style actually clears, both leaves
-                      // included — the same reading the lamps get above, and
-                      // for the same reason (#145): `entity` alone leaves a
-                      // door whose *second* panel is open reading as shut,
-                      // and a converging pair reading as twice as clear as it
-                      // draws. Glazing and shutters are applied on top of
-                      // this, inside openingSunFraction.
-                      openAmount: (o) =>
-                        openingClearFraction(
-                          o,
-                          this._openingAmount(o, renderHass),
-                          this._openingSecond(o, renderHass)?.amount
-                        ),
-                      // A shutter that is all the way down stops the light, as
-                      // one does. Undefined where none is bound, so an opening
-                      // without a shutter is judged on itself alone.
-                      shutterOpen: (o) =>
-                        o.shutterEntity
-                          ? shutterAmount(renderHass?.states[o.shutterEntity], o.shutterInvert)
-                          : undefined,
-                      // How far a skylight's patch slides from the roof light
-                      // before it lands. Handed on raw: it is a fraction of
-                      // the reach above, which already carries the sun's
-                      // height, so scaling it here would apply 1/tan twice
-                      // and pin every patch under its own skylight at noon.
-                      // Bounded at the sink, in skylightDropFraction.
-                      drop: c.skylightDrop,
+                      ...openingLight,
                       light: c.sunlightColor ?? SUN_LIGHT_COLOR,
                       shade: c.sunShade === false ? null : (c.sunShadeColor ?? SUN_SHADE_COLOR),
                     }
                   )
                 : nothing
             }
+            <!-- Moonlight (issue #201): the same light through the same
+                 openings, cool rather than warm, once the sun has set. -->
+            ${moon
+              ? svg`<g class="fp-moonlight">${moonLayer(`${this._wallMaskId}-moon`, MOON_LIGHT_COLOR)}</g>`
+              : nothing}
             ${renderWallMask(active.openings, c.width, c.height, this._wallMaskId)}
             ${roomWallSegments.map(
                 (w) => svg`

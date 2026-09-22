@@ -1,6 +1,6 @@
 import type { FloorplanCardConfig } from "../types";
 import { getFloors } from "../types";
-import { cloudCoverEntityOf, itemReadings } from "../render";
+import { cloudCoverEntityOf, itemReadings, moonlightOn } from "../render";
 
 export class ReplayScopeService {
   public static currentFloorEntityIds(config: FloorplanCardConfig | undefined, activeFloorId?: string): string[] {
@@ -17,10 +17,15 @@ export class ReplayScopeService {
     // direct-sun layers read the same entity and have the same gap; widening
     // the scope for them is a change to their own behaviour and belongs with
     // them, so this stays scoped to the layer that claims to be replay-aware.
-    if (config?.ambientDaylight) ids.add("sun.sun");
-    // Its clouds too (issue #201), under the same rule: a replayed afternoon
+    //
+    // Moonlight claims the same (issue #201): the moon is worked out from the
+    // replayed time, but whether it is night enough for it is `sun.sun`'s
+    // elevation — left live, a replayed midnight viewed at noon has no moon.
+    const skyReplays = !!config?.ambientDaylight || (!!config && moonlightOn(config));
+    if (skyReplays) ids.add("sun.sun");
+    // Their clouds too (issue #201), under the same rule: a replayed afternoon
     // is dimmed by that afternoon's weather, not by this evening's.
-    const cloud = config?.ambientDaylight ? cloudCoverEntityOf(config) : undefined;
+    const cloud = skyReplays && config ? cloudCoverEntityOf(config) : undefined;
     if (cloud) ids.add(cloud);
     for (const opening of activeFloor.openings) {
       if (opening.entity) ids.add(opening.entity);

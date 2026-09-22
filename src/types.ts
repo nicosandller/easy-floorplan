@@ -1960,6 +1960,19 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    */
   cloudCoverEntity?: string;
   /**
+   * Let the moon in too, once the sun is down (issue #201). A cool light
+   * through the same openings by the same rules as {@link sunlight}, from
+   * wherever the moon actually is, and as bright as it is full: a thin
+   * crescent lets in a trace, a new moon nothing.
+   *
+   * An add-on to sunlight that follows the real sun. It needs `sunlight` on
+   * and no {@link sunBearing}: a pinned sun never sets, so there is no night
+   * for the moon to light. Home Assistant has no entity for the moon's
+   * position, so it is worked out from the instance's latitude and longitude
+   * — see `moon.ts`.
+   */
+  moonlight?: boolean;
+  /**
    * What a device does when you press it (issue #134). Tapping used to change
    * nothing on screen until the entity itself came back — which on a cover or
    * a slow bulb is long enough to wonder whether the tap registered at all.
