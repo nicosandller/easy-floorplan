@@ -309,6 +309,47 @@ export function rectAreaSideWallSegments(
     .sort((a, b) => a.start - b.start);
 }
 
+export function rectAreaSideBoundarySegments(
+  side: RectAreaSide,
+  points: readonly AreaPoint[]
+): Array<{ x1: number; y1: number; x2: number; y2: number }> {
+  const bounds = rectBounds(points);
+  const segments: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+
+  for (let i = 0; i < points.length; i++) {
+    const p = points[i]!;
+    const next = points[(i + 1) % points.length]!;
+    const horizontal = Math.abs(p.y - next.y) < RECT_AREA_EPSILON;
+    const vertical = Math.abs(p.x - next.x) < RECT_AREA_EPSILON;
+
+    if (side === "top" && horizontal && Math.abs(p.y - bounds.minY) < RECT_AREA_EPSILON) {
+      const x1 = Math.min(p.x, next.x);
+      const x2 = Math.max(p.x, next.x);
+      segments.push({ x1, y1: bounds.minY, x2, y2: bounds.minY });
+    }
+    if (side === "bottom" && horizontal && Math.abs(p.y - bounds.maxY) < RECT_AREA_EPSILON) {
+      const x1 = Math.min(p.x, next.x);
+      const x2 = Math.max(p.x, next.x);
+      segments.push({ x1, y1: bounds.maxY, x2, y2: bounds.maxY });
+    }
+    if (side === "left" && vertical && Math.abs(p.x - bounds.minX) < RECT_AREA_EPSILON) {
+      const y1 = Math.min(p.y, next.y);
+      const y2 = Math.max(p.y, next.y);
+      segments.push({ x1: bounds.minX, y1, x2: bounds.minX, y2 });
+    }
+    if (side === "right" && vertical && Math.abs(p.x - bounds.maxX) < RECT_AREA_EPSILON) {
+      const y1 = Math.min(p.y, next.y);
+      const y2 = Math.max(p.y, next.y);
+      segments.push({ x1: bounds.maxX, y1, x2: bounds.maxX, y2 });
+    }
+  }
+
+  if (side === "top" || side === "bottom") segments.sort((a, b) => a.x1 - b.x1);
+  else segments.sort((a, b) => a.y1 - b.y1);
+
+  return segments;
+}
+
 function rectAreaSideWallSegmentBounds(
   side: RectAreaSide,
   points: readonly AreaPoint[],
@@ -359,7 +400,7 @@ export function rectAreaSideWalls(
   points: readonly AreaPoint[],
   sideWalls: RectAreaSideWalls = {}
 ): Wall[] {
-  if (!isRectArea(points)) return [];
+  if (points.length < 3) return [];
 
   const out: Wall[] = [];
   for (const side of RECT_AREA_SIDES) {
@@ -367,15 +408,61 @@ export function rectAreaSideWalls(
     const segments = rectAreaSideWallSegments(raw);
     if (!segments.length) continue;
 
+    const sideBounds = rectAreaSideBoundarySegments(side, points);
+    if (!sideBounds.length) continue;
+
+    const totalLength = sideBounds.reduce((sum, bound) => {
+      if (side === "top" || side === "bottom") return sum + Math.abs(bound.x2 - bound.x1);
+      return sum + Math.abs(bound.y2 - bound.y1);
+    }, 0);
+    if (totalLength <= RECT_AREA_EPSILON) continue;
+
     segments.forEach((segment, index) => {
-      const base = rectAreaSideWallSegmentBounds(side, points, segment);
-      const keepLegacyId = segments.length === 1 && segment.start === 0 && segment.end === 1;
-      const id = keepLegacyId ? rectAreaWallId(areaId, side) : `${rectAreaWallId(areaId, side)}-${index}`;
-      out.push({
-        id,
-        ...base,
-        thickness: WALL_THICKNESS,
-        ...(segment.state === "divider" ? { divider: true } : {}),
+      const start = segment.start * totalLength;
+      const end = segment.end * totalLength;
+      const pieces: Array<{ x1: number; y1: number; x2: number; y2: number }> = [];
+      let cursor = 0;
+
+      for (const bound of sideBounds) {
+        const length =
+          side === "top" || side === "bottom"
+            ? Math.abs(bound.x2 - bound.x1)
+            : Math.abs(bound.y2 - bound.y1);
+        if (length <= RECT_AREA_EPSILON) continue;
+
+        const boundStart = cursor;
+        const boundEnd = cursor + length;
+        const overlapStart = Math.max(start, boundStart);
+        const overlapEnd = Math.min(end, boundEnd);
+        if (overlapEnd > overlapStart + RECT_AREA_EPSILON) {
+          const t0 = (overlapStart - boundStart) / length;
+          const t1 = (overlapEnd - boundStart) / length;
+          const x1 = side === "top" || side === "bottom"
+            ? bound.x1 + (bound.x2 - bound.x1) * t0
+            : bound.x1;
+          const x2 = side === "top" || side === "bottom"
+            ? bound.x1 + (bound.x2 - bound.x1) * t1
+            : bound.x1;
+          const y1 = side === "left" || side === "right"
+            ? bound.y1 + (bound.y2 - bound.y1) * t0
+            : bound.y1;
+          const y2 = side === "left" || side === "right"
+            ? bound.y1 + (bound.y2 - bound.y1) * t1
+            : bound.y1;
+          pieces.push({ x1, y1, x2, y2 });
+        }
+        cursor = boundEnd;
+      }
+
+      pieces.forEach((piece) => {
+        const keepLegacyId = segments.length === 1 && segment.start === 0 && segment.end === 1 && pieces.length === 1;
+        const id = keepLegacyId ? rectAreaWallId(areaId, side) : `${rectAreaWallId(areaId, side)}-${index}${pieces.length > 1 ? `-${pieces.indexOf(piece)}` : ""}`;
+        out.push({
+          id,
+          ...piece,
+          thickness: WALL_THICKNESS,
+          ...(segment.state === "divider" ? { divider: true } : {}),
+        });
       });
     });
   }

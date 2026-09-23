@@ -749,6 +749,21 @@ describe("rectAreaSideWalls", () => {
     ]);
   });
 
+  it("creates a wall on a rectilinear polygon top edge", () => {
+    const pts = [
+      { x: 100, y: 100 },
+      { x: 300, y: 100 },
+      { x: 300, y: 200 },
+      { x: 200, y: 200 },
+      { x: 200, y: 300 },
+      { x: 100, y: 300 },
+    ];
+
+    expect(rectAreaSideWalls("room", pts, { top: "wall" })).toEqual([
+      { id: "area-wall-room-top", x1: 100, y1: 100, x2: 300, y2: 100, thickness: 8 },
+    ]);
+  });
+
   it("keeps mixed wall and open ranges on one edge while ignoring the open subrange", () => {
     const pts = [{ x: 0, y: 0 }, { x: 10, y: 0 }, { x: 10, y: 10 }, { x: 0, y: 10 }];
     expect(
