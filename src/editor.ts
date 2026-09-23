@@ -581,6 +581,15 @@ export class FloorplanCardEditor extends LitElement {
   private _clipboard: Clipboard | null = null;
   private _onKeyDown = (ev: KeyboardEvent) => this._handleKeyDown(ev);
   private _onKeyUp = (ev: KeyboardEvent) => {
+    console.log("DEBUG keyup", JSON.stringify({
+      key: ev.key,
+      shiftKey: ev.shiftKey,
+      ctrlKey: ev.ctrlKey,
+      metaKey: ev.metaKey,
+      areaEdgeModifierBefore: this._areaEdgeModifier,
+      selectedWallSegment: this._selectedWallSegment,
+      selection: this._selection,
+    }));
     if (!ev.shiftKey && !(ev.ctrlKey || ev.metaKey)) this._areaEdgeModifier = null;
   };
   private _onHostKeyDown = (ev: KeyboardEvent) => {
@@ -1142,20 +1151,20 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _clearSelectedWallSegment(): void {
-    console.log("DEBUG clearSelectedWallSegment", {
+    console.log("DEBUG clearSelectedWallSegment", JSON.stringify({
       before: this._selectedWallSegment,
       selection: this._selection,
       reason: "clearSelectedWallSegment",
-    });
+    }));
     this._selectedWallSegment = null;
   }
 
   private _selectOne(sel: Sel): void {
-    console.log("DEBUG selectOne", {
+    console.log("DEBUG selectOne", JSON.stringify({
       incoming: sel,
       oldSelection: this._selection,
       oldSelectedWallSegment: this._selectedWallSegment,
-    });
+    }));
     this._selection = [sel];
     this._clearSelectedWallSegment();
     // Selection changes end any live-edit burst: re-selecting the same
@@ -1164,11 +1173,11 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _toggleSel(sel: Sel): void {
-    console.log("DEBUG toggleSel", {
+    console.log("DEBUG toggleSel", JSON.stringify({
       incoming: sel,
       oldSelection: this._selection,
       oldSelectedWallSegment: this._selectedWallSegment,
-    });
+    }));
     this._selection = this._isSel(sel.kind, sel.id)
       ? this._selection.filter((s) => !(s.kind === sel.kind && s.id === sel.id))
       : [...this._selection, sel];
@@ -1177,10 +1186,10 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _clearSel(): void {
-    console.log("DEBUG clearSel", {
+    console.log("DEBUG clearSel", JSON.stringify({
       oldSelection: this._selection,
       oldSelectedWallSegment: this._selectedWallSegment,
-    });
+    }));
     this._selection = [];
     this._clearSelectedWallSegment();
     this._liveEditKey = null;
@@ -1454,6 +1463,18 @@ export class FloorplanCardEditor extends LitElement {
 
   private _onCanvasDown(ev: PointerEvent): void {
     if (ev.button !== 0) return;
+    console.log("DEBUG canvas pointerdown", JSON.stringify({
+      pointerId: ev.pointerId,
+      client: { x: ev.clientX, y: ev.clientY },
+      buttons: ev.buttons,
+      ctrlKey: ev.ctrlKey,
+      metaKey: ev.metaKey,
+      shiftKey: ev.shiftKey,
+      gesturePointer: this._gesturePointer,
+      areaEdgeModifier: this._areaEdgeModifier,
+      selection: this._selection,
+      selectedWallSegment: this._selectedWallSegment,
+    }));
     // One gesture at a time: a second touch must not hijack the state machine.
     if (this._gesturePointer !== null) return;
     this._canvasWrap?.focus({ preventScroll: true });
@@ -1630,7 +1651,23 @@ export class FloorplanCardEditor extends LitElement {
       this._marquee = { ...this._marquee, x1: raw.x, y1: raw.y };
       return;
     }
-    if (this._drag) this._dragMoves.push({ ...this._toVirtual(ev, false), altKey: ev.altKey });
+    if (this._drag) {
+      const point = this._toVirtual(ev, false);
+      console.log("DEBUG canvas move while dragging", JSON.stringify({
+        hasSideWallSegment: !!this._drag.sideWallSegment,
+        sideWallSegment: this._drag.sideWallSegment,
+        primary: this._drag.primary,
+        pointer: { x: ev.clientX, y: ev.clientY },
+        point,
+        buttons: ev.buttons,
+        ctrlKey: ev.ctrlKey,
+        metaKey: ev.metaKey,
+        shiftKey: ev.shiftKey,
+        selection: this._selection,
+        selectedWallSegment: this._selectedWallSegment,
+      }));
+      this._dragMoves.push({ ...point, altKey: ev.altKey });
+    }
   }
 
   private _onCanvasUp(ev: PointerEvent): void {
@@ -1808,7 +1845,7 @@ export class FloorplanCardEditor extends LitElement {
     info: { area: Area; side: RectAreaSide; edgeIndex: number; segmentIndex: number },
     mode: "segment" | "start" | "end"
   ): void {
-    console.log("DEBUG startSideWallSegmentDrag", {
+    console.log("DEBUG startSideWallSegmentDrag", JSON.stringify({
       pointer: { x: ev.clientX, y: ev.clientY },
       info,
       selection: this._selection,
@@ -1817,7 +1854,7 @@ export class FloorplanCardEditor extends LitElement {
       metaKey: ev.metaKey,
       shiftKey: ev.shiftKey,
       buttons: ev.buttons,
-    });
+    }));
     if (this._tool !== "select" || info.area.locked) return;
     ev.stopPropagation();
     ev.preventDefault();
@@ -1825,13 +1862,21 @@ export class FloorplanCardEditor extends LitElement {
     const seg = this._sideWallSegmentInfo(info.area, info.side, info.segmentIndex);
     if (!seg) return;
     const selectedWallSegment = this._selectedWallSegment;
-    this._selectOne({ kind: "area", id: info.area.id });
+    const nextSelectedWallSegment = {
+      areaId: info.area.id,
+      side: info.side,
+      edgeIndex: info.edgeIndex,
+      segmentIndex: info.segmentIndex,
+    };
+    this._selection = [];
     if (selectedWallSegment &&
         selectedWallSegment.areaId === info.area.id &&
         selectedWallSegment.side === info.side &&
         selectedWallSegment.edgeIndex === info.edgeIndex &&
         selectedWallSegment.segmentIndex === info.segmentIndex) {
       this._selectedWallSegment = selectedWallSegment;
+    } else {
+      this._selectedWallSegment = nextSelectedWallSegment;
     }
     this._canvasWrap?.focus({ preventScroll: true });
     this._drag = {
@@ -2240,6 +2285,16 @@ export class FloorplanCardEditor extends LitElement {
 
     if (drag.sideWallSegment) {
       const segDrag = drag.sideWallSegment;
+      console.log("DEBUG apply side wall segment drag", JSON.stringify({
+        drag,
+        start: drag.start,
+        current: this._dragMoves.last?.(),
+        areaId: segDrag.areaId,
+        side: segDrag.side,
+        segmentIndex: segDrag.segmentIndex,
+        mode: segDrag.mode,
+        areaCount: (f.areas ?? []).length,
+      }));
       const area = (f.areas ?? []).find((x) => x.id === segDrag.areaId);
       if (!area) return;
 
@@ -2694,10 +2749,10 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _deleteSelected(): void {
-    console.log("DEBUG deleteSelected start", {
+    console.log("DEBUG deleteSelected start", JSON.stringify({
       selection: this._selection,
       selectedWallSegment: this._selectedWallSegment,
-    });
+    }));
     const selectedWallSegment = this._selectedWallSegment;
     if (selectedWallSegment) {
       const f = this._floor();
@@ -5184,16 +5239,17 @@ export class FloorplanCardEditor extends LitElement {
       this._selectedWallSegment.side === sideWallInfo.side &&
       this._selectedWallSegment.edgeIndex === sideWallInfo.edgeIndex &&
       this._selectedWallSegment.segmentIndex === sideWallInfo.segmentIndex;
+    const segmentHandlesVisible = selected || selectedSideWall;
     // A pinned wall still *looks* selected — it is — but shows no endpoint
     // handles (issue #191): they would be drawn as grab targets that refuse
     // to grab, and their absence is the clearest signal on the canvas that
     // the wall is pinned.
-    const handles = selected && !w.locked;
+    const handles = segmentHandlesVisible && !w.locked;
     const sideWallSide = sideWallInfo?.side;
     const sideWallIndex = sideWallInfo?.edgeIndex ?? -1;
     const sideWallToggle = !!sideWallInfo && !sideWallInfo.area.locked;
     const sideState = sideWallInfo?.area.sideWalls?.[sideWallSide!];
-    const segmentModifierActive = !!sideWallInfo && this._areaEdgeModifier !== null;
+    const segmentModifierActive = !!sideWallInfo && (this._areaEdgeModifier !== null || selectedSideWall);
     const sideIsHorizontal = Math.abs(w.y1 - w.y2) < RECT_AREA_EPSILON;
     const edgeCursorClass = sideIsHorizontal ? "ns" : "ew";
     const style = w.divider ? dividerStrokeStyle() : wallStrokeStyle(w.thickness, w.kind);
@@ -5203,7 +5259,7 @@ export class FloorplanCardEditor extends LitElement {
               class=${["wall-hit", sideWallInfo ? "side-wall-edge" : "", selectedSideWall ? "selected" : "", edgeCursorClass].filter(Boolean).join(" ")}
               @pointerdown=${(e: PointerEvent) => {
                 if (sideWallInfo) {
-                  console.log("DEBUG sideWall pointerdown", {
+                  console.log("DEBUG sideWall pointerdown", JSON.stringify({
                     ctrlKey: e.ctrlKey,
                     metaKey: e.metaKey,
                     shiftKey: e.shiftKey,
@@ -5211,8 +5267,10 @@ export class FloorplanCardEditor extends LitElement {
                     sideWallInfo,
                     beforeSelection: this._selection,
                     beforeSelectedWallSegment: this._selectedWallSegment,
-                  });
+                  }));
                   if (e.ctrlKey || e.metaKey) {
+                    e.preventDefault();
+                    e.stopPropagation();
                     this._selectedWallSegment = {
                       areaId: sideWallInfo.area.id,
                       side: sideWallInfo.side,
@@ -5220,13 +5278,14 @@ export class FloorplanCardEditor extends LitElement {
                       segmentIndex: sideWallInfo.segmentIndex,
                     };
                     this._selection = [];
-                    console.log("DEBUG sideWall selected after ctrl pointerdown", {
+                    console.log("DEBUG sideWall selected after ctrl pointerdown", JSON.stringify({
                       selectedWallSegment: this._selectedWallSegment,
                       selection: this._selection,
-                    });
+                    }));
+                    this._startSideWallSegmentDrag(e, sideWallInfo, "segment");
                     return;
                   }
-                  if (selectedSideWall || e.shiftKey) {
+                  if (selectedSideWall || e.shiftKey || this._areaEdgeModifier !== null) {
                     this._startSideWallSegmentDrag(e, sideWallInfo, "segment");
                     return;
                   }
@@ -5239,13 +5298,13 @@ export class FloorplanCardEditor extends LitElement {
               }}
               @click=${(e: PointerEvent) => {
                 if (sideWallInfo && (e.ctrlKey || e.metaKey)) {
-                  console.log("DEBUG sideWall click ctrl", {
+                  console.log("DEBUG sideWall click ctrl", JSON.stringify({
                     sideWallInfo,
                     selectionBefore: this._selection,
                     selectedWallSegmentBefore: this._selectedWallSegment,
                     ctrlKey: e.ctrlKey,
                     metaKey: e.metaKey,
-                  });
+                  }));
                   e.preventDefault();
                   e.stopPropagation();
                   this._selectedWallSegment = {
@@ -5255,10 +5314,10 @@ export class FloorplanCardEditor extends LitElement {
                     segmentIndex: sideWallInfo.segmentIndex,
                   };
                   this._selection = [];
-                  console.log("DEBUG sideWall click ctrl result", {
+                  console.log("DEBUG sideWall click ctrl result", JSON.stringify({
                     selectedWallSegment: this._selectedWallSegment,
                     selection: this._selection,
-                  });
+                  }));
                 }
               }}
               @dblclick=${(e: PointerEvent) => {
@@ -5286,9 +5345,31 @@ export class FloorplanCardEditor extends LitElement {
                 segmentModifierActive
                   ? svg`
                 <circle cx=${w.x1} cy=${w.y1} r="6" class="handle side-wall-segment-handle ${edgeCursorClass}"
-                  @pointerdown=${(e: PointerEvent) => this._startSideWallSegmentDrag(e, sideWallInfo!, "start")} />
+                  @pointerdown=${(e: PointerEvent) => {
+                    const selected = !!sideWallInfo && !!this._selectedWallSegment &&
+                      this._selectedWallSegment.areaId === sideWallInfo.area.id &&
+                      this._selectedWallSegment.side === sideWallInfo.side &&
+                      this._selectedWallSegment.edgeIndex === sideWallInfo.edgeIndex &&
+                      this._selectedWallSegment.segmentIndex === sideWallInfo.segmentIndex;
+                    if (selected && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                      this._startSideWallSegmentDrag(e, sideWallInfo!, "segment");
+                      return;
+                    }
+                    this._startSideWallSegmentDrag(e, sideWallInfo!, "start");
+                  }} />
                 <circle cx=${w.x2} cy=${w.y2} r="6" class="handle side-wall-segment-handle ${edgeCursorClass}"
-                  @pointerdown=${(e: PointerEvent) => this._startSideWallSegmentDrag(e, sideWallInfo!, "end")} />`
+                  @pointerdown=${(e: PointerEvent) => {
+                    const selected = !!sideWallInfo && !!this._selectedWallSegment &&
+                      this._selectedWallSegment.areaId === sideWallInfo.area.id &&
+                      this._selectedWallSegment.side === sideWallInfo.side &&
+                      this._selectedWallSegment.edgeIndex === sideWallInfo.edgeIndex &&
+                      this._selectedWallSegment.segmentIndex === sideWallInfo.segmentIndex;
+                    if (selected && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
+                      this._startSideWallSegmentDrag(e, sideWallInfo!, "segment");
+                      return;
+                    }
+                    this._startSideWallSegmentDrag(e, sideWallInfo!, "end");
+                  }} />`
                   : nothing
               }
         ${

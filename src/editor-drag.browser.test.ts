@@ -1009,6 +1009,8 @@ describe("editor drag", () => {
     await ed.updateComplete;
 
     expect((ed as any)._selectedWallSegment).toEqual({ areaId: "room1", side: "top", edgeIndex: 0, segmentIndex: 0 });
+    expect(ed.shadowRoot!.querySelectorAll<SVGLineElement>(".wall.selected")).toHaveLength(0);
+    expect(ed.shadowRoot!.querySelectorAll<SVGCircleElement>(".side-wall-segment-handle")).toHaveLength(2);
 
     const before = (ed as any)._floor().areas[0].sideWalls.top[0];
     const from = wallCenter;
@@ -1066,6 +1068,598 @@ describe("editor drag", () => {
     await ed.updateComplete;
 
     expect((ed as any)._floor().areas[0].sideWalls?.top).toBeUndefined();
+
+    document.body.innerHTML = "";
+  });
+
+  it("keeps a selected generated wall segment visually active without blueing the whole wall", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "room1",
+              points: [
+                { x: 100, y: 100 },
+                { x: 300, y: 100 },
+                { x: 300, y: 200 },
+                { x: 200, y: 200 },
+                { x: 200, y: 300 },
+                { x: 100, y: 300 },
+              ],
+              sideWalls: {
+                top: [{ start: 0.2, end: 0.4, state: "wall" }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [{ kind: "area", id: "room1" }];
+    (ed as any)._areaEdgeModifier = "split";
+    await ed.updateComplete;
+
+    const segmentWall = ed.shadowRoot!.querySelector<SVGLineElement>(".wall-hit.side-wall-edge");
+    expect(segmentWall).toBeTruthy();
+
+    const wallCenter = center(segmentWall!);
+    segmentWall!.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        ctrlKey: true,
+        clientX: wallCenter.x,
+        clientY: wallCenter.y,
+      })
+    );
+    await ed.updateComplete;
+
+    expect((ed as any)._selectedWallSegment).toEqual({ areaId: "room1", side: "top", edgeIndex: 0, segmentIndex: 0 });
+    expect(ed.shadowRoot!.querySelectorAll<SVGLineElement>(".wall.selected")).toHaveLength(0);
+    expect(ed.shadowRoot!.querySelectorAll<SVGCircleElement>(".side-wall-segment-handle")).toHaveLength(2);
+
+    document.body.innerHTML = "";
+  });
+
+  it("dragging a selected generated wall segment keeps it selected and moves it along the edge", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "room1",
+              points: [
+                { x: 100, y: 100 },
+                { x: 300, y: 100 },
+                { x: 300, y: 200 },
+                { x: 200, y: 200 },
+                { x: 200, y: 300 },
+                { x: 100, y: 300 },
+              ],
+              sideWalls: {
+                top: [{ start: 0.2, end: 0.4, state: "wall" }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [{ kind: "area", id: "room1" }];
+    (ed as any)._areaEdgeModifier = "split";
+    await ed.updateComplete;
+
+    const segmentWall = ed.shadowRoot!.querySelector<SVGLineElement>(".wall-hit.side-wall-edge");
+    expect(segmentWall).toBeTruthy();
+
+    const wallCenter = center(segmentWall!);
+    segmentWall!.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        ctrlKey: true,
+        clientX: wallCenter.x,
+        clientY: wallCenter.y,
+      })
+    );
+    await ed.updateComplete;
+
+    const before = (ed as any)._floor().areas[0].sideWalls.top[0];
+    const from = wallCenter;
+    segmentWall!.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: from.x,
+        clientY: from.y,
+      })
+    );
+    segmentWall!.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: from.x + 26,
+        clientY: from.y,
+      })
+    );
+    await frame();
+    await ed.updateComplete;
+    segmentWall!.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 0,
+        clientX: from.x + 26,
+        clientY: from.y,
+      })
+    );
+    await ed.updateComplete;
+
+    const after = (ed as any)._floor().areas[0].sideWalls.top[0];
+    expect((ed as any)._selectedWallSegment).toEqual({ areaId: "room1", side: "top", edgeIndex: 0, segmentIndex: 0 });
+    expect(after.start).toBeGreaterThan(before.start);
+    expect(after.end).toBeGreaterThan(before.end);
+    expect(after.end - after.start).toBeCloseTo(before.end - before.start, 3);
+
+    document.body.innerHTML = "";
+  });
+
+  it("a selected generated wall segment stays draggable after Ctrl is released", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "room1",
+              points: [
+                { x: 100, y: 100 },
+                { x: 300, y: 100 },
+                { x: 300, y: 200 },
+                { x: 200, y: 200 },
+                { x: 200, y: 300 },
+                { x: 100, y: 300 },
+              ],
+              sideWalls: {
+                top: [{ start: 0.2, end: 0.4, state: "wall" }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [];
+    (ed as any)._selectedWallSegment = { areaId: "room1", side: "top", edgeIndex: 0, segmentIndex: 0 };
+    (ed as any)._areaEdgeModifier = "split";
+    await ed.updateComplete;
+
+    ed.dispatchEvent(new KeyboardEvent("keydown", { key: "Control", bubbles: true, composed: true, ctrlKey: true }));
+    ed.dispatchEvent(new KeyboardEvent("keyup", { key: "Control", bubbles: true, composed: true, ctrlKey: false }));
+    await ed.updateComplete;
+
+    const before = (ed as any)._floor().areas[0].sideWalls.top[0];
+    const segmentWall = ed.shadowRoot!.querySelector<SVGLineElement>(".wall-hit.side-wall-edge");
+    expect(segmentWall).toBeTruthy();
+
+    const from = center(segmentWall!);
+    segmentWall!.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: from.x,
+        clientY: from.y,
+      })
+    );
+    segmentWall!.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: from.x + 26,
+        clientY: from.y,
+      })
+    );
+    await frame();
+    await ed.updateComplete;
+    segmentWall!.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 0,
+        clientX: from.x + 26,
+        clientY: from.y,
+      })
+    );
+    await ed.updateComplete;
+
+    const after = (ed as any)._floor().areas[0].sideWalls.top[0];
+    expect((ed as any)._selectedWallSegment).toEqual({ areaId: "room1", side: "top", edgeIndex: 0, segmentIndex: 0 });
+    expect(after.start).toBeGreaterThan(before.start);
+    expect(after.end).toBeGreaterThan(before.end);
+    expect(after.end - after.start).toBeCloseTo(before.end - before.start, 3);
+
+    document.body.innerHTML = "";
+  });
+
+  it("dragging a selected segment after a ctrl click-and-release sequence still moves it", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "room1",
+              points: [
+                { x: 100, y: 100 },
+                { x: 300, y: 100 },
+                { x: 300, y: 200 },
+                { x: 200, y: 200 },
+                { x: 200, y: 300 },
+                { x: 100, y: 300 },
+              ],
+              sideWalls: {
+                top: [{ start: 0.2, end: 0.4, state: "wall" }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [{ kind: "area", id: "room1" }];
+    (ed as any)._areaEdgeModifier = "split";
+    await ed.updateComplete;
+
+    const segmentWall = ed.shadowRoot!.querySelector<SVGLineElement>(".wall-hit.side-wall-edge");
+    expect(segmentWall).toBeTruthy();
+
+    const wallCenter = center(segmentWall!);
+    segmentWall!.dispatchEvent(
+      new MouseEvent("click", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        ctrlKey: true,
+        clientX: wallCenter.x,
+        clientY: wallCenter.y,
+      })
+    );
+    await ed.updateComplete;
+
+    const before = (ed as any)._floor().areas[0].sideWalls.top[0];
+    ed.dispatchEvent(new KeyboardEvent("keydown", { key: "Control", bubbles: true, composed: true, ctrlKey: true }));
+    ed.dispatchEvent(new KeyboardEvent("keyup", { key: "Control", bubbles: true, composed: true, ctrlKey: false }));
+    await ed.updateComplete;
+
+    const from = center(segmentWall!);
+    segmentWall!.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: from.x,
+        clientY: from.y,
+      })
+    );
+    segmentWall!.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: from.x + 28,
+        clientY: from.y,
+      })
+    );
+    await frame();
+    await ed.updateComplete;
+    segmentWall!.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 0,
+        clientX: from.x + 28,
+        clientY: from.y,
+      })
+    );
+    await ed.updateComplete;
+
+    const after = (ed as any)._floor().areas[0].sideWalls.top[0];
+    expect((ed as any)._selectedWallSegment).toEqual({ areaId: "room1", side: "top", edgeIndex: 0, segmentIndex: 0 });
+    expect(after.start).toBeGreaterThan(before.start);
+    expect(after.end).toBeGreaterThan(before.end);
+
+    document.body.innerHTML = "";
+  });
+
+  it("dragging a selected segment from the midpoint handle after modifier release still moves it", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "room1",
+              points: [
+                { x: 100, y: 100 },
+                { x: 300, y: 100 },
+                { x: 300, y: 200 },
+                { x: 200, y: 200 },
+                { x: 200, y: 300 },
+                { x: 100, y: 300 },
+              ],
+              sideWalls: {
+                top: [{ start: 0.2, end: 0.4, state: "wall" }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [];
+    (ed as any)._selectedWallSegment = { areaId: "room1", side: "top", edgeIndex: 0, segmentIndex: 0 };
+    (ed as any)._areaEdgeModifier = "split";
+    await ed.updateComplete;
+
+    ed.dispatchEvent(new KeyboardEvent("keydown", { key: "Control", bubbles: true, composed: true, ctrlKey: true }));
+    ed.dispatchEvent(new KeyboardEvent("keyup", { key: "Control", bubbles: true, composed: true, ctrlKey: false }));
+    await ed.updateComplete;
+
+    const handle = ed.shadowRoot!.querySelector<SVGCircleElement>(".side-wall-segment-handle");
+    expect(handle).toBeTruthy();
+    const before = (ed as any)._floor().areas[0].sideWalls.top[0];
+    const from = { x: Number(handle!.getAttribute("cx")), y: Number(handle!.getAttribute("cy")) };
+
+    handle!.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: from.x,
+        clientY: from.y,
+      })
+    );
+    handle!.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: from.x + 24,
+        clientY: from.y,
+      })
+    );
+    await frame();
+    await ed.updateComplete;
+    handle!.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 0,
+        clientX: from.x + 24,
+        clientY: from.y,
+      })
+    );
+    await ed.updateComplete;
+
+    const after = (ed as any)._floor().areas[0].sideWalls.top[0];
+    expect((ed as any)._selectedWallSegment).toEqual({ areaId: "room1", side: "top", edgeIndex: 0, segmentIndex: 0 });
+    expect(after.start).toBeGreaterThan(before.start);
+    expect(after.end).toBeGreaterThan(before.end);
+
+    document.body.innerHTML = "";
+  });
+
+  it("dragging an already-selected generated wall segment still works when Ctrl is held", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "room1",
+              points: [
+                { x: 100, y: 100 },
+                { x: 300, y: 100 },
+                { x: 300, y: 200 },
+                { x: 200, y: 200 },
+                { x: 200, y: 300 },
+                { x: 100, y: 300 },
+              ],
+              sideWalls: {
+                top: [{ start: 0.2, end: 0.4, state: "wall" }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [];
+    (ed as any)._selectedWallSegment = { areaId: "room1", side: "top", edgeIndex: 0, segmentIndex: 0 };
+    await ed.updateComplete;
+
+    const before = (ed as any)._floor().areas[0].sideWalls.top[0];
+    const segmentWall = ed.shadowRoot!.querySelector<SVGLineElement>(".wall-hit.side-wall-edge");
+    expect(segmentWall).toBeTruthy();
+
+    const from = center(segmentWall!);
+    segmentWall!.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        ctrlKey: true,
+        clientX: from.x,
+        clientY: from.y,
+      })
+    );
+    segmentWall!.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        ctrlKey: true,
+        clientX: from.x + 26,
+        clientY: from.y,
+      })
+    );
+    await frame();
+    await ed.updateComplete;
+    segmentWall!.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 0,
+        ctrlKey: true,
+        clientX: from.x + 26,
+        clientY: from.y,
+      })
+    );
+    await ed.updateComplete;
+
+    const after = (ed as any)._floor().areas[0].sideWalls.top[0];
+    expect((ed as any)._selectedWallSegment).toEqual({ areaId: "room1", side: "top", edgeIndex: 0, segmentIndex: 0 });
+    expect(after.start).toBeGreaterThan(before.start);
+    expect(after.end).toBeGreaterThan(before.end);
+    expect(after.end - after.start).toBeCloseTo(before.end - before.start, 3);
 
     document.body.innerHTML = "";
   });
