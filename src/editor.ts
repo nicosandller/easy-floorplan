@@ -5346,28 +5346,14 @@ export class FloorplanCardEditor extends LitElement {
                   ? svg`
                 <circle cx=${w.x1} cy=${w.y1} r="6" class="handle side-wall-segment-handle ${edgeCursorClass}"
                   @pointerdown=${(e: PointerEvent) => {
-                    const selected = !!sideWallInfo && !!this._selectedWallSegment &&
-                      this._selectedWallSegment.areaId === sideWallInfo.area.id &&
-                      this._selectedWallSegment.side === sideWallInfo.side &&
-                      this._selectedWallSegment.edgeIndex === sideWallInfo.edgeIndex &&
-                      this._selectedWallSegment.segmentIndex === sideWallInfo.segmentIndex;
-                    if (selected && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-                      this._startSideWallSegmentDrag(e, sideWallInfo!, "segment");
-                      return;
-                    }
+                    e.preventDefault();
+                    e.stopPropagation();
                     this._startSideWallSegmentDrag(e, sideWallInfo!, "start");
                   }} />
                 <circle cx=${w.x2} cy=${w.y2} r="6" class="handle side-wall-segment-handle ${edgeCursorClass}"
                   @pointerdown=${(e: PointerEvent) => {
-                    const selected = !!sideWallInfo && !!this._selectedWallSegment &&
-                      this._selectedWallSegment.areaId === sideWallInfo.area.id &&
-                      this._selectedWallSegment.side === sideWallInfo.side &&
-                      this._selectedWallSegment.edgeIndex === sideWallInfo.edgeIndex &&
-                      this._selectedWallSegment.segmentIndex === sideWallInfo.segmentIndex;
-                    if (selected && !e.ctrlKey && !e.metaKey && !e.shiftKey) {
-                      this._startSideWallSegmentDrag(e, sideWallInfo!, "segment");
-                      return;
-                    }
+                    e.preventDefault();
+                    e.stopPropagation();
                     this._startSideWallSegmentDrag(e, sideWallInfo!, "end");
                   }} />`
                   : nothing
@@ -5384,6 +5370,12 @@ export class FloorplanCardEditor extends LitElement {
                   })()}
                   class=${["area-wall-toggle", sideState ?? "none"].join(" ")}
                   title=${sideState ? `Double-click to cycle this ${sideWallSide} wall: ${sideState}` : `Double-click to add a wall on the ${sideWallSide} side`}
+                  @pointerdown=${(e: PointerEvent) => {
+                    if (this._tool !== "select") return;
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this._startSideWallSegmentDrag(e, sideWallInfo!, "segment");
+                  }}
                   @dblclick=${(e: PointerEvent) => {
                     e.preventDefault();
                     e.stopPropagation();

@@ -1461,7 +1461,7 @@ describe("editor drag", () => {
     document.body.innerHTML = "";
   });
 
-  it("dragging a selected segment from the midpoint handle after modifier release still moves it", async () => {
+  it("dragging a selected segment from the midpoint diamond after modifier release still moves it", async () => {
     const host = document.createElement("div");
     host.style.width = "900px";
     document.body.appendChild(host);
@@ -1504,12 +1504,12 @@ describe("editor drag", () => {
     ed.dispatchEvent(new KeyboardEvent("keyup", { key: "Control", bubbles: true, composed: true, ctrlKey: false }));
     await ed.updateComplete;
 
-    const handle = ed.shadowRoot!.querySelector<SVGCircleElement>(".side-wall-segment-handle");
-    expect(handle).toBeTruthy();
+    const midpoint = ed.shadowRoot!.querySelector<SVGPathElement>(".area-wall-toggle");
+    expect(midpoint).toBeTruthy();
     const before = (ed as any)._floor().areas[0].sideWalls.top[0];
-    const from = { x: Number(handle!.getAttribute("cx")), y: Number(handle!.getAttribute("cy")) };
+    const from = center(midpoint!);
 
-    handle!.dispatchEvent(
+    midpoint!.dispatchEvent(
       new PointerEvent("pointerdown", {
         bubbles: true,
         composed: true,
@@ -1523,7 +1523,7 @@ describe("editor drag", () => {
         clientY: from.y,
       })
     );
-    handle!.dispatchEvent(
+    midpoint!.dispatchEvent(
       new PointerEvent("pointermove", {
         bubbles: true,
         composed: true,
@@ -1539,7 +1539,7 @@ describe("editor drag", () => {
     );
     await frame();
     await ed.updateComplete;
-    handle!.dispatchEvent(
+    midpoint!.dispatchEvent(
       new PointerEvent("pointerup", {
         bubbles: true,
         composed: true,
@@ -1895,6 +1895,198 @@ describe("editor drag", () => {
         button: 0,
         buttons: 0,
         shiftKey: true,
+        clientX: from.x + 24,
+        clientY: from.y,
+      })
+    );
+    await ed.updateComplete;
+
+    const after = (ed as any)._floor().areas[0].sideWalls.top[0];
+    expect(after.start).toBeGreaterThan(before.start);
+    expect(after.end).toBeGreaterThan(before.end);
+    expect(after.end - after.start).toBeCloseTo(before.end - before.start, 3);
+
+    document.body.innerHTML = "";
+  });
+
+  it("dragging a side-wall endpoint handle always stretches the endpoint even without Ctrl", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "room1",
+              points: [
+                { x: 100, y: 100 },
+                { x: 300, y: 100 },
+                { x: 300, y: 200 },
+                { x: 200, y: 200 },
+                { x: 200, y: 300 },
+                { x: 100, y: 300 },
+              ],
+              sideWalls: {
+                top: [{ start: 0.2, end: 0.4, state: "wall" }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selection = [];
+    (ed as any)._selectedWallSegment = { areaId: "room1", side: "top", edgeIndex: 0, segmentIndex: 0 };
+    await ed.updateComplete;
+
+    const before = (ed as any)._floor().areas[0].sideWalls.top[0];
+    const handles = [...ed.shadowRoot!.querySelectorAll<SVGCircleElement>(".side-wall-segment-handle")];
+    const first = handles.sort((a, b) => Number(a.getAttribute("cx")) - Number(b.getAttribute("cx")))[0]!;
+    const from = center(first);
+
+    first.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: from.x,
+        clientY: from.y,
+      })
+    );
+    first.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: from.x - 18,
+        clientY: from.y,
+      })
+    );
+    await frame();
+    await ed.updateComplete;
+    first.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 0,
+        clientX: from.x - 18,
+        clientY: from.y,
+      })
+    );
+    await ed.updateComplete;
+
+    const after = (ed as any)._floor().areas[0].sideWalls.top[0];
+    expect(after.start !== before.start || after.end !== before.end).toBe(true);
+    expect(Math.abs((after.end - after.start) - (before.end - before.start))).toBeLessThan(0.05);
+
+    document.body.innerHTML = "";
+  });
+
+  it("dragging the midpoint diamond moves the whole selected segment", async () => {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          areas: [
+            {
+              id: "room1",
+              points: [
+                { x: 100, y: 100 },
+                { x: 300, y: 100 },
+                { x: 300, y: 200 },
+                { x: 200, y: 200 },
+                { x: 200, y: 300 },
+                { x: 100, y: 300 },
+              ],
+              sideWalls: {
+                top: [{ start: 0.2, end: 0.4, state: "wall" }],
+              },
+            },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+
+    (ed as any)._selectedWallSegment = { areaId: "room1", side: "top", edgeIndex: 0, segmentIndex: 0 };
+    await ed.updateComplete;
+
+    const before = (ed as any)._floor().areas[0].sideWalls.top[0];
+    const midpoint = ed.shadowRoot!.querySelector<SVGPathElement>(".area-wall-toggle");
+    expect(midpoint).toBeTruthy();
+    const from = center(midpoint!);
+
+    midpoint!.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: from.x,
+        clientY: from.y,
+      })
+    );
+    midpoint!.dispatchEvent(
+      new PointerEvent("pointermove", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 1,
+        clientX: from.x + 24,
+        clientY: from.y,
+      })
+    );
+    await frame();
+    await ed.updateComplete;
+    midpoint!.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        pointerId: POINTER_ID,
+        pointerType: "mouse",
+        isPrimary: true,
+        button: 0,
+        buttons: 0,
         clientX: from.x + 24,
         clientY: from.y,
       })
