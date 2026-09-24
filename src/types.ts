@@ -1719,6 +1719,28 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    */
   rotationLandscape?: number;
   /**
+   * How the plan is drawn (issue #261). `plan` — the default — is the flat
+   * drawing. `iso` shows the same plan as an isometric elevation: the floor
+   * turns by one transform and the walls stand up on it as extruded boxes,
+   * cut at their doors and lowered to a sill at their windows, with the
+   * furniture as blocks under the plan's own glyphs. Display only, exactly
+   * like {@link rotation}: coordinates stay plan coordinates and the editor
+   * always shows the plan as drawn. Anything else is read as `plan`.
+   */
+  projection?: "plan" | "iso";
+  /** Display mode. Takes precedence over the prototype `projection` key. */
+  view?: "2d" | "3d";
+  /** Opacity of standing walls, 0..1. Default 1; ignored in 2D. */
+  wallOpacity?: number;
+  /**
+   * How tall the walls stand under `projection: iso`, in canvas units.
+   * Default `DEFAULT_WALL_HEIGHT` (projection.ts), clamped to
+   * `0..MAX_WALL_HEIGHT`. A real wall is taller than a room is wide and
+   * would hide the room, so this is a maquette's cut-down wall, not a
+   * survey. Ignored on the flat plan.
+   */
+  wallHeight?: number;
+  /**
    * Built-in skin id (issue #122), e.g. `odnetnin`, `pastel`, `tron`. Restyles
    * the whole plan at once — paper, walls, badges, accents — by supplying the
    * fallbacks every element already reads.
@@ -1774,6 +1796,23 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    */
   overlayScale?: OverlayScale;
   /**
+   * Move the zoom from room to room (issue #261). `true` puts previous/next
+   * controls on the card and makes the arrow keys walk the rooms — which is
+   * the only way in without a pointer, since a room that merely zooms is not
+   * a tab stop. An object adds a dwell and an explicit tour:
+   *
+   * ```yaml
+   * roomFocus:
+   *   controls: true    # the arrows; on unless turned off
+   *   interval: 10      # seconds per room, omitted for manual only
+   *   rooms: [kitchen]  # visiting order, defaulting to the floor's own
+   * ```
+   *
+   * Cycling never moves the view while someone is using the card: any tap or
+   * key press starts the dwell again. See {@link normalizeRoomFocus}.
+   */
+  roomFocus?: boolean | { controls?: boolean; interval?: number; rooms?: string[] };
+  /**
    * Under `overlayScale: plan`, size the overlay as though the displayed plan
    * were at least this wide (px). All overlay measures stop shrinking together.
    * Unset or zero keeps normal scaling; ignored in fixed-pixel mode.
@@ -1788,7 +1827,7 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * trackers) so a badge and its label scale as one thing, and only while a
    * room is actually zoomed: at full plan it does nothing at all.
    */
-  zoomedOverlayScale?: number;
+  zoomedOverlayScale?: number | "auto";
   /** Canvas background color (CSS / hex). Falls back to the skin's paper, then the card background. */
   background?: string;
   /**

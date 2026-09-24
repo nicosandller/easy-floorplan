@@ -4091,6 +4091,20 @@ describe("overlay size while zoomed (issue #222)", () => {
     expect(zoomedOverlayScale(0.5, 2)).toBe(1);
   });
 
+  it("rides the zoom under `auto`, which is the multiplier a config cannot name", () => {
+    // Counter-scale 1: the overlay is carried by the zoom transform, so a
+    // badge ends up bigger by exactly the factor its room was zoomed by.
+    expect(zoomedOverlayScale(4, "auto")).toBe(1);
+    expect(zoomedOverlayScale(1.32, "auto")).toBe(1);
+    // Badge size and the gaps between badges then grow by the same factor, so
+    // a room reads larger without its devices crowding each other any worse
+    // than they did at full plan. A fixed multiplier cannot do that: the
+    // fitted zoom differs room by room.
+    expect(zoomedOverlayScale(4, 4)).toBe(zoomedOverlayScale(4, "auto"));
+    // And it still says nothing at full plan.
+    expect(zoomedOverlayScale(1, "auto")).toBe(1);
+  });
+
   it("ignores a value that would poison the custom property it lands in", () => {
     // --fp-inv-zoom:NaN invalidates the property, and .item's transform is
     // built from it — every badge would lose its centring, not just its size.

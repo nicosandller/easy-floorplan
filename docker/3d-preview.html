@@ -1,0 +1,94 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Easy Floorplan · 3D preview</title>
+<style>
+  :root { font: 15px system-ui; color: #e8edf5; background: #101821; color-scheme: dark; }
+  body { max-width: 1100px; margin: 32px auto; padding: 0 24px; }
+  h1 { font-size: 28px; margin-bottom: 8px; }
+  p { color: #9eafc2; }
+  nav { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; margin: 28px 0; }
+  label { display: flex; gap: 8px; align-items: center; }
+  select, button { padding: 8px 12px; border: 1px solid #425064; border-radius: 6px; }
+  main { padding: 24px; background: #eef2f5; border-radius: 16px; }
+  easy-floorplan-card { --primary-text-color: #334558; --card-background-color: #eef2f5; --primary-color: #168ca3; --secondary-text-color: #425a71; display: block; }
+  output { display: block; min-height: 24px; margin-top: 16px; color: #b9cadd; }
+</style>
+<h1>One floorplan, a new point of view</h1>
+<p>Local development preview with simulated entities. Tap a room to zoom or a door to change its state.</p>
+<nav aria-label="Preview controls">
+  <label>View <select id="view"><option value="3d">3D</option><option value="2d">2D</option></select></label>
+  <label>Corner <select id="rotation"><option>0</option><option>90</option><option>180</option><option>270</option></select></label>
+  <label>Walls <input id="wallHeight" type="range" min="0" max="160" value="60" aria-label="Wall height"></label>
+  <label>Opacity <input id="wallOpacity" type="range" min="0" max="1" step="0.05" value="0.65"></label>
+  <button id="doors">Open / close doors</button>
+  <button id="light">Day / night</button>
+</nav>
+<main><easy-floorplan-card></easy-floorplan-card></main>
+<output aria-live="polite"></output>
+<script type="module">
+  import '/src/floorplan-card.ts';
+  // Home Assistant supplies these elements in the actual dashboard.
+  customElements.define('ha-icon', class extends HTMLElement {
+    connectedCallback() { this.textContent = this.getAttribute('icon')?.includes('close') ? '×' : '●'; }
+  });
+  const card = document.querySelector('easy-floorplan-card');
+  const rectangle = (x, y, w, h) => [{x,y}, {x:x+w,y}, {x:x+w,y:y+h}, {x,y:y+h}];
+  const config = {
+    type: 'custom:easy-floorplan-card', width: 700, height: 480,
+    view: '3d', wallHeight: 60, wallOpacity: 0.65, overlayScale: 'plan',
+    sunlight: true, sunBearing: 0, ambientDaylight: true,
+    walls: [
+      ['n',80,80,620,80], ['e',620,80,620,400], ['s',620,400,80,400],
+      ['w',80,400,80,80], ['partition',390,80,390,400],
+    ].map(([id,x1,y1,x2,y2]) => ({id,x1,y1,x2,y2,thickness:8})),
+    openings: [
+      {id:'entry',type:'door',x:240,y:400,angle:0,length:70,entity:'binary_sensor.entry'},
+      {id:'inner',type:'door',x:390,y:280,angle:90,length:65,entity:'binary_sensor.inner'},
+      {id:'window',type:'window',x:235,y:80,angle:0,length:110,entity:'binary_sensor.window'},
+      {id:'fixed',type:'window',motion:'fixed',x:505,y:80,angle:0,length:110},
+      {id:'velux',type:'skylight',x:505,y:330,angle:0,length:90,width:56,entity:'binary_sensor.velux',shutterEntity:'cover.velux_blind'},
+    ],
+    areas: [
+      {id:'living',name:'Living room',points:rectangle(80,80,310,320),color:'#bad3d5',opacity:0.5},
+      {id:'bedroom',name:'Bedroom',points:rectangle(390,80,230,320),color:'#dcc9aa',opacity:0.5},
+    ],
+    furniture: [
+      {id:'sofa',type:'sofa',x:155,y:210,w:100,h:50,angle:90},
+      {id:'table',type:'table',x:280,y:210,w:75,h:60},
+      {id:'bed',type:'bed',x:505,y:190,w:110,h:145},
+    ],
+    items: [
+      {id:'lamp',kind:'light',entity:'light.lamp',x:280,y:320,glow:true,glowRadius:160},
+      {id:'temp',kind:'sensor',entity:'sensor.temperature',x:530,y:325,showState:true},
+    ], texts: [], trackers: [],
+  };
+  let open = false;
+  let night = false;
+  const states = () => Object.fromEntries([
+    ['cover.velux_blind', open ? 'open' : 'closed', {friendly_name:'Velux blind',current_position: open ? 100 : 35}],
+    ...['entry','inner','window','velux'].map(id => [`binary_sensor.${id}`, open ? 'on' : 'off', {friendly_name:id,device_class:'door'}]),
+    ['light.lamp','on',{brightness:255,rgb_color:[255,193,92],friendly_name:'Reading lamp'}],
+    ['sensor.temperature','21.5',{unit_of_measurement:'°C',friendly_name:'Room temperature'}],
+    ['sun.sun',night?'below_horizon':'above_horizon',{elevation:night?-10:35,azimuth:0}],
+  ].map(([entity_id,state,attributes]) => [entity_id,{entity_id,state,attributes}]));
+  function render() {
+    card.setConfig({...config,sunDimming:night});
+    card.hass = {states:states(),entities:{},formatEntityState:s => s.state};
+  }
+  for (const id of ['view','rotation','wallHeight','wallOpacity']) {
+    document.getElementById(id).addEventListener('input', event => {
+      config[id] = id === 'view' ? event.target.value : Number(event.target.value);
+      render();
+    });
+  }
+  document.getElementById('doors').onclick = () => { open = !open; render(); };
+  document.getElementById('light').onclick = () => { night = !night; render(); };
+  card.addEventListener('hass-more-info', event => {
+    document.querySelector('output').textContent = `Selected ${event.detail.entityId}`;
+    if (event.detail.entityId.startsWith('binary_sensor.')) { open = !open; render(); }
+  });
+  render();
+</script>
+</html>
