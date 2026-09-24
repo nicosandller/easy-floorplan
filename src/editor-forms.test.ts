@@ -1233,12 +1233,16 @@ describe("wallForm / projectForm / floorImageForm", () => {
   it("rotation lives in the bottom-row display form, defaults to 0°, and patches as a number", () => {
     const form = projectDisplayForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
     expect(form.fields.map((x) => x.name)).toEqual([
+      "view",
       "rotation",
       "rotationPortrait",
       "rotationLandscape",
       "overlayScale",
       "compactHeader",
+      "zoomedOverlayAuto",
       "zoomedOverlayScale",
+      "roomFocusControls",
+      "roomFocusInterval",
       "offlineStyle",
     ]);
     expect(form.data.rotation).toBe("0");
@@ -2157,13 +2161,17 @@ describe("every field lands in exactly one panel group", () => {
     // first three under "Display" and the last under "Devices". Miss it in
     // both slices and the control silently disappears.
     const DISPLAY = [
+      "view",
       "rotation",
       "rotationPortrait",
       "rotationLandscape",
       "overlayScale",
       "overlayMinWidth",
       "compactHeader",
+      "zoomedOverlayAuto",
       "zoomedOverlayScale",
+      "roomFocusControls",
+      "roomFocusInterval",
     ];
     const DEVICES = ["offlineStyle"];
     // Canvas units, so the conditional overlayMinWidth field is produced too.
@@ -2532,6 +2540,79 @@ describe("openingForm — passages (issue #309)", () => {
   });
 });
 
+describe("3D display controls", () => {
+  const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+  it("reads the prototype alias and lets an explicit 2D selection override it", () => {
+    const form = projectDisplayForm({ ...base, projection: "iso" });
+    expect(form.data.view).toBe("3d");
+    const patch = form.toPatch({ view: "2d" });
+    expect(patch).toEqual({ view: "2d", projection: undefined });
+    expect(projectDisplayForm({ ...base, projection: "iso", ...patch }).data.view).toBe("2d");
+  });
+  it("exposes wall controls only in 3D and preserves a deliberately invisible wall", () => {
+    const form = projectDisplayForm({ ...base, view: "3d", wallHeight: 0, wallOpacity: 0 });
+    expect(form.fields.map((f) => f.name)).toEqual(expect.arrayContaining(["wallHeight", "wallOpacity"]));
+    expect(form.data).toMatchObject({ wallHeight: 0, wallOpacity: 0 });
+    expect(form.toPatch({ wallHeight: 0, wallOpacity: 0 })).toEqual({ wallHeight: 0, wallOpacity: 0 });
+    expect(projectDisplayForm(base).fields.map((f) => f.name)).not.toContain("wallHeight");
+  });
+});
+
+
+describe("room focus in the display form", () => {
+  const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+
+  it("reads the plain `true` as arrows with no cycling", () => {
+    const form = projectDisplayForm({ ...base, roomFocus: true });
+    expect(form.data.roomFocusControls).toBe(true);
+    expect(form.data.roomFocusInterval).toBe(0);
+  });
+
+  it("writes the plain case plainly, and clears the key when both are off", () => {
+    const form = projectDisplayForm(base);
+    expect(form.data.roomFocusControls).toBe(false);
+    expect(form.toPatch({ roomFocusControls: true })).toEqual({ roomFocus: true });
+    expect(
+      projectDisplayForm({ ...base, roomFocus: true }).toPatch({ roomFocusControls: false })
+    ).toEqual({ roomFocus: undefined });
+  });
+
+  it("keeps the half that did not change, since either control can arrive alone", () => {
+    // Turning the arrows off must not take the cycling with them…
+    const cycling = projectDisplayForm({ ...base, roomFocus: { controls: true, interval: 10 } });
+    expect(cycling.toPatch({ roomFocusControls: false })).toEqual({
+      roomFocus: { controls: false, interval: 10 },
+    });
+    // …nor the other way round.
+    expect(cycling.toPatch({ roomFocusInterval: 0 })).toEqual({ roomFocus: true });
+    const arrows = projectDisplayForm({ ...base, roomFocus: true });
+    expect(arrows.toPatch({ roomFocusInterval: 25 })).toEqual({
+      roomFocus: { controls: true, interval: 25 },
+    });
+  });
+
+  it("carries a YAML-authored tour through an edit the panel cannot see", () => {
+    const form = projectDisplayForm({
+      ...base,
+      roomFocus: { interval: 5, rooms: ["kitchen", "hall"] },
+    });
+    expect(form.toPatch({ roomFocusInterval: 8 })).toEqual({
+      roomFocus: { controls: true, interval: 8, rooms: ["kitchen", "hall"] },
+    });
+    // With everything switched off the key goes entirely, tour included —
+    // there is nothing left for it to describe.
+    expect(form.toPatch({ roomFocusControls: false, roomFocusInterval: 0 })).toEqual({
+      roomFocus: undefined,
+    });
+  });
+
+  it("ignores a dwell that is not a number", () => {
+    const form = projectDisplayForm({ ...base, roomFocus: true });
+    expect(form.toPatch({ roomFocusInterval: "soon" })).toEqual({ roomFocus: true });
+    expect(form.toPatch({ roomFocusInterval: -4 })).toEqual({ roomFocus: true });
+  });
+});
+
 describe("minimum overlay width in the display form", () => {
   const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
   it("appears only with canvas-unit sizing", () => {
@@ -2547,5 +2628,35 @@ describe("minimum overlay width in the display form", () => {
     const form = projectDisplayForm({ ...base, overlayScale: "plan", overlayMinWidth: 800 });
     expect(form.toPatch({ overlayScale: "fixed" })).toEqual({ overlayScale: "fixed" });
     expect(projectDisplayForm({ ...base, overlayScale: "plan" }).data.overlayMinWidth).toBe(0);
+  });
+});
+
+
+describe("growing badges with the room", () => {
+  const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+
+  it("offers the multiplier only while it is the thing in charge", () => {
+    expect(projectDisplayForm(base).fields.map((f) => f.name)).toContain("zoomedOverlayScale");
+    // Under `auto` the number would be ignored, so the panel stops offering it.
+    const auto = projectDisplayForm({ ...base, zoomedOverlayScale: "auto" });
+    expect(auto.fields.map((f) => f.name)).not.toContain("zoomedOverlayScale");
+    expect(auto.data.zoomedOverlayAuto).toBe(true);
+  });
+
+  it("shows the default under the toggle rather than a multiplier that is not in force", () => {
+    const auto = projectDisplayForm({ ...base, zoomedOverlayScale: "auto" });
+    expect(auto.data.zoomedOverlayScale).toBe(DEFAULT_ZOOMED_OVERLAY_SCALE);
+    expect(projectDisplayForm({ ...base, zoomedOverlayScale: 2 }).data.zoomedOverlayScale).toBe(2);
+  });
+
+  it("writes the word, and drops the key entirely when turned back off", () => {
+    expect(projectDisplayForm(base).toPatch({ zoomedOverlayAuto: true })).toEqual({
+      zoomedOverlayScale: "auto",
+    });
+    // Off returns to the default, not to a multiplier set before `auto` was —
+    // the slider that comes back would otherwise disagree with the config.
+    expect(
+      projectDisplayForm({ ...base, zoomedOverlayScale: "auto" }).toPatch({ zoomedOverlayAuto: false })
+    ).toEqual({ zoomedOverlayScale: undefined });
   });
 });

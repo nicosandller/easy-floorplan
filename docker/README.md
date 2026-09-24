@@ -294,3 +294,23 @@ window should shrink with the opening and disappear at 0%. The same plan, sun
 bearing and lamp states should be used for every screenshot. Before this fix,
 the sunlight patch remained even at 0% because the rolled-down shutter was treated
 as clear glazing.
+
+
+## 3D development preview
+
+For a quick visual check without starting Home Assistant:
+
+```bash
+npx vite --host 127.0.0.1 --port 5261
+```
+
+Open [the 3D preview](http://127.0.0.1:5261/docker/3d-preview.html). It imports the
+actual card source and supplies simulated entities. Change the viewing corner,
+wall height and opacity; toggle doors, the roof window and its blind, and day/night; tap a room to check zoom.
+The icon placeholder is local to this preview. Use the HA container above to
+check real entity services, HA icons, editor selectors and history playback.
+
+To use 3D in that container, choose **Project → Display → View → 3D isometric**
+or add `view: 3d` to its card YAML. Older `projection: iso` configurations still
+work. Nothing is reseeded or changed in an existing dashboard by the standalone
+preview.
