@@ -135,7 +135,8 @@ then pick the entity in the **Element** section below the canvas.
   [More readings per device](https://github.com/nicosandller/easy-floorplan/blob/main/docs/configuration.md#more-readings-per-device).
 - **Label position** — **Below** the badge (the default), or hung off its **left** or
   **right**. A reading under a badge grows in both directions and meets whatever sits
-  beside it; hung off one side it grows one way only.
+  beside it; hung off one side it grows one way only. Left and right hold their place
+  when the badge is set to show nothing.
 - **Disable label color** — an item's label normally follows the same state and active
   color rules its badge does. That is useful as a status cue and awkward when it hurts
   readability or fights a deliberately plain dashboard, so this pins the text to the
