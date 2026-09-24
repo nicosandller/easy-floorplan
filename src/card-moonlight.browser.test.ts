@@ -89,6 +89,33 @@ it("follows the moon across the sky with nothing else changing", async () => {
   expect(moonBeam(card)!.getAttribute("points")).not.toBe(before);
 });
 
+it("puts the replayed night's moon in, not tonight's", async () => {
+  // Where the moon is 3½ hours on, drawn live, as the answer to compare with.
+  const replayed = Date.parse("2026-09-23T00:30:00Z");
+  // Replay has to be offered for the card to draw from it at all.
+  const replay: Partial<FloorplanCardConfig> = { historyReplay: { enabled: true } };
+  vi.setSystemTime(replayed);
+  const live = mount(-27, replay);
+  await live.updateComplete;
+  const then = moonBeam(live)!.getAttribute("points");
+  live.remove();
+
+  vi.setSystemTime(Date.parse("2026-09-22T21:00:00Z"));
+  const card = mount(-27, replay);
+  await card.updateComplete;
+  expect(moonBeam(card)!.getAttribute("points")).not.toBe(then);
+  const controller = (card as unknown as { _replayController: {
+    state: { enabled: boolean; historyVisible: boolean; playbackController: { currentTime: number } };
+  } })._replayController;
+  controller.state.enabled = true;
+  controller.state.historyVisible = true;
+  // The replay clock counts seconds, where Date.now() counts milliseconds.
+  controller.state.playbackController.currentTime = replayed / 1000;
+  card.requestUpdate();
+  await card.updateComplete;
+  expect(moonBeam(card)?.getAttribute("points")).toBe(then);
+});
+
 it("keeps no clock without moonlight, and stops it when the card goes", async () => {
   const idle = vi.getTimerCount();
   const card = mount(-27);

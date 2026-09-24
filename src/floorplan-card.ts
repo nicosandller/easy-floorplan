@@ -1527,11 +1527,12 @@ export class FloorplanCard extends LitElement {
     // The moon (issue #201), where it is at the moment being drawn: the
     // replayed one during replay, so a replayed night shows that night's moon.
     // Home Assistant has no entity for its position, so it comes from the
-    // instance's own latitude and longitude.
+    // instance's own latitude and longitude. The replay clock counts seconds;
+    // the moon counts milliseconds, as Date.now() does.
     const moon = moonlightOn(c)
       ? moonlightOf(
           c,
-          replayState.enabled ? replayState.currentTime : Date.now(),
+          replayState.enabled ? replayState.currentTime * 1000 : Date.now(),
           this.hass?.config,
           renderHass?.states["sun.sun"]?.attributes?.elevation,
           cloudCover(cloudCoverEntityOf(c), renderHass)

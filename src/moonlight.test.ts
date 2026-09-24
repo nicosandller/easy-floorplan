@@ -159,6 +159,15 @@ describe("the Moonlight switch in the editor", () => {
     expect("moonlight" in lit.toPatch({ sunlight: false })).toBe(true);
     expect(lit.toPatch({ sunlight: false }).moonlight).toBeUndefined();
   });
+
+  it("goes when the sun is pinned, since a pinned sun never sets", () => {
+    const lit = projectReliefForm(config({ sunlight: true, moonlight: true }));
+    const pinned = lit.toPatch({ sunFollows: false });
+    expect("moonlight" in pinned && pinned.moonlight === undefined).toBe(true);
+    // Following the sun again asks nothing of the switch.
+    const again = projectReliefForm(config({ sunlight: true, sunBearing: 120 }));
+    expect(again.toPatch({ sunFollows: true })).not.toHaveProperty("moonlight");
+  });
 });
 
 /** Flatten a Lit template the way `render.opening.test.ts` does. */

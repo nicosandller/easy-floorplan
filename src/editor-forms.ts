@@ -2634,6 +2634,9 @@ export function projectReliefForm(c: FloorplanCardConfig): FormSpec {
       // rule: the live reading wins only when nothing was decided).
       if ("sunFollows" in out) {
         out.sunBearing = out.sunFollows ? undefined : (c.sunBearing ?? DEFAULT_SUN_BEARING);
+        // A pinned sun never sets, so there is no night left for the moon:
+        // its switch goes with its row rather than waiting stale in the YAML.
+        if (!out.sunFollows) out.moonlight = undefined;
         delete out.sunFollows;
       }
       // The defaults stay out of the YAML — shading is on unless declined.
