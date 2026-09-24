@@ -2589,11 +2589,14 @@ export function projectReliefForm(c: FloorplanCardConfig): FormSpec {
       // therefore stays out of YAML even when direct sunlight is also toggled.
       if ("ambientDaylight" in out && !out.ambientDaylight)
         out = { ...out, ambientDaylight: undefined };
-      // The clouds belong to both layers, so they go only once neither is
-      // left to read them — for the reason the list below gives.
+      // The clouds belong to the sky light and to a sun that follows the real
+      // one, so they go only once neither is left to read them — for the
+      // reason the list below gives. Judged on what the patch leaves, since
+      // pinning the sun hides the Clouds row as surely as switching it off.
       const sunOn = "sunlight" in out ? !!out.sunlight : !!c.sunlight;
       const skyOn = "ambientDaylight" in out ? !!out.ambientDaylight : !!c.ambientDaylight;
-      if (!sunOn && !skyOn) out.cloudCoverEntity = undefined;
+      const follows = "sunFollows" in out ? !!out.sunFollows : typeof c.sunBearing !== "number";
+      if (!skyOn && !(sunOn && follows)) out.cloudCoverEntity = undefined;
       // Nothing left to aim or to paint, so all of the direct-sun state goes —
       // every one of these keys is read only while the light is on, and left behind they
       // would sit in the YAML meaning nothing and come back stale on

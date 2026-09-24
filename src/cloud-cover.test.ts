@@ -7,6 +7,7 @@ import {
   cloudCoverEntityOf,
   cloudFactor,
   collectWatchedEntities,
+  DEFAULT_SUN_BEARING,
   renderSunlight,
   SUN_PATCH_OPACITY,
   SUN_SHADE,
@@ -242,6 +243,30 @@ describe("the Clouds row in the editor", () => {
     const sunOnly = projectReliefForm(config({ sunlight: true, cloudCoverEntity: "weather.forecast_home" }));
     const off = sunOnly.toPatch({ sunlight: false });
     expect("cloudCoverEntity" in off && off.cloudCoverEntity === undefined).toBe(true);
+  });
+
+  it("goes when the sun is pinned and no sky light is left to read it", () => {
+    const cleared = (patch: Partial<FloorplanCardConfig>) =>
+      "cloudCoverEntity" in patch && patch.cloudCoverEntity === undefined;
+    const cloud = "weather.forecast_home";
+    // Pinning the only reader hides the row, so the entity must not stay
+    // behind in the YAML where nothing can reach it.
+    const sunOnly = projectReliefForm(config({ sunlight: true, cloudCoverEntity: cloud }));
+    const pinned = sunOnly.toPatch({ sunFollows: false });
+    expect(cleared(pinned)).toBe(true);
+    expect(pinned.sunBearing).toBe(DEFAULT_SUN_BEARING);
+    // The sky light still reads it, pinned sun or not.
+    const both = projectReliefForm(config({ sunlight: true, ambientDaylight: true, cloudCoverEntity: cloud }));
+    expect(both.toPatch({ sunFollows: false })).not.toHaveProperty("cloudCoverEntity");
+    // And once the sky light goes too, the pinned sun cannot keep it.
+    const pinnedBoth = projectReliefForm(
+      config({ sunlight: true, sunBearing: 90, ambientDaylight: true, cloudCoverEntity: cloud }),
+    );
+    expect(cleared(pinnedBoth.toPatch({ ambientDaylight: false }))).toBe(true);
+    // Following the sun again with the sky light off hands it back to the sun.
+    expect(pinnedBoth.toPatch({ sunFollows: true, ambientDaylight: false })).not.toHaveProperty(
+      "cloudCoverEntity",
+    );
   });
 });
 
