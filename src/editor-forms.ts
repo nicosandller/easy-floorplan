@@ -879,10 +879,12 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           // A door turned into a passage has lost its leaf (issue #309), and
           // everything that described the leaf goes with it: left behind it
           // is hidden from the form and would come back as a hinge, a slider
-          // or an inverted sensor the day the gap became a door again. The
-          // shutter stays — it hangs over the gap, not off the leaf — and so
-          // does `flipH`, for the reason given above.
-          if (v === "passage") {
+          // or an inverted sensor the day the gap became a door again. Both
+          // ways, as for the skylight: a hand-written passage can carry a
+          // leaf it is ignoring, and it would wake the moment the passage
+          // became a door. The shutter stays — it hangs over the gap, not off
+          // the leaf — and so does `flipH`, for the reason given above.
+          if (v === "passage" || passage) {
             out.motion = undefined;
             out.sliderStyle = undefined;
             out.sashSpan = undefined;

@@ -2523,6 +2523,34 @@ describe("openingForm — passages (issue #309)", () => {
     for (const k of ["entity", "shutterEntity", "shutterStyle", "flipH"]) expect(k in out).toBe(false);
   });
 
+  it("wakes no leaf a hand-written passage was ignoring when it becomes a door", () => {
+    const out = openingForm(
+      passage({ motion: "slide", sliderStyle: "biparting", sash: "double", invert: true, glazed: true })
+    ).toPatch({ type: "door" });
+    expect(out.type).toBe("door");
+    for (const k of ["motion", "sliderStyle", "sash", "invert", "glazed"]) {
+      expect(k in out).toBe(true);
+      expect(out[k]).toBeUndefined();
+    }
+  });
+
+  it("comes back from a round trip as a plain door, shutter and mirror kept", () => {
+    const start = {
+      ...door,
+      motion: "slide",
+      sliderStyle: "biparting",
+      invert: true,
+      flipH: true,
+      shutterEntity: "cover.grille",
+    } as Opening;
+    const asPassage = { ...start, ...openingForm(start).toPatch({ type: "passage" }) } as Opening;
+    const back = { ...asPassage, ...openingForm(asPassage).toPatch({ type: "door" }) } as Opening;
+    expect(back.type).toBe("door");
+    for (const k of ["motion", "sliderStyle", "invert"] as const) expect(back[k]).toBeUndefined();
+    expect(back.flipH).toBe(true);
+    expect(back.shutterEntity).toBe("cover.grille");
+  });
+
   it("sheds a skylight's second side on the way, too", () => {
     const out = openingForm({ ...door, type: "skylight", width: 60, ceilingHeight: 2 } as Opening).toPatch({
       type: "passage",

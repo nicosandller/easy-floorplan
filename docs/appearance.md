@@ -281,7 +281,8 @@ On the card there is nothing to press unless an entity is bound. In the editor
 a dashed line marks the gap, so there is something to see and pick up. Pick
 **Passage** from the toolbar, or turn an existing door into one with **Type**,
 which drops the settings only a leaf had: leaves, sliding style, glazing and
-`invert`.
+`invert`. Turning a passage back into a door drops them too, so a hand-written
+passage that carried them comes back as a plain door.
 
 In the [3D view](#3d-view) the wall is cut for a passage as for a door, and
 nothing stands in the gap but its shutter.
