@@ -283,6 +283,9 @@ a dashed line marks the gap, so there is something to see and pick up. Pick
 which drops the settings only a leaf had: leaves, sliding style, glazing and
 `invert`.
 
+In the [3D view](#3d-view) the wall is cut for a passage as for a door, and
+nothing stands in the gap but its shutter.
+
 ## Balcony railings
 
 *"Allow a wall in the floor plan to be marked as belonging to a balcony, rather than being
