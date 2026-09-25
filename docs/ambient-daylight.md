@@ -54,6 +54,7 @@ This makes complete room geometry important. If a real neighbouring room has no 
 - The existing opening travel, glazing and shutter state are reused for transmission instead of introducing a second state model.
 - Whether an opening counts as clear glass is `openingGlassIsClear`, the single rule both existing light paths read. A `motion: roll` window is a roller shutter bound as the opening's own entity, so it is judged by how far down it is rather than treated as always-clear glass. That helper's known gap applies here too: a blind or curtain that defaults to `slide` rather than `roll` still reads as clear glass, and fixing it needs a covering flag of its own on the opening.
 - Every state the layer reads — sun elevation, opening travel and shutter position — comes from the card's replay-aware state source, and enabling the layer adds `sun.sun` to the replay scope so history is actually fetched for it. A plan scrubbed back through replay history therefore shows the daylight of the moment being replayed rather than of now.
+- Cloud cover thins the wash when `cloudCoverEntity` is set, but only to 70% of itself under full cover: clouds hide the sun, not the sky. See [Clouds](lighting.md#clouds).
 - `sunlight: false` remains the opening-level natural-light opt-out. This matters for intentionally schematic openings such as an unbound solid door that is drawn open as a floor-plan convention but should not illuminate the room.
 
 The layer is rendered above Area fills and below the existing dead-space, artificial-light and direct-sun layers. It does not reorder those existing layers.
@@ -82,7 +83,6 @@ The renderer owns the patch `fill` and `filter`. Card CSS must not replace eithe
 
 Deliberately outside the first public version:
 
-- weather/cloud attenuation,
 - calibration from local irradiance or lux sensors,
 - orientation-dependent sky exposure,
 - propagation through open interior doors,

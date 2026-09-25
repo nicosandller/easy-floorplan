@@ -117,6 +117,9 @@ import {
   normalizeOverlayMinWidth,
   overlayLength,
   renderSunlight,
+  cloudCover,
+  cloudCoverEntityOf,
+  sunThroughCloud,
   sunLightDirection,
   sunlightStrengthOf,
   sunReachScale,
@@ -1705,6 +1708,10 @@ export class FloorplanCard extends LitElement {
                         c,
                         renderHass?.states["sun.sun"]?.attributes?.elevation
                       ),
+                      // The clouds (issue #201) thin what the sun lights and
+                      // leave its shade, and a pinned plan ignores them the
+                      // same way — see sunThroughCloud.
+                      direct: sunThroughCloud(c, cloudCover(cloudCoverEntityOf(c), renderHass)),
                       // How far a patch carries, shortened as the sun climbs
                       // (issue #185): a midday sun drops its light almost
                       // straight down and lays a short patch, an evening one

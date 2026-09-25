@@ -178,6 +178,9 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
   // sunBearing reads neither (see sunBearingOf and sunlightStrengthOf), so it
   // needs no subscription.
   if (c.sunDimming || c.ambientDaylight || (c.sunlight && !sunIsPinned(c))) ids.add("sun.sun");
+  // The clouds over that sun (issue #201), for the layers that read them.
+  const cloud = cloudCoverEntityOf(c);
+  if (cloud) ids.add(cloud);
   for (const f of getFloors(c)) {
     for (const o of f.openings) {
       if (o.entity) ids.add(o.entity);
@@ -4616,6 +4619,96 @@ export function sunlightStrengthOf(
   return sunIsPinned(cfg) ? 1 : sunlightStrength(elevation);
 }
 
+/**
+ * How much of the sun gets through the clouds for this plan (issue #201):
+ * `cover` is what {@link cloudCover} read, and no reading dims nothing.
+ *
+ * Separate from {@link sunlightStrengthOf} because it does a different job.
+ * That one says whether it is day at all and fades the whole layer, shade
+ * included, since a plan does not keep its shadows after sunset. Clouds only
+ * hide the sun, so they fade what the sun lights and leave the shade where it
+ * was — see {@link SunlightOptions.direct}. A pinned plan ignores them, as it
+ * ignores the sun's height: both are readings of a sky it declined to follow.
+ */
+export function sunThroughCloud(
+  cfg: Pick<FloorplanCardConfig, "sunBearing">,
+  cover: number | undefined,
+): number {
+  return sunIsPinned(cfg) ? 1 : cloudFactor(cover, CLOUD_DIRECT_MIN);
+}
+
+// ---- clouds -----------------------------------------------------------------
+
+/**
+ * What full cloud cover leaves of the **direct** light (issue #201).
+ *
+ * Not zero, although a thick overcast does hide the sun outright. A cover
+ * reading cannot tell that overcast from a veil of high cirrus, which Met.no
+ * reports as cover just the same and which the sun still throws an edged
+ * patch through. Drawn as no sun at all, a plan would be wrong on exactly the
+ * days it is most often looked at. A quarter still reads as "not much sun
+ * today" at a glance.
+ */
+export const CLOUD_DIRECT_MIN = 0.25;
+
+/**
+ * What full cloud cover leaves of the **diffuse** sky light — far more than
+ * the direct light keeps. Clouds hide the sun, not the sky, and an overcast
+ * sky is roughly as bright as a clear one away from the sun. What makes a grey
+ * day read dim is the missing sun patches, and the direct layer already takes
+ * those away.
+ */
+export const CLOUD_DIFFUSE_MIN = 0.7;
+
+/**
+ * Cloud cover, 0..1, from {@link FloorplanCardConfig.cloudCoverEntity} — or
+ * `undefined` when there is no reading.
+ *
+ * A `weather` entity carries it as the `cloud_coverage` attribute; its state
+ * is the condition ("rainy"), not a number. Anything else is read from its
+ * state, which is how integrations that split the weather into sensors report
+ * it. Both are percentages. Through {@link liveSunAttribute} for the reason
+ * that function exists: `Number(null)` is 0, and 0 here is a confidently clear
+ * sky.
+ */
+export function cloudCover(
+  entityId: string | undefined,
+  hass: Pick<RenderHass, "states"> | undefined,
+): number | undefined {
+  if (typeof entityId !== "string" || !entityId) return undefined;
+  const st = hass?.states[entityId];
+  if (!st) return undefined;
+  const pct = liveSunAttribute(
+    entityId.startsWith("weather.") ? st.attributes?.cloud_coverage : st.state
+  );
+  return pct === undefined ? undefined : Math.max(0, Math.min(100, pct)) / 100;
+}
+
+/**
+ * How much of a light the clouds leave, 0..1: all of it under a clear sky,
+ * `min` of it under full cover, and linear between — the share of the day the
+ * sun spends behind a cloud grows with the share of the sky that is cloud.
+ *
+ * No reading dims nothing. Each layer keeps its own policy for a *sun* it
+ * cannot read; an unreadable weather only means the plan does not know about
+ * the clouds, and drawing it as it was before it knew is the honest answer.
+ */
+export function cloudFactor(cover: number | undefined, min: number): number {
+  return cover === undefined ? 1 : 1 - (1 - min) * cover;
+}
+
+/**
+ * The cloud entity, when a layer is going to read it. Direct sunlight reads
+ * the sky only while it follows the real sun; ambient daylight always does.
+ */
+export function cloudCoverEntityOf(
+  c: Pick<FloorplanCardConfig, "cloudCoverEntity" | "sunlight" | "sunBearing" | "ambientDaylight">,
+): string | undefined {
+  const id = typeof c.cloudCoverEntity === "string" ? c.cloudCoverEntity.trim() : "";
+  if (!id) return undefined;
+  return c.ambientDaylight || (c.sunlight && !sunIsPinned(c)) ? id : undefined;
+}
+
 // ---- sunlight through the openings ----------------------------------------
 //
 // The sun is far enough away that its rays arrive parallel, which is what
@@ -5263,6 +5356,17 @@ export interface SunlightOptions {
    */
   strength?: number;
   /**
+   * How much of that light reaches the floor as direct sun, 0..1 — what the
+   * clouds leave of it (see {@link sunThroughCloud}). Default 1.
+   *
+   * It fades the patches and the holes they cut in the shade, and leaves the
+   * shade itself alone. That is the difference from `strength`: clouds hide
+   * the sun, they do not lift the shade it left. Scaling the shade with them
+   * made an overcast plan read *brighter* than a sunny one — the shade went
+   * with the sun, and nothing darker came in its place.
+   */
+  direct?: number;
+  /**
    * How far the light carries, as a fraction of the plan's shorter side.
    * Defaults to {@link SUN_REACH}; the card scales it by the sun's height
    * (see {@link sunReachScale}).
@@ -5293,6 +5397,10 @@ export function renderSunlight(
   opts: SunlightOptions,
 ): SVGTemplateResult | typeof nothing {
   const { dir, openAmount, shutterOpen, strength = 1 } = opts;
+  const direct =
+    typeof opts.direct === "number" && Number.isFinite(opts.direct)
+      ? Math.max(0, Math.min(1, opts.direct))
+      : 1;
   const paint = {
     light: opts.light ?? SUN_LIGHT_COLOR,
     // `?? ` would swallow the explicit null that means "no shade at all".
@@ -5536,6 +5644,9 @@ export function renderSunlight(
     gid: string,
     color: string,
     kind: "beam" | "core" | "halo" = "beam",
+    // Scales every stop — how deep a hole this cuts when it is drawn into the
+    // shade mask, which is how clouds thin a patch there too.
+    depth = 1,
   ) => svg`<radialGradient id=${gid} gradientUnits="userSpaceOnUse" cx="0" cy="0" r="1"
               gradientTransform=${`translate(${b.cx} ${b.cy}) rotate(${b.angle}) scale(${b.along} ${b.across})`}>
           ${
@@ -5543,18 +5654,18 @@ export function renderSunlight(
               ? // Even, corner to corner: the ellipse circumscribes the
                 // rectangle, so what ends this patch is the rectangle's own
                 // outline. See SKYLIGHT_CORE.
-                svg`<stop offset="0" stop-color=${color} stop-opacity="1" />
-          <stop offset="0.66" stop-color=${color} stop-opacity="0.92" />
-          <stop offset="1" stop-color=${color} stop-opacity="0.62" />`
+                svg`<stop offset="0" stop-color=${color} stop-opacity=${depth} />
+          <stop offset="0.66" stop-color=${color} stop-opacity=${0.92 * depth} />
+          <stop offset="1" stop-color=${color} stop-opacity=${0.62 * depth} />`
               : kind === "halo"
                 ? // …and the spill past it, which is what keeps that outline
                   // from reading as a cut. Never full strength: it is the
                   // light around the patch, not the patch.
-                  svg`<stop offset="0" stop-color=${color} stop-opacity="0.5" />
-          <stop offset="0.48" stop-color=${color} stop-opacity="0.38" />
+                  svg`<stop offset="0" stop-color=${color} stop-opacity=${0.5 * depth} />
+          <stop offset="0.48" stop-color=${color} stop-opacity=${0.38 * depth} />
           <stop offset="1" stop-color=${color} stop-opacity="0" />`
-                : svg`<stop offset="0" stop-color=${color} stop-opacity="1" />
-          <stop offset="0.45" stop-color=${color} stop-opacity="0.55" />
+                : svg`<stop offset="0" stop-color=${color} stop-opacity=${depth} />
+          <stop offset="0.45" stop-color=${color} stop-opacity=${0.55 * depth} />
           <stop offset="1" stop-color=${color} stop-opacity="0" />`
           }
         </radialGradient>`;
@@ -5570,10 +5681,10 @@ export function renderSunlight(
       <mask id=${shadeId} maskUnits="userSpaceOnUse" x=${x} y=${y} width=${w} height=${h}>
         ${cover("#fff")}
         ${beams.map((b) =>
-          b ? fade(b, b.shadeId, "#000", b.sky ? "core" : "beam") : nothing
+          b ? fade(b, b.shadeId, "#000", b.sky ? "core" : "beam", direct) : nothing
         )}
         ${beams.map((b) =>
-          b && b.halo ? fade(b.halo, b.haloShadeId, "#000", "halo") : nothing
+          b && b.halo ? fade(b.halo, b.haloShadeId, "#000", "halo", direct) : nothing
         )}
         ${beams.map((b) =>
           b && !b.sky
@@ -5657,7 +5768,7 @@ export function renderSunlight(
           ? fade(b.halo, b.haloLightId, cssColorOr(paint.light, SUN_LIGHT_COLOR), "halo")
           : nothing
       )}
-      <g mask=${`url(#${shadowId})`} opacity=${SUN_PATCH_OPACITY * strength}>
+      <g mask=${`url(#${shadowId})`} opacity=${SUN_PATCH_OPACITY * strength * direct}>
         ${beams.map((b) =>
           b && !b.sky
             ? svg`<polygon class="fp-sunbeam" points=${b.points}
@@ -5669,7 +5780,7 @@ export function renderSunlight(
            downwind of it and no others — the reason spelled out above. -->
       ${beams.map((b) =>
         b && b.sky
-          ? svg`<g mask=${`url(#${b.shadowMaskId})`} opacity=${SUN_PATCH_OPACITY * strength}>
+          ? svg`<g mask=${`url(#${b.shadowMaskId})`} opacity=${SUN_PATCH_OPACITY * strength * direct}>
               <polygon class="fp-sunbeam fp-skylight-halo" points=${b.haloPoints}
                        fill=${`url(#${b.haloLightId})`} />
               <polygon class="fp-sunbeam fp-skylight-patch" points=${b.points}

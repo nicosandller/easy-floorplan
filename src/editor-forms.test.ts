@@ -1917,6 +1917,9 @@ describe("projectReliefForm", () => {
       "sunShade",
       "sunReach",
       "sunFollows",
+      // Following the real sun reads the sky, so its clouds can be asked for
+      // (issue #201).
+      "cloudCoverEntity",
     ]);
     // The angle itself only appears once the light is pinned — while it
     // follows the sun, the angle is not ours to choose.
@@ -1974,6 +1977,8 @@ describe("projectReliefForm", () => {
       sunShade: undefined,
       sunlightColor: undefined,
       sunShadeColor: undefined,
+      // With ambient daylight off too, nothing is left to read the clouds.
+      cloudCoverEntity: undefined,
     });
   });
 
