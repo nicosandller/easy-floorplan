@@ -51,7 +51,7 @@ Back to the [README](../README.md).
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
 | `floorSwitcher` | `{x, y}` | top-right corner | Where the floor buttons sit on the plan, in canvas units — the point the block is centred on. Drag it on the editor canvas. Follows `rotation` like every other anchor. See [Where the floor switcher sits](appearance.md#where-the-floor-switcher-sits). |
 | `walls`      | Wall[]   | `[]`               | Wall segments (single-floor / floor 1).      |
-| `openings`   | Opening[]| `[]`               | Doors, windows and skylights.                |
+| `openings`   | Opening[]| `[]`               | Doors, windows, skylights and passages.      |
 | `items`      | Item[]   | `[]`               | Entity devices.                              |
 | `texts`      | Text[]   | `[]`               | Free text labels.                            |
 | `furniture`  | Furniture[]| `[]`             | Gray furniture/fixture diagrams.             |
@@ -165,7 +165,7 @@ balcony, terrace or gallery. A railing is drawn at 40% of the wall weight, lamp 
 sunlight carry on over it, and it seals off no dead space. Editor: **Kind**. See
 [Balcony railings](appearance.md#balcony-railings).
 
-## Opening (door / window / skylight)
+## Opening (door / window / skylight / passage)
 
 A `skylight` is a hole in the **ceiling** — a velux, a roof light, a lantern —
 rather than in a wall, so it reads a slightly different set of these fields.
@@ -175,7 +175,7 @@ See [Skylights](lighting.md#skylights) for what the sun does with one and
 | Field         | Type                        | Description                                            |
 | ------------- | --------------------------- | ------------------------------------------------------ |
 | `id`          | string                      | Unique id.                                             |
-| `type`        | `door` \| `window` \| `skylight` | The kind of opening. A `skylight` snaps to no wall, cuts no wall band, opens no doorway for a lamp's pool, and is never the way into a [dead space](behavior.md#dead-spaces) — it is not in a wall to begin with. It is always top-hung, so it ignores `motion`, `sash`, `sashSpan`, `sliderStyle` and `flipH`. |
+| `type`        | `door` \| `window` \| `skylight` \| `passage` | The kind of opening. A `passage` is a gap in the wall with nothing in it — an open doorway or an archway: it cuts the wall like a door but draws no leaf, arc or jambs, and is always open to light, so it ignores `motion`, `sash`, `sashSpan`, `sliderStyle`, `glazed` and `invert`. See [Passages](appearance.md#passages). A `skylight` snaps to no wall, cuts no wall band, opens no doorway for a lamp's pool, and is never the way into a [dead space](behavior.md#dead-spaces) — it is not in a wall to begin with. It is always top-hung, so it ignores `motion`, `sash`, `sashSpan`, `sliderStyle` and `flipH`. |
 | `width`       | number                      | **Skylights only**: the other plan dimension, across `length`. A roof window is a rectangle you look down on, so it needs both sides — and the patch of sun it lays is that rectangle, moved. Defaults to 0.62 of `length` (portrait, like an ordinary velux). |
 | `ceilingHeight` | number (clamped `0.1`–`8`) | **Skylights only**: how high the ceiling is here, as a multiple of an ordinary storey (default `1`). Not a distance — the plan has no vertical unit — but the multiplier on how far the patch of light slides before it lands, which is the only thing a ceiling height changes about a plan view. `2` is a stairwell, `0.6` a low attic. Scales `skylightDrop`. The editor's slider offers `0.2`–`4`, which is the useful range; YAML may go further and is clamped. |
 | `motion`      | `swing` \| `slide` \| `roll` \| `fixed` \| `awning` | How it moves: hinged (default), sliding panels, a roll-up curtain (garage / roller shutter), `fixed` — a window that does not open (bay, picture, sealed pane) — or `awning`, hinged at the head and swung out at the sill. A fixed opening draws no leaf and no arc, ignores `entity` for its drawing, and never counts as a gap; glazing still applies, so it passes daylight like the glass it is. See [Top-hinged windows](appearance.md#top-hinged-windows) for `awning`. |
@@ -522,6 +522,8 @@ openings:
   - { id: d1, type: door, x: 300, y: 500, length: 80, angle: 0,
       entity: binary_sensor.front_door, activeColor: "#ef5350" }
   - { id: win1, type: window, x: 600, y: 100, length: 140, angle: 0 }
+  # An open doorway: the gap in the wall, and nothing drawn in it.
+  - { id: arch1, type: passage, x: 100, y: 300, length: 90, angle: 90 }
   # A roof window over the middle of the room: no wall, two sides, and a
   # blind that is what darkens the room under it.
   - { id: sky1, type: skylight, x: 500, y: 300, length: 100, width: 60, angle: 0,
@@ -676,7 +678,7 @@ label gets no Label group, and an opening with no shutter gets no Shutter group.
 | Element | Groups |
 | --- | --- |
 | Device | Identity · What it reads · Label · Badge · Color · Effects · Behaviour · Visibility |
-| Door / window / skylight | Shape · What it reads · Sunlight · Shutter · Badge · Color · Behavior |
+| Door / window / skylight / passage | Shape · What it reads · Sunlight · Shutter · Badge · Color · Behavior |
 | Furniture | Shape · What it reads · Behavior · Color |
 | Area | Identity · What it reads · Color · Behavior · Home Assistant area |
 | Tracker | Zone · Sensors · Marker |

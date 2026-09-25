@@ -74,6 +74,7 @@ import {
   openingSash,
   defaultSash,
   openingIsGlazed,
+  openingIsPassage,
 } from "./render";
 import { normalizeProjection, normalizeWallHeight, normalizeWallOpacity, MAX_WALL_HEIGHT } from "./projection";
 import { defaultItemAction } from "./actions";
@@ -250,14 +251,25 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
   //
   // What it gains is a second side and a ceiling height — see below.
   const skylight = o.type === "skylight";
+  // A passage is the gap with nothing in it (issue #309), so it skips every
+  // question below that describes what fills one: motion, leaves and their
+  // width, glass, hinge, which side it opens to, and the invert that flips a
+  // sensor's reading of a leaf. What it keeps is what any opening has without
+  // a leaf — a length, the sunlight switch, an entity to badge and act on.
+  const passage = openingIsPassage(o);
   const fields: FormField[] = [
     {
       name: "type",
       label: "Type",
-      selector: dropdown(opt("door", "Door"), opt("window", "Window"), opt("skylight", "Skylight")),
+      selector: dropdown(
+        opt("door", "Door"),
+        opt("passage", "Passage (no door)"),
+        opt("window", "Window"),
+        opt("skylight", "Skylight")
+      ),
     },
   ];
-  if (!skylight) {
+  if (!skylight && !passage) {
     fields.push({
       name: "motion",
       label: "Motion",
@@ -313,7 +325,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
   // Leaf count, for anything hinged. Offered on doors too: a double door is
   // as ordinary as a double casement, and was previously undrawable — every
   // door came out as one leaf spanning the whole opening, however wide.
-  if (!skylight && motion === "swing") {
+  if (!skylight && !passage && motion === "swing") {
     const door = o.type === "door";
     fields.push({
       name: "sash",
@@ -336,7 +348,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
   // case, and `renderOpening` already draws that remainder as a solid panel
   // rather than glass — so the only thing that would be window-only here is
   // the wording, which is why the wording is what varies.
-  if (motion === "swing" && openingSash(o) === "single") {
+  if (!passage && motion === "swing" && openingSash(o) === "single") {
     fields.push({
       name: "sashSpan",
       label: o.type === "door" ? "Leaf width" : "Sash width",
@@ -379,14 +391,14 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
   });
   // Hinge applies to anything with ONE hinged leaf. A double is hinged at both
   // jambs, so there is no side left to choose.
-  if (motion === "swing" && openingSash(o) === "single") {
+  if (!passage && motion === "swing" && openingSash(o) === "single") {
     fields.push({
       name: "hinge",
       label: "Hinge",
       selector: dropdown(opt("left", "Left"), opt("right", "Right")),
     });
   }
-  if (!skylight && motion === "swing") {
+  if (!skylight && !passage && motion === "swing") {
     fields.push({
       name: "opens",
       label: "Opens",
@@ -405,7 +417,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: dropdown(opt("this", "Top edge"), opt("other", "Bottom edge")),
     });
   }
-  if (!skylight && motion === "slide") {
+  if (!skylight && !passage && motion === "slide") {
     // A two-panel slider moves both ways at once, so there is no direction to
     // pick — `flipH` only swaps which panel each sensor drives (issue #145).
     if (!twoLeaves) {
@@ -441,9 +453,11 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
     // what the card does.
     helper: skylight
       ? "Contact or cover for the sash. A roof window keeps its type whatever the entity's device class says"
-      : twoLeaves
-        ? "Contact, cover or lock. Drives the first leaf; type and motion follow its device class"
-        : "Contact, cover or lock — a lock reads unlocked as open. Type and motion follow its device class",
+      : passage
+        ? "Optional. A passage is always open, so this only badges it and takes its tap actions"
+        : twoLeaves
+          ? "Contact, cover or lock. Drives the first leaf; type and motion follow its device class"
+          : "Contact, cover or lock — a lock reads unlocked as open. Type and motion follow its device class",
     selector: { entity: { filter: [{ domain: OPENING_ENTITY_DOMAINS }] } },
   });
   // One sensor per leaf (issues #145, #159). Only a two-leaved opening has a
@@ -525,24 +539,26 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
   // sensor reading counts as open; without one, it flips the type default a
   // door or window draws with no sensor to ask (openingDefaultOpen) — so an
   // unbound door can be drawn shut, or an unbound window drawn open.
-  fields.push({
-    name: "invert",
-    label:
-      o.type === "door"
-        ? "Invert door animation"
-        : skylight
-          ? "Invert skylight animation"
-          : "Invert window animation",
-    helper: o.entity
-      ? undefined
-      : // Only a swing door draws open with no sensor to ask
-        // (openingDefaultOpen) — everything else, door, window or roof light,
-        // draws shut.
-        o.type === "door" && openingMotion(o) === "swing"
-        ? "No sensor bound — draws shut instead of open"
-        : "No sensor bound — draws open instead of shut",
-    selector: { boolean: {} },
-  });
+  if (!passage) {
+    fields.push({
+      name: "invert",
+      label:
+        o.type === "door"
+          ? "Invert door animation"
+          : skylight
+            ? "Invert skylight animation"
+            : "Invert window animation",
+      helper: o.entity
+        ? undefined
+        : // Only a swing door draws open with no sensor to ask
+          // (openingDefaultOpen) — everything else, door, window or roof light,
+          // draws shut.
+          o.type === "door" && openingMotion(o) === "swing"
+          ? "No sensor bound — draws shut instead of open"
+          : "No sensor bound — draws open instead of shut",
+      selector: { boolean: {} },
+    });
+  }
   fields.push(angleField());
   // The opening's own badge (issue #154 follow-up). Offered for any bound
   // opening, but sold on the case that needs it: a raised roll-up has nothing
@@ -607,7 +623,13 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: dropdown(
         opt(
           "opening",
-          o.type === "door" ? "The door" : skylight ? "The skylight" : "The window"
+          o.type === "door"
+            ? "The door"
+            : skylight
+              ? "The skylight"
+              : passage
+                ? "The passage"
+                : "The window"
         ),
         opt("shutter", skylight ? "The blind" : "The shutter")
       ),
@@ -853,6 +875,23 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
             out.shutterStyle = undefined;
             out.shutterFlipV = undefined;
             out.shutterSecondaryEntity = undefined;
+          }
+          // A door turned into a passage has lost its leaf (issue #309), and
+          // everything that described the leaf goes with it: left behind it
+          // is hidden from the form and would come back as a hinge, a slider
+          // or an inverted sensor the day the gap became a door again. Both
+          // ways, as for the skylight: a hand-written passage can carry a
+          // leaf it is ignoring, and it would wake the moment the passage
+          // became a door. The shutter stays — it hangs over the gap, not off
+          // the leaf — and so does `flipH`, for the reason given above.
+          if (v === "passage" || passage) {
+            out.motion = undefined;
+            out.sliderStyle = undefined;
+            out.sashSpan = undefined;
+            out.sash = undefined;
+            out.secondaryEntity = undefined;
+            out.glazed = undefined;
+            out.invert = undefined;
           }
         }
         else out[k] = v;
