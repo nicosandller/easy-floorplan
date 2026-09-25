@@ -474,8 +474,13 @@ views:
                   - { id: uw2, x1: 800, y1: 150, x2: 800, y2: 450 }
                   - { id: uw3, x1: 800, y1: 450, x2: 200, y2: 450 }
                   - { id: uw4, x1: 200, y1: 450, x2: 200, y2: 150 }
+                  # Splits the bedroom from the landing at the top of the stairs.
+                  - { id: uw5, x1: 420, y1: 150, x2: 420, y2: 450 }
                 openings:
                   - { id: uo1, type: door, x: 500, y: 450, length: 90, angle: 0 }
+                  # An archway through that partition (issue #309): the gap in
+                  # the wall and nothing drawn in it, always open to light.
+                  - { id: up1, type: passage, x: 420, y: 300, length: 90, angle: 90 }
                 items:
                   - { id: ui1, entity: light.bed_light, x: 350, y: 300, kind: light }
                 texts: []

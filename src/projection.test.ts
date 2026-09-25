@@ -198,6 +198,12 @@ describe("wallSolids", () => {
     expect(xs(solids).some((x) => x > 120)).toBe(true);
   });
 
+  it("leaves a passage open the way it leaves a doorway (issue #309)", () => {
+    const passage = { x: 100, y: 0, length: 40, angle: 0, type: "passage" as const };
+    const door = { ...passage, type: "door" as const };
+    expect(wallSolids([wall], [passage], H)).toEqual(wallSolids([wall], [door], H));
+  });
+
   it("lowers a window to a sill and puts glass above it", () => {
     const win = { x: 200, y: 0, length: 60, angle: 0, type: "window" as const };
     const solids = wallSolids([wall], [win], H);

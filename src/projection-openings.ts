@@ -3,7 +3,7 @@ import type { Opening } from "./types";
 import { cssColor, cssColorOr, cssNumber } from "./css-safe";
 import {
   WALL_THICKNESS, openingMotion, openingSash, openingSashSpan, openingIsGlazed, sliderStyleOf,
-  openingIsSkylight, skylightWidth, type OpeningStyle,
+  openingIsSkylight, openingIsPassage, skylightWidth, type OpeningStyle,
 } from "./render";
 import { SKIN_ACCENT } from "./skins";
 import { SILL_FRACTION, GLASS_FRACTION, type IsoSolid, type Pt } from "./projection";
@@ -53,7 +53,9 @@ export function openingSolids(
 
   // The standing gap remains a keyboard/pointer target even with every panel open.
   out.push({ kind: "opening-hit", id: o.id, base: [at(-half, 0), at(half, 0)], z0, z1 });
-  const motion = openingMotion(o);
+  // A passage (issue #309) is the gap alone: the wall is cut for it as for a
+  // door, and nothing stands in it but its shutter, when it has one.
+  const motion = openingIsPassage(o) ? undefined : openingMotion(o);
   if (motion === "swing") {
     const two = openingSash(o) === "double";
     const width = two ? half : o.length * openingSashSpan(o);
@@ -72,7 +74,7 @@ export function openingSolids(
     out.push({ kind: "panel", id: o.id, base: [a, b], z0: bottom, z1, color, glazed,
       vertices: [{ ...a, z: bottom }, { ...b, z: bottom },
         { ...at(half, 0), z: z1 }, { ...at(-half, 0), z: z1 }] });
-  } else {
+  } else if (motion === "slide") {
     const slider = sliderStyleOf(o);
     const q = half / 2;
     const off = 1.75;
