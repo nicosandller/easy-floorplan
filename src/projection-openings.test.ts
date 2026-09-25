@@ -150,6 +150,21 @@ describe("standing openings", () => {
     });
   });
 
+  it("stands nothing in a passage but its shutter (issue #309)", () => {
+    // Not even when a hand-written plan says how its leaf would move.
+    for (const motion of [undefined, "swing", "slide", "fixed", "roll", "awning"] as const) {
+      expect(panels({ type: "passage", motion }, { amount: 1 })).toEqual([]);
+    }
+    // The gap is still what a tap lands on, at a doorway's height.
+    const solids = openingSolids({ ...door, type: "passage" }, { color: "#333" }, identity, 60);
+    expect(solids.map((s) => s.kind)).toEqual(["opening-hit"]);
+    expect(solids[0].z0).toBe(0);
+    // A grille over the gap is the one thing that does stand in it.
+    const [grille] = panels({ type: "passage" }, { shutter: { amount: 0.5 } });
+    expect(grille.base).toEqual([{ x: 60, y: 102 }, { x: 140, y: 102 }]);
+    expect(grille.glazed).toBe(false);
+  });
+
   it("does not emit standing geometry for zero-height relief", () => {
     expect(openingSolids(door, { color: "#333" }, identity, 0)).toEqual([]);
   });

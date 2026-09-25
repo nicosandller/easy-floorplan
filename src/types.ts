@@ -133,8 +133,19 @@ export type WallKind = "wall" | "railing";
  * blind over it with an entity of its own, colours, icons, gestures, actions,
  * locking, selection and drag — is exactly what an opening already is. Making
  * it a top-level array would have meant a second copy of all of it.
+ *
+ * `passage` is the gap with nothing in it (issue #309): an open doorway, an
+ * archway, the frame an internal door was taken out of. It is a wall opening
+ * like a door — it snaps to a wall, cuts the band, lets light and lamps
+ * through, and is a way into a dead space — but it has no leaf, no arc and no
+ * glass, and it is always open. Drawn as a door with the symbol hidden, it
+ * would still carry a hinge, a swing and a sensor that could shut it; drawn
+ * as two walls, it could not be measured and placed as the one width it is.
+ * A type for the same reason the skylight is one: what it is drawn as and
+ * what the light does with it differ, and there is no sash whose travel a
+ * {@link Opening.motion} could describe.
  */
-export type OpeningType = "door" | "window" | "skylight";
+export type OpeningType = "door" | "window" | "skylight" | "passage";
 
 /**
  * Whether this opening is a hole in the **ceiling** rather than in a wall.
@@ -156,6 +167,19 @@ export function openingIsSkylight(o: Pick<Opening, "type">): boolean {
 }
 
 /**
+ * Whether this opening is a plain **gap** in its wall — no leaf, no glass,
+ * never shut (issue #309). See {@link OpeningType}.
+ *
+ * The mirror image of `motion: "fixed"`: a fixed pane is never clear whatever
+ * its sensor says, and a passage is always clear whatever its sensor says. An
+ * `entity` on one still badges and takes gestures, as it does on a fixed pane;
+ * it just has nothing to move.
+ */
+export function openingIsPassage(o: Pick<Opening, "type">): boolean {
+  return o.type === "passage";
+}
+
+/**
  * How a sliding opening's panels are arranged. Named as a type rather than
  * inlined on {@link Opening.sliderStyle} so the render and the editor agree on
  * the set — three of these carry a second moving panel and the list had started
@@ -164,16 +188,17 @@ export function openingIsSkylight(o: Pick<Opening, "type">): boolean {
 export type SliderStyle = "single" | "bypass" | "biparting" | "biparting-bypass" | "converging";
 
 /**
- * A door, a window, or a skylight. Positioned by its center point and rotation
- * so it can be dropped onto (and aligned with) a wall, but it is stored
- * independently. A skylight is in the ceiling and so snaps to no wall — see
- * {@link OpeningType}.
+ * A door, a window, a skylight or a passage. Positioned by its center point
+ * and rotation so it can be dropped onto (and aligned with) a wall, but it is
+ * stored independently. A skylight is in the ceiling and so snaps to no wall —
+ * see {@link OpeningType}.
  */
 export interface Opening {
   id: string;
   /**
    * The kind of opening: a `door` (single leaf), a `window` (two leaves /
-   * glass), or a `skylight` (a hole in the ceiling). See {@link OpeningType}.
+   * glass), a `skylight` (a hole in the ceiling), or a `passage` (a gap in the
+   * wall with nothing in it). See {@link OpeningType}.
    */
   type: OpeningType;
   /**

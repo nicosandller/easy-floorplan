@@ -2148,6 +2148,8 @@ describe("every field lands in exactly one panel group", () => {
       { type: "skylight", width: 60 },
       { type: "skylight", width: 60, entity: "cover.velux" },
       { type: "skylight", width: 60, shutterEntity: "cover.blind", entity: "cover.velux" },
+      { type: "passage" },
+      { type: "passage", entity: "binary_sensor.hall_motion", showIcon: true },
     ]) {
       check(openingForm({ ...base, ...extra } as Opening).fields, OPENING_GROUPS, JSON.stringify(extra));
     }
@@ -2459,6 +2461,110 @@ describe("openingForm — skylights", () => {
       "shutterSecondaryEntity",
     ])
       expect(handWritten[k]).toBeUndefined();
+  });
+});
+
+describe("openingForm — passages (issue #309)", () => {
+  const passage = (extra: Partial<Opening> = {}) =>
+    ({ ...door, type: "passage", ...extra }) as Opening;
+  const names = (o: Opening) => openingForm(o).fields.map((x) => x.name);
+
+  it("is offered as a type, next to the door it stands in for", () => {
+    const f = openingForm(door).fields.find((x) => x.name === "type")!;
+    const values = (f.selector as { select: { options: { value: string }[] } }).select.options.map(
+      (x) => x.value
+    );
+    expect(values.slice(0, 2)).toEqual(["door", "passage"]);
+  });
+
+  it("asks nothing about a leaf it does not have", () => {
+    const n = names(passage({ entity: "binary_sensor.hall_motion" }));
+    for (const gone of ["motion", "sash", "sashSpan", "hinge", "opens", "slide", "style", "glazed", "invert", "secondaryEntity"])
+      expect(n).not.toContain(gone);
+    // What any opening has without a leaf stays.
+    for (const kept of ["type", "length", "angle", "sunlight", "entity", "showIcon", "shutterEntity"])
+      expect(n).toContain(kept);
+    // Not even when a hand-written plan says it slides.
+    expect(names(passage({ motion: "slide" }))).not.toContain("style");
+  });
+
+  it("does not promise that binding an entity changes its type", () => {
+    const helper = openingForm(passage()).fields.find((f) => f.name === "entity")!.helper ?? "";
+    expect(helper).not.toContain("device class");
+    expect(helper).toContain("always open");
+  });
+
+  it("takes the leaf with it when a door becomes a passage", () => {
+    const out = openingForm({
+      ...door,
+      motion: "slide",
+      sliderStyle: "biparting",
+      sash: "double",
+      sashSpan: 0.5,
+      secondaryEntity: "binary_sensor.b",
+      glazed: true,
+      invert: true,
+    } as Opening).toPatch({ type: "passage" });
+    expect(out.type).toBe("passage");
+    for (const k of ["motion", "sliderStyle", "sash", "sashSpan", "secondaryEntity", "glazed", "invert"]) {
+      expect(k in out).toBe(true);
+      expect(out[k]).toBeUndefined();
+    }
+  });
+
+  it("keeps what hangs over the gap rather than in it", () => {
+    const out = openingForm({
+      ...door,
+      entity: "binary_sensor.a",
+      shutterEntity: "cover.grille",
+      shutterStyle: "roll",
+      flipH: true,
+    } as Opening).toPatch({ type: "passage" });
+    for (const k of ["entity", "shutterEntity", "shutterStyle", "flipH"]) expect(k in out).toBe(false);
+  });
+
+  it("wakes no leaf a hand-written passage was ignoring when it becomes a door", () => {
+    const out = openingForm(
+      passage({ motion: "slide", sliderStyle: "biparting", sash: "double", invert: true, glazed: true })
+    ).toPatch({ type: "door" });
+    expect(out.type).toBe("door");
+    for (const k of ["motion", "sliderStyle", "sash", "invert", "glazed"]) {
+      expect(k in out).toBe(true);
+      expect(out[k]).toBeUndefined();
+    }
+  });
+
+  it("comes back from a round trip as a plain door, shutter and mirror kept", () => {
+    const start = {
+      ...door,
+      motion: "slide",
+      sliderStyle: "biparting",
+      invert: true,
+      flipH: true,
+      shutterEntity: "cover.grille",
+    } as Opening;
+    const asPassage = { ...start, ...openingForm(start).toPatch({ type: "passage" }) } as Opening;
+    const back = { ...asPassage, ...openingForm(asPassage).toPatch({ type: "door" }) } as Opening;
+    expect(back.type).toBe("door");
+    for (const k of ["motion", "sliderStyle", "invert"] as const) expect(back[k]).toBeUndefined();
+    expect(back.flipH).toBe(true);
+    expect(back.shutterEntity).toBe("cover.grille");
+  });
+
+  it("sheds a skylight's second side on the way, too", () => {
+    const out = openingForm({ ...door, type: "skylight", width: 60, ceilingHeight: 2 } as Opening).toPatch({
+      type: "passage",
+    });
+    expect(out.width).toBeUndefined();
+    expect(out.ceilingHeight).toBeUndefined();
+  });
+
+  it("names itself where a tap has to choose", () => {
+    const f = openingForm(passage({ entity: "binary_sensor.a", shutterEntity: "cover.grille" })).fields.find(
+      (x) => x.name === "tapTarget"
+    )!;
+    const labels = (f.selector as { select: { options: { label: string }[] } }).select.options.map((x) => x.label);
+    expect(labels).toContain("The passage");
   });
 });
 

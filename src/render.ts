@@ -76,8 +76,8 @@ import { projectPlanPoint, projectedCanvasSize, type DisplayFrame } from "./proj
 // imports from there — the same trade `pointInPolygon` made in the other
 // direction. Re-exported so it reads as one of these helpers at every call
 // site, which is what it is.
-import { openingIsSkylight } from "./types";
-export { openingIsSkylight };
+import { openingIsPassage, openingIsSkylight } from "./types";
+export { openingIsPassage, openingIsSkylight };
 
 export const WALL_THICKNESS = 8;
 
@@ -717,6 +717,10 @@ function clipWallToBox(
  * and the mean of it is itself.
  */
 export function openingClearFraction(o: Opening, amount: number, secondAmount?: number): number {
+  // Nothing in the gap, so all of it is always clear (issue #309) — the
+  // mirror of the fixed pane below, and asked first for the same reason: a
+  // bound sensor must not be able to shut it.
+  if (openingIsPassage(o)) return 1;
   // Nothing moves, so nothing is ever clear — whatever a bound sensor says
   // (issue #218). Asked before `amount` is even read, because a fixed pane
   // with a contact on it is exactly the case that would otherwise open.
@@ -2741,8 +2745,12 @@ export function openingSashSpan(o: Opening): number {
  * but the intent is the same either way: "the opposite of what this would
  * otherwise draw." A swing door marked `invert: true` and left unbound draws
  * shut; an unbound window marked the same way draws open.
+ *
+ * A passage is open and `invert` does not reach it: there is nothing in the
+ * gap that could be drawn shut (issue #309).
  */
 export function openingDefaultOpen(o: Opening): boolean {
+  if (openingIsPassage(o)) return true;
   const natural = o.type === "door" && openingMotion(o) === "swing";
   return o.invert ? !natural : natural;
 }
@@ -2792,9 +2800,10 @@ export function sliderStyleHasTwoLeaves(style: SliderStyle): boolean {
  * - a **two-panel slider** (issue #145), by {@link sliderStyleHasTwoLeaves}.
  *
  * A single-leaf swing door does not: there is nothing to split. Nor does a
- * roll-up, whose curtain is one piece.
+ * roll-up, whose curtain is one piece, or a passage, which has no leaf at all.
  */
 export function openingHasTwoLeaves(o: Opening): boolean {
+  if (openingIsPassage(o)) return false;
   return openingMotion(o) === "swing"
     ? openingSash(o) === "double"
     : sliderStyleHasTwoLeaves(sliderStyleOf(o));
@@ -2941,6 +2950,10 @@ export function openingDeviceClassPatch(
 ): { type?: Opening["type"]; motion?: "slide" | "roll" | undefined } {
   if (!deviceClass) return {};
   if (openingIsSkylight(o)) return {};
+  // Same for a passage (issue #309): whatever is bound to it — a motion
+  // sensor in the doorway, say — did not make it a door, and a guess that
+  // turned it into one would hang a leaf back in a gap drawn empty on purpose.
+  if (openingIsPassage(o)) return {};
   return openingFromDeviceClass(deviceClass);
 }
 
@@ -3589,6 +3602,9 @@ const OPENING_FALLBACK_ICON: Record<OpeningType, { on: string; off: string }> = 
   door: { on: "mdi:door-open", off: "mdi:door-closed" },
   window: { on: "mdi:window-open", off: "mdi:window-closed" },
   skylight: { on: "mdi:window-open-variant", off: "mdi:window-closed-variant" },
+  // One glyph for both: a passage is never shut, so there is no pair to pick
+  // from — the badge's colour still says what its entity is doing.
+  passage: { on: "mdi:arrow-expand-horizontal", off: "mdi:arrow-expand-horizontal" },
 };
 
 /**
@@ -3776,7 +3792,7 @@ export interface OpeningStyle {
 }
 
 /**
- * Render a door or window as an SVG group centered at the origin, then translated
+ * Render an opening as an SVG group centered at the origin, then translated
  * and rotated into place. The wall behind the opening is cut away by the host via
  * an SVG mask (see {@link renderWallMask}), so this draws only the symbol — jambs,
  * swing arc and the moving leaf/sash, which carry CSS classes so the host's styles
@@ -3879,6 +3895,12 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
         <!-- the head it is hung from -->
         <line x1=${-gl} y1=${-halfW} x2=${gl} y2=${-halfW}
               stroke=${tone} stroke-width="2.5" />`;
+  } else if (openingIsPassage(o)) {
+    // A gap with nothing in it (issue #309). The wall mask has already cut
+    // the hole, and the hole is the whole symbol: no jambs, no leaf, no arc.
+    // The group is still emitted, so the gap keeps its `data-id` for CSS and
+    // anything layered over it — a shutter — still has a frame to sit in.
+    body = svg``;
   } else if (openingMotion(o) === "swing") {
     // One symbol for every hinged opening. A single-sash window (issue #73)
     // and a plain door draw the same thing; so do a double door and a pair of
@@ -5021,6 +5043,9 @@ export function openingAdmitsSun(
  * a surprise to anyone who bound the sash expecting a switch.
  */
 export function openingIsGlazed(o: Pick<Opening, "type" | "glazed">): boolean {
+  // A passage is not, whatever it says: there is nothing in it to be glass
+  // (issue #309). It lets all the light through anyway, as a hole.
+  if (openingIsPassage(o)) return false;
   return o.glazed ?? o.type !== "door";
 }
 
