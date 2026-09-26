@@ -22,13 +22,15 @@
  * drawn in plan coordinates inside the very same group, with no inverse
  * transform and no second coordinate system. See {@link elevate}.
  *
- * Nearer the viewer means larger x + y. That one fact decides which faces of
- * a box are visible and the order the boxes are painted in.
+ * The viewer looks along (1,1,1). Face normals decide visibility; spatial
+ * separation and visible-face depth decide the order of overlapping solids.
  */
 import { svg, nothing, type SVGTemplateResult } from "lit";
 import { cssNumber, cssIdent } from "./css-safe";
 import { OPENING_ON_WALL_EPS } from "./dead-space";
 import { openingIsSkylight, type OpeningType } from "./types";
+import { joinIsoWalls } from "./projection-joints";
+import { sortIsoSolids } from "./projection-order";
 
 export type PlanProjection = "plan" | "iso";
 
@@ -49,8 +51,7 @@ export const GLASS_FRACTION = 0.85;
  * Walls are drawn in pieces no longer than this. A painter's order sorts
  * whole shapes, and a long wall has no single depth: the far end of a front
  * wall can be further away than the near end of a side wall it never touches.
- * Short pieces each have a depth that is nearly right everywhere along them,
- * which is what lets one sort key stand in for real occlusion.
+ * Short pieces can be ordered independently around objects along the wall.
  */
 export const ISO_CHUNK = 32;
 /** Shade laid over a face that looks along +x (right) and one that looks along +y (front). */
@@ -182,7 +183,7 @@ export type IsoSolidKind = "wall" | "sill" | "glass" | "furniture" | "panel" | "
 export interface IsoSolid {
   kind: IsoSolidKind;
   id?: string;
-  /** Footprint corners in the rotated frame: a quad for a box, two points for a pane. */
+  /** Footprint corners in the rotated frame, or two points for a pane. */
   base: Pt[];
   /** Where it starts above the floor — 0 for anything standing on it. */
   z0: number;
@@ -268,9 +269,8 @@ function openingSpans(
  * The walls as boxes, in the rotated frame. Each wall is cut at its doors,
  * lowered to a sill under its windows with a pane of glass above, and what
  * remains is drawn in pieces of at most {@link ISO_CHUNK} so it sorts well.
- * A wall's own ends are extended by half its thickness, the way the flat
- * plan's round caps do, which is what makes two walls meet at a corner
- * without a notch.
+ * Free ends extend by half the thickness. Shared corners meet at one miter;
+ * T/cross junctions partition their centre without overlapping end caps.
  */
 export function wallSolids(
   walls: readonly IsoWallInput[],
@@ -279,7 +279,14 @@ export function wallSolids(
   includeGlass = true
 ): IsoSolid[] {
   const out: IsoSolid[] = [];
-  for (const w of walls) {
+  const joined = joinIsoWalls(walls, (w, start) => {
+    const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
+    const d = { x: (w.x2 - w.x1) / len, y: (w.y2 - w.y1) / len };
+    // A doorway or a low sill at a junction leaves its neighbour's end face
+    // exposed. Do not miter it away as if another full-height wall met it.
+    return !openingSpans(w, openings, d, len).some(s => start ? s.s0 <= 1e-6 : s.s1 >= len - 1e-6);
+  });
+  for (const w of joined) {
     const dx = w.x2 - w.x1;
     const dy = w.y2 - w.y1;
     const len = Math.hypot(dx, dy);
@@ -288,22 +295,25 @@ export function wallSolids(
     const n = { x: -d.y, y: d.x };
     const half = w.thickness / 2;
     const at = (s: number): Pt => ({ x: w.x1 + d.x * s, y: w.y1 + d.y * s });
-    const box = (s0: number, s1: number): Pt[] => {
+    const box = (s0: number, s1: number) => {
       const a = at(s0);
       const b = at(s1);
-      return [
-        { x: a.x + n.x * half, y: a.y + n.y * half },
-        { x: b.x + n.x * half, y: b.y + n.y * half },
-        { x: b.x - n.x * half, y: b.y - n.y * half },
-        { x: a.x - n.x * half, y: a.y - n.y * half },
-      ];
+      const start = s0 <= 0 && w.start ? w.start : [
+        { x: a.x + n.x * half, y: a.y + n.y * half }, { x: a.x - n.x * half, y: a.y - n.y * half }];
+      const end = s1 >= len && w.end ? w.end : [
+        { x: b.x + n.x * half, y: b.y + n.y * half }, { x: b.x - n.x * half, y: b.y - n.y * half }];
+      return { base: [start[0]!, ...end, ...start.slice(1).reverse()],
+        endEdges: end.slice(1).map((_p, i) => i + 1),
+        startEdges: start.slice(1).map((_p, i) => end.length + 1 + i) };
     };
     const pieces = (s0: number, s1: number, z1: number, kind: IsoSolidKind) => {
       const count = Math.max(1, Math.ceil((s1 - s0) / ISO_CHUNK));
       const step = (s1 - s0) / count;
       for (let i = 0; i < count; i++) {
-        out.push({ kind, id: w.id, base: box(s0 + step * i, s0 + step * (i + 1)), z0: 0, z1,
-          hiddenEdges: [...(i < count - 1 ? [1] : []), ...(i > 0 ? [3] : [])] });
+        const shape = box(s0 + step * i, s0 + step * (i + 1));
+        out.push({ kind, id: w.id, base: shape.base, z0: 0, z1,
+          hiddenEdges: [...(i < count - 1 || (s1 >= len && w.end) ? shape.endEdges : []),
+            ...(i > 0 || (s0 <= 0 && w.start) ? shape.startEdges : [])] });
       }
     };
     const spans = openingSpans(w, openings, d, len);
@@ -356,7 +366,7 @@ export function furnitureSolid(
   return { kind: "furniture", id: f.id, base, z0: 0, z1: height, color, top };
 }
 
-/** Painter's key: the footprint's mean x + y. Larger is nearer, and drawn later. */
+/** Stable fallback depth for disjoint, coplanar or cyclic geometry. */
 export function solidDepth(s: IsoSolid): number {
   let sum = 0;
   for (const p of s.base) sum += p.x + p.y;
@@ -374,10 +384,7 @@ export function renderIsoSolids(
   solids: readonly IsoSolid[],
   decorate: (solid: IsoSolid, drawing: SVGTemplateResult) => SVGTemplateResult = (_s, drawing) => drawing
 ): SVGTemplateResult {
-  const order = solids
-    .map((s, i) => ({ s, i, depth: solidDepth(s) }))
-    .sort((a, b) => a.depth - b.depth || a.i - b.i);
-  return svg`<g class="fp-iso">${order.map(({ s }) => decorate(s, renderIsoSolid(s)))}</g>`;
+  return svg`<g class="fp-iso">${sortIsoSolids(solids).map(s => decorate(s, renderIsoSolid(s)))}</g>`;
 }
 
 /**
