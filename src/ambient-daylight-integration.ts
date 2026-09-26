@@ -7,6 +7,8 @@ import {
   cloudFactor,
   openingClearFraction,
   shutterAmount,
+  wallsThatBlock,
+  wallsLightPassesThrough,
 } from "./render";
 import {
   DEFAULT_AMBIENT_DAYLIGHT_STRENGTH,
@@ -15,6 +17,7 @@ import {
   ambientOpeningTransmission,
 } from "./ambient-daylight";
 import { renderAmbientDaylight } from "./ambient-daylight-render";
+import { ambientWallClip, ambientWallLights } from "./ambient-daylight-walls";
 
 /** Explicit opt-in: existing plans remain on their old render path. */
 export function ambientDaylightEnabled(
@@ -72,17 +75,13 @@ function uniquelyIdentified(areas: readonly Area[]): Area[] {
  * the pure ambient modules.
  */
 export function renderAmbientDaylightLayer(
-  floor: Pick<Floor, "areas" | "openings">,
+  floor: Pick<Floor, "areas" | "openings" | "walls">,
   config: FloorplanCardConfig,
   hass: Pick<RenderHass, "states"> | undefined,
   idPrefix: string,
   openingState: AmbientDaylightOpeningState,
 ): SVGTemplateResult | typeof nothing {
-  if (!ambientDaylightEnabled(config) || floor.areas.length === 0) return nothing;
-
-  const areas = uniquelyIdentified(floor.areas);
-  const sources = ambientOpeningSources(areas, floor.openings);
-  if (sources.length === 0) return nothing;
+  if (!ambientDaylightEnabled(config)) return nothing;
 
   const openingsById = new Map(floor.openings.map((opening) => [opening.id, opening]));
   const transmission = (openingId: string): number => {
@@ -105,8 +104,21 @@ export function renderAmbientDaylightLayer(
   const strength =
     DEFAULT_AMBIENT_DAYLIGHT_STRENGTH *
     cloudFactor(cloudCover(cloudCoverEntityOf(config), hass), CLOUD_DIFFUSE_MIN);
+  const walls = wallsThatBlock(floor.walls);
+  const blockers = wallsLightPassesThrough(walls, floor.openings, o => transmission(o.id));
+  const wallLights = ambientWallLights(walls, floor.openings, blockers, elevation, transmission, strength);
+  if (wallLights !== undefined) {
+    const layers = wallLights.map(light => light
+      ? renderAmbientDaylight(light.area, [light.patch], { idPrefix }) : nothing);
+    return layers.some(layer => layer !== nothing) ? svg`${layers}` : nothing;
+  }
+
+  const areas = uniquelyIdentified(floor.areas);
+  const sources = ambientOpeningSources(areas, floor.openings);
+  if (sources.length === 0) return nothing;
   const rendered = areas.map((area) => {
-    const patches = ambientDaylightPatches(area, sources, elevation, transmission, { strength });
+    const patches = ambientDaylightPatches(area, sources, elevation, transmission, { strength })
+      .map(patch => ambientWallClip(sources.find(source => source.openingId === patch.openingId && source.areaId === patch.areaId)!, patch, blockers));
     return patches.length
       ? renderAmbientDaylight(area, patches, { idPrefix })
       : nothing;
