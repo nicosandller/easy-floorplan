@@ -77,6 +77,7 @@ import { projectPlanPoint, projectedCanvasSize, type DisplayFrame } from "./proj
 // direction. Re-exported so it reads as one of these helpers at every call
 // site, which is what it is.
 import { openingIsPassage, openingIsSkylight } from "./types";
+import { moonIllumination, moonPosition } from "./moon";
 export { openingIsPassage, openingIsSkylight };
 
 export const WALL_THICKNESS = 8;
@@ -1108,6 +1109,10 @@ export function renderGlow(
  *
  * Only Cast-light devices qualify — they are the ones that define a radius.
  * Returns `nothing` when no lamp does, so an ordinary plan pays for no mask.
+ *
+ * `extra` is anything else that holds the night back, painted in black over
+ * the lamps — the moon's patches (issue #201), which clear the dim where they
+ * land the way a lamp's pool does.
  */
 export function renderSunDimMask(
   items: readonly FloorItem[],
@@ -1116,6 +1121,7 @@ export function renderSunDimMask(
   height: number,
   id: string,
   walls?: readonly Wall[],
+  extra: SVGTemplateResult | typeof nothing = nothing,
 ): SVGTemplateResult | typeof nothing {
   // Strength per item, by INDEX — undefined where the lamp contributes nothing.
   // Deliberately not compacted: see the map below.
@@ -1132,7 +1138,7 @@ export function renderSunDimMask(
       radius: paint.radius,
     };
   });
-  if (!clearings.some((v) => v !== undefined)) return nothing;
+  if (!clearings.some((v) => v !== undefined) && extra === nothing) return nothing;
 
   const pad = WALL_THICKNESS;
   return svg`
@@ -1178,6 +1184,7 @@ export function renderSunDimMask(
             <circle cx=${it.x} cy=${it.y} r=${r} fill=${`url(#${gid})`}
                     clip-path=${reach ? `url(#${clipId})` : nothing} />`;
         })}
+        ${extra}
       </mask>
     </defs>`;
 }
@@ -4695,6 +4702,105 @@ export function cloudCover(
  */
 export function cloudFactor(cover: number | undefined, min: number): number {
   return cover === undefined ? 1 : 1 - (1 - min) * cover;
+}
+
+// ---- moonlight --------------------------------------------------------------
+
+/**
+ * Colour of moonlight: a cool white, against the sun's warm one. Skins restyle
+ * it through `--fp-skin-moonlight`, as they do the sun's.
+ */
+export const MOON_LIGHT_COLOR = "var(--fp-skin-moonlight, #c4d6ff)";
+
+/**
+ * How strong a full moon high in a dark sky is drawn, where the sun is 1.
+ *
+ * Not to scale — the real ratio is about 1 to 400,000, and a plan drawn to it
+ * would show nothing. What it has to be is clearly weaker than any sun, so a
+ * moonlit room never reads as a sunny one.
+ */
+export const MOON_STRENGTH = 0.6;
+
+/**
+ * How often the card redraws while moonlight is on: about a degree of the
+ * moon's travel across the sky, the cadence Home Assistant itself updates
+ * `sun.sun` at through the day.
+ */
+export const MOON_TICK_MS = 4 * 60_000;
+
+/**
+ * Whether the plan draws moonlight: `moonlight` on, as an add-on to sunlight
+ * that follows the real sun. A pinned sun never sets, so there is no night
+ * for a moon to light.
+ */
+export function moonlightOn(
+  c: Pick<FloorplanCardConfig, "moonlight" | "sunlight" | "sunBearing">,
+): boolean {
+  return c.moonlight === true && c.sunlight === true && !sunIsPinned(c);
+}
+
+/**
+ * How much of the night there is for the moon, 0..1, from `sun.sun`'s
+ * elevation: none while the sun is up, all of it once the sun is
+ * {@link SUN_ELEVATION_NIGHT} below the horizon — where Follow the sun reaches
+ * its night brightness — and eased between.
+ *
+ * It starts where the sunlight ends. The sun's patches are gone at the
+ * horizon (see {@link sunlightStrength}), so dusk hands the light from one to
+ * the other rather than drawing both at once; the moon could not compete with
+ * a twilight sky anyway.
+ *
+ * An unreadable sun means no moonlight. The direct sun fails bright, so an
+ * outage already looks like day, and a moon drawn over it would say it was
+ * night as well.
+ */
+export function moonNightFactor(sunElevation: unknown): number {
+  const e = liveSunAttribute(sunElevation);
+  if (e === undefined || e >= 0) return 0;
+  if (e <= SUN_ELEVATION_NIGHT) return 1;
+  const t = e / SUN_ELEVATION_NIGHT;
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * The moon's light on this plan at `time`, or `undefined` when there is none
+ * to draw: the moon below the horizon, the sun up, a new moon, or no location
+ * to find the moon from.
+ *
+ * `dir` is the way the light travels, as {@link sunLightDirection} gives it
+ * for the sun; `altitude` is what the reach scales by, exactly as the sun's
+ * elevation does, since a patch is as deep as the opening is tall over the
+ * tangent of the light's angle whatever is shining.
+ */
+export function moonlightOf(
+  c: Pick<FloorplanCardConfig, "north">,
+  time: number,
+  location: { latitude?: unknown; longitude?: unknown } | undefined,
+  sunElevation: unknown,
+  cover?: number,
+): { dir: { x: number; y: number }; strength: number; altitude: number } | undefined {
+  const lat = location?.latitude;
+  const lon = location?.longitude;
+  if (typeof lat !== "number" || !Number.isFinite(lat)) return undefined;
+  if (typeof lon !== "number" || !Number.isFinite(lon)) return undefined;
+  if (!Number.isFinite(time)) return undefined;
+  const night = moonNightFactor(sunElevation);
+  if (!(night > 0)) return undefined;
+  const moon = moonPosition(time, lat, lon);
+  // The same climb out of the horizon the sun's light makes: nothing below
+  // it, full by SUN_ELEVATION_FULL.
+  const strength =
+    MOON_STRENGTH *
+    sunlightStrength(moon.altitude) *
+    moonIllumination(time) *
+    night *
+    cloudFactor(cover, CLOUD_DIRECT_MIN);
+  if (!(strength > 0)) return undefined;
+  return {
+    dir: planDirection(moon.bearing + 180, c.north ?? 0),
+    strength,
+    altitude: moon.altitude,
+  };
 }
 
 /**

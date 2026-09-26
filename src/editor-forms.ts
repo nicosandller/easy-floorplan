@@ -2586,6 +2586,16 @@ export function projectReliefForm(c: FloorplanCardConfig): FormSpec {
         selector: { boolean: {} },
       }
     );
+    // The moon (issue #201) only follows a sun that sets: a pinned one keeps
+    // its light on all night, so there is no night for the moon to light.
+    if (typeof c.sunBearing !== "number") {
+      fields.push({
+        name: "moonlight",
+        label: "Moonlight",
+        helper: "After dark the moon lets in its own cooler light, brighter the fuller it is",
+        selector: { boolean: {} },
+      });
+    }
     // Only worth asking once the light is pinned; following the sun means the
     // angle is not ours to choose.
     if (typeof c.sunBearing === "number") {
@@ -2620,6 +2630,7 @@ export function projectReliefForm(c: FloorplanCardConfig): FormSpec {
       north: c.north ?? 0,
       sunReach: c.sunReach ?? SUN_REACH,
       sunFollows: typeof c.sunBearing !== "number",
+      moonlight: c.moonlight ?? false,
       sunBearing: c.sunBearing ?? DEFAULT_SUN_BEARING,
     },
     toPatch: (p) => {
@@ -2655,12 +2666,16 @@ export function projectReliefForm(c: FloorplanCardConfig): FormSpec {
           sunShade: undefined,
           sunlightColor: undefined,
           sunShadeColor: undefined,
+          moonlight: undefined,
         };
       }
       // "Follow the sun" is the *absence* of a stated bearing (issue #113's
       // rule: the live reading wins only when nothing was decided).
       if ("sunFollows" in out) {
         out.sunBearing = out.sunFollows ? undefined : (c.sunBearing ?? DEFAULT_SUN_BEARING);
+        // A pinned sun never sets, so there is no night left for the moon:
+        // its switch goes with its row rather than waiting stale in the YAML.
+        if (!out.sunFollows) out.moonlight = undefined;
         delete out.sunFollows;
       }
       // The defaults stay out of the YAML — shading is on unless declined.
@@ -2668,6 +2683,7 @@ export function projectReliefForm(c: FloorplanCardConfig): FormSpec {
       // The default stays out of the YAML, like every other default here.
       if ("sunReach" in out && out.sunReach === SUN_REACH) out.sunReach = undefined;
       if ("sunShade" in out && out.sunShade) out.sunShade = undefined;
+      if ("moonlight" in out && !out.moonlight) out.moonlight = undefined;
       return out;
     },
   };
