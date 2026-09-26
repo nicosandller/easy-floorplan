@@ -1,4 +1,4 @@
-import { svg, type SVGTemplateResult } from "lit";
+import { nothing, svg, type SVGTemplateResult } from "lit";
 import type { Area, AreaPoint } from "./types";
 import type { AmbientDaylightPatch } from "./ambient-daylight";
 
@@ -23,6 +23,8 @@ export interface AmbientDaylightRenderPatch {
   gradientStart: AreaPoint;
   gradientEnd: AreaPoint;
   opacity: number;
+  clipId?: string;
+  clipPoints?: string;
 }
 
 export interface AmbientDaylightRenderModel {
@@ -70,9 +72,9 @@ export function ambientDaylightSvgId(raw: string): string {
 /**
  * Pure render preparation shared by tests and the SVG template.
  *
- * The Area polygon is the hard room boundary. Patch edges inside the room are
- * feathered later by the blur filter, while clipping after that blur prevents
- * diffuse light from leaking through walls into a neighbouring room.
+ * The supplied polygon bounds the building (or the Area-only fallback).
+ * Each patch can also carry a wall-visibility polygon. Both clips apply after
+ * blur, so its soft edge cannot leak through a solid wall.
  */
 export function buildAmbientDaylightRenderModel(
   area: Area,
@@ -95,6 +97,8 @@ export function buildAmbientDaylightRenderModel(
     const points = ambientDaylightPolygonPoints(patch.points);
     if (!points || !finitePoint(patch.gradientStart) || !finitePoint(patch.gradientEnd)) continue;
     if (!Number.isFinite(patch.opacity) || patch.opacity <= 0) continue;
+    const wallClip = patch.clipPoints && ambientDaylightPolygonPoints(patch.clipPoints);
+    if (patch.clipPoints && !wallClip) continue;
     rendered.push({
       openingId: patch.openingId,
       points,
@@ -102,6 +106,8 @@ export function buildAmbientDaylightRenderModel(
       gradientStart: patch.gradientStart,
       gradientEnd: patch.gradientEnd,
       opacity: clamp(patch.opacity, 0, 1),
+      clipId: wallClip ? ambientDaylightSvgId(`${prefix}-wall-${area.id}-${patch.openingId}-${i}`) : undefined,
+      clipPoints: wallClip || undefined,
     });
   }
 
@@ -144,6 +150,9 @@ export function renderAmbientDaylight(
         </filter>
         ${model.patches.map(
           (patch) => svg`
+            ${patch.clipPoints ? svg`<clipPath id=${patch.clipId}>
+              <polygon points=${patch.clipPoints}></polygon>
+            </clipPath>` : nothing}
             <linearGradient id=${patch.gradientId} gradientUnits="userSpaceOnUse"
                             x1=${patch.gradientStart.x} y1=${patch.gradientStart.y}
                             x2=${patch.gradientEnd.x} y2=${patch.gradientEnd.y}>
@@ -158,6 +167,7 @@ export function renderAmbientDaylight(
       <g clip-path=${`url(#${model.clipId})`}>
         ${model.patches.map(
           (patch) => svg`
+            <g clip-path=${patch.clipId ? `url(#${patch.clipId})` : nothing}>
             <polygon class="fp-ambient-daylight-patch"
                      data-opening-id=${patch.openingId}
                      points=${patch.points}
@@ -165,6 +175,7 @@ export function renderAmbientDaylight(
                      opacity=${patch.opacity}
                      filter=${model.blur > 0 ? `url(#${model.filterId})` : "none"}>
             </polygon>
+            </g>
           `,
         )}
       </g>

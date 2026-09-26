@@ -1011,10 +1011,12 @@ export function glowReach(
   cy: number,
   r: number,
   walls: readonly Wall[],
+  /** Lamps ignore their mounting wall; daylight must also see nearby partitions. */
+  wallClearance = WALL_THICKNESS,
 ): Array<{ x: number; y: number }> | undefined {
   const blocking = walls.filter((w) => {
     const d = pointWallDist(cx, cy, w);
-    return d < r && d > WALL_THICKNESS;
+    return d < r && d > wallClearance;
   });
   if (!blocking.length) return undefined;
   const m = r * 1.01;

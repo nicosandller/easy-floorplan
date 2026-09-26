@@ -1914,8 +1914,9 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * This is deliberately independent of direct {@link sunlight}: a north-facing
    * window can brighten its room even when no direct sun ray reaches that wall.
    *
-   * V1 derives exterior openings from Area adjacency and clips each wash to its
-   * Area polygon, so complete room Areas are required for reliable topology.
+   * Closed wall outlines identify exterior sources; solid walls clip the wash
+   * after blur. Named Areas do not block it. Plans without a closed wall outline
+   * fall back to Area adjacency and clipping.
    * Off by default for backward compatibility.
    */
   ambientDaylight?: boolean;

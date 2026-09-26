@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Easy Floorplan · Ambient daylight regression preview</title>
+<style>
+  :root { font: 15px system-ui; color: #edf3fa; background: #101821; color-scheme: dark; }
+  body { max-width: 1260px; margin: 32px auto; padding: 0 24px; }
+  h1 { font-size: 28px; margin: 8px 0; }
+  h2 { font-size: 18px; margin: 0 0 8px; }
+  p { line-height: 1.55; color: #b7c6d8; }
+  .eyebrow { color: #83d8d0; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+  main { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 20px; margin-top: 28px; }
+  article { border: 1px solid #3b4b5e; border-radius: 12px; padding: 18px; background: #172231; }
+  article p { min-height: 70px; margin: 0 0 12px; }
+  easy-floorplan-card { display: block; --primary-text-color: #e2eaf3; --secondary-text-color: #b7c6d8; --card-background-color: #101821; }
+  footer { margin-top: 20px; color: #a7b8cb; line-height: 1.55; }
+  @media (max-width: 850px) { main { grid-template-columns: 1fr; } article p { min-height: 0; } }
+</style>
+<div class="eyebrow">Issue #319 · reproducible examples</div>
+<h1>Ambient daylight, walls and room labels</h1>
+<p>Simulated daytime entities. Ambient daylight is on; directional sunlight is off.</p>
+<main>
+  <article><h2>1. Solid partition</h2><p>A single Area spans both rooms. Light should stop at the internal wall.</p><easy-floorplan-card id="solid"></easy-floorplan-card></article>
+  <article><h2>2. Open floor, two Areas</h2><p>A label boundary crosses the floor. Light should continue across it.</p><easy-floorplan-card id="labels"></easy-floorplan-card></article>
+  <article><h2>3. Unlabelled porch</h2><p>Only the kitchen has an Area. Sky light should enter at the porch window and pass through the open door.</p><easy-floorplan-card id="porch"></easy-floorplan-card></article>
+</main>
+<footer>These are synthetic regression fixtures, not the reporter's configuration. Each plan has the same outside window on the left.</footer>
+<script type="module">
+  import '/src/floorplan-card.ts';
+  customElements.define('ha-icon', class extends HTMLElement {});
+  const rectangle = (x, w) => [{x,y:20},{x:x+w,y:20},{x:x+w,y:320},{x,y:320}];
+  const base = {
+    type:'custom:easy-floorplan-card',width:440,height:340,skin:'tron',
+    ambientDaylight:true,sunlight:false,sunDimming:false,
+    walls:[['n',20,20,420,20],['e',420,20,420,320],['s',420,320,20,320],['w',20,320,20,20]]
+      .map(([id,x1,y1,x2,y2])=>({id,x1,y1,x2,y2})),
+    openings:[{id:'outside',type:'window',motion:'fixed',x:20,y:170,length:85,angle:90}],
+    areas:[],items:[],texts:[],furniture:[],trackers:[],
+  };
+  const partition = {id:'partition',x1:180,y1:20,x2:180,y2:320};
+  const configs = {
+    solid:{...base,walls:[...base.walls,partition],areas:[{id:'whole',points:rectangle(20,400)}]},
+    labels:{...base,areas:[{id:'lounge',name:'Lounge',points:rectangle(20,160)},{id:'kitchen',name:'Kitchen',points:rectangle(180,240)}]},
+    porch:{...base,walls:[...base.walls,partition],areas:[{id:'kitchen',name:'Kitchen',points:rectangle(180,240)}],
+      openings:[...base.openings,{id:'inside',type:'door',x:180,y:170,length:70,angle:90,entity:'binary_sensor.door'}]},
+  };
+  for (const [id,config] of Object.entries(configs)) {
+    const card = document.getElementById(id);
+    card.setConfig(config);
+    card.hass = {states:{
+      'sun.sun':{state:'above_horizon',attributes:{elevation:30,azimuth:90}},
+      'binary_sensor.door':{state:'on',attributes:{device_class:'door'}},
+    },entities:{}};
+  }
+</script>
+</html>

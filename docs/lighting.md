@@ -246,10 +246,15 @@ ambientDaylight: true
 ```
 
 A north-facing window can therefore brighten its room even when no direct sun ray reaches
-that wall. V1 uses your **Area polygons** to identify exterior openings and to hard-clip
-the wash to the receiving room: an opening touching exactly one Area is a sky source; one
-touching two Areas is interior; one touching none is ignored. With no Areas, nothing is
-drawn rather than guessing the room topology.
+that wall. **Closed wall outlines** identify outside openings. The wash stops at solid
+walls and can continue through open or glazed interior openings. Room labels and Area
+boundaries do not cut the light, and a porch does not need an Area to receive it.
+Room side walls participate; dividers and railings do not block light.
+
+For plans without any closed wall outline, the original Area-based fallback remains:
+an opening touching exactly one Area is a source, and the wash stays inside that Area
+while also respecting any solid walls. In this fallback, complete Areas are still needed
+to distinguish outside openings from interior ones.
 
 The layer reuses the opening's existing travel, glazing and shutter state, including the
 rule that a `motion: roll` window is the roller shutter across the glass rather than the

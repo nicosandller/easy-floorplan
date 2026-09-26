@@ -4,7 +4,9 @@ import { OPENING_ON_WALL_EPS } from "./dead-space";
 import { liveSunAttribute, openingGlassIsClear } from "./render";
 
 /**
- * Room-aware diffuse daylight geometry.
+ * Diffuse daylight geometry and the Area-only source-classification fallback.
+ * Plans with closed wall outlines use ambient-daylight-walls.ts to supply
+ * physical rooms and wall visibility instead of named Area boundaries.
  *
  * The module is deliberately pure: it reads no Home Assistant state and emits
  * no SVG, so every decision below is testable on plain numbers. The card wires
@@ -62,6 +64,8 @@ export interface AmbientDaylightPatch {
   gradientStart: AreaPoint;
   gradientEnd: AreaPoint;
   opacity: number;
+  /** Wall visibility, applied after the soft edge is blurred. */
+  clipPoints?: AreaPoint[];
 }
 
 interface BoundaryMatch {

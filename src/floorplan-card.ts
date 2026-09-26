@@ -1725,7 +1725,7 @@ export class FloorplanCard extends LitElement {
                  source as every other light layer, so a replayed plan shows the
                  daylight of the moment being replayed rather than of now. -->
             ${renderAmbientDaylightLayer(
-              active,
+              { ...active, walls: blockingWallSegments },
               c,
               renderHass,
               `${this._wallMaskId}-ambient`,

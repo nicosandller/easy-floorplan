@@ -21,26 +21,38 @@ V1 intentionally exposes only the on/off switch. Strength, depth, spread, tint a
 
 ## Geometry and source classification
 
-Ambient daylight uses `Area` polygons for two jobs:
+Closed **wall outlines** identify the outside of the building. An opening on that
+outline can admit sky light; an internal doorway cannot become a new source merely
+because a room has no label. Solid room side walls participate in the same geometry.
+Dividers and railings do not block light.
 
-1. determining whether an opening is exterior or interior, and
-2. hard-clipping the soft light to the room that receives it.
+Each exterior source paints a broad wash. Its receiving physical room sets the fade
+distance, and its visibility through walls and opening gaps sets the clip. Light can
+continue through an open or glazed interior doorway within that reach. Named Area
+boundaries do not interrupt it. Blur is applied before the wall clip so even its soft
+edge stops at a solid partition.
 
-An opening that touches exactly one known Area boundary is an exterior daylight source. An opening touching two known Areas is an interior opening and is not a V1 sky-light source. An opening touching no known Area is ignored.
+Detached buildings have separate outlines. A detached closed loop inside another
+outline, such as a cupboard, is a blocker rather than a second exterior. Wall endpoints
+use the same small welding tolerance as the existing dead-space geometry. Draw walls
+continuously underneath doors and windows; opening states cut the light gaps at render
+time.
 
-**A skylight is not a V1 source**, and it falls out of that same rule rather than
-being excluded by name: a roof light sits *inside* a room instead of on its
-boundary, so it touches no Area edge and is ignored like any other opening that
-touches none. That is a gap rather than a decision — a roof light sees more sky
-than any wall window, so it is the strongest ambient source a room can have —
-but giving it one needs geometry this layer does not have yet. Every source here
-is a point on a wall with an inward normal and a length; a skylight has no
-inward direction, because it lights the room from above in all of them.
+**Skylights do not yet supply ambient daylight.** This model needs a source on a wall
+with an inward direction; a roof light needs an overhead spread model. Direct
+[Sunlight](lighting.md#skylights) continues to model skylights.
 
-Direct [Sunlight](lighting.md#skylights) does model roof lights fully, so a plan
-with skylights is not dark — it simply gets no *diffuse* contribution from them.
+### Plans without closed wall outlines
 
-This makes complete room geometry important. If a real neighbouring room has no Area polygon, an opening between that room and a modeled room can look exterior because only one side is represented. V1 keeps that limitation explicit instead of guessing missing topology.
+When no closed outline can be found, the original Area-based source classification and
+clip remain available. An opening touching exactly one Area is a source; touching two
+Areas makes it interior; touching none ignores it. Solid walls still clip those patches.
+In this fallback, complete neighbouring Areas are still necessary and light cannot
+continue across Area boundaries. With neither closed walls nor Areas, no layer is drawn.
+
+The fallback is selected for the whole floor. On a floor with closed outlines, openings
+outside those outlines are ignored, even if an Area is drawn around them. Close the
+walls of each building to include it.
 
 ## Light behaviour
 
@@ -49,7 +61,7 @@ This makes complete room geometry important. If a real neighbouring room has no 
 - Sun elevation is read as a number or as a numeric string, since Home Assistant supplies it either way depending on the path it arrives by.
 - Missing, `unknown`, `unavailable` or otherwise unreadable sun elevation fails dark: the layer renders no invented daylight until Home Assistant supplies a valid elevation again.
 - Each exterior opening creates a broad widening wash rather than a narrow sun beam.
-- The exact Area polygon clips the result. Blur can soften the pool inside a room but cannot leak through a solid Area boundary.
+- The physical outside outline and each source's wall visibility clip the result. Area-only plans retain their Area clip as described above.
 - Multiple exterior sources combine without normalised brightness exceeding 1.
 - The existing opening travel, glazing and shutter state are reused for transmission instead of introducing a second state model.
 - Whether an opening counts as clear glass is `openingGlassIsClear`, the single rule both existing light paths read. A `motion: roll` window is a roller shutter bound as the opening's own entity, so it is judged by how far down it is rather than treated as always-clear glass. That helper's known gap applies here too: a blind or curtain that defaults to `slide` rather than `roll` still reads as clear glass, and fixing it needs a covering flag of its own on the opening.
@@ -59,19 +71,14 @@ This makes complete room geometry important. If a real neighbouring room has no 
 
 The layer is rendered above Area fills and below the existing dead-space, artificial-light and direct-sun layers. It does not reorder those existing layers.
 
-## Why Areas are required
-
-Walls alone describe segments, but not which enclosed polygon is *the room that owns a window*. The Area gives the feature the room identity and an exact physical clip without adding a second room-topology format.
-
-That choice also fails safely: with no Areas, ambient daylight renders nothing rather than spreading light across the whole plan.
-
 ## Renderer contract
 
-`ambient-daylight.ts` owns deterministic daylight geometry and transmission math. `ambient-daylight-render.ts` owns SVG paint and clipping. `ambient-daylight-integration.ts` is the thin card-facing adapter that reuses the card's existing opening/shutter resolvers.
+`ambient-daylight.ts` owns deterministic patch geometry, transmission math and the Area-only fallback. `ambient-daylight-walls.ts` derives physical regions using the shared planar wall-face walker and uses the existing wall visibility sweep. `ambient-daylight-render.ts` owns SVG paint and clipping. `ambient-daylight-integration.ts` is the thin card-facing adapter that reuses the card's existing opening/shutter resolvers.
 
 The SVG renderer uses:
 
-- one exact Area clip path,
+- one exact outside-outline clip per exterior source (an Area clip in fallback mode),
+- one wall-visibility clip per patch, applied outside its blur,
 - one bounded Gaussian blur filter,
 - one user-space linear gradient per opening patch,
 - deterministic IDs with a per-card instance prefix,
@@ -79,13 +86,15 @@ The SVG renderer uses:
 
 The renderer owns the patch `fill` and `filter`. Card CSS must not replace either with a flat declaration; a regression guard covers the same class of live-browser compositing failure that previously affected direct sunlight.
 
-## V1 boundaries
+## Remaining boundaries
 
-Deliberately outside the first public version:
+The wash is a visual approximation: visibility is sampled from the opening centre, not integrated across its full width. Partial passages use the shared centred-gap approximation. It does not model light bouncing around a corner or sky occlusion by buildings outside the outline.
+
+Still outside this layer:
 
 - calibration from local irradiance or lux sensors,
 - orientation-dependent sky exposure,
-- propagation through open interior doors,
+- diffuse skylight sources and indirect light bouncing between rooms,
 - curtains/blinds beyond the existing shutter transmission,
 - vertical opening geometry,
 - moonlight or night-sky contribution,
@@ -97,6 +106,6 @@ These can be added later without changing the distinction between directional su
 
 The feature follows the repository's normal validation path: project typecheck, the complete Vitest suite and production build. Geometry tests cover exterior/interior classification, twilight strength, transmission, falloff, clipping, invalid inputs and multiple-card SVG ID isolation. Host/editor tests pin opt-in behaviour, the `sun.sun` watcher contract, fail-dark behavior and independence from direct sunlight.
 
-The renderer's own markup is asserted directly — the patch fill pointing at the gradient it built, the blur on the patch with the Area clip on the group above it — because a layer can compute perfect geometry and still paint a flat slab if the `fill` never references it. The stylesheet guard in `src/card-styles.test.ts` covers `.fp-ambient-daylight-patch` for both `fill` and `filter`, so a future CSS rule cannot silently discard renderer-owned paint the way `.fp-sunbeam` once did.
+The renderer's own markup is asserted directly — the patch fill pointing at the gradient it built, the blur on the patch with wall and envelope clips on its ancestor groups — because a layer can compute perfect geometry and still paint a flat slab if the `fill` never references it. The stylesheet guard in `src/card-styles.test.ts` covers `.fp-ambient-daylight-patch` for both `fill` and `filter`, so a future CSS rule cannot silently discard renderer-owned paint the way `.fp-sunbeam` once did.
 
-Before release, the built card is still worth a look in a real browser for layer order against the rest of the plan. Markup assertions fix the composition, not the stacking order it lands in.
+The Chromium regressions exercise the rendered card for missing Areas, open-plan Area boundaries, solid partitions, open doors, generated room walls and dividers. `docker/ambient-preview.html` provides three reproducible visual examples with simulated entities.
