@@ -99,6 +99,7 @@ describe("the shipped furniture library", () => {
       "washer", "dryer", "dishwasher", "waterHeater", "airHandler", "bathtub",
       "vanity", "sectional", "fishTank", "piano", "hotTub", "quarterTub",
       "cornerShowerCurved",
+      "ladderShelf", "bookcase",
     ];
     for (const t of union) expect(BUILTIN_SYMBOLS[t], t).toBeTruthy();
     expect(Object.keys(BUILTIN_SYMBOLS).sort()).toEqual([...union].sort());

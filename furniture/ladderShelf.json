@@ -1,0 +1,14 @@
+{
+  "id": "ladderShelf",
+  "name": "ladder shelf",
+  "category": "living",
+  "keywords": ["shelving", "shelves", "rack", "open", "cross brace", "reol", "stigereol"],
+  "size": { "w": 80, "h": 40 },
+  "parts": [
+    { "line": [10, 8, 90, 92], "role": "detail" },
+    { "line": [90, 8, 10, 92], "role": "detail" },
+    { "rect": [3, 0, 7, 100], "role": "body" },
+    { "rect": [90, 0, 7, 100], "role": "body" },
+    { "repeat": 3, "step": [0, 36], "part": { "rect": [10, 16, 80, 5], "role": "body" } }
+  ]
+}

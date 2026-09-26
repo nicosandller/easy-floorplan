@@ -1,0 +1,18 @@
+{
+  "id": "bookcase",
+  "name": "bookcase",
+  "category": "living",
+  "keywords": ["bookshelf", "books", "shelving", "shelves", "billy", "library", "reol", "bogreol"],
+  "size": { "w": 80, "h": 40 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "role": "body" },
+    { "rect": [7, 6, 86, 88], "role": "line" },
+    { "repeat": 2, "step": [0, 30], "part": { "line": [7, 34, 93, 34] } },
+    { "repeat": 3, "step": [13, 0], "part": { "rect": [13, 12, 10, 22], "role": "thin" } },
+    { "polygon": [[61, 15], [70, 12], [82, 31], [73, 34]], "role": "thin" },
+    { "repeat": 3, "step": [13, 0], "part": { "rect": [48, 41, 10, 23], "role": "thin" } },
+    { "rect": [14, 83, 34, 11], "role": "thin" },
+    { "line": [14, 88, 48, 88], "role": "detail" },
+    { "rect": [66, 72, 13, 22], "role": "thin" }
+  ]
+}
