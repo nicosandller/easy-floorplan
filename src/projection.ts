@@ -27,6 +27,7 @@
  */
 import { svg, nothing, type SVGTemplateResult } from "lit";
 import { cssNumber, cssIdent } from "./css-safe";
+import type { WallKind } from "./types";
 import { OPENING_ON_WALL_EPS } from "./dead-space";
 import { openingIsSkylight, type OpeningType } from "./types";
 
@@ -42,6 +43,8 @@ export const DEFAULT_WALL_HEIGHT = 60;
 export const MAX_WALL_HEIGHT = 400;
 /** How tall a piece of furniture stands, as a fraction of the wall height. */
 export const FURNITURE_HEIGHT_FRACTION = 0.4;
+/** Railings are low barriers, rather than another full-height room wall. */
+export const RAILING_HEIGHT_FRACTION = 0.5;
 /** A window's sill, and the top of its glass, as fractions of the wall height. */
 export const SILL_FRACTION = 0.35;
 export const GLASS_FRACTION = 0.85;
@@ -176,7 +179,7 @@ export function elevationShift(z: number, rot: number): Pt {
 
 // ---- standing geometry ------------------------------------------------------
 
-export type IsoSolidKind = "wall" | "sill" | "glass" | "furniture" | "panel" | "opening-hit";
+export type IsoSolidKind = "wall" | "railing" | "sill" | "glass" | "furniture" | "panel" | "opening-hit";
 
 /** A box standing on the rotated floor — or, for glass, one pane of it. */
 export interface IsoSolid {
@@ -201,6 +204,7 @@ export interface IsoSolid {
 
 export interface IsoWallInput {
   id: string;
+  kind?: WallKind;
   x1: number;
   y1: number;
   x2: number;
@@ -284,6 +288,8 @@ export function wallSolids(
     const dy = w.y2 - w.y1;
     const len = Math.hypot(dx, dy);
     if (!(len > 1e-6)) continue;
+    const height = wallHeight * (w.kind === "railing" ? RAILING_HEIGHT_FRACTION : 1);
+    const kind = w.kind === "railing" ? "railing" : "wall";
     const d = { x: dx / len, y: dy / len };
     const n = { x: -d.y, y: d.x };
     const half = w.thickness / 2;
@@ -310,20 +316,20 @@ export function wallSolids(
     let cursor = 0;
     for (const s of spans) {
       // Solid wall up to this opening. The cap only at the wall's real end.
-      if (s.s0 > cursor) pieces(cursor === 0 ? -half : cursor, s.s0, wallHeight, "wall");
+      if (s.s0 > cursor) pieces(cursor === 0 ? -half : cursor, s.s0, height, kind);
       if (s.type === "window") {
-        pieces(s.s0, s.s1, wallHeight * SILL_FRACTION, "sill");
+        pieces(s.s0, s.s1, height * SILL_FRACTION, "sill");
         if (includeGlass) out.push({
           kind: "glass",
           id: w.id,
           base: [at(s.s0), at(s.s1)],
-          z0: wallHeight * SILL_FRACTION,
-          z1: wallHeight * GLASS_FRACTION,
+          z0: height * SILL_FRACTION,
+          z1: height * GLASS_FRACTION,
         });
       }
       cursor = s.s1;
     }
-    if (cursor < len) pieces(cursor === 0 ? -half : cursor, len + half, wallHeight, "wall");
+    if (cursor < len) pieces(cursor === 0 ? -half : cursor, len + half, height, kind);
   }
   return out;
 }
