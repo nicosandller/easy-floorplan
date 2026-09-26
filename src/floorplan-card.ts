@@ -2368,6 +2368,11 @@ export class FloorplanCard extends LitElement {
     .area-tap-target {
       cursor: pointer;
     }
+    /* Decorative glyphs sit above the room, but are not hit targets (#323).
+       Only a piece with a runnable gesture or floor navigation takes input.
+       Keep this in the card: the editor must still be able to select furniture. */
+    .fp-furniture { pointer-events: none; }
+    .fp-furniture-link .fp-furniture { pointer-events: auto; }
     /* A staircase that changes floor (issue #121). The pointer is the whole
        affordance — the symbol already draws an arrow saying which way it
        goes — and it only exists on a piece that has somewhere to lead. */
