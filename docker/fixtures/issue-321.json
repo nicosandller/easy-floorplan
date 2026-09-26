@@ -1,0 +1,576 @@
+{
+  "type": "custom:easy-floorplan-card",
+  "width": 840,
+  "height": 1020,
+  "grid": 20,
+  "overlayScale": "plan",
+  "floors": [
+    {
+      "id": "floor_main",
+      "name": "Floor 1",
+      "walls": [
+        {
+          "id": "wall_xkrq740",
+          "x1": 40,
+          "y1": 100,
+          "x2": 380,
+          "y2": 100
+        },
+        {
+          "id": "wall_pkm4zdc",
+          "x1": 380,
+          "y1": 560,
+          "x2": 380,
+          "y2": 100
+        },
+        {
+          "id": "wall_k9fllfg",
+          "x1": 40,
+          "y1": 560,
+          "x2": 40,
+          "y2": 100
+        },
+        {
+          "id": "wall_eidgpep",
+          "x1": 380,
+          "y1": 100,
+          "x2": 700,
+          "y2": 100
+        },
+        {
+          "id": "wall_uw3bbu4",
+          "x1": 380,
+          "y1": 560,
+          "x2": 700,
+          "y2": 560
+        },
+        {
+          "id": "wall_olgtu1o",
+          "x1": 700,
+          "y1": 560,
+          "x2": 700,
+          "y2": 100
+        },
+        {
+          "id": "wall_cvt0dqp",
+          "x1": 280,
+          "y1": 660,
+          "x2": 280,
+          "y2": 560
+        },
+        {
+          "id": "wall_9fpd3ok",
+          "x1": 700,
+          "y1": 660,
+          "x2": 700,
+          "y2": 560
+        },
+        {
+          "id": "wall_5vfnn29",
+          "x1": 700,
+          "y1": 660,
+          "x2": 700,
+          "y2": 980
+        },
+        {
+          "id": "wall_8142h82",
+          "x1": 700,
+          "y1": 980,
+          "x2": 480,
+          "y2": 980
+        },
+        {
+          "id": "wall_nxrvvg6",
+          "x1": 280,
+          "y1": 980,
+          "x2": 280,
+          "y2": 660
+        },
+        {
+          "id": "wall_vgey5c6",
+          "x1": 480,
+          "y1": 660,
+          "x2": 280,
+          "y2": 660
+        },
+        {
+          "id": "wall_hwdrw8y",
+          "x1": 40,
+          "y1": 560,
+          "x2": 280,
+          "y2": 560
+        },
+        {
+          "id": "wall_yxzvxu0",
+          "x1": 280,
+          "y1": 560,
+          "x2": 380,
+          "y2": 560
+        },
+        {
+          "id": "wall_1mahp7c",
+          "x1": 480,
+          "y1": 660,
+          "x2": 560,
+          "y2": 660
+        },
+        {
+          "id": "wall_xzltihy",
+          "x1": 700,
+          "y1": 660,
+          "x2": 620,
+          "y2": 660
+        },
+        {
+          "id": "wall_jcoiyu3",
+          "x1": 480,
+          "y1": 660,
+          "x2": 480,
+          "y2": 880
+        },
+        {
+          "id": "wall_02w4wmi",
+          "x1": 480,
+          "y1": 880,
+          "x2": 480,
+          "y2": 980
+        },
+        {
+          "id": "wall_d2n4qfp",
+          "x1": 440,
+          "y1": 880,
+          "x2": 440,
+          "y2": 980
+        },
+        {
+          "id": "wall_4merjbp",
+          "x1": 440,
+          "y1": 980,
+          "x2": 480,
+          "y2": 980
+        },
+        {
+          "id": "wall_efwdl3c",
+          "x1": 440,
+          "y1": 880,
+          "x2": 480,
+          "y2": 880
+        },
+        {
+          "id": "wall_zmiemrf",
+          "x1": 280,
+          "y1": 980,
+          "x2": 440,
+          "y2": 980
+        },
+        {
+          "id": "wall_vq4tv89",
+          "x1": 40,
+          "y1": 100,
+          "x2": 40,
+          "y2": 40,
+          "kind": "railing"
+        },
+        {
+          "id": "wall_zrymsuy",
+          "x1": 760,
+          "y1": 40,
+          "x2": 40,
+          "y2": 40,
+          "kind": "railing"
+        },
+        {
+          "id": "wall_7qkypcy",
+          "x1": 760,
+          "y1": 200,
+          "x2": 760,
+          "y2": 40,
+          "kind": "railing"
+        },
+        {
+          "id": "wall_t5w5vgj",
+          "x1": 800,
+          "y1": 200,
+          "x2": 760,
+          "y2": 200,
+          "kind": "railing"
+        },
+        {
+          "id": "wall_83qi4jw",
+          "x1": 800,
+          "y1": 200,
+          "x2": 800,
+          "y2": 580,
+          "kind": "railing"
+        },
+        {
+          "id": "wall_r0f6vpw",
+          "x1": 800,
+          "y1": 580,
+          "x2": 700,
+          "y2": 580,
+          "kind": "railing"
+        }
+      ],
+      "openings": [
+        {
+          "id": "window_d497te0",
+          "type": "window",
+          "x": 150.02255002962673,
+          "y": 100,
+          "length": 180,
+          "angle": 0,
+          "motion": "fixed"
+        },
+        {
+          "id": "door_t20atqb",
+          "type": "door",
+          "x": 289.5436791207607,
+          "y": 100,
+          "length": 60,
+          "angle": 180
+        },
+        {
+          "id": "door_xprwse4",
+          "type": "door",
+          "x": 329.51391320744557,
+          "y": 560,
+          "length": 60,
+          "angle": 0,
+          "flipH": true
+        },
+        {
+          "id": "door_39926nt",
+          "type": "door",
+          "x": 700,
+          "y": 230.39564509792916,
+          "length": 60,
+          "angle": -90,
+          "flipH": true
+        },
+        {
+          "id": "door_ibn1bw4",
+          "type": "door",
+          "x": 490.03676965762463,
+          "y": 560,
+          "length": 60,
+          "angle": 0
+        },
+        {
+          "id": "window_lch2wu6",
+          "type": "window",
+          "x": 700,
+          "y": 359.6688927549245,
+          "length": 160,
+          "angle": -90,
+          "motion": "fixed"
+        },
+        {
+          "id": "window_eb7g0om",
+          "type": "window",
+          "x": 700,
+          "y": 475.22083169650375,
+          "length": 60,
+          "angle": -90,
+          "sash": "single"
+        },
+        {
+          "id": "door_v4826hw",
+          "type": "door",
+          "x": 369.1463513185895,
+          "y": 660,
+          "length": 60,
+          "angle": 180
+        },
+        {
+          "id": "window_hix4no4",
+          "type": "window",
+          "x": 370,
+          "y": 980,
+          "length": 90,
+          "angle": 180,
+          "sash": "single"
+        },
+        {
+          "id": "window_414ycxy",
+          "type": "window",
+          "x": 585.8095161131015,
+          "y": 980,
+          "length": 90,
+          "angle": 180,
+          "sash": "single"
+        },
+        {
+          "id": "door_qut4qxk",
+          "type": "door",
+          "x": 280,
+          "y": 609.8052420332408,
+          "length": 60,
+          "angle": 90,
+          "flipH": true
+        }
+      ],
+      "items": [],
+      "texts": [],
+      "furniture": [
+        {
+          "id": "furn_k62xdag",
+          "type": "bathtub",
+          "x": 440,
+          "y": 740,
+          "w": 150,
+          "h": 76,
+          "angle": 270
+        },
+        {
+          "id": "furn_sb6ezc0",
+          "type": "toilet",
+          "x": 410,
+          "y": 930,
+          "w": 40,
+          "h": 55,
+          "angle": 90
+        },
+        {
+          "id": "furn_mg5iyfq",
+          "type": "washer",
+          "x": 320,
+          "y": 940,
+          "w": 60,
+          "h": 60,
+          "angle": 270
+        },
+        {
+          "id": "furn_y8hvxla",
+          "type": "bed",
+          "x": 140,
+          "y": 230,
+          "w": 150,
+          "h": 200,
+          "angle": 270
+        },
+        {
+          "id": "furn_9dgrtlz",
+          "type": "sofa",
+          "x": 480,
+          "y": 280,
+          "w": 170,
+          "h": 72,
+          "angle": 210
+        },
+        {
+          "id": "furn_7s510py",
+          "type": "table",
+          "x": 650,
+          "y": 440,
+          "w": 120,
+          "h": 80,
+          "angle": 90
+        },
+        {
+          "id": "furn_1zz01pl",
+          "type": "fridge",
+          "x": 660,
+          "y": 700,
+          "w": 60,
+          "h": 64,
+          "angle": 0
+        },
+        {
+          "id": "furn_cby5n2f",
+          "type": "sink",
+          "x": 520,
+          "y": 920,
+          "w": 60,
+          "h": 60,
+          "angle": 270
+        },
+        {
+          "id": "furn_gihjrnl",
+          "type": "stove",
+          "x": 520,
+          "y": 740,
+          "w": 60,
+          "h": 60,
+          "angle": 270
+        },
+        {
+          "id": "furn_qr9l2vt",
+          "type": "dishwasher",
+          "x": 520,
+          "y": 840,
+          "w": 45,
+          "h": 60,
+          "angle": 270
+        },
+        {
+          "id": "furn_ny61i1n",
+          "type": "sink",
+          "x": 320,
+          "y": 760,
+          "w": 60,
+          "h": 60,
+          "angle": 270
+        },
+        {
+          "id": "furn_fnkol3n",
+          "type": "wardrobe",
+          "x": 140,
+          "y": 370,
+          "w": 200,
+          "h": 40,
+          "angle": 0
+        },
+        {
+          "id": "furn_g78ufu3",
+          "type": "wardrobe",
+          "x": 210,
+          "y": 440,
+          "w": 100,
+          "h": 60,
+          "angle": 270
+        }
+      ],
+      "trackers": [],
+      "areas": [
+        {
+          "id": "area_9pujf4b",
+          "points": [
+            {
+              "x": 380,
+              "y": 100
+            },
+            {
+              "x": 700,
+              "y": 100
+            },
+            {
+              "x": 700,
+              "y": 560
+            },
+            {
+              "x": 380,
+              "y": 560
+            }
+          ],
+          "showName": true,
+          "name": "Living Room",
+          "color": "#f0ffff",
+          "opacity": 0.6,
+          "activeColor": "#ffeeaa"
+        },
+        {
+          "id": "area_4f90j24",
+          "points": [
+            {
+              "x": 40,
+              "y": 100
+            },
+            {
+              "x": 380,
+              "y": 100
+            },
+            {
+              "x": 380,
+              "y": 560
+            },
+            {
+              "x": 40,
+              "y": 560
+            }
+          ],
+          "showName": true,
+          "name": "Bedroom",
+          "opacity": 0.6,
+          "color": "#f0ffff"
+        },
+        {
+          "id": "area_lqjyl1f",
+          "points": [
+            {
+              "x": 280,
+              "y": 560
+            },
+            {
+              "x": 700,
+              "y": 560
+            },
+            {
+              "x": 700,
+              "y": 660
+            },
+            {
+              "x": 280,
+              "y": 660
+            }
+          ],
+          "showName": true,
+          "name": "Hallway",
+          "opacity": 0.6,
+          "color": "#f0ffff"
+        },
+        {
+          "id": "area_zbz6cx1",
+          "points": [
+            {
+              "x": 280,
+              "y": 660
+            },
+            {
+              "x": 480,
+              "y": 660
+            },
+            {
+              "x": 480,
+              "y": 980
+            },
+            {
+              "x": 280,
+              "y": 980
+            }
+          ],
+          "showName": true,
+          "name": "Bathroom",
+          "opacity": 0.6,
+          "color": "#f0ffff"
+        },
+        {
+          "id": "area_4cm0kw7",
+          "points": [
+            {
+              "x": 480,
+              "y": 660
+            },
+            {
+              "x": 700,
+              "y": 660
+            },
+            {
+              "x": 700,
+              "y": 980
+            },
+            {
+              "x": 480,
+              "y": 980
+            }
+          ],
+          "showName": true,
+          "name": "Kitchen",
+          "opacity": 0.6,
+          "color": "#f0ffff"
+        }
+      ]
+    }
+  ],
+  "view": "3d",
+  "wallHeight": 100,
+  "grid_options": {
+    "columns": "full",
+    "rows": "auto"
+  },
+  "roomFocus": true,
+  "background": "#91b5b6",
+  "skin": "pastel",
+  "snap": 10,
+  "wallOpacity": 1
+}

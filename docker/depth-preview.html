@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Easy Floorplan · Depth sorting #321</title>
+<style>
+  :root { font: 15px system-ui; color: #243d4c; background: #eef3f5; }
+  body { max-width: 1120px; margin: 24px auto; padding: 0 24px; }
+  h1 { margin: 0 0 8px; font-size: 26px; } p { margin: 8px 0; }
+  nav { display: flex; gap: 24px; align-items: center; margin: 18px 0; }
+  label { display: flex; gap: 8px; align-items: center; }
+  select { padding: 6px; } #stage { color: #087c88; font-weight: 700; }
+  easy-floorplan-card { display: block; max-width: 950px; margin: auto; --primary-text-color: #243d4c; --card-background-color: #91b5b6; }
+</style>
+<h1>3D depth sorting <span id="stage"></span></h1>
+<p>Issue #321 · Reporter’s attached layout, with device badges omitted for clarity.</p>
+<nav>
+  <label>Corner <select id="rotation"><option>0</option><option>90</option><option>180</option><option>270</option></select></label>
+  <label>Wall opacity <input id="opacity" type="range" min="0.2" max="1" step="0.1" value="1"></label>
+  <span>Inspect the wall corners, window sills and bathroom partition.</span>
+</nav>
+<easy-floorplan-card></easy-floorplan-card>
+<script type="module">
+  import '/src/floorplan-card.ts';
+  import config from './fixtures/issue-321.json';
+  const card = document.querySelector('easy-floorplan-card');
+  document.querySelector('#stage').textContent = new URLSearchParams(location.search).get('stage') === 'before' ? '· Before' : '· After';
+  function render() {
+    card.setConfig({ ...config, rotation: Number(document.querySelector('#rotation').value), wallOpacity: Number(document.querySelector('#opacity').value) });
+    card.hass = { states: {}, entities: {} };
+  }
+  document.querySelector('#rotation').onchange = render;
+  document.querySelector('#opacity').oninput = render;
+  render();
+</script>
+</html>

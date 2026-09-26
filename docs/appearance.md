@@ -597,10 +597,12 @@ changed. The panels ease to the new position rather than arriving in one frame:
 
 ![Window sashes easing shut over five frames](img/3d-view-panel-travel.png)
 
-This remains an isometric 2.5D view. Depth ordering uses a
-painter's sort and can misorder diagonal walls or large objects. Furniture still
-uses a shared height. Pin-shaped device markers and per-symbol heights are also
-follow-ups.
+This remains an isometric 2.5D view. Wall corners share a joined outline, and
+overlapping solids are ordered by their separation and visible faces, so glass
+stays above its sill and a nearer wall hides furniture. Physically intersecting
+objects or cyclic overlaps can still fall back to an approximate painter order.
+Furniture still uses a shared height. Pin-shaped device markers and per-symbol
+heights are also follow-ups.
 
 For a local preview with simulated entities and view, height, opacity and state
 controls, see [the development preview](../docker/README.md#3d-development-preview).
