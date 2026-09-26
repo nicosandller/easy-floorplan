@@ -180,6 +180,11 @@ contact sensor once is enough for `more-info` to know what to show. A piece with
 floor to go to nor any action stays inert: no button role, no tab stop, nothing that
 announces itself and then does nothing.
 
+Inert furniture also lets pointer input pass through to the Area underneath,
+so tapping its surface can zoom the room in both 2D and 3D. Furniture with a
+runnable gesture or a floor destination keeps its existing interaction target.
+The editor still lets you select and move every piece.
+
 "Any action" means one that could actually run, not merely one that is written down. A
 `more-info` with no entity to show, a `navigate` with no path, a `call-service` with no
 service and anything set to `none` all count as nothing to do: the piece stays inert, and

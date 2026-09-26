@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Easy Floorplan · Furniture taps #323</title>
+<style>
+  :root { font: 15px system-ui; color: #243d4c; background: #eef3f5; }
+  body { max-width: 1120px; margin: 32px auto; padding: 0 24px; }
+  h1 { margin-bottom: 8px; font-size: 28px; } p { color: #496574; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 28px; }
+  section { background: white; border-radius: 16px; padding: 20px; }
+  h2 { font-size: 18px; margin: 0 0 12px; } #stage, output { color: #087c88; font-weight: 700; }
+  output { display: block; margin-top: 18px; } button { padding: 8px 16px; }
+  easy-floorplan-card { display: block; --primary-text-color: #243d4c; --card-background-color: #fff; --primary-color:#087c88; }
+  @media(max-width:700px) { main { grid-template-columns:1fr; } }
+</style>
+<h1>Tap furniture to focus its room <span id="stage"></span></h1>
+<p>Issue #323 · Tap the centre of each decorative table. The Area underneath should zoom.</p>
+<button id="reset">Reset both views</button>
+<main><section><h2>2D plan</h2><easy-floorplan-card id="flat"></easy-floorplan-card><output id="flat-state">Room not focused</output></section>
+<section><h2>3D view</h2><easy-floorplan-card id="raised"></easy-floorplan-card><output id="raised-state">Room not focused</output></section></main>
+<script type="module">
+  import '/src/floorplan-card.ts';
+  customElements.define('ha-icon', class extends HTMLElement { connectedCallback() { this.textContent = '×'; } });
+  document.querySelector('#stage').textContent = new URLSearchParams(location.search).get('stage') === 'before' ? '· Before' : '· After';
+  const config = {
+    type:'custom:easy-floorplan-card',width:500,height:400,wallHeight:60,skin:'pastel',roomFocus:true,
+    areas:[{id:'room',name:'Dining room',color:'#b9d9d0',opacity:0.7,points:[{x:120,y:80},{x:340,y:80},{x:340,y:280},{x:120,y:280}]}],
+    furniture:[{id:'table',type:'table',x:220,y:170,w:130,h:90}],
+    walls:[],openings:[],items:[],texts:[],trackers:[]
+  };
+  function render() {
+    for (const [id,view] of [['flat','2d'],['raised','3d']]) {
+      const previous = document.getElementById(id);
+      const card = document.createElement('easy-floorplan-card');
+      card.id = id; previous.replaceWith(card);
+      card.setConfig({...config,view});
+      card.hass = {states:{},entities:{}};
+      const output = document.getElementById(id+'-state');
+      output.textContent = 'Room not focused';
+      card.addEventListener('click', async () => {
+        await card.updateComplete;
+        output.textContent = card.shadowRoot.querySelector('.zoom-out') ? 'Room focused ✓' : 'Room not focused';
+      });
+    }
+  }
+  document.querySelector('#reset').onclick = render;
+  render();
+</script>
+</html>
