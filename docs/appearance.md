@@ -289,6 +289,10 @@ nothing stands in the gap but its shutter.
 
 ## Balcony railings
 
+In **3D view**, railings stand at half the configured wall height and retain
+their 40% thickness. They follow the wall colour and opacity, while continuing
+to let light through. At zero wall height the normal flat railing is drawn.
+
 *"Allow a wall in the floor plan to be marked as belonging to a balcony, rather than being
 treated as a full-height wall."* (issue #182)
 

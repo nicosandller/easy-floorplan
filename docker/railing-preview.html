@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Easy Floorplan · Railings #322</title>
+<style>
+  :root { font: 15px system-ui; color: #243d4c; background: #eef3f5; }
+  body { max-width: 1120px; margin: 32px auto; padding: 0 24px; }
+  h1 { margin-bottom: 8px; font-size: 28px; } p { color: #496574; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 28px; }
+  section { background: white; border-radius: 16px; padding: 20px; }
+  h2 { font-size: 18px; margin: 0 0 12px; } #stage { color: #087c88; }
+  easy-floorplan-card { display: block; --primary-text-color: #243d4c; --card-background-color: #fff; }
+  @media(max-width:700px) { main { grid-template-columns:1fr; } }
+</style>
+<h1>Balcony railings <span id="stage"></span></h1>
+<p>Issue #322 · One solid rear wall and three railing edges, shown in both views.</p>
+<main><section><h2>2D plan</h2><easy-floorplan-card id="flat"></easy-floorplan-card></section>
+<section><h2>3D view</h2><easy-floorplan-card id="raised"></easy-floorplan-card></section></main>
+<script type="module">
+  import '/src/floorplan-card.ts';
+  document.querySelector('#stage').textContent = new URLSearchParams(location.search).get('stage') === 'before' ? '· Before' : '· After';
+  const config = {
+    type:'custom:easy-floorplan-card', width:420, height:340, wallHeight:90, wallOpacity:1, skin:'pastel',
+    walls:[
+      {id:'rear',x1:70,y1:80,x2:350,y2:80,thickness:12},
+      {id:'left',x1:70,y1:80,x2:70,y2:270,thickness:12,kind:'railing'},
+      {id:'front',x1:70,y1:270,x2:350,y2:270,thickness:12,kind:'railing'},
+      {id:'right',x1:350,y1:270,x2:350,y2:80,thickness:12,kind:'railing'}],
+    areas:[{id:'balcony',name:'Balcony',color:'#b9d9d0',opacity:0.7,points:[{x:70,y:80},{x:350,y:80},{x:350,y:270},{x:70,y:270}]}],
+    furniture:[{id:'table',type:'table',x:200,y:185,w:90,h:60},{id:'plant',type:'plant',x:310,y:130,w:40,h:40}],
+    openings:[],items:[],texts:[],trackers:[]
+  };
+  for (const [id,view] of [['flat','2d'],['raised','3d']]) {
+    const card = document.getElementById(id);
+    card.setConfig({...config,view});
+    card.hass = {states:{},entities:{}};
+  }
+</script>
+</html>

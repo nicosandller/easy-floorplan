@@ -150,6 +150,7 @@ import {
   zoomedOverlayScale,
   IDENTITY_ZOOM,
   wallThickness,
+  RAILING_WEIGHT,
   type PlanRotation,
   type OpeningStyle,
 } from "./render";
@@ -800,7 +801,8 @@ export class FloorplanCard extends LitElement {
     const walls = standingWalls.map((w) => {
       const a = map(w.x1, w.y1);
       const b = map(w.x2, w.y2);
-      return { id: w.id, x1: a.x, y1: a.y, x2: b.x, y2: b.y, thickness: wallThickness(w.thickness) };
+      return { id: w.id, kind: w.kind, x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+        thickness: wallThickness(w.thickness) * (isRailing(w) ? RAILING_WEIGHT : 1) };
     });
     const openings = active.openings.map((o) => {
       const p = map(o.x, o.y);
@@ -2442,12 +2444,12 @@ export class FloorplanCard extends LitElement {
        shade laid over a side is what makes a box read as a box; a furniture
        block keeps the paper on top so its glyph still reads. Wall faces pass
        taps through; opening panels and furniture keep their own actions. */
-    .fp-iso-wall polygon, .fp-iso-sill polygon { stroke: none; }
+    .fp-iso-wall polygon, .fp-iso-railing polygon, .fp-iso-sill polygon { stroke: none; }
     /* Everything standing in the wall plane fades together. A closed door leaf
        left at full opacity read as a patch of wall that had refused to turn
        transparent, which is what it looks like from the front (issue #261
        review). Glazed panels keep their own glass alpha instead. */
-    .fp-iso-wall, .fp-iso-sill, .fp-iso-panel:not(.fp-iso-glazed) {
+    .fp-iso-wall, .fp-iso-railing, .fp-iso-sill, .fp-iso-panel:not(.fp-iso-glazed) {
       opacity: var(--fp-wall-opacity, 1);
     }
     .fp-iso-panel {
