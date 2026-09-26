@@ -5,6 +5,23 @@ to hand-edit YAML or to see what a control maps to.
 
 Back to the [README](../README.md).
 
+## Writing coordinates in YAML
+
+Quote the lowercase **key** `'y'` wherever you write a coordinate, including
+openings, devices, furniture, text, trackers, area points and the floor switcher:
+
+```yaml
+x: 480
+'y': 141
+```
+
+Home Assistant's YAML 1.1 editor can interpret both unquoted `y` and `Y` as
+boolean `true`, saving the coordinate as `'true': 141`. Replace that key with
+`'y': 141`; quoting the value or using uppercase `'Y'` does not fix the key.
+The card and visual editor report the affected configuration path when a
+required `y` is missing or is not a finite number. The visual editor creates
+the lowercase property and Home Assistant quotes it when writing YAML.
+
 ## Top level
 
 | Option       | Type     | Default            | Description                                  |
@@ -265,7 +282,7 @@ items:
     entity: light.living_standing_lamp
     kind: light
     x: 400
-    y: 300
+    'y': 300
     glow: true
     glowRadius: 200
 ```
@@ -321,11 +338,11 @@ in the corner of the plan, a temperature over a room:
 ```yaml
 texts:
   # The reading on its own.
-  - { id: pv, x: 300, y: 80, text: "", entity: sensor.pv_output, size: 28 }
+  - { id: pv, x: 300, 'y': 80, text: "", entity: sensor.pv_output, size: 28 }
   # Words in front of it: "Grid 0.4 kW".
-  - { id: grid, x: 300, y: 130, text: Grid, entity: sensor.grid_power }
+  - { id: grid, x: 300, 'y': 130, text: Grid, entity: sensor.grid_power }
   # An attribute rather than the state: "Hall 21.5".
-  - { id: hall, x: 300, y: 180, text: Hall, entity: climate.hall, attribute: current_temperature }
+  - { id: hall, x: 300, 'y': 180, text: Hall, entity: climate.hall, attribute: current_temperature }
 ```
 
 `text` becomes a **prefix** when an entity is bound, and the value stands alone when you
@@ -362,7 +379,7 @@ double-tap stay free. An action with no `entity` of its own uses the piece's. Se
 [Actions on furniture](behavior.md#actions-on-furniture).
 
 ```yaml
-{ id: plant1, type: plant, x: 300, y: 220, w: 40, h: 40,
+{ id: plant1, type: plant, x: 300, 'y': 220, w: 40, h: 40,
   entity: sensor.ficus_soil_moisture,
   stateColor: [ { above: 80, color: green }, { above: 65, color: yellow }, { color: red } ] }
 ```
@@ -388,7 +405,7 @@ symbols:
       - { repeat: 7, step: [14.29, 0], part: { line: [11.4, 40, 11.4, 60], role: line } }
 
 furniture:
-  - { id: w1, type: wardrobe7, x: 300, y: 90, w: 420, h: 55 }
+  - { id: w1, type: wardrobe7, x: 300, 'y': 90, w: 420, h: 55 }
 ```
 
 You don't have to hand-write it: **Project → Symbols** in the editor takes pasted JSON,
@@ -473,7 +490,7 @@ areas:
     haArea: living_room
     color: "#26c6da"
     opacity: 0.15
-    points: [{ x: 100, y: 100 }, { x: 900, y: 100 }, { x: 900, y: 500 }, { x: 100, y: 500 }]
+    points: [{ x: 100, 'y': 100 }, { x: 900, 'y': 100 }, { x: 900, 'y': 500 }, { x: 100, 'y': 500 }]
 
   # Lights up green while occupied, lifting to a stronger fill.
   - id: kitchen
@@ -482,7 +499,7 @@ areas:
     activeColor: "#4caf50"
     opacity: 0.12
     activeOpacity: 0.35
-    points: [{ x: 100, y: 500 }, { x: 500, y: 500 }, { x: 500, y: 900 }, { x: 100, y: 900 }]
+    points: [{ x: 100, 'y': 500 }, { x: 500, 'y': 500 }, { x: 500, 'y': 900 }, { x: 100, 'y': 900 }]
 
   # Outline only: the hall's own walls turn green, its fill never changes.
   - id: hall
@@ -490,7 +507,7 @@ areas:
     entity: binary_sensor.hall_occupancy
     activeColor: "#4caf50"
     highlight: border
-    points: [{ x: 500, y: 100 }, { x: 900, y: 100 }, { x: 900, y: 500 }, { x: 500, y: 500 }]
+    points: [{ x: 500, 'y': 100 }, { x: 900, 'y': 100 }, { x: 900, 'y': 500 }, { x: 500, 'y': 500 }]
 
   # Thresholded: the whole room reddens as air quality drops.
   - id: study
@@ -500,7 +517,7 @@ areas:
       - { above: 1200, color: "#e1243b" }
       - { above: 800, color: "#ff9300" }
       - { color: "#58d32f" }
-    points: [{ x: 500, y: 500 }, { x: 900, y: 500 }, { x: 900, y: 900 }, { x: 500, y: 900 }]
+    points: [{ x: 500, 'y': 500 }, { x: 900, 'y': 500 }, { x: 900, 'y': 900 }, { x: 500, 'y': 900 }]
 ```
 
 ## Example
@@ -519,37 +536,37 @@ walls:
   - { id: w4, x1: 100, y1: 500, x2: 100, y2: 100 }
 openings:
   # Swings open when the contact opens.
-  - { id: d1, type: door, x: 300, y: 500, length: 80, angle: 0,
+  - { id: d1, type: door, x: 300, 'y': 500, length: 80, angle: 0,
       entity: binary_sensor.front_door, activeColor: "#ef5350" }
-  - { id: win1, type: window, x: 600, y: 100, length: 140, angle: 0 }
+  - { id: win1, type: window, x: 600, 'y': 100, length: 140, angle: 0 }
   # An open doorway: the gap in the wall, and nothing drawn in it.
-  - { id: arch1, type: passage, x: 100, y: 300, length: 90, angle: 90 }
+  - { id: arch1, type: passage, x: 100, 'y': 300, length: 90, angle: 90 }
   # A roof window over the middle of the room: no wall, two sides, and a
   # blind that is what darkens the room under it.
-  - { id: sky1, type: skylight, x: 500, y: 300, length: 100, width: 60, angle: 0,
+  - { id: sky1, type: skylight, x: 500, 'y': 300, length: 100, width: 60, angle: 0,
       entity: cover.velux, shutterEntity: cover.velux_blind }
 items:
-  - { id: i1, entity: light.living_room, x: 240, y: 200, kind: light, glow: true }
-  - { id: i2, entity: binary_sensor.presence, x: 380, y: 380, kind: binary_sensor,
+  - { id: i1, entity: light.living_room, x: 240, 'y': 200, kind: light, glow: true }
+  - { id: i2, entity: binary_sensor.presence, x: 380, 'y': 380, kind: binary_sensor,
       display: iconRipple, rippleColor: "#26c6da", rippleSize: 120 }
   - { id: i3, entity: sensor.living_room_temperature,
       secondaryEntity: sensor.living_room_humidity,
-      x: 700, y: 380, kind: sensor, showState: true }
+      x: 700, 'y': 380, kind: sensor, showState: true }
 furniture:
-  - { id: f1, type: sofa, x: 250, y: 420, w: 170, h: 72, angle: 0 }
+  - { id: f1, type: sofa, x: 250, 'y': 420, w: 170, h: 72, angle: 0 }
 texts:
-  - { id: t1, x: 500, y: 60, text: Living Room, size: 22 }
+  - { id: t1, x: 500, 'y': 60, text: Living Room, size: 22 }
 areas:
   - id: a1
     name: Living Room
     haArea: living_room
     color: "#26c6da"
     opacity: 0.15
-    points: [{ x: 100, y: 100 }, { x: 900, y: 100 }, { x: 900, y: 500 }, { x: 100, y: 500 }]
+    points: [{ x: 100, 'y': 100 }, { x: 900, 'y': 100 }, { x: 900, 'y': 500 }, { x: 100, 'y': 500 }]
 trackers:
   - id: pet
     x: 120
-    y: 130
+    'y': 130
     w: 760
     h: 350
     color: "#26c6da"

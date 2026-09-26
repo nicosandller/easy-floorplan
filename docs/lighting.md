@@ -135,10 +135,14 @@ ceiling is not in the plan at all, so a roof window does something else:
 
 ```yaml
 openings:
-  - { id: velux, type: skylight, x: 450, y: 220, length: 100, width: 60, angle: 0,
+  - { id: velux, type: skylight, x: 450, 'y': 220, length: 100, width: 60, angle: 0,
       shutterEntity: cover.velux_blind }
 skylightDrop: 0.55   # how far the patch slides before it lands (default)
 ```
+
+Keep `skylightDrop` at card level, alongside `openings`. To adjust an individual
+skylight, set its `ceilingHeight`. Quote the lowercase `'y'` key when hand-editing
+coordinates; see [Writing coordinates in YAML](configuration.md#writing-coordinates-in-yaml).
 
 **The patch is the skylight, moved.** Parallel light projects a horizontal
 rectangle onto a horizontal floor unchanged — congruent, at every sun angle —

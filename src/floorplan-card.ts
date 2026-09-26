@@ -2,6 +2,7 @@ import { LitElement, html, css, svg, nothing, type TemplateResult, type Property
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { keyed } from "lit/directives/keyed.js";
+import { validateYCoordinates } from "./config-coordinates";
 import type {
   HomeAssistant,
   FloorplanCardConfig,
@@ -318,6 +319,7 @@ export class FloorplanCard extends LitElement {
       if (raw[key] != null && typeof raw[key] !== "number")
         throw new Error(`Invalid configuration: "${key}" must be a number`);
     }
+    validateYCoordinates(config);
     this._config = {
       ...config,
       width: config.width ?? DEFAULT_WIDTH,
