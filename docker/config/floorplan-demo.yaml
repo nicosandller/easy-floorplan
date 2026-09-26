@@ -115,14 +115,14 @@ views:
                   - id: o1
                     type: window
                     x: 500
-                    y: 100
+                    'y': 100
                     length: 140
                     angle: 0
                     # The demo cover has no shutter device_class, so state its
                     # motion explicitly: a closed roller blocks sun and lamp glow.
                     motion: roll
                     entity: cover.living_room_window
-                  - { id: o2, type: door, x: 500, y: 500, length: 90, angle: 0 }
+                  - { id: o2, type: door, x: 500, 'y': 500, length: 90, angle: 0 }
                   # The garage door is open/close only -- no position at all -- which
                   # is the other half of the cover story, and it drives the roll-up
                   # curtain from a real entity rather than a dev-only slider.
@@ -130,7 +130,7 @@ views:
                     type: door
                     motion: roll
                     x: 900
-                    y: 300
+                    'y': 300
                     length: 140
                     angle: 90
                     entity: cover.garage_door
@@ -142,7 +142,7 @@ views:
                     type: window
                     motion: awning
                     x: 845
-                    y: 500
+                    'y': 500
                     length: 90
                     angle: 0
                     entity: binary_sensor.front_door
@@ -152,7 +152,7 @@ views:
                   - id: o4
                     type: window
                     x: 300
-                    y: 500
+                    'y': 500
                     length: 120
                     angle: 0
                     entity: binary_sensor.front_door
@@ -172,7 +172,7 @@ views:
                   - id: o5
                     type: window
                     x: 740
-                    y: 100
+                    'y': 100
                     length: 140
                     angle: 0
                     entity: binary_sensor.left_leaf
@@ -183,7 +183,7 @@ views:
                     type: door
                     sash: double
                     x: 720
-                    y: 500
+                    'y': 500
                     length: 140
                     angle: 0
                     entity: binary_sensor.left_leaf
@@ -197,7 +197,7 @@ views:
                     type: window
                     sash: single
                     x: 100
-                    y: 380
+                    'y': 380
                     length: 120
                     angle: 90
                     shutterEntity: binary_sensor.left_leaf
@@ -222,7 +222,7 @@ views:
                   - id: sk1
                     type: skylight
                     x: 450
-                    y: 220
+                    'y': 220
                     length: 100
                     width: 60
                     angle: 0
@@ -238,7 +238,7 @@ views:
                     type: skylight
                     glazed: false
                     x: 170
-                    y: 330
+                    'y': 330
                     length: 90
                     width: 50
                     angle: 90
@@ -254,7 +254,7 @@ views:
                   - id: garage
                     entity: cover.garage_door
                     x: 900
-                    y: 240
+                    'y': 240
                     activeColor: var(--fp-color-good)
                     inactiveColor: var(--fp-color-bad)
                   # Paired temperature/humidity: stored at two decimals, displayed at
@@ -271,7 +271,7 @@ views:
                     readings:
                       - { entity: sensor.ficus_soil_moisture }
                     x: 500
-                    y: 300
+                    'y': 300
                     kind: sensor
                   # Cast light. These two sit 200 apart with 200 radii so their pools
                   # overlap in the middle, and both are colour-capable demo lights, so
@@ -280,14 +280,14 @@ views:
                   - id: glow_warm
                     entity: light.bed_light
                     x: 400
-                    y: 380
+                    'y': 380
                     kind: light
                     glow: true
                     glowRadius: 200
                   - id: glow_cool
                     entity: light.office_rgbw_lights
                     x: 600
-                    y: 380
+                    'y': 380
                     kind: light
                     glow: true
                     glowRadius: 200
@@ -296,14 +296,14 @@ views:
                   - id: glow_dim
                     entity: light.ceiling_lights
                     x: 780
-                    y: 200
+                    'y': 200
                     kind: light
                     glow: true
                     glowRadius: 120
                   - id: glow_plain
                     entity: light.kitchen_lights
                     x: 780
-                    y: 430
+                    'y': 430
                     kind: light
                     glow: true
                     glowRadius: 110
@@ -312,7 +312,7 @@ views:
                   - id: i3
                     entity: cover.living_room_window
                     x: 380
-                    y: 180
+                    'y': 180
                     kind: cover
                     activeColor: "#8e24aa"
                   # Readings without the device's own state (issue #180) -- the
@@ -331,14 +331,14 @@ views:
                       - { attribute: percentage }
                     labelPosition: left
                     x: 220
-                    y: 180
+                    'y': 180
                     kind: fan
                   # The one that goes `unavailable` on a timer. Left as a plain value
                   # badge so it is obvious on the plan when it drops out.
                   - id: i5
                     entity: sensor.flaky_sensor
                     x: 620
-                    y: 180
+                    'y': 180
                     kind: sensor
                     badgeContent: value
                     showState: true
@@ -352,7 +352,7 @@ views:
                     entity: light.deleted_by_accident
                     name: Missing entity
                     x: 300
-                    y: 300
+                    'y': 300
                     kind: light
                   # climate.hvac boots straight into "cool" (issue #206) --
                   # its own state, never the literal "on" -- which reproduced
@@ -365,7 +365,7 @@ views:
                     entity: climate.hvac
                     iconAnimation: spin
                     x: 860
-                    y: 260
+                    'y': 260
                     kind: climate
                   # A demo weather entity's condition is fixed for its
                   # lifetime, so two side by side -- the same pairing
@@ -376,12 +376,12 @@ views:
                   - id: i8
                     entity: weather.demo_weather_south
                     x: 260
-                    y: 460
+                    'y': 460
                     kind: generic
                   - id: i9
                     entity: weather.demo_weather_north
                     x: 340
-                    y: 460
+                    'y': 460
                     kind: generic
                   # Boots "playing" (issue #206). Call
                   # media_player.media_pause from Developer Tools > Actions
@@ -390,18 +390,18 @@ views:
                   - id: i10
                     entity: media_player.walkman
                     x: 620
-                    y: 460
+                    'y': 460
                     kind: media_player
 
                 furniture:
                   # Issue #121: click it to go up. The card only makes it a
                   # button when there is a floor that way, so the same piece on
                   # the top floor would draw as ordinary stairs.
-                  - { id: fu3, type: stairs, x: 640, y: 300, w: 80, h: 140, goToFloor: up }
+                  - { id: fu3, type: stairs, x: 640, 'y': 300, w: 80, h: 140, goToFloor: up }
                   - id: fu1
                     type: sofa
                     x: 200
-                    y: 380
+                    'y': 380
                     w: 120
                     h: 60
                   # Coloured by threshold off the soil sensor, which the generator
@@ -410,7 +410,7 @@ views:
                   - id: fu2
                     type: plant
                     x: 700
-                    y: 380
+                    'y': 380
                     w: 60
                     h: 60
                     entity: sensor.ficus_soil_moisture
@@ -427,7 +427,7 @@ views:
                   # "hide the marker when the room is empty" path is exercised too.
                   - id: t1
                     x: 120
-                    y: 120
+                    'y': 120
                     w: 360
                     h: 360
                     color: var(--fp-color-living)
@@ -452,20 +452,20 @@ views:
                     color: var(--fp-color-living)
                     opacity: 0.15
                     points:
-                      - { x: 100, y: 100 }
-                      - { x: 500, y: 100 }
-                      - { x: 500, y: 500 }
-                      - { x: 100, y: 500 }
+                      - { x: 100, 'y': 100 }
+                      - { x: 500, 'y': 100 }
+                      - { x: 500, 'y': 500 }
+                      - { x: 100, 'y': 500 }
                   - id: a2
                     name: Kitchen
                     showName: true
                     color: var(--fp-color-kitchen)
                     opacity: 0.15
                     points:
-                      - { x: 500, y: 100 }
-                      - { x: 900, y: 100 }
-                      - { x: 900, y: 500 }
-                      - { x: 500, y: 500 }
+                      - { x: 500, 'y': 100 }
+                      - { x: 900, 'y': 100 }
+                      - { x: 900, 'y': 500 }
+                      - { x: 500, 'y': 500 }
               - id: upstairs
                 name: Upstairs
                 short: 1st
@@ -477,16 +477,16 @@ views:
                   # Splits the bedroom from the landing at the top of the stairs.
                   - { id: uw5, x1: 420, y1: 150, x2: 420, y2: 450 }
                 openings:
-                  - { id: uo1, type: door, x: 500, y: 450, length: 90, angle: 0 }
+                  - { id: uo1, type: door, x: 500, 'y': 450, length: 90, angle: 0 }
                   # An archway through that partition (issue #309): the gap in
                   # the wall and nothing drawn in it, always open to light.
-                  - { id: up1, type: passage, x: 420, y: 300, length: 90, angle: 90 }
+                  - { id: up1, type: passage, x: 420, 'y': 300, length: 90, angle: 90 }
                 items:
-                  - { id: ui1, entity: light.bed_light, x: 350, y: 300, kind: light }
+                  - { id: ui1, entity: light.bed_light, x: 350, 'y': 300, kind: light }
                 texts: []
                 furniture:
                   # The other end of the staircase below — and the way back.
-                  - { id: ust, type: stairs, x: 640, y: 300, w: 80, h: 140, goToFloor: down }
+                  - { id: ust, type: stairs, x: 640, 'y': 300, w: 80, h: 140, goToFloor: down }
                 trackers: []
                 areas: []
 

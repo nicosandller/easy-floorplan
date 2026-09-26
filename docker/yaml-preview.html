@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Easy Floorplan · YAML coordinate regression preview</title>
+<style>
+  :root { font: 15px system-ui; color: #edf3fa; background: #101821; color-scheme: dark; }
+  body { max-width: 1150px; margin: 32px auto; padding: 0 24px; }
+  h1 { font-size: 28px; margin: 8px 0; }
+  h2 { font-size: 19px; margin: 0 0 14px; }
+  p { color: #b7c6d8; line-height: 1.5; }
+  .eyebrow { color: #83d8d0; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin: 24px 0; }
+  article { background: #172231; border: 1px solid #3b4b5e; border-radius: 12px; padding: 20px; }
+  pre { background: #0c141f; padding: 14px; border-radius: 7px; font-size: 16px; line-height: 1.5; }
+  output { display: block; border-left: 3px solid #e8b475; background: #2c2825; padding: 14px; min-height: 74px; line-height: 1.5; overflow-wrap: anywhere; }
+  .ok { border-color: #83d8d0; background: #173435; }
+  easy-floorplan-card { display: block; margin-top: 20px; --primary-text-color: #e2eaf3; --card-background-color: #101821; }
+  footer { color: #a7b8cb; line-height: 1.55; }
+</style>
+<div class="eyebrow">Issue #312 · YAML 1.1 round trip</div>
+<h1>Keep the coordinate key as lowercase 'y'</h1>
+<p>This local preview uses js-yaml's YAML 1.1 schema and the actual card. The Home Assistant editor uses the same schema.</p>
+<main>
+  <article id="unquoted"><h2>Unquoted coordinate</h2><pre>x: 240
+y: 141</pre><p class="parsed"></p><output></output><easy-floorplan-card></easy-floorplan-card></article>
+  <article id="quoted"><h2>Quoted coordinate</h2><pre>x: 240
+'y': 141</pre><p class="parsed"></p><output></output><easy-floorplan-card></easy-floorplan-card></article>
+</main>
+<footer>The same rule applies to wall openings, items, text, furniture, trackers and Area points. Skylight offset uses card-level <code>skylightDrop</code>; each skylight can scale it with <code>ceilingHeight</code>.</footer>
+<script type="module">
+  import {load,dump,YAML11_SCHEMA} from 'js-yaml';
+  import '/src/floorplan-card.ts';
+  customElements.define('ha-icon', class extends HTMLElement {});
+  for (const [id,key] of [['unquoted','y'],['quoted',"'y'"]]) {
+    const article = document.getElementById(id);
+    const coordinates = load('x: 240\n'+key+': 141',{schema:YAML11_SCHEMA});
+    const saved = load(dump(coordinates,{schema:YAML11_SCHEMA}),{schema:YAML11_SCHEMA});
+    article.querySelector('.parsed').textContent = 'Parsed and saved: '+JSON.stringify(saved);
+    const card = article.querySelector('easy-floorplan-card');
+    const output = article.querySelector('output');
+    try {
+      card.setConfig({type:'custom:easy-floorplan-card',width:480,height:290,skin:'tron',
+        sunlight:true,sunBearing:270,skylightDrop:0.2,sunDimming:false,
+        walls:[['n',20,20,460,20],['e',460,20,460,270],['s',460,270,20,270],['w',20,270,20,20]]
+          .map(([id,x1,y1,x2,y2])=>({id,x1,y1,x2,y2})),
+        openings:[{id:'velux',type:'skylight',...saved,length:78,width:98,angle:0}],
+        areas:[],items:[],texts:[],furniture:[],trackers:[]});
+      card.hass = {states:{'sun.sun':{state:'above_horizon',attributes:{elevation:45,azimuth:270}}},entities:{}};
+      output.textContent = typeof saved.y === 'number' ? 'Card accepts the coordinate; the skylight and its sun patch render below.' : 'Card accepted a missing y coordinate. The skylight has no valid vertical position.';
+      if (typeof saved.y === 'number') output.className = 'ok';
+    } catch (error) {
+      output.textContent = error.message;
+      card.remove();
+    }
+  }
+</script>
+</html>

@@ -52,7 +52,7 @@ lock and it drives the door (issue #176):
 
 ```yaml
 openings:
-  - { id: front, type: door, x: 300, y: 100, length: 90, angle: 0, entity: lock.front_door }
+  - { id: front, type: door, x: 300, 'y': 100, length: 90, angle: 0, entity: lock.front_door }
 ```
 
 `unlocked` draws the door open, `locked` draws it shut. The in-between states follow the
@@ -116,7 +116,7 @@ items:
     entity: sensor.bathroom_humidity
     kind: sensor
     x: 300
-    y: 250
+    'y': 250
     showOnlyWhenZoomed: true
 ```
 
@@ -130,7 +130,7 @@ thermostat in the hall — name the room with `area`, by its `id` or its `name`:
   - id: doorbell
     entity: binary_sensor.doorbell
     x: 960
-    y: 560
+    'y': 560
     showOnlyWhenZoomed: true
     area: porch
 ```
@@ -216,11 +216,11 @@ floors:
   - id: ground
     name: Ground floor
     furniture:
-      - { id: stairs_up, type: stairs, x: 640, y: 300, w: 80, h: 140, goToFloor: up }
+      - { id: stairs_up, type: stairs, x: 640, 'y': 300, w: 80, h: 140, goToFloor: up }
   - id: upstairs
     name: Upstairs
     furniture:
-      - { id: stairs_down, type: stairs, x: 640, y: 300, w: 80, h: 140, goToFloor: down }
+      - { id: stairs_down, type: stairs, x: 640, 'y': 300, w: 80, h: 140, goToFloor: down }
 ```
 
 Click the stairs, change floor. `up` is the next entry in `floors`, `down` the previous —
