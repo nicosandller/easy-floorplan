@@ -1820,7 +1820,8 @@ export function textForm(t: FloorText, areaScope?: AreaEntityScope): FormSpec {
 export function furnitureForm(
   f: Furniture,
   areaScope?: AreaEntityScope,
-  catalog: SymbolCatalog = BUILTIN_SYMBOLS
+  catalog: SymbolCatalog = BUILTIN_SYMBOLS,
+  floors: readonly Pick<Floor, "id" | "name">[] = [],
 ): FormSpec {
   const choices = furnitureChoices(catalog);
   // A piece whose symbol this install doesn't have keeps its own id in the
@@ -1829,6 +1830,13 @@ export function furnitureForm(
   const options = choices.some((s) => s.id === f.type)
     ? choices.map((s) => ({ value: s.id, label: s.name }))
     : [{ value: f.type, label: `${f.type} (missing)` }, ...choices.map((s) => ({ value: s.id, label: s.name }))];
+  // A prefixed selector value keeps floor ids such as "up" distinct from the
+  // relative destinations. The config stores the explicit target as an object.
+  const namedFloor = f.goToFloor && typeof f.goToFloor === "object" ? f.goToFloor.floor : undefined;
+  const floorOptions = floors.map((floor) => opt(`floor:${floor.id}`, `Go to ${floor.name} (${floor.id})`));
+  if (namedFloor !== undefined && !floors.some((floor) => floor.id === namedFloor)) {
+    floorOptions.push(opt(`floor:${namedFloor}`, `Missing floor: ${namedFloor}`));
+  }
   return {
     fields: [
       {
@@ -1868,8 +1876,12 @@ export function furnitureForm(
       {
         name: "goToFloor",
         label: "Go to floor",
-        helper: "Clicking this piece changes floor — for a staircase",
-        selector: dropdown(opt("", "Nothing"), opt("up", "Up one floor"), opt("down", "Down one floor")),
+        helper: "Tap the icon to change floor. Main uses the default floor, or the first floor",
+        selector: dropdown(
+          opt("", "Nothing"), opt("up", "Up one floor"), opt("down", "Down one floor"),
+          opt("top", "Top floor"), opt("bottom", "Bottom floor"), opt("main", "Main floor"),
+          ...floorOptions,
+        ),
       },
       // Actions on the piece itself (issue #284), offered on every piece the
       // way a room's actions are — furniture with no entity can still navigate or call
@@ -1901,13 +1913,21 @@ export function furnitureForm(
       h: f.h,
       angle: f.angle ?? 0,
       entity: f.entity ?? "",
-      goToFloor: f.goToFloor ?? "",
+      goToFloor: namedFloor !== undefined ? `floor:${namedFloor}` : (f.goToFloor ?? ""),
       tap_action: f.tap_action,
       hold_action: f.hold_action,
       double_tap_action: f.double_tap_action,
     },
-    // "" is the empty option, and means the piece is ordinary furniture.
-    toPatch: (p) => ("goToFloor" in p && !p.goToFloor ? { ...p, goToFloor: undefined } : p),
+    toPatch: (p) => {
+      if (!("goToFloor" in p)) return p;
+      const value = p.goToFloor;
+      return {
+        ...p,
+        goToFloor: typeof value === "string" && value.startsWith("floor:")
+          ? { floor: value.slice("floor:".length) }
+          : value || undefined,
+      };
+    },
   };
 }
 

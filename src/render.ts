@@ -2357,7 +2357,7 @@ export function pressEffectOf(c: { pressEffect?: PressEffect }): PressEffect {
 }
 
 /**
- * Which floor a piece of furniture's click leads to (issue #121), or
+ * Which floor a piece of furniture's click leads to (issues #121, #327), or
  * `undefined` when it leads nowhere.
  *
  * `floors` is bottom-to-top, so `up` is the next entry and `down` the
@@ -2369,17 +2369,31 @@ export function pressEffectOf(c: { pressEffect?: PressEffect }): PressEffect {
  * Deliberately not wrapping. A plan's floors are a building, and the top of a
  * building is not above the basement — a stair click that teleported you from
  * the loft to the cellar would be a bug report, not a feature.
+ * Direct destinations may skip floors. Main follows the configured default,
+ * and an explicit id survives renaming or reordering the floors.
  */
 export function furnitureFloorTarget(
   f: Pick<Furniture, "goToFloor">,
   floors: readonly { id: string }[],
   activeFloorId: string | undefined,
+  defaultFloor?: string,
 ): string | undefined {
-  if (f.goToFloor !== "up" && f.goToFloor !== "down") return undefined;
   const i = floors.findIndex((x) => x.id === activeFloorId);
   if (i < 0) return undefined;
-  const next = floors[i + (f.goToFloor === "up" ? 1 : -1)];
-  return next?.id;
+  const target = f.goToFloor;
+  let next: { id: string } | undefined;
+  if (target && typeof target === "object") {
+    next = floors.find((x) => x.id === target.floor);
+  } else {
+    switch (target) {
+      case "up": next = floors[i + 1]; break;
+      case "down": next = floors[i - 1]; break;
+      case "top": next = floors[floors.length - 1]; break;
+      case "bottom": next = floors[0]; break;
+      case "main": next = floors.find((x) => x.id === defaultFloor) ?? floors[0]; break;
+    }
+  }
+  return next && next.id !== activeFloorId ? next.id : undefined;
 }
 
 /**

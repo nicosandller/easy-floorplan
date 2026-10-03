@@ -237,6 +237,31 @@ Tap the stairs' up/down icon to change floor; the stair surface itself passes ta
 to the room. `up` is the next entry in `floors`, `down` the previous — the list is
 read bottom-to-top — and the icon's tooltip and accessible label name its destination.
 
+The **Go to floor** selector also offers direct destinations (issue #327):
+
+| Setting | Destination |
+| --- | --- |
+| `top` | Last entry in `floors` |
+| `bottom` | First entry in `floors` |
+| `main` | The configured `defaultFloor`, or the first floor when that id is unset or missing |
+| `{ floor: upstairs }` | The floor whose `id` is `upstairs` |
+
+The editor lists each floor by name and id. A specific destination follows the id,
+so renaming or reordering floors keeps the link intact. An explicit object also
+allows a floor id such as `up` or `main` without confusing it with a navigation option.
+For example, an elevator on the ground floor can skip directly to the loft:
+
+```yaml
+goToFloor: { floor: loft }
+```
+
+Selecting **Main floor** uses the floor marked **Default** in the editor's floor
+menu; it does not use the last-viewed floor remembered by the card. Links to the
+current floor or a deleted floor have no navigation icon. A missing specific
+destination stays visible in the editor as **Missing floor** so it can be repaired.
+Configured tap actions still replace floor navigation, while hold and double-tap
+actions can be used alongside it.
+
 **At the end of the list it leads nowhere, and stops being a button.** An `up` staircase
 on the top floor still draws as a staircase; without another runnable action, it has
 no icon or tab stop and its surface passes taps to the room. It does not

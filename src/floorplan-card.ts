@@ -1028,7 +1028,7 @@ export class FloorplanCard extends LitElement {
     floors: readonly Floor[],
     activeId: string,
   ): TemplateResult | typeof nothing {
-    const to = furnitureFloorTarget(f, floors, activeId);
+    const to = furnitureFloorTarget(f, floors, activeId, c.defaultFloor);
     const runs = (gesture: "tap" | "hold" | "double_tap"): boolean => {
       const press = furnitureActionForGesture(f, gesture);
       return !!press && gestureDoesSomething({ entity: press.entity }, press.config);

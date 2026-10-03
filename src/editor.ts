@@ -6285,7 +6285,7 @@ export class FloorplanCardEditor extends LitElement {
     if (sel.kind === "furniture") {
       const f = this._floor().furniture.find((x) => x.id === sel.id);
       if (!f) return html`${nothing}`;
-      const fSpec = furnitureForm(f, this._areaEntitiesAt(f.x, f.y), this._symbols());
+      const fSpec = furnitureForm(f, this._areaEntitiesAt(f.x, f.y), this._symbols(), getFloors(this._config));
       const fApply = (patch: Record<string, unknown>, live: boolean) =>
         this._applyElementPatch("furniture", f.id, patch, live);
       return html`
