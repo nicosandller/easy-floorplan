@@ -50,6 +50,18 @@ export const RAILING_HEIGHT_FRACTION = 0.5;
 /** A window's sill, and the top of its glass, as fractions of the wall height. */
 export const SILL_FRACTION = 0.35;
 export const GLASS_FRACTION = 0.85;
+/** The highest sill a window can have, leaving a band of glass under its head. */
+export const MAX_SILL = 0.8;
+
+/**
+ * A window's sill as a fraction of the wall height: its own `sill`, clamped,
+ * or {@link SILL_FRACTION}. `0` is a floor-to-ceiling window.
+ */
+export function openingSill(o: { sill?: number }): number {
+  const raw = o.sill;
+  if (typeof raw !== "number" || !Number.isFinite(raw)) return SILL_FRACTION;
+  return Math.max(0, Math.min(MAX_SILL, raw));
+}
 /**
  * Walls are drawn in pieces no longer than this. A painter's order sorts
  * whole shapes, and a long wall has no single depth: the far end of a front
@@ -219,12 +231,15 @@ export interface IsoOpeningInput {
   length: number;
   angle: number;
   type: OpeningType;
+  sill?: number;
 }
 
 interface Span {
   s0: number;
   s1: number;
   type: "door" | "window";
+  /** Windows only: the sill, as a fraction of the wall height. */
+  sill: number;
 }
 
 /** The openings that sit on this wall, as spans along it, clipped and in order. */
@@ -256,7 +271,8 @@ function openingSpans(
     const s0 = Math.max(0, t - o.length / 2);
     const s1 = Math.min(len, t + o.length / 2);
     if (s1 - s0 <= 0) continue;
-    spans.push({ s0, s1, type: o.type === "window" ? "window" : "door" });
+    const window = o.type === "window";
+    spans.push({ s0, s1, type: window ? "window" : "door", sill: window ? openingSill(o) : 0 });
   }
   spans.sort((a, b) => a.s0 - b.s0);
   // Overlapping openings merge; the first one's kind wins.
@@ -328,12 +344,13 @@ export function wallSolids(
       // Solid wall up to this opening. The cap only at the wall's real end.
       if (s.s0 > cursor) pieces(cursor === 0 ? -half : cursor, s.s0, height, kind);
       if (s.type === "window") {
-        pieces(s.s0, s.s1, height * SILL_FRACTION, "sill");
+        // A floor-to-ceiling window stands on no sill at all.
+        if (s.sill > 0) pieces(s.s0, s.s1, height * s.sill, "sill");
         if (includeGlass) out.push({
           kind: "glass",
           id: w.id,
           base: [at(s.s0), at(s.s1)],
-          z0: height * SILL_FRACTION,
+          z0: height * s.sill,
           z1: height * GLASS_FRACTION,
         });
       }

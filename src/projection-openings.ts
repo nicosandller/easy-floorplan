@@ -6,7 +6,7 @@ import {
   openingIsSkylight, openingIsPassage, skylightWidth, type OpeningStyle,
 } from "./render";
 import { SKIN_ACCENT } from "./skins";
-import { SILL_FRACTION, GLASS_FRACTION, type IsoSolid, type Pt } from "./projection";
+import { GLASS_FRACTION, openingSill, type IsoSolid, type Pt } from "./projection";
 
 export function openingSolids(
   o: Opening,
@@ -18,7 +18,7 @@ export function openingSolids(
   if (openingIsSkylight(o)) return skylightSolids(o, style, map, height);
   const out: IsoSolid[] = [];
   const half = o.length / 2;
-  const z0 = o.type === "window" ? height * SILL_FRACTION : 0;
+  const z0 = o.type === "window" ? height * openingSill(o) : 0;
   const z1 = height * GLASS_FRACTION;
   const clamp = (v: unknown) => Math.max(0, Math.min(1, cssNumber(v, 0)));
   const amount = clamp(style.amount ?? (style.open === false ? 0 : 1));
