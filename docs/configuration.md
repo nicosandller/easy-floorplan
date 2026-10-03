@@ -172,6 +172,20 @@ walls. Note the card is still stretched into whatever box the dashboard gives it
 `width` / `height` close to the shape it occupies on screen or a `contain` image looks
 distorted anyway.
 
+### Background images on older WebViews
+
+An older WebView can leave a device badge visible while the plan and background
+image disappear because the plan has collapsed to zero width. The card includes
+a width fallback to keep the plan visible when the WebView cannot use its normal
+height-aware sizing.
+
+The comparison below reproduces this layout failure, consistent with the symptoms
+in [issue #339](https://github.com/nicosandller/easy-floorplan/issues/339). It uses
+Chromium with missing CSS support simulated; the cause on the reporter's Android
+device still needs confirmation.
+
+![Before the fallback, the plan collapses and only a badge remains; after the fallback, the background image and badge stay aligned.](img/floor-image-cqh-fallback.jpg)
+
 ## Wall
 
 `{ id, x1, y1, x2, y2, thickness?, kind?, locked? }` — endpoints in virtual units.

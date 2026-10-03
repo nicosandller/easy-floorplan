@@ -2116,6 +2116,9 @@ export class FloorplanCard extends LitElement {
     }
     .plan {
       position: relative;
+      /* Older WebViews reject the inline cqh width. With only absolutely
+         positioned children, auto width collapses the plan to zero (#339). */
+      width: 100%;
       height: auto;
     }
     /*
