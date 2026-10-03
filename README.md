@@ -23,6 +23,7 @@ screen size.
 ## Features
 - ✏️ **Visual editor** — draw walls, drop doors and windows that snap onto them, drag, nudge with arrow keys, multi-select, copy/paste, undo/redo, zoom.
   - 🆕 **Lock in place** — pin anything you have finished positioning. A locked element still selects and edits but never moves, and it yields the click to whatever is unlocked on top of it, so reaching for a window stops grabbing the wall behind it. See [Locking elements in place](#locking-elements-in-place).
+  - 🆕 **Trace over a PDF** — load the architect's PDF (or a PNG/JPG) under the canvas, scale it by clicking two ends of a known length, and draw your walls over it. Editor only: it is never saved and the card never shows it. See [Tracing over an existing plan](#tracing-over-an-existing-plan).
   - **Apply** — save the plan to the dashboard *without* closing the editor, so you can judge a change on the real card (in a second tab, or by collapsing the editor) instead of in the small preview beside it, then carry straight on. Needs Home Assistant 2025.3 or newer; on anything older the button says so and Save still works.
 - 🎛️ **Devices** — bind any entity to an icon: tap to toggle or open more-info, live state or attribute label, custom icon, size, rotation.
   - **Presence ripples** — presence and vibration sensors drawn as animated rings instead of a static icon.
@@ -453,6 +454,39 @@ and the first thing you do is position it.
 
 Nothing about the rendered card reads this — it is an editing aid, and `locked: true` in
 the YAML changes nothing a viewer sees.
+
+## Tracing over an existing plan
+
+Open **Project → Trace template** in the editor and load a PDF or an image of the plan
+you already have. It is laid under the grid at half opacity, fitted to the canvas, and
+everything you draw sits on top of it.
+
+- **Scale — Set by 2 points.** The plan is scaled in the editor's own units, the same
+  ones every part is measured in: a door or window is 60, a wall 8 thick, a grid square
+  20. Click both jambs of a door on the plan, type 60 and press Enter — new doors,
+  windows and walls then fit the drawing. The first point stays where it is, so pick a
+  corner you want to keep. **Width** sets the scale as a number instead.
+- **Position — Move.** Drag the template until it lines up with what you have drawn, or
+  type **X**/**Y**. **Rotation** turns it about its centre; **Fit** puts it back in view.
+- **Page.** A multi-page PDF gets a page picker, one plan per floor.
+
+Each floor keeps its own template, so the ground floor and the first floor can trace
+different pages. While a floor has one, a **Trace** button next to **Labels** in the
+toolbar shows or hides it, to check the drawing on its own without opening the panel.
+
+- **Floor under.** Pick another floor and its walls show faintly under the one you are
+  drawing, so an upper storey can be traced straight over the one below. New wall ends
+  and room corners snap to its corners too, so the load-bearing walls line up exactly. While moving or calibrating, the template takes the clicks (walls under
+the pointer are not selected); Escape or **Done** hands the canvas back.
+
+This is tracing paper, not the floor's background image: nothing is written to the
+config, the card never shows it, and it is gone once the editor closes. For a picture the
+card *should* show, use **Floor image** instead.
+
+PDFs are drawn with [pdf.js](https://mozilla.github.io/pdf.js/), fetched from
+cdn.jsdelivr.net the first time you load one rather than bundled — the card itself stays
+the size it was. Without internet access, export the page as PNG or JPG; images need
+nothing extra.
 
 
 <!-- Anchors for sections that moved into docs/. Invisible when rendered; they keep
