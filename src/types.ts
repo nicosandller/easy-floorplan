@@ -1071,6 +1071,7 @@ export type FurnitureType =
   | "bookcase"
   | "rug"
   | "plant"
+  | "indoorPalm"
   | "fridge"
   | "stove"
   | "sink"
