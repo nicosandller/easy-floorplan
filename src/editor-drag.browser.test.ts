@@ -138,7 +138,7 @@ describe("editor drag", () => {
     const t = await mountEditor();
     // Zoom until the stage overflows the wrap, so the wrap can scroll. The
     // scroll amount below is the one from #232's review: 150px mid-drag.
-    await t.zoomIn(3);
+    await t.zoomIn(4);
     const scrollable = t.wrap.scrollHeight - t.wrap.clientHeight;
     // If this fails the harness is wrong, not the editor — a canvas that
     // cannot scroll cannot reproduce the bug, and the test would pass vacuously.
@@ -362,12 +362,14 @@ describe("editor drag", () => {
     pointer(corner!, "pointerup", to.x, to.y);
     await ed.updateComplete;
 
-    expect((ed as any)._floor().areas[0].points).toEqual([
-      { x: 70, y: 70 },
-      { x: 200, y: 70 },
-      { x: 200, y: 200 },
-      { x: 70, y: 200 },
-    ]);
+    // The canvas can start at a fractional CSS pixel in the responsive layout.
+    // Inverting its screen matrix must preserve geometry, within float precision.
+    const points = (ed as any)._floor().areas[0].points as { x: number; y: number }[];
+    expect(points).toHaveLength(4);
+    [[70, 70], [200, 70], [200, 200], [70, 200]].forEach(([x, y], i) => {
+      expect(points[i].x).toBeCloseTo(x, 8);
+      expect(points[i].y).toBeCloseTo(y, 8);
+    });
     document.body.innerHTML = "";
   });
 

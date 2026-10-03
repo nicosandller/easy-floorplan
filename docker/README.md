@@ -1,5 +1,77 @@
 # Developing against a real Home Assistant
 
+## Standalone editor preview
+
+Run `npx vite --host 127.0.0.1 --port 5187` and open
+<http://127.0.0.1:5187/docker/editor-preview.html> to try the responsive editor
+workspace with a sample two-floor home. Select and drag objects, edit their
+properties, use undo, switch floors, and expand the workspace. The theme button
+exercises the same Home Assistant CSS variables the editor uses in a dashboard.
+The Selection and Project tabs separate object properties from plan settings.
+Selecting an object shows its main properties directly. Visible category tabs open
+sensor bindings, appearance, actions or visibility in one step, with no nested
+accordions or repeated basic fields. All destinations stay visible while their
+fields scroll; arrow keys, Home and End move between tabs. Size and rotation come
+before the object type, and staircase navigation has a full-width field. The
+header uses the selected furniture's actual symbol or the device's resolved icon
+and friendly name. Undo keeps an existing object selected. Project settings use
+six visible destinations: Plan, Style, View, Lighting, Devices and Symbols.
+
+On phones, Edit properties opens a panel below a live view of the plan. The
+preview preserves drawing scale and follows the selected object; its zoom
+controls have their own space. Properties receive most of the available height.
+Hide plan gives fields the whole workspace; Show plan restores the preview.
+When an input is focused and the visual viewport shrinks for a keyboard, the
+preview temporarily hides and the expanded editor follows the available height.
+Phone inputs use 16px text and larger touch controls. Done returns to the full
+drawing area. A compact Drawing tool picker offers all eight modes; Project settings, undo/redo and Apply
+remain accessible. At tablet widths the inspector docks beside the plan and the
+tool picker shares the top toolbar. Large screens use a vertical tool rail.
+Short landscape screens keep the drawing and open properties side by side.
+
+This renders the actual editor with its standalone input fallbacks. Changes
+stay in the page; Apply requires a Home Assistant dashboard. Use the container
+below to test the actual Home Assistant entity and action selectors.
+The preview's MDI paths are from `@mdi/svg` 7.4.47; their license is beside
+`editor-preview-icons.json`. Production continues to use HA's `ha-icon`.
+
+### Editor workspace screenshots
+
+The desktop and mobile comparisons show the same sample home and selected stairs. The
+[previous editor](../docs/img/editor-workspace-before.jpg) is a full-page
+capture of `main` at `5641e51`; its properties sit below the large canvas.
+The [desktop workspace](../docs/img/editor-workspace-preview.jpg) keeps the
+tools, fitted plan and inspector together within a 1280×720 viewport.
+On mobile, the [drawing workspace](../docs/img/editor-workspace-mobile.jpg)
+opens [properties beneath a live preview](../docs/img/editor-workspace-mobile-inspector.jpg);
+both captures are 360×780. The [tablet layout](../docs/img/editor-workspace-tablet.jpg)
+keeps the inspector beside the plan with a compact toolbar at 960×780.
+The [landscape properties](../docs/img/editor-workspace-landscape.jpg) show both
+panes within a 740×360 fullscreen viewport. The [project settings](../docs/img/editor-workspace-project.jpg)
+show all six category tabs with flat field headings.
+These comparisons demonstrate the standalone preview. The
+[native desktop editor](../docs/img/editor-workspace-ha.jpg) and
+[native phone inspector](../docs/img/editor-workspace-ha-mobile.jpg) show Home
+Assistant 2026.9.2 with its own forms, theme and selectors. On the phone, Hide plan
+gives the fields the available space.
+
+### Native acceptance checked on 2026-10-03
+
+In a separate loopback-only development container, opened the card's narrow
+configuration dialog and expanded workspace, bound a real demo sensor, selected
+a More info hold action, changed the stairs from 80 to 96 units wide and used
+Apply. The size, binding and action survived a reload; dashboard storage contains the
+96-unit width, sensor binding and hold action. Also checked the native inspector
+at 375×812 and toggled its plan preview. The typing check caught and fixed
+per-keystroke minimum clamping that could turn `96` into `106`; unfinished number
+input now stays intact while the stored configuration remains normalized.
+
+Browser regressions cover the visual viewport keyboard transition and synthetic
+touch pinch/cancel events. Physical iOS/Android keyboards and gestures still need
+device testing; desktop viewport emulation does not establish that acceptance.
+
+## Home Assistant integration
+
 A throwaway Home Assistant in a container, preloaded with a sample floorplan
 and entities that keep changing, so the card can be developed against the real
 thing rather than a mock.

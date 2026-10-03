@@ -347,16 +347,15 @@ async function mountEditor(extra: Partial<FloorplanCardConfig> = {}) {
   };
 }
 
-/** The coordinate fields sit behind the Project section and its own group. */
+/** The coordinate fields live in the Project tab and Floor switcher group. */
 async function openSwitcherPanel(ed: FloorplanCardEditor): Promise<HTMLInputElement[]> {
   const root = ed.shadowRoot!;
-  root.querySelector<HTMLButtonElement>("button.section-toggle")?.click();
+  root.querySelector<HTMLButtonElement>("#project-tab")?.click();
   await ed.updateComplete;
-  [...root.querySelectorAll<HTMLButtonElement>(".cfg-group-title")]
-    .find((b) => b.textContent?.includes("Floor switcher"))
-    ?.click();
+  root.querySelector<HTMLButtonElement>('#project-category-plan')!.click();
   await ed.updateComplete;
-  return [...root.querySelectorAll<HTMLInputElement>("input[type=number]")];
+  const group = root.querySelector<HTMLElement>('[data-group="Floor switcher"]')!;
+  return [...group.querySelectorAll<HTMLInputElement>("input[type=number]")];
 }
 
 /** Type into a field and commit it, the way a keyboard user would. */
@@ -840,13 +839,8 @@ describe("the editor lets you drag the switcher anywhere on the canvas", () => {
     // and a partial position was committed on release.
     const t = await mountEditor();
     const root = t.ed.shadowRoot!;
-    root.querySelector<HTMLButtonElement>("button.section-toggle")?.click();
-    await t.ed.updateComplete;
-    [...root.querySelectorAll<HTMLButtonElement>(".cfg-group-title")]
-      .find((b) => b.textContent?.includes("Floor switcher"))
-      ?.click();
-    await t.ed.updateComplete;
-    const field = root.querySelector("input[type=number]") as HTMLInputElement | null;
+    await openSwitcherPanel(t.ed);
+    const field = root.querySelector('input[aria-label="Floor switcher X, in canvas units"]') as HTMLInputElement | null;
     expect(field, "a coordinate field to focus").toBeTruthy();
     field!.focus();
     const at = t.handleCentre();
@@ -874,15 +868,9 @@ describe("the editor lets you drag the switcher anywhere on the canvas", () => {
     // The visible labels are siblings, so they name nothing: unlabelled, these
     // are two spinbuttons with no way to tell which axis each edits.
     const t = await mountEditor({ floorSwitcher: { x: 60, y: 100 } });
-    // The fields sit behind two collapses — the Project section, then the
-    // "Floor switcher" group inside it — and neither is open on mount.
+    // The fields live in the Project tab and Floor switcher group.
     const root = t.ed.shadowRoot!;
-    root.querySelector<HTMLButtonElement>("button.section-toggle")?.click();
-    await t.ed.updateComplete;
-    [...root.querySelectorAll<HTMLButtonElement>(".cfg-group-title")]
-      .find((b) => b.textContent?.includes("Floor switcher"))
-      ?.click();
-    await t.ed.updateComplete;
+    await openSwitcherPanel(t.ed);
 
     const names = [...root.querySelectorAll("input[type=number]")]
       .map((i) => i.getAttribute("aria-label"))

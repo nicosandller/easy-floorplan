@@ -132,7 +132,7 @@ describe("placing a passage", () => {
     pointer(hit!, "pointerdown", cx, cy);
     pointer(hit!, "pointerup", cx, cy);
     await t.ed.updateComplete;
-    expect(t.root.querySelector(".context-bar")?.textContent).toContain("1 selected");
+    expect(t.root.querySelector(".context-bar")?.textContent).toContain("Passage · 100 units");
     // Selected, the mark takes the selection colour as a door's symbol does.
     const mark = t.root.querySelector(".passage-mark")!;
     expect(mark.getAttribute("stroke")).toContain("--primary-color");

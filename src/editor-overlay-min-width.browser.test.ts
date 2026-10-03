@@ -66,12 +66,12 @@ describe("overlayMinWidth in the editor", () => {
     expect(t.unitWidth()).toBeCloseTo(t.stageWidth(), 0);
   });
 
-  it("shows the control under Project → Display", async () => {
+  it("shows the control under Project → View & scale", async () => {
     const t = await mount();
-    // Behind two collapses: the Project section, then its Display group.
-    const ed = t.ed as unknown as { _projectOpen: boolean; _openGroups: Set<string> };
+    // In the Project tab, under Display.
+    const ed = t.ed as unknown as { _projectOpen: boolean; _projectPage: string };
     ed._projectOpen = true;
-    ed._openGroups = new Set(["Display"]);
+    ed._projectPage = "view";
     t.ed.requestUpdate();
     await t.ed.updateComplete;
     expect(t.root.textContent).toContain("Stop shrinking below");

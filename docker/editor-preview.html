@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Easy Floorplan · Editor workspace</title>
+<style>
+  :root { font: 14px system-ui, sans-serif; color: #293943; background: #e9eef1; color-scheme: light; }
+  body { margin: 0; padding: 28px; }
+  header { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 0 auto 18px; max-width: 1500px; }
+  header p { color: #657682; font-size: 12px; margin: 0; line-height: 1.6; }
+  header strong { color: #293943; }
+  header button { border: 1px solid #cdd7de; background: #fff; color: #344c58; padding: 8px 12px; border-radius: 6px; cursor: pointer; }
+  main { max-width: 1500px; margin: auto; }
+  easy-floorplan-card-editor { display: block; --primary-color: #007e80; --primary-text-color: #293943; --secondary-text-color: #697b86; --card-background-color: #fff; --secondary-background-color: #f1f4f6; --divider-color: #dfe6eb; --text-primary-color: #fff; }
+  body.dark { color-scheme: dark; background: #12191f; }
+  body.dark easy-floorplan-card-editor { --primary-color: #64cfc5; --primary-text-color: #e0e8ec; --secondary-text-color: #98aab6; --card-background-color: #202c34; --secondary-background-color: #172129; --divider-color: #34454f; --text-primary-color: #142629; }
+  body.dark header strong { color: #e0e8ec; }
+  @media (max-width: 650px) { body { padding: 8px; } header { padding: 4px; } }
+</style>
+<header><p><strong>Editor workspace</strong><br>Interactive local preview · sample home · changes stay in this page</p><button id="theme">Dark theme</button></header>
+<main><easy-floorplan-card-editor></easy-floorplan-card-editor></main>
+<script type="module">
+  import '/src/editor.ts';
+  import iconPaths from './editor-preview-icons.json';
+  // Material Design Icons 7.4.47, Templarian/MaterialDesign, Apache-2.0.
+  // Preview-only ha-icon replacement; HA supplies its actual component in the dashboard.
+  customElements.define('ha-icon', class extends HTMLElement {
+    static observedAttributes = ['icon'];
+    connectedCallback() { this.render(); }
+    attributeChangedCallback() { this.render(); }
+    render() {
+      const root = this.shadowRoot ?? this.attachShadow({ mode: 'open' });
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('viewBox', '0 0 24 24');
+      svg.setAttribute('aria-hidden', 'true');
+      svg.style.cssText = 'display:block;width:var(--mdc-icon-size,24px);height:var(--mdc-icon-size,24px);fill:currentColor';
+      for (const d of iconPaths[this.getAttribute('icon')] ?? iconPaths['mdi:help-circle-outline']) {
+        const path = document.createElementNS(svg.namespaceURI, 'path');
+        path.setAttribute('d', d); svg.append(path);
+      }
+      root.replaceChildren(svg);
+    }
+  });
+  const box = (x, y, w, h) => [{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}];
+  const wall = (id,x1,y1,x2,y2) => ({id,x1,y1,x2,y2});
+  const furniture = (id,type,x,y,w,h,extra={}) => ({id,type,x,y,w,h,color:'#708791',...extra});
+  const room = (id,name,x,y,w,h,color) => ({id,name,points:box(x,y,w,h),color,opacity:0.5,showName:true,labelSize:14});
+  const ground = {
+    id:'ground',name:'Ground floor',short:'G',
+    walls:[wall('n',60,60,940,60),wall('e',940,60,940,660),wall('s',940,660,60,660),wall('w',60,660,60,60),
+      wall('middle',580,60,580,660),wall('living',60,420,580,420),wall('kitchen',580,340,940,340),wall('hall',760,340,760,660)],
+    openings:[{id:'door-living',type:'door',x:580,y:320,length:90,angle:90},
+      {id:'door-office',type:'door',x:420,y:420,length:80,angle:0},
+      {id:'door-hall',type:'passage',x:670,y:340,length:100,angle:0},
+      {id:'door-bath',type:'door',x:760,y:510,length:80,angle:90},
+      {id:'window-living',type:'window',x:300,y:60,length:210,angle:0},
+      {id:'window-kitchen',type:'window',x:790,y:60,length:140,angle:0},
+      {id:'window-office',type:'window',x:280,y:660,length:170,angle:0}],
+    areas:[room('living','Living room',60,60,520,360,'#dbe9e4'),room('kitchen','Kitchen',580,60,360,280,'#efe7d7'),
+      room('office','Studio',60,420,520,240,'#e0e8ee'),room('hall','Hall',580,340,180,320,'#e6e8e2'),room('bath','Bath',760,340,180,320,'#dce9ee')],
+    furniture:[furniture('sofa','sofa',245,170,220,95),furniture('coffee','table',245,300,120,65),
+      furniture('plant','plant',110,360,45,45),furniture('tv','tv',500,230,100,36,{angle:90}),
+      furniture('dining','roundTable',790,235,110,100),furniture('sink','sink',660,105,85,55),
+      furniture('stove','stove',860,105,70,55),furniture('desk','desk',225,530,180,80),
+      furniture('chair','chair',225,595,50,50),furniture('shelf','bookcase',490,550,110,40,{angle:90}),
+      furniture('stairs','stairs',670,555,94,155,{goToFloor:'up',color:'#56727b'}),
+      furniture('bath','bathtub',865,445,70,135),furniture('toilet','toilet',815,585,44,60)],
+    items:[{id:'temperature',kind:'sensor',entity:'sensor.living_temperature',x:465,y:370,icon:'mdi:thermometer',showState:true,labelSize:18,size:34},
+      {id:'light',kind:'light',entity:'light.living',x:460,y:125,icon:'mdi:ceiling-light',size:30}],
+    texts:[{id:'living-name',x:320,y:385,text:'LIVING ROOM',size:18,color:'#687c82'},
+      {id:'kitchen-name',x:785,y:300,text:'KITCHEN',size:18,color:'#7e7869'},
+      {id:'office-name',x:375,y:620,text:'STUDIO',size:18,color:'#687c82'},
+      {id:'hall-name',x:670,y:395,text:'HALL',size:16,color:'#687c82'},
+      {id:'bath-name',x:850,y:635,text:'BATH',size:16,color:'#687c82'}],trackers:[]
+  };
+  const loft = {...ground,id:'loft',name:'Loft',short:'L',furniture:[furniture('bed','bed',270,230,180,200),furniture('stairs','stairs',670,555,94,155,{goToFloor:'down'})],items:[]};
+  const editor = document.querySelector('easy-floorplan-card-editor');
+  editor.hass = {states:{
+    'sensor.living_temperature':{entity_id:'sensor.living_temperature',state:'21.4',attributes:{friendly_name:'Living room',unit_of_measurement:'°C'}},
+    'light.living':{entity_id:'light.living',state:'on',attributes:{friendly_name:'Living room ceiling',brightness:220}}
+  },entities:{}, formatEntityState: (entity) => `${entity.state}${entity.attributes.unit_of_measurement ?? ''}`};
+  editor.setConfig({type:'custom:easy-floorplan-card',title:'Maple House',width:1000,height:720,grid:20,overlayScale:'plan',overlayMinWidth:640,defaultFloor:'ground',floors:[ground,loft]});
+  document.querySelector('#theme').onclick = (event) => {
+    const dark = document.body.classList.toggle('dark');
+    event.target.textContent = dark ? 'Light theme' : 'Dark theme';
+  };
+</script>
+</html>

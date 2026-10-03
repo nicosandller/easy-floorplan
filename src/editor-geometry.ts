@@ -731,7 +731,7 @@ export function elementsAtPoint(
  * pushed from elsewhere — another tab, a YAML edit — can leave the editor
  * holding ids for elements that no longer exist.
  */
-function findElement(f: Floor, sel: Sel): { id: string; locked?: boolean } | undefined {
+export function findElement(f: Floor, sel: Sel): { id: string; locked?: boolean } | undefined {
   switch (sel.kind) {
     case "wall":
       return f.walls.find((x) => x.id === sel.id);
