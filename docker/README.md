@@ -296,6 +296,26 @@ the sunlight patch remained even at 0% because the rolled-down shutter was treat
 as clear glazing.
 
 
+## Live appearance preview
+
+```bash
+npx vite --host 127.0.0.1 --port 5263
+```
+
+Open [the live appearance example](http://127.0.0.1:5263/docker/line-art-preview.html).
+Use the card's toolbar to switch Normal/Line art, 2D/3D and viewing direction.
+Tap a room to zoom, tap the reading lamp to toggle it, or tap the entry door to
+open it. The controls above the card simulate those devices and a light/dark
+Home Assistant theme. The download icon is an optional extra.
+The example uses simulated entities and does not connect to Home Assistant.
+
+`node docker/verify-line-art.mjs` starts its own temporary local server, downloads
+through the real button in Chromium, reopens the files and checks live devices,
+door movement, selection, rotation, zoom, reset, keyboard use, both themes,
+320/390px screens and fixed-height cards. SVGs and screenshots go to `.claude/line-art-export/`
+(or the directory supplied as the first argument). Install the Playwright browser
+with `npx playwright install chromium` if needed.
+
 ## 3D development preview
 
 For a quick visual check without starting Home Assistant:

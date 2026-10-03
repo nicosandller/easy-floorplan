@@ -1,0 +1,319 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title description" viewBox="-20 -20 1081.9099764656376 705" width="1082" height="705">
+    <title id="title">Ground floor (3D)</title>
+    <desc id="description">Floorplan line art. Full floor, with static opening positions. Canvas units; not a measured survey.</desc>
+    <rect x="-20" y="-20" width="1081.9099764656376" height="705" fill="#ffffff"/>
+    <g stroke-linejoin="round" stroke-linecap="round">
+      <g transform="matrix(0.866025 0.5 -0.866025 0.5 425.692194 65)">
+        <g>
+          <polygon stroke-width="0.6" points="80,80 390,80 390,400 80,400" fill="#ffffff" stroke="#222222"/><polygon stroke-width="0.6" points="390,80 620,80 620,400 390,400" fill="#ffffff" stroke="#222222"/>
+
+    <defs>
+      <mask maskUnits="userSpaceOnUse" id="wall-gaps" x="-8" y="-8" width="716" height="496">
+        <rect fill="white" x="-8" y="-8" width="716" height="496"/>
+        <rect fill="black" x="205" y="394" width="70" height="12" transform="rotate(0 240 400)"/><rect fill="black" x="357.5" y="274" width="65" height="12" transform="rotate(90 390 280)"/><rect fill="black" x="180" y="74" width="110" height="12" transform="rotate(0 235 80)"/><rect fill="black" x="450" y="74" width="110" height="12" transform="rotate(0 505 80)"/>
+      </mask>
+    </defs>
+          <g mask="url(#wall-gaps)"/>
+
+
+        </g>
+        <g class="fp-iso"><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="84,84 102,84 47,29 29,29" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="29,29 47,29 47,21 21,21" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M29 29L47 29 M84 84L102 84 M84 84L29 29 M47 21L21 21" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="84,105.82 84,84 29,29 29,50.82" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="29,50.82 29,29 21,21 21,50.82" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M29 50.818L29 29 M84 105.818L84 84 M84 84L29 29 M21 21L21 50.818" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="102,84 128,84 73,29 47,29" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="47,29 73,29 73,21 47,21" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M47 29L73 29 M102 84L128 84 M73 21L47 21" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="84,135.64 84,105.82 29,50.82 29,80.64" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="29,80.64 29,50.82 21,50.82 21,80.64" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M29 80.636L29 50.818 M84 135.636L84 105.818 M21 50.818L21 80.636" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="128,84 154,84 99,29 73,29" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="73,29 99,29 99,21 73,21" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M73 29L99 29 M128 84L154 84 M99 21L73 21" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="84,165.45 84,135.64 29,80.64 29,110.45" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="29,110.45 29,80.64 21,80.64 21,110.45" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M29 110.455L29 80.636 M84 165.455L84 135.636 M21 80.636L21 110.455" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="154,84 180,84 125,29 99,29" fill="#ffffff"/><polygon class="fp-iso-face" points="180,84 180,76 125,21 125,29" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="99,29 125,29 125,21 99,21" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M99 29L125 29 M154 84L180 84 M180 84L125 29 M125 29L125 21 M180 84L180 76 M180 84L125 29 M180 76L125 21 M125 21L99 21" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="84,195.27 84,165.45 29,110.45 29,140.27" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="29,140.27 29,110.45 21,110.45 21,140.27" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M29 140.273L29 110.455 M84 195.273L84 165.455 M21 110.455L21 140.273" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-sill">
+    <polygon class="fp-iso-face" points="180,84 207.5,84 188.25,64.75 160.75,64.75" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="160.75,64.75 188.25,64.75 188.25,56.75 160.75,56.75" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M160.75 64.75L188.25 64.75 M180 84L207.5 84 M180 84L160.75 64.75 M188.25 56.75L160.75 56.75 M160.75 56.75L160.75 64.75" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="84,225.09 84,195.27 29,140.27 29,170.09" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="29,170.09 29,140.27 21,140.27 21,170.09" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M29 170.091L29 140.273 M84 225.091L84 195.273 M21 140.273L21 170.091" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-sill">
+    <polygon class="fp-iso-face" points="207.5,84 235,84 215.75,64.75 188.25,64.75" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="188.25,64.75 215.75,64.75 215.75,56.75 188.25,56.75" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M188.25 64.75L215.75 64.75 M207.5 84L235 84 M215.75 56.75L188.25 56.75" stroke="#222222"/></g><g><polygon class="fp-iso-panel fp-iso-glazed" points="160.75,60.75 215.75,60.75 188.25,33.25 133.25,33.25" fill="#ffffff" stroke="#222222" stroke-width="1"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="84,254.91 84,225.09 29,170.09 29,199.91" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="29,199.91 29,170.09 21,170.09 21,199.91" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M29 199.909L29 170.091 M84 254.909L84 225.091 M21 170.091L21 199.909" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-sill">
+    <polygon class="fp-iso-face" points="235,84 262.5,84 243.25,64.75 215.75,64.75" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="215.75,64.75 243.25,64.75 243.25,56.75 215.75,56.75" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M215.75 64.75L243.25 64.75 M235 84L262.5 84 M243.25 56.75L215.75 56.75" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="84,284.73 84,254.91 29,199.91 29,229.73" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="29,229.73 29,199.91 21,199.91 21,229.73" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M29 229.727L29 199.909 M84 284.727L84 254.909 M21 199.909L21 229.727" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-furniture">
+    <polygon class="fp-iso-face" points="165,150 165,270 143,248 143,128" fill="#ffffff"/><polygon class="fp-iso-face" points="165,270 115,270 93,248 143,248" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="143,128 143,248 93,248 93,128" fill="#ffffff"/>
+    <g><g transform="translate(-22 -22)"><g class="fp-furniture fp-furniture-sofa" transform="translate(140 210) rotate(90)"><rect x="-60" y="-25" width="120" height="50" rx="2.777778" fill="#ffffff" stroke="#222222" stroke-width="2"/><line fill="none" x1="-60" y1="-10" x2="60" y2="-10" stroke="#222222" stroke-width="2"/><line fill="none" x1="-45.6" y1="-10" x2="-45.6" y2="25" stroke="#222222" stroke-width="2"/><line fill="none" x1="45.599999999999994" y1="-10" x2="45.599999999999994" y2="25" stroke="#222222" stroke-width="2"/></g></g></g>
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M143 128L143 248 M165 150L165 270 M165 150L143 128 M165 270L143 248 M143 248L93 248 M165 270L115 270 M165 270L143 248 M115 270L93 248 M93 248L93 128 M93 128L143 128" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-sill">
+    <polygon class="fp-iso-face" points="262.5,84 290,84 270.75,64.75 243.25,64.75" fill="#ffffff"/><polygon class="fp-iso-face" points="290,84 290,76 270.75,56.75 270.75,64.75" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="243.25,64.75 270.75,64.75 270.75,56.75 243.25,56.75" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M243.25 64.75L270.75 64.75 M262.5 84L290 84 M290 84L270.75 64.75 M270.75 64.75L270.75 56.75 M290 84L290 76 M290 84L270.75 64.75 M290 76L270.75 56.75 M270.75 56.75L243.25 56.75" stroke="#222222"/></g><g><polygon class="fp-iso-panel fp-iso-glazed" points="270.75,60.75 215.75,60.75 188.25,33.25 243.25,33.25" fill="#ffffff" stroke="#222222" stroke-width="1"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="84,314.55 84,284.73 29,229.73 29,259.55" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="29,259.55 29,229.73 21,229.73 21,259.55" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M29 259.545L29 229.727 M84 314.545L84 284.727 M21 229.727L21 259.545" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="290,84 316,84 261,29 235,29" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="235,29 261,29 261,21 235,21" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M235 29L261 29 M290 84L316 84 M290 84L235 29 M261 21L235 21 M235 21L235 29" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="316,84 342,84 287,29 261,29" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="261,29 287,29 287,21 261,21" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M261 29L287 29 M316 84L342 84 M287 21L261 21" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="84,344.36 84,314.55 29,259.55 29,289.36" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="29,289.36 29,259.55 21,259.55 21,289.36" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M29 289.364L29 259.545 M84 344.364L84 314.545 M21 259.545L21 289.364" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-furniture">
+    <polygon class="fp-iso-face" points="302.5,127.5 302.5,182.5 280.5,160.5 280.5,105.5" fill="#ffffff"/><polygon class="fp-iso-face" points="302.5,182.5 237.5,182.5 215.5,160.5 280.5,160.5" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="215.5,105.5 280.5,105.5 280.5,160.5 215.5,160.5" fill="#ffffff"/>
+    <g><g transform="translate(-22 -22)"><g class="fp-furniture fp-furniture-table" transform="translate(270 155) rotate(0)"><rect x="-32.5" y="-27.5" width="65" height="55.00000000000001" rx="2.75" fill="#ffffff" stroke="#222222" stroke-width="2"/></g></g></g>
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M215.5 105.5L280.5 105.5 M280.5 105.5L280.5 160.5 M302.5 127.5L302.5 182.5 M302.5 127.5L280.5 105.5 M302.5 182.5L280.5 160.5 M280.5 160.5L215.5 160.5 M302.5 182.5L237.5 182.5 M302.5 182.5L280.5 160.5 M237.5 182.5L215.5 160.5 M215.5 160.5L215.5 105.5" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="342,84 368,84 313,29 287,29" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="287,29 313,29 313,21 287,21" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M287 29L313 29 M342 84L368 84 M313 21L287 21" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="84,374.18 84,344.36 29,289.36 29,319.18" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="29,319.18 29,289.36 21,289.36 21,319.18" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M29 319.182L29 289.364 M84 374.182L84 344.364 M21 289.364L21 319.182" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="368,84 386,84 331,29 313,29" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="313,29 331,29 335,26.33 335,21 313,21" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M313 29L331 29 M368 84L386 84 M386 84L331 29 M335 21L313 21" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="84,396 84,374.18 29,319.18 29,341" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="29,341 29,319.18 21,319.18 21,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M29 341L29 319.182 M84 396L84 374.182 M84 396L29 341 M21 319.182L21 349" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="394,84 418,84 363,29 339,29" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="339,29 363,29 363,21 335,21 335,26.33" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M339 29L363 29 M394 84L418 84 M394 84L339 29 M363 21L335 21" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="394,104.58 394,84 339,29 339,49.58" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="331,29 331,49.58 339,49.58 339,29 335,26.33" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M331 29L331 49.583 M339 49.583L339 29 M394 104.583L394 84 M394 84L339 29" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="76,404 101.8,404 46.8,349 21,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="46.8,341 29,341 21,349 46.8,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M46.8 341L29 341 M21 349L46.8 349 M76 404L101.8 404 M76 404L21 349" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="394,133.17 394,104.58 339,49.58 339,78.17" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="331,49.58 331,78.17 339,78.17 339,49.58" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M331 49.583L331 78.167 M339 78.167L339 49.583 M394 133.167L394 104.583" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="418,84 450,84 395,29 363,29" fill="#ffffff"/><polygon class="fp-iso-face" points="450,84 450,76 395,21 395,29" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="363,29 395,29 395,21 363,21" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M363 29L395 29 M418 84L450 84 M450 84L395 29 M395 29L395 21 M450 84L450 76 M450 84L395 29 M450 76L395 21 M395 21L363 21" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="101.8,404 127.6,404 72.6,349 46.8,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="72.6,341 46.8,341 46.8,349 72.6,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M72.6 341L46.8 341 M46.8 349L72.6 349 M101.8 404L127.6 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="394,161.75 394,133.17 339,78.17 339,106.75" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="331,78.17 331,106.75 339,106.75 339,78.17" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M331 78.167L331 106.75 M339 106.75L339 78.167 M394 161.75L394 133.167" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="127.6,404 153.4,404 98.4,349 72.6,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="98.4,341 72.6,341 72.6,349 98.4,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M98.4 341L72.6 341 M72.6 349L98.4 349 M127.6 404L153.4 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-sill">
+    <polygon class="fp-iso-face" points="450,84 477.5,84 458.25,64.75 430.75,64.75" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="430.75,64.75 458.25,64.75 458.25,56.75 430.75,56.75" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M430.75 64.75L458.25 64.75 M450 84L477.5 84 M450 84L430.75 64.75 M458.25 56.75L430.75 56.75 M430.75 56.75L430.75 64.75" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="394,190.33 394,161.75 339,106.75 339,135.33" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="331,106.75 331,135.33 339,135.33 339,106.75" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M331 106.75L331 135.333 M339 135.333L339 106.75 M394 190.333L394 161.75" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="153.4,404 179.2,404 124.2,349 98.4,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="124.2,341 98.4,341 98.4,349 124.2,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M124.2 341L98.4 341 M98.4 349L124.2 349 M153.4 404L179.2 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-sill">
+    <polygon class="fp-iso-face" points="477.5,84 505,84 485.75,64.75 458.25,64.75" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="458.25,64.75 485.75,64.75 485.75,56.75 458.25,56.75" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M458.25 64.75L485.75 64.75 M477.5 84L505 84 M485.75 56.75L458.25 56.75" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="179.2,404 205,404 150,349 124.2,349" fill="#ffffff"/><polygon class="fp-iso-face" points="205,404 205,396 150,341 150,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="150,341 124.2,341 124.2,349 150,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M150 341L124.2 341 M124.2 349L150 349 M179.2 404L205 404 M205 404L150 349 M150 349L150 341 M205 404L205 396 M205 404L150 349 M205 396L150 341" stroke="#222222"/></g><g><polygon class="fp-iso-panel" points="205,400 205,330 158.25,283.25 158.25,353.25" fill="#ffffff" stroke="#222222" stroke-width="1"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="394,218.92 394,190.33 339,135.33 339,163.92" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="331,135.33 331,163.92 339,163.92 339,135.33" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M331 135.333L331 163.917 M339 163.917L339 135.333 M394 218.917L394 190.333" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-sill">
+    <polygon class="fp-iso-face" points="505,84 532.5,84 513.25,64.75 485.75,64.75" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="485.75,64.75 513.25,64.75 513.25,56.75 485.75,56.75" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M485.75 64.75L513.25 64.75 M505 84L532.5 84 M513.25 56.75L485.75 56.75" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="386,247.5 394,247.5 339,192.5 331,192.5" fill="#ffffff"/><polygon class="fp-iso-face" points="394,247.5 394,218.92 339,163.92 339,192.5" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="331,163.92 331,192.5 339,192.5 339,163.92" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M331 163.917L331 192.5 M331 192.5L339 192.5 M386 247.5L394 247.5 M386 247.5L331 192.5 M394 247.5L339 192.5 M339 192.5L339 163.917 M394 247.5L394 218.917 M394 247.5L339 192.5" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-sill">
+    <polygon class="fp-iso-face" points="532.5,84 560,84 540.75,64.75 513.25,64.75" fill="#ffffff"/><polygon class="fp-iso-face" points="560,84 560,76 540.75,56.75 540.75,64.75" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="513.25,64.75 540.75,64.75 540.75,56.75 513.25,56.75" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M513.25 64.75L540.75 64.75 M532.5 84L560 84 M560 84L540.75 64.75 M540.75 64.75L540.75 56.75 M560 84L560 76 M560 84L540.75 64.75 M560 76L540.75 56.75 M540.75 56.75L513.25 56.75" stroke="#222222"/></g><g><polygon class="fp-iso-panel fp-iso-glazed" points="430.75,60.75 540.75,60.75 513.25,33.25 403.25,33.25" fill="#ffffff" stroke="#222222" stroke-width="1"/></g><g><g class="fp-iso-solid fp-iso-furniture">
+    <polygon class="fp-iso-face" points="572.5,112.5 572.5,167.5 550.5,145.5 550.5,90.5" fill="#ffffff"/><polygon class="fp-iso-face" points="572.5,167.5 437.5,167.5 415.5,145.5 550.5,145.5" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="415.5,90.5 550.5,90.5 550.5,145.5 415.5,145.5" fill="#ffffff"/>
+    <g><g transform="translate(-22 -22)"><g class="fp-furniture fp-furniture-desk" transform="translate(505 140) rotate(0)"><rect x="-67.5" y="-27.5" width="135" height="55.00000000000001" rx="3.6666668500000004" fill="#ffffff" stroke="#222222" stroke-width="2"/><line fill="none" x1="-67.5" y1="2.7500000000000036" x2="67.5" y2="2.7500000000000036" stroke="#222222" stroke-width="1.5" opacity="0.7"/></g></g></g>
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M415.5 90.5L550.5 90.5 M550.5 90.5L550.5 145.5 M572.5 112.5L572.5 167.5 M572.5 112.5L550.5 90.5 M572.5 167.5L550.5 145.5 M550.5 145.5L415.5 145.5 M572.5 167.5L437.5 167.5 M572.5 167.5L550.5 145.5 M437.5 167.5L415.5 145.5 M415.5 145.5L415.5 90.5" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="560,84 592,84 537,29 505,29" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="505,29 537,29 537,21 505,21" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M505 29L537 29 M560 84L592 84 M560 84L505 29 M537 21L505 21 M505 21L505 29" stroke="#222222"/></g><g><polygon class="fp-iso-panel" points="390,247.5 455,247.5 408.25,200.75 343.25,200.75" fill="#ffffff" stroke="#222222" stroke-width="1"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="592,84 616,84 561,29 537,29" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="537,29 561,29 569,21 537,21" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M537 29L561 29 M592 84L616 84 M616 84L561 29 M569 21L537 21" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="275,404 304.75,404 249.75,349 220,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="249.75,341 220,341 220,349 249.75,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M249.75 341L220 341 M220 341L220 349 M220 349L249.75 349 M275 404L304.75 404 M275 404L220 349" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-furniture">
+    <polygon class="fp-iso-face" points="525,165 525,205 503,183 503,143" fill="#ffffff"/><polygon class="fp-iso-face" points="525,205 485,205 463,183 503,183" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="463,143 503,143 503,183 463,183" fill="#ffffff"/>
+    <g><g transform="translate(-22 -22)"><g class="fp-furniture fp-furniture-chair" transform="translate(505 185) rotate(0)"><rect x="-20" y="-20" width="40" height="40" rx="3.6363636" fill="#ffffff" stroke="#222222" stroke-width="2"/><line fill="none" x1="-20" y1="-11.2" x2="20" y2="-11.2" stroke="#222222" stroke-width="2"/></g></g></g>
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M463 143L503 143 M503 143L503 183 M525 165L525 205 M525 165L503 143 M525 205L503 183 M503 183L463 183 M525 205L485 205 M525 205L503 183 M485 205L463 183 M463 183L463 143" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="624,105.82 624,76 569,21 569,50.82" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="561,29 561,50.82 569,50.82 569,21" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M561 29L561 50.818 M569 50.818L569 21 M624 105.818L624 76 M624 76L569 21" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="394,343 394,312.5 339,257.5 339,288" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="331,257.5 331,288 339,288 339,257.5" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M331 257.5L331 288 M339 288L339 257.5 M394 343L394 312.5 M394 312.5L339 257.5 M339 257.5L331 257.5" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="304.75,404 334.5,404 279.5,349 249.75,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="279.5,341 249.75,341 249.75,349 279.5,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M279.5 341L249.75 341 M249.75 349L279.5 349 M304.75 404L334.5 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="624,135.64 624,105.82 569,50.82 569,80.64" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="561,50.82 561,80.64 569,80.64 569,50.82" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M561 50.818L561 80.636 M569 80.636L569 50.818 M624 135.636L624 105.818" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="394,373.5 394,343 339,288 339,318.5" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="331,288 331,318.5 339,318.5 339,288" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M331 288L331 318.5 M339 318.5L339 288 M394 373.5L394 343" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="334.5,404 364.25,404 309.25,349 279.5,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="309.25,341 279.5,341 279.5,349 309.25,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M309.25 341L279.5 341 M279.5 349L309.25 349 M334.5 404L364.25 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="624,165.45 624,135.64 569,80.64 569,110.45" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="561,80.64 561,110.45 569,110.45 569,80.64" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M561 80.636L561 110.455 M569 110.455L569 80.636 M624 165.455L624 135.636" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="394,396 394,373.5 339,318.5 339,341" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="331,318.5 331,341 335,343.67 339,341 339,318.5" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M331 318.5L331 341 M339 341L339 318.5 M394 396L394 373.5 M394 396L339 341" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="364.25,404 390,404 335,349 309.25,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="331,341 309.25,341 309.25,349 335,349 335,343.67" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M331 341L309.25 341 M309.25 349L335 349 M364.25 404L390 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="624,195.27 624,165.45 569,110.45 569,140.27" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="561,110.45 561,140.27 569,140.27 569,110.45" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M561 110.455L561 140.273 M569 140.273L569 110.455 M624 195.273L624 165.455" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="390,404 415.75,404 360.75,349 335,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="360.75,341 339,341 335,343.67 335,349 360.75,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M360.75 341L339 341 M335 349L360.75 349 M390 404L415.75 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="624,225.09 624,195.27 569,140.27 569,170.09" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="561,140.27 561,170.09 569,170.09 569,140.27" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M561 140.273L561 170.091 M569 170.091L569 140.273 M624 225.091L624 195.273" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="415.75,404 445.5,404 390.5,349 360.75,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="390.5,341 360.75,341 360.75,349 390.5,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M390.5 341L360.75 341 M360.75 349L390.5 349 M415.75 404L445.5 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="624,254.91 624,225.09 569,170.09 569,199.91" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="561,170.09 561,199.91 569,199.91 569,170.09" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M561 170.091L561 199.909 M569 199.909L569 170.091 M624 254.909L624 225.091" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="445.5,404 475.25,404 420.25,349 390.5,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="420.25,341 390.5,341 390.5,349 420.25,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M420.25 341L390.5 341 M390.5 349L420.25 349 M445.5 404L475.25 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="624,284.73 624,254.91 569,199.91 569,229.73" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="561,199.91 561,229.73 569,229.73 569,199.91" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M561 199.909L561 229.727 M569 229.727L569 199.909 M624 284.727L624 254.909" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="475.25,404 505,404 450,349 420.25,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="450,341 420.25,341 420.25,349 450,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M450 341L420.25 341 M420.25 349L450 349 M475.25 404L505 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-furniture">
+    <polygon class="fp-iso-face" points="600,287.5 600,362.5 578,340.5 578,265.5" fill="#ffffff"/><polygon class="fp-iso-face" points="600,362.5 570,362.5 548,340.5 578,340.5" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="578,265.5 578,340.5 548,340.5 548,265.5" fill="#ffffff"/>
+    <g><g transform="translate(-22 -22)"><g class="fp-furniture fp-furniture-bookshelf" transform="translate(585 325) rotate(90)"><rect x="-37.5" y="-15" width="75" height="30" rx="2.0000001" fill="#ffffff" stroke="#222222" stroke-width="2"/></g></g></g>
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M578 265.5L578 340.5 M600 287.5L600 362.5 M600 287.5L578 265.5 M600 362.5L578 340.5 M578 340.5L548 340.5 M600 362.5L570 362.5 M600 362.5L578 340.5 M570 362.5L548 340.5 M548 340.5L548 265.5 M548 265.5L578 265.5" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="624,314.55 624,284.73 569,229.73 569,259.55" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="561,229.73 561,259.55 569,259.55 569,229.73" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M561 229.727L561 259.545 M569 259.545L569 229.727 M624 314.545L624 284.727" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="505,404 534.75,404 479.75,349 450,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="479.75,341 450,341 450,349 479.75,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M479.75 341L450 341 M450 349L479.75 349 M505 404L534.75 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="624,344.36 624,314.55 569,259.55 569,289.36" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="561,259.55 561,289.36 569,289.36 569,259.55" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M561 259.545L561 289.364 M569 289.364L569 259.545 M624 344.364L624 314.545" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="534.75,404 564.5,404 509.5,349 479.75,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="509.5,341 479.75,341 479.75,349 509.5,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M509.5 341L479.75 341 M479.75 349L509.5 349 M534.75 404L564.5 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="624,374.18 624,344.36 569,289.36 569,319.18" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="561,289.36 561,319.18 569,319.18 569,289.36" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M561 289.364L561 319.182 M569 319.182L569 289.364 M624 374.182L624 344.364" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="564.5,404 594.25,404 539.25,349 509.5,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="539.25,341 509.5,341 509.5,349 539.25,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M539.25 341L509.5 341 M509.5 349L539.25 349 M564.5 404L594.25 404" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="624,404 624,374.18 569,319.18 569,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="561,319.18 561,341 569,349 569,319.18" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M561 319.182L561 341 M569 349L569 319.182 M624 404L624 374.182 M624 404L569 349" stroke="#222222"/></g><g><g class="fp-iso-solid fp-iso-wall">
+    <polygon class="fp-iso-face" points="594.25,404 624,404 569,349 539.25,349" fill="#ffffff"/>
+    <polygon class="fp-iso-face fp-iso-top" points="561,341 539.25,341 539.25,349 569,349" fill="#ffffff"/>
+
+  </g><path class="solid-edges" fill="none" stroke-width="1" pointer-events="none" d="M561 341L539.25 341 M539.25 349L569 349 M594.25 404L624 404 M624 404L569 349" stroke="#222222"/></g></g>
+      </g>
+      <g font-family="sans-serif" text-anchor="middle" dominant-baseline="central" fill="#222222">
+        <text stroke-width="3" paint-order="stroke" x="421.3620667976083" y="302.5" font-size="14" stroke="#ffffff">Living room</text><text stroke-width="3" paint-order="stroke" x="655.1889258194067" y="437.5" font-size="14" stroke="#ffffff">Studio</text>
+      </g>
+    </g>
+  </svg>

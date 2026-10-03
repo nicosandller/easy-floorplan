@@ -6,6 +6,7 @@
  * effects (device-class inference, grid/snap rescale).
  */
 import { MAX_FOCUS_INTERVAL, normalizeRoomFocus } from "./room-focus";
+import { normalizeAppearance } from "./line-art";
 import type {
   Area,
   Floor,
@@ -2289,6 +2290,21 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
         helper: "3D shows standing walls and openings. Editing stays in 2D",
         selector: dropdown(opt("2d", "2D plan"), opt("3d", "3D isometric")),
       },
+      {
+        name: "appearance", label: "Appearance",
+        helper: "Line art uses crisp outlines on white while keeping devices and doors live",
+        selector: dropdown(opt("normal", "Normal"), opt("line-art", "Line art")),
+      },
+      {
+        name: "showViewControls", label: "Show view controls",
+        helper: "Switch 2D/3D, appearance and viewing direction directly on the card",
+        selector: { boolean: {} },
+      },
+      {
+        name: "showExport", label: "Allow SVG download",
+        helper: "Optional download of a static line-art drawing",
+        selector: { boolean: {} },
+      },
       ...(normalizeProjection(c.view ?? c.projection) === "iso" ? [
         {
           name: "wallHeight",
@@ -2405,6 +2421,9 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
     ],
     data: {
       view: normalizeProjection(c.view ?? c.projection) === "iso" ? "3d" : "2d",
+      appearance: normalizeAppearance(c.appearance),
+      showViewControls: c.showViewControls ?? false,
+      showExport: c.showExport ?? false,
       wallHeight: normalizeWallHeight(c.wallHeight),
       wallOpacity: normalizeWallOpacity(c.wallOpacity),
       rotation: String(normalizePlanRotation(c.rotation)),

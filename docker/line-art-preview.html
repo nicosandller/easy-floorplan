@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Easy Floorplan · Live line art</title>
+<style>
+  :root { font: 15px system-ui, sans-serif; color: #283a43; background: #e9efed;
+    --primary-text-color: #283a43; --card-background-color: #fff; --secondary-background-color: #f0f4f3;
+    --secondary-text-color: #596c64; --divider-color: #dce5e1; --primary-color: #347962; }
+  :root[data-theme="dark"] { color-scheme: dark; color: #e3ede9; background: #111b21;
+    --primary-text-color: #e3ede9; --card-background-color: #202d35; --secondary-background-color: #16242c;
+    --secondary-text-color: #a4b8af; --divider-color: #3d4d53; --primary-color: #8bd0b8; }
+  body { max-width: 1000px; margin: 36px auto; padding: 0 24px; }
+  .eyebrow { color: var(--primary-color); font-size: 12px; text-transform: uppercase; letter-spacing: .15em; font-weight: 700; }
+  h1 { font-size: clamp(28px, 4vw, 42px); letter-spacing: -.04em; margin: 10px 0; }
+  p { max-width: 700px; line-height: 1.6; }
+  nav { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; margin: 24px 0 16px; }
+  label { display: flex; gap: 8px; align-items: center; }
+  select, button { font: inherit; padding: 9px 14px; border: 1px solid var(--divider-color); border-radius: 8px; background: var(--card-background-color); color: inherit; cursor: pointer; }
+  button[aria-pressed="true"] { border-color: var(--primary-color); }
+  main { background: var(--card-background-color); border: 1px solid var(--divider-color); border-radius: 16px; overflow: hidden; box-shadow: 0 16px 48px #15352808; }
+  easy-floorplan-card { display: block; }
+  .note { font-size: 13px; color: var(--secondary-text-color); }
+</style>
+<div class="eyebrow">Easy Floorplan / live appearance</div>
+<h1>Your home. A clearer view.</h1>
+<p>Clean architectural lines, with your home still live. Switch the appearance,
+  explore another angle, or tap a room to take a closer look.</p>
+<nav aria-label="Simulated home controls">
+  <button id="light" aria-pressed="true">Reading lamp · On</button>
+  <button id="door" aria-pressed="false">Entry door · Closed</button>
+  <label>Theme <select id="theme"><option value="light">Light</option><option value="dark">Dark</option></select></label>
+</nav>
+<main><easy-floorplan-card></easy-floorplan-card></main>
+<p class="note">Interactive demo with simulated devices. Tap the lamp to switch it or the entry door to open it.
+  View controls are part of the card; your saved layout stays the same.</p>
+<script type="module">
+  import '/src/floorplan-card.ts';
+  // Only the mock HA icon lives here; the card and download are the real feature.
+  customElements.define('ha-icon', class extends HTMLElement {
+    connectedCallback() {
+      const icon=this.getAttribute('icon') ?? '';
+      const path=icon.includes('lightbulb') ? 'M9 18h6m-5 3h4M8 14a6 6 0 1 1 8 0l-1 2H9Z'
+        : icon.includes('magnify') ? 'M10 4a6 6 0 1 1 0 12 6 6 0 0 1 0-12m5 11 5 5M7 10h6'
+        : icon.includes('thermometer') ? 'M10 5a2 2 0 0 1 4 0v9a4 4 0 1 1-4 0ZM12 10v7'
+        : 'M4 11 12 4l8 7v9H4Zm5 9v-7h6v7';
+      const root = this.shadowRoot ?? this.attachShadow({mode:'open'});
+      root.innerHTML=`<style>:host{display:inline-flex;align-items:center;justify-content:center}svg{width:var(--mdc-icon-size,20px);height:var(--mdc-icon-size,20px);fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}</style><svg viewBox="0 0 24 24" aria-hidden="true"><path d="${path}"/></svg>`;
+    }
+  });
+  const rect = (x,y,w,h) => [{x,y},{x:x+w,y},{x:x+w,y:y+h},{x,y:y+h}];
+  const ground = {
+    id:'ground',name:'Ground floor',short:'G',
+    walls:[['n',80,80,620,80],['e',620,80,620,400],['s',620,400,80,400],['w',80,400,80,80],['partition',390,80,390,400]]
+      .map(([id,x1,y1,x2,y2]) => ({id,x1,y1,x2,y2,thickness:8})),
+    openings:[
+      {id:'entry',type:'door',x:240,y:400,angle:0,length:70,entity:'binary_sensor.entry',activeColor:'#347962'},
+      {id:'inner',type:'door',x:390,y:280,angle:90,length:65},
+      {id:'window',type:'window',x:235,y:80,angle:0,length:110},
+      {id:'fixed',type:'window',motion:'fixed',x:505,y:80,angle:0,length:110},
+    ],
+    areas:[
+      {id:'living',name:'Living room',points:rect(80,80,310,320),color:'#bed6ca',opacity:.45},
+      {id:'studio',name:'Studio',points:rect(390,80,230,320),color:'#ead4b9',opacity:.45},
+    ],
+    furniture:[
+      {id:'sofa',type:'sofa',x:140,y:210,w:120,h:50,angle:90},
+      {id:'coffee',type:'table',x:270,y:155,w:65,h:55},
+      {id:'desk',type:'desk',x:505,y:140,w:135,h:55},
+      {id:'chair',type:'chair',x:505,y:185,w:40,h:40},
+      {id:'shelf',type:'bookshelf',x:585,y:325,w:75,h:30,angle:90},
+    ],
+    items:[{id:'lamp',kind:'light',entity:'light.example',x:285,y:325,glow:true,glowRadius:160,
+      tap_action:{action:'toggle'}},
+      {id:'temperature',kind:'sensor',entity:'sensor.example',x:540,y:320,showState:true}],
+    texts:[],trackers:[],
+  };
+  const upper = structuredClone(ground);
+  upper.id='upper'; upper.name='Upper floor'; upper.short='1';
+  upper.areas[0].name='Bedroom'; upper.areas[1].name='Dressing room';
+  upper.furniture=[{id:'bed',type:'bed',x:220,y:200,w:125,h:150},{id:'wardrobe',type:'wardrobe',x:510,y:140,w:170,h:65}];
+  upper.items=[];
+  const config={type:'custom:easy-floorplan-card',width:700,height:480,showViewControls:true,showExport:true,
+    view:'3d',appearance:'line-art',wallHeight:55,wallOpacity:.65,overlayScale:'plan',overlayMinWidth:560,floors:[ground,upper]};
+  const card=document.querySelector('easy-floorplan-card');
+  let light=true, door=false;
+  const update=()=> {
+    card.setConfig(config);
+    card.hass={states:{
+      'light.example':{entity_id:'light.example',state:light?'on':'off',attributes:{friendly_name:'Reading lamp',brightness:255,rgb_color:[255,193,92]}},
+      'binary_sensor.entry':{entity_id:'binary_sensor.entry',state:door?'on':'off',attributes:{friendly_name:'Entry door',device_class:'door'}},
+      'sensor.example':{entity_id:'sensor.example',state:'21.5',attributes:{friendly_name:'Studio temperature',device_class:'temperature',unit_of_measurement:'°C'}}
+    },entities:{}, formatEntityState:s=>s.state+(s.attributes.unit_of_measurement??''),
+    callService:()=>{light=!light;update();}};
+    document.getElementById('light').textContent=`Reading lamp · ${light?'On':'Off'}`;
+    document.getElementById('light').setAttribute('aria-pressed',String(light));
+    document.getElementById('door').textContent=`Entry door · ${door?'Open':'Closed'}`;
+    document.getElementById('door').setAttribute('aria-pressed',String(door));
+  };
+  document.getElementById('theme').onchange=e=>{document.documentElement.dataset.theme=e.target.value;};
+  document.getElementById('light').onclick=()=>{light=!light; update();};
+  document.getElementById('door').onclick=()=>{door=!door; update();};
+  card.addEventListener('hass-more-info',e=>{if(e.detail.entityId==='binary_sensor.entry'){door=!door;update();}});
+  update();
+</script>
+</html>

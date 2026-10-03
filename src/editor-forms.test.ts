@@ -1292,6 +1292,9 @@ describe("wallForm / projectForm / floorImageForm", () => {
     const form = projectDisplayForm({ type: "t", width: 1000, height: 600 } as FloorplanCardConfig);
     expect(form.fields.map((x) => x.name)).toEqual([
       "view",
+      "appearance",
+      "showViewControls",
+      "showExport",
       "rotation",
       "rotationPortrait",
       "rotationLandscape",
@@ -2227,6 +2230,9 @@ describe("every field lands in exactly one panel group", () => {
     // both slices and the control silently disappears.
     const DISPLAY = [
       "view",
+      "appearance",
+      "showViewControls",
+      "showExport",
       "rotation",
       "rotationPortrait",
       "rotationLandscape",

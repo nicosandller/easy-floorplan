@@ -539,6 +539,81 @@ was rotated (issue #280).
 
 <a id="isometric-view"></a>
 
+## Live appearance and view controls
+
+Choose **Project → Display → Appearance → Line art** for a live architectural
+drawing of your existing plan. Enable **Show view controls** in the same group
+to give viewers these controls directly on the card:
+
+- **2D / 3D** changes the projection.
+- **Normal / Line art** changes the drawing style.
+- **Rotate left / right** moves through the four viewing directions in 90° steps.
+- **Reset view** returns to the saved view, appearance and rotation and zooms out.
+
+![Live line art with view controls and simulated devices](img/line-art-live-desktop.png)
+
+The same controls [wrap on a narrow screen](img/line-art-live-mobile.png).
+
+The controls are enabled for new plans; existing plans can opt in without changing
+their saved layout. Choose the initial appearance and view in the editor:
+
+```yaml
+view: 3d
+appearance: line-art
+showViewControls: true
+```
+
+Line art keeps entity readings, device actions, animated opening positions,
+furniture actions, floor switching and room zoom live. Light pools and state
+colours still show what is happening at home. The canvas uses white surfaces and
+dark outlines; standing walls become opaque and background images turn grayscale.
+Environmental sunlight, moonlight and night dimming pause while Line art is
+selected. **Normal** restores your configured colours, skin, opacity and lighting.
+
+View choices last while the card is mounted, including through entity updates
+and floor changes. They do not modify the saved configuration. Changing a saved
+default in the editor replaces the corresponding temporary choice; reloading the
+card also restores its defaults. Reset keeps the active floor selected. The 3D
+view uses the existing isometric renderer and four viewing corners, with no free
+orbit camera.
+
+The toolbar follows the Home Assistant theme, wraps for narrow cards, and supports
+keyboard focus and touch. Try the [live preview](../docker/README.md#live-appearance-preview)
+with simulated lights, doors and both themes.
+
+## SVG export
+
+Enable **Project → Display → Allow SVG download**, or add `showExport: true`, for
+an optional download button at the end of the view controls. Without view controls,
+it appears as **Export SVG** below the plan. Select a floor, then download it.
+The download uses the current 2D or 3D view and display rotation,
+including orientation overrides. It always includes the full canvas, even while
+zoomed into a room. Open the SVG directly in a browser, print it, or insert it into
+a document or vector editor.
+
+![Downloaded 3D line-art example](img/line-art-example.svg)
+
+```yaml
+showExport: true
+view: 3d
+wallHeight: 60
+```
+
+The file contains black-on-white walls, openings, furniture (including custom
+symbols), dividers and room names. It needs no Home Assistant connection, theme,
+external fonts or linked images. Openings use their static drawing convention:
+swing doors open and windows closed, respecting the configured inversion.
+Background images, free text, device badges, entity readings, lighting
+and replay state are omitted. The live card is unchanged by exporting.
+
+Standing faces are opaque and use the existing 3D painter's ordering to cover
+geometry behind them. This is an illustration in canvas units, not a survey or
+a general hidden-line CAD export. White faces and SVG masks remain in the file;
+it is intended for printing and documents, not optimised pen-plotter paths.
+
+Try the [local live preview](../docker/README.md#live-appearance-preview) to switch
+views and floors and download the example drawing.
+
 ## 3D view
 
 Choose **Project → Display → View → 3D isometric** to see the plan from a corner.

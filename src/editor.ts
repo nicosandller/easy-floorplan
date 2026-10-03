@@ -5586,6 +5586,9 @@ export class FloorplanCardEditor extends LitElement {
           this._renderForm(
             formSlice(display, [
               "view",
+              "appearance",
+              "showViewControls",
+              "showExport",
               "wallHeight",
               "wallOpacity",
               "rotation",
