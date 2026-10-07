@@ -86,8 +86,8 @@ describe("published YAML coordinates survive HA's schema", () => {
     expect(yamlBlocks(markdown.replaceAll("\n", "\r\n"))).toHaveLength(2);
   });
 
-  it("includes the README openings example in the round-trip checks", () => {
-    expect(yamlBlocks(examples["../README.md"]!).some(block => /^openings:/m.test(block))).toBe(true);
+  it("includes the element guide openings example in the round-trip checks", () => {
+    expect(yamlBlocks(examples["../docs/elements.md"]!).some(block => /^openings:/m.test(block))).toBe(true);
   });
 
   for (const [file, text] of Object.entries(examples)) {

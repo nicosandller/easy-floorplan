@@ -21,6 +21,10 @@ skin: tron
 | `pastel` | Soft and low-contrast: muted mauve walls on blush paper, peach for active devices. Easy on a dashboard that stays on screen. |
 | `tron` | Neon on near-black: thin glowing cyan walls, amber for active devices, light text. Light pools read best here. |
 
+<img width="300" height="300" alt="Default skin" src="https://github.com/user-attachments/assets/ce2d6545-10f4-4aa2-bbd7-0dcae08c27f5" />
+<img width="300" height="300" alt="Odnetnin skin" src="https://github.com/user-attachments/assets/1d46f7a3-b894-4fcb-bdb9-a55270b8e4e4" />
+<img width="300" height="300" alt="Tron skin" src="https://github.com/user-attachments/assets/de5b0825-3bff-4817-8a26-8f887bab8c48" />
+
 A skin only supplies **fallbacks**, so anything you set on an element yourself still wins —
 a room's own `color`, a device's `activeColor`, a `background` on the plan. Switch skins
 freely without losing colors you chose by hand.
