@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { html, nothing } from "lit";
-import type { Area, FloorText, Furniture, FurnitureType, ItemKind, ItemReading } from "./types";
+import type { Area, FloorText, Furniture, ItemKind, ItemReading } from "./types";
 import { SKIN_ACCENT, SKIN_WALL, MAX_SKIN_WALL_WIDTH } from "./skins";
 import { MAX_AREA_ZOOM, DEFAULT_ZOOMED_OVERLAY_SCALE } from "./types";
 import {
@@ -170,7 +170,7 @@ import {
 import { buildRenderHass } from "./replay-history/render-state-service";
 import type { FloorplanCardConfig, Opening, RenderHass, Wall } from "./types";
 import { deadSpaces } from "./dead-space";
-import { symbolCatalog, symbolSize } from "./symbols";
+import { BUILTIN_SYMBOLS, symbolCatalog, symbolSize } from "./symbols";
 
 /**
  * Render a Lit template to the string it would emit, for asserting on markup.
@@ -1756,12 +1756,9 @@ describe("the sectional's L-shaped outline", () => {
 });
 
 describe("every furniture type renders and has a default size", () => {
-  const types: FurnitureType[] = [
-    "table", "roundTable", "desk", "chair", "sofa", "bed", "wardrobe", "rug",
-    "plant", "fridge", "stove", "sink", "toilet", "stairs", "tv",
-    "washer", "dryer", "dishwasher", "waterHeater", "airHandler", "bathtub",
-    "vanity", "sectional", "fishTank", "piano", "hotTub",
-  ];
+  // Derive coverage from the shipped catalogue so new symbols cannot be
+  // omitted from rendering/default-size checks by a stale manual list.
+  const types = Object.keys(BUILTIN_SYMBOLS);
 
   it("has a default size for each", () => {
     for (const t of types) {

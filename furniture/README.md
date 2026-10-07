@@ -3,7 +3,10 @@
 Every glyph the card draws lives in this directory, one JSON file per symbol. Adding a new
 one is adding a file — no code and no build step. There is one list to keep in step: the
 `FurnitureType` union in [`src/types.ts`](../src/types.ts), which is what a hand-written
-config autocompletes against. Add the id there too, or `symbols.test.ts` fails.
+config autocompletes against. Add the id there and to the expected catalogue in
+`src/symbols.test.ts`. Run both `src/symbols.test.ts` and `src/render.test.ts` when
+adding or changing a symbol. The rendering/default-size checks automatically cover
+every shipped symbol through `BUILTIN_SYMBOLS`; do not replace that with a manual list.
 
 **A symbol is geometry, not markup.** It is a list of primitives with numeric attributes,
 and the card builds the SVG elements itself. Nothing here is ever parsed as markup, which
