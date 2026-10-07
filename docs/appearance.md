@@ -547,7 +547,8 @@ to give viewers these controls directly on the card:
 
 - **2D / 3D** changes the projection.
 - **Normal / Line art** changes the drawing style.
-- **Rotate left / right** moves through the four viewing directions in 90° steps.
+- **Rotate left / right** turns through the four viewing directions in 90° steps.
+  In 3D the house moves smoothly around its centre; in 2D it switches immediately.
 - **Reset view** returns to the saved view, appearance and rotation and zooms out.
 
 ![Live line art with view controls and simulated devices](img/line-art-live-desktop.png)
@@ -577,6 +578,21 @@ card also restores its defaults. Reset keeps the active floor selected. The 3D
 view uses the existing isometric renderer and four viewing corners, with no free
 orbit camera.
 
+A 3D quarter-turn takes about half a second. Click again to keep turning or
+reverse direction; the next movement starts from the current position. Labels
+stay upright, device and opening actions follow the drawing, and a focused room
+stays selected. The angle beside the buttons is the destination. Reset cancels
+an unfinished turn and restores the saved defaults.
+
+With view controls enabled, 3D reserves enough space for every intermediate
+angle, including when a room is focused. Long, narrow plans can therefore look
+slightly smaller than a fixed-corner view, but keep the same scale while turning.
+The system's **Reduce motion** preference makes turns instantaneous; changing it
+mid-turn immediately settles the view. Switching to 2D or changing the screen's
+orientation also settles an unfinished turn.
+
+![A smooth 90-degree turn with simulated entities](../assets/issue-354/rotation-after.gif)
+
 The toolbar follows the Home Assistant theme, wraps for narrow cards, and supports
 keyboard focus and touch. Try the [live preview](../docker/README.md#live-appearance-preview)
 with simulated lights, doors and both themes.
@@ -586,8 +602,8 @@ with simulated lights, doors and both themes.
 Enable **Project → Display → Allow SVG download**, or add `showExport: true`, for
 an optional download button at the end of the view controls. Without view controls,
 it appears as **Export SVG** below the plan. Select a floor, then download it.
-The download uses the current 2D or 3D view and display rotation,
-including orientation overrides. It always includes the full canvas, even while
+The download uses the current 2D or 3D view and the selected destination rotation
+(even while a turn is still moving), including orientation overrides. It always includes the full canvas, even while
 zoomed into a room. Open the SVG directly in a browser, print it, or insert it into
 a document or vector editor.
 

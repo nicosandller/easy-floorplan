@@ -153,7 +153,6 @@ import {
   IDENTITY_ZOOM,
   wallThickness,
   RAILING_WEIGHT,
-  type PlanRotation,
   type OpeningStyle,
 } from "./render";
 import {
@@ -176,6 +175,7 @@ import { downloadLineArtSvg } from "./line-art-export";
 import { LINE_INK, lineArtStyles, normalizeAppearance, solidEdgeRenderer, type PlanAppearance } from "./line-art";
 import { renderViewControls, viewControlStyles } from "./view-controls";
 import { AmountTween, OPENING_TWEEN_MS, rafTweenFrames } from "./opening-tween";
+import { RotationTween } from "./rotation";
 import { focusOrder, normalizeRoomFocus, stepFocus } from "./room-focus";
 import type { SVGTemplateResult } from "lit";
 import { symbolCatalog } from "./symbols";
@@ -234,7 +234,7 @@ export class FloorplanCard extends LitElement {
   /** Viewer choices stay local to this card; the editor owns saved defaults. */
   @state() private _viewOverride?: "2d" | "3d";
   @state() private _appearanceOverride?: PlanAppearance;
-  @state() private _rotationOffset = 0;
+  private readonly _rotation = new RotationTween(rafTweenFrames, () => this.requestUpdate("_rotation"));
   /** The dwell between rooms while `roomFocus.interval` is cycling. */
   private _focusTimer?: ReturnType<typeof setTimeout>;
   /** The interval {@link _focusTimer} was armed with, to notice a config that changes it. */
@@ -291,9 +291,11 @@ export class FloorplanCard extends LitElement {
   @state() private _portrait?: boolean;
   /** Undoes the orientation subscription; set while connected (issue #237). */
   private _unsubscribeOrientation?: () => void;
+  private _unsubscribeMotion?: () => void;
   // Takes the narrowest thing it uses, so it fits both a `MediaQueryList` read
   // directly on load and the `change` event that follows.
   private readonly _onOrientation = (e: { matches: boolean }): void => {
+    if (this._portrait !== e.matches) this._rotation.finish();
     this._portrait = e.matches;
   };
 
@@ -311,6 +313,11 @@ export class FloorplanCard extends LitElement {
     // that is correct until the device is turned rather than one that is wrong.
     this._onOrientation(q);
     this._unsubscribeOrientation = subscribeOrientation(q, this._onOrientation);
+    const motion = window.matchMedia("(prefers-reduced-motion: reduce)");
+    if (motion.matches) this._rotation.finish();
+    this._unsubscribeMotion = subscribeOrientation(motion, (e) => {
+      if (e.matches) this._rotation.finish();
+    });
   }
 
   public setConfig(config: FloorplanCardConfig): void {
@@ -330,14 +337,17 @@ export class FloorplanCard extends LitElement {
     }
     validateYCoordinates(config);
     const previous = this._config;
-    if (previous?.view !== config.view || previous?.projection !== config.projection) this._viewOverride = undefined;
+    if (previous?.view !== config.view || previous?.projection !== config.projection) {
+      this._rotation.finish();
+      this._viewOverride = undefined;
+    }
     if (previous?.appearance !== config.appearance) this._appearanceOverride = undefined;
     if (["rotation", "rotationPortrait", "rotationLandscape"].some((key) =>
-      previous?.[key] !== config[key])) this._rotationOffset = 0;
+      previous?.[key] !== config[key])) this._rotation.jump(0);
     if (!config.showViewControls) {
       this._viewOverride = undefined;
       this._appearanceOverride = undefined;
-      this._rotationOffset = 0;
+      this._rotation.jump(0);
     }
     this._config = {
       ...config,
@@ -398,7 +408,7 @@ export class FloorplanCard extends LitElement {
   private _resetView(): void {
     this._viewOverride = undefined;
     this._appearanceOverride = undefined;
-    this._rotationOffset = 0;
+    this._rotation.jump(0);
     this._zoomedAreaId = undefined;
   }
 
@@ -612,6 +622,9 @@ export class FloorplanCard extends LitElement {
   public disconnectedCallback(): void {
     this._replayController.stopReplayLoop();
     this._openingTween.stop();
+    this._rotation.finish();
+    this._unsubscribeMotion?.();
+    this._unsubscribeMotion = undefined;
     this._stopFocusTimer();
     // Orientation subscription for the per-screen rotations (issue #237).
     // Folded in here rather than declared as a second `disconnectedCallback`:
@@ -707,11 +720,16 @@ export class FloorplanCard extends LitElement {
    * framing all come from this one description, so the layers cannot drift
    * apart.
    */
-  private _frame(c: FloorplanCardConfig, rot: PlanRotation): DisplayFrame {
-    const d = rotatedCanvasSize(cssNumber(c.width, DEFAULT_WIDTH), cssNumber(c.height, DEFAULT_HEIGHT), rot);
+  private _frame(c: FloorplanCardConfig, rot: number): DisplayFrame {
+    const width = cssNumber(c.width, DEFAULT_WIDTH);
+    const height = cssNumber(c.height, DEFAULT_HEIGHT);
+    const d = rotatedCanvasSize(width, height, rot);
     return {
       w: d.w,
       h: d.h,
+      // A circle enclosing the unrotated rectangle has the same projected
+      // bounds at every angle. Reserve it before the first turn, not mid-flight.
+      orbitSpan: c.showViewControls ? Math.SQRT2 * Math.hypot(width, height) : undefined,
       projection: normalizeProjection(c.view ?? c.projection),
       wallHeight: normalizeWallHeight(c.wallHeight),
       padding: 2 + Math.max(WALL_THICKNESS, ...getFloors(c).flatMap((f) => f.walls.map((w) => wallThickness(w.thickness)))),
@@ -726,7 +744,7 @@ export class FloorplanCard extends LitElement {
     x: number,
     y: number,
     c: FloorplanCardConfig,
-    rot: PlanRotation
+    rot: number
   ): { p: { x: number; y: number }; d: { w: number; h: number } } {
     const f = this._frame(c, rot);
     const r = rotatePlanPoint(x, y, c.width, c.height, rot);
@@ -737,7 +755,7 @@ export class FloorplanCard extends LitElement {
   private _displayDirection(
     n: { x: number; y: number },
     c: FloorplanCardConfig,
-    rot: PlanRotation
+    rot: number
   ): { x: number; y: number } {
     return projectPlanDirection(n.x, n.y, this._frame(c, rot));
   }
@@ -827,7 +845,7 @@ export class FloorplanCard extends LitElement {
     active: Floor,
     standingWalls: readonly Wall[],
     c: FloorplanCardConfig,
-    rot: PlanRotation,
+    rot: number,
     frame: DisplayFrame,
     rotTransform: string,
     drawFurniture: (f: Furniture) => SVGTemplateResult,
@@ -895,7 +913,7 @@ export class FloorplanCard extends LitElement {
   private _renderShutterMark(
     o: Opening,
     c: FloorplanCardConfig,
-    rot: PlanRotation,
+    rot: number,
     scale: OverlayScale,
     renderHass: RenderHass | undefined
   ): TemplateResult {
@@ -956,7 +974,7 @@ export class FloorplanCard extends LitElement {
   private _renderOpeningMark(
     o: Opening,
     c: FloorplanCardConfig,
-    rot: PlanRotation,
+    rot: number,
     scale: OverlayScale,
     renderHass: RenderHass | undefined
   ): TemplateResult {
@@ -1067,7 +1085,7 @@ export class FloorplanCard extends LitElement {
   private _renderFurnitureAction(
     f: Furniture,
     c: FloorplanCardConfig,
-    rot: PlanRotation,
+    rot: number,
     floors: readonly Floor[],
     activeId: string,
   ): TemplateResult | typeof nothing {
@@ -1192,7 +1210,7 @@ export class FloorplanCard extends LitElement {
   private _renderItem(
     item: FloorItem,
     c: FloorplanCardConfig,
-    rot: PlanRotation,
+    rot: number,
     scale: OverlayScale,
     renderHass: RenderHass | undefined
   ): TemplateResult {
@@ -1379,7 +1397,7 @@ export class FloorplanCard extends LitElement {
   private _renderAreaLabel(
     a: Area,
     c: FloorplanCardConfig,
-    rot: PlanRotation,
+    rot: number,
     scale: OverlayScale
   ): TemplateResult | typeof nothing {
     if (!a.name || (a.showName ?? true) === false) return nothing;
@@ -1403,7 +1421,7 @@ export class FloorplanCard extends LitElement {
   private _renderText(
     t: FloorText,
     c: FloorplanCardConfig,
-    rot: PlanRotation,
+    rot: number,
     scale: OverlayScale
   ): TemplateResult {
     const { p, d } = this._display(t.x, t.y, c, rot);
@@ -1432,7 +1450,9 @@ export class FloorplanCard extends LitElement {
     // Whole-plan display rotation (issue #33): the SVG rotates via one group
     // transform below; the HTML overlay remaps per point in _renderItem /
     // _renderText. Both must use the same mapping (rotatePlanPoint).
-    const rot = normalizePlanRotation(resolvePlanRotation(c, this._portrait) + this._rotationOffset);
+    const baseRotation = resolvePlanRotation(c, this._portrait);
+    const targetRotation = normalizePlanRotation(baseRotation + this._rotation.target);
+    const rot = baseRotation + this._rotation.value;
     const frame = this._frame(c, rot);
     const dims = projectedCanvasSize(frame);
     const rotTransform = planRotationTransform(c.width, c.height, rot);
@@ -1665,7 +1685,7 @@ export class FloorplanCard extends LitElement {
                size containment leaves 100cqh with nothing to resolve against
                and the plan collapses to nothing. -->
           <div
-            class="plan ${scale === "plan" ? "scale-plan" : ""} ${lineArt ? "line-art" : ""}"
+            class="plan ${scale === "plan" ? "scale-plan" : ""} ${lineArt ? "line-art" : ""} ${this._rotation.running ? "rotating" : ""}"
             tabindex=${focusRooms.length > 1 ? "0" : nothing}
             role=${focusRooms.length > 1 ? "group" : nothing}
             aria-label=${focusRooms.length > 1
@@ -2041,17 +2061,17 @@ export class FloorplanCard extends LitElement {
         </div>
         </div>
         ${c.showViewControls ? renderViewControls({
-          view: iso ? "3d" : "2d", appearance: normalizeAppearance(c.appearance), rotation: rot,
-          canReset: !!(this._viewOverride || this._appearanceOverride || this._rotationOffset || this._zoomedAreaId),
+          view: iso ? "3d" : "2d", appearance: normalizeAppearance(c.appearance), rotation: targetRotation,
+          canReset: !!(this._viewOverride || this._appearanceOverride || this._rotation.target || this._rotation.running || this._zoomedAreaId),
           exportEnabled: !!c.showExport,
-          setView: (view) => { this._viewOverride = view === (normalizeProjection(this._config!.view ?? this._config!.projection) === "iso" ? "3d" : "2d") ? undefined : view; },
+          setView: (view) => { this._rotation.finish(); this._viewOverride = view === (normalizeProjection(this._config!.view ?? this._config!.projection) === "iso" ? "3d" : "2d") ? undefined : view; },
           setAppearance: (appearance) => { this._appearanceOverride = appearance === normalizeAppearance(this._config!.appearance) ? undefined : appearance; },
-          rotate: (step) => { this._rotationOffset = normalizePlanRotation(this._rotationOffset + step); },
+          rotate: (step) => this._rotation.turn(step, iso && this.isConnected && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches),
           reset: () => this._resetView(),
-          download: () => downloadLineArtSvg(c, active, rot),
+          download: () => downloadLineArtSvg(c, active, targetRotation),
         }) : c.showExport ? html`<div class="export-bar">
           <button type="button" title=${`Download line art of ${active.name} as SVG`}
-            @click=${() => downloadLineArtSvg(c, active, rot)}>Export SVG</button>
+            @click=${() => downloadLineArtSvg(c, active, targetRotation)}>Export SVG</button>
         </div>` : nothing}
         </div>
       </ha-card>
@@ -2068,7 +2088,7 @@ export class FloorplanCard extends LitElement {
     active: Floor,
     compact = false,
     c?: FloorplanCardConfig,
-    rot: PlanRotation = 0,
+    rot: number = 0,
   ): TemplateResult {
     // Where the author put it (issue #281), mapped into the displayed frame
     // like every other anchor so a rotated card keeps it in the same corner of
@@ -2362,6 +2382,12 @@ export class FloorplanCard extends LitElement {
        areaZoomTransform(). Setting a transform (even the identity) makes this
        div establish the containing block for its absolutely-positioned
        svg/.items children, so it needs the same inset:0 they'd otherwise use. */
+    /* Orbit frames already interpolate the geometry and room framing. CSS
+       transitions would trail behind them and briefly detach overlay scales. */
+    .rotating .plan-zoom, .rotating .item, .rotating .text,
+    .rotating .area-label, .rotating .fp-furniture-link, .rotating .shutter-mark {
+      transition: none;
+    }
     .plan-zoom {
       position: absolute;
       inset: 0;

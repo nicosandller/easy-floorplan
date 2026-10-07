@@ -1,3 +1,4 @@
+import { rotationBasis } from "./rotation";
 import { svg, html, nothing, type SVGTemplateResult, type TemplateResult } from "lit";
 import {
   BUILTIN_SYMBOLS,
@@ -3524,7 +3525,7 @@ export const SHUTTER_MARK_ICON_SIZE = 15;
  */
 export function shutterMarkNormal(
   o: Pick<Opening, "angle" | "flipV">,
-  rot: PlanRotation = 0,
+  rot: number = 0,
 ): { x: number; y: number } {
   const s = o.flipV ? -1 : 1;
   const rad = (o.angle * Math.PI) / 180;
@@ -3533,7 +3534,8 @@ export function shutterMarkNormal(
   if (rot === 90) return { x: -n.y, y: n.x };
   if (rot === 180) return { x: -n.x, y: -n.y };
   if (rot === 270) return { x: n.y, y: -n.x };
-  return n;
+  const { cos, sin } = rotationBasis(rot);
+  return { x: n.x * cos - n.y * sin, y: n.x * sin + n.y * cos };
 }
 
 /**
@@ -3764,7 +3766,7 @@ export function openingMarkPoint(
 
 export function openingMarkNormal(
   o: Pick<Opening, "angle" | "flipV">,
-  rot: PlanRotation = 0,
+  rot: number = 0,
 ): { x: number; y: number } {
   const n = shutterMarkNormal(o, rot);
   return { x: -n.x, y: -n.y };
@@ -4436,13 +4438,14 @@ function switcherCoord(v: unknown): number | undefined {
   return Number.isFinite(n) ? n : undefined;
 }
 
-/** Canvas size as displayed: 90°/270° swap width and height. */
+/** Axis-aligned bounds of the rotated plan, including intermediate orbit angles. */
 export function rotatedCanvasSize(
   w: number,
   h: number,
-  rot: PlanRotation
+  rot: number
 ): { w: number; h: number } {
-  return rot === 90 || rot === 270 ? { w: h, h: w } : { w, h };
+  const { cos, sin } = rotationBasis(rot);
+  return { w: Math.abs(cos) * w + Math.abs(sin) * h, h: Math.abs(sin) * w + Math.abs(cos) * h };
 }
 
 /**
@@ -4460,7 +4463,7 @@ export function rotatedCanvasSize(
  * bearing of 0 becomes 90. The result is normalised into 0..360 so callers can
  * hand it straight to CSS.
  */
-export function rotatePlanAngle(angle: number, rot: PlanRotation): number {
+export function rotatePlanAngle(angle: number, rot: number): number {
   const a = cssNumber(angle, 0) + rot;
   return ((a % 360) + 360) % 360;
 }
@@ -4471,7 +4474,7 @@ export function rotatePlanPoint(
   y: number,
   w: number,
   h: number,
-  rot: PlanRotation
+  rot: number
 ): { x: number; y: number } {
   switch (rot) {
     case 90:
@@ -4480,8 +4483,14 @@ export function rotatePlanPoint(
       return { x: w - x, y: h - y };
     case 270:
       return { x: y, y: w - x };
-    default:
+    case 0:
       return { x, y };
+    default: {
+      const { cos, sin } = rotationBasis(rot);
+      const d = rotatedCanvasSize(w, h, rot);
+      return { x: (x - w / 2) * cos - (y - h / 2) * sin + d.w / 2,
+        y: (x - w / 2) * sin + (y - h / 2) * cos + d.h / 2 };
+    }
   }
 }
 
@@ -4491,7 +4500,7 @@ export function rotatePlanPoint(
  * (HTML, remapped per point) and the drawing (SVG, one transform) must land
  * on the same pixels or badges drift off their walls.
  */
-export function planRotationTransform(w: number, h: number, rot: PlanRotation): string {
+export function planRotationTransform(w: number, h: number, rot: number): string {
   switch (rot) {
     case 90:
       return `translate(${h} 0) rotate(90)`;
@@ -4499,8 +4508,12 @@ export function planRotationTransform(w: number, h: number, rot: PlanRotation): 
       return `translate(${w} ${h}) rotate(180)`;
     case 270:
       return `translate(0 ${w}) rotate(-90)`;
-    default:
+    case 0:
       return "";
+    default: {
+      const d = rotatedCanvasSize(w, h, rot);
+      return `translate(${d.w / 2} ${d.h / 2}) rotate(${rot}) translate(${-w / 2} ${-h / 2})`;
+    }
   }
 }
 
@@ -6086,7 +6099,7 @@ export function areaZoomTransform(
   points: readonly AreaPoint[],
   w: number,
   h: number,
-  rot: PlanRotation,
+  rot: number,
   padFrac = 0.15,
   maxScale = MAX_AREA_ZOOM_FIT,
   /**
@@ -6112,10 +6125,26 @@ export function areaZoomTransform(
   const d = projectedCanvasSize(f);
   const xs = rotated.map((p) => p.x);
   const ys = rotated.map((p) => p.y);
-  const minX = Math.min(...xs);
-  const maxX = Math.max(...xs);
-  const minY = Math.min(...ys) - (f.projection === "iso" ? f.wallHeight : 0);
-  const maxY = Math.max(...ys);
+  let minX = Math.min(...xs);
+  let maxX = Math.max(...xs);
+  let minY = Math.min(...ys) - (f.projection === "iso" ? f.wallHeight : 0);
+  let maxY = Math.max(...ys);
+  if (f.projection === "iso" && f.orbitSpan !== undefined) {
+    // Keep a focused room at one scale throughout its orbit, just like the
+    // whole floor. Its enclosing circle fits even at the widest midway angle.
+    const left = Math.min(...points.map((p) => p.x));
+    const right = Math.max(...points.map((p) => p.x));
+    const top = Math.min(...points.map((p) => p.y));
+    const bottom = Math.max(...points.map((p) => p.y));
+    const centre = rotatePlanPoint((left + right) / 2, (top + bottom) / 2, w, h, rot);
+    const at = projectPlanPoint(centre.x, centre.y, f);
+    const bounds = projectedCanvasSize({ ...f, padding: 0,
+      orbitSpan: Math.SQRT2 * Math.hypot(right - left, bottom - top) });
+    minX = at.x - bounds.w / 2;
+    maxX = at.x + bounds.w / 2;
+    minY = at.y - (bounds.h - f.wallHeight) / 2 - f.wallHeight;
+    maxY = at.y + (bounds.h - f.wallHeight) / 2;
+  }
   const pad = Math.max(maxX - minX, maxY - minY) * padFrac;
   const bw = Math.max(maxX - minX + pad * 2, 1);
   const bh = Math.max(maxY - minY + pad * 2, 1);
