@@ -808,8 +808,10 @@ export class FloorplanCard extends LitElement {
     });
     const openings = active.openings.map((o) => {
       const p = map(o.x, o.y);
-      // The rotation turns directions along with points.
-      return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
+      // The rotation turns directions along with points. The sill goes along
+      // too: the wall is what stands under a window, so it is the wall's
+      // pieces that stop at it.
+      return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type, sill: o.sill };
     });
     const solids = wallSolids(walls, openings, frame.wallHeight, false);
     for (const o of active.openings) {

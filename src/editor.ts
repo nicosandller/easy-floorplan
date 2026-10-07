@@ -2790,13 +2790,14 @@ export class FloorplanCardEditor extends LitElement {
     // What it is, and how it is drawn.
     // `width` and `ceilingHeight` are the skylight's two; `openingForm` only
     // offers them for one, so they cost every other opening nothing but a
-    // name in this list.
+    // name in this list. `sill` is the same for a window.
     ["Shape", [
       "type",
       "motion",
       "length",
       "width",
       "ceilingHeight",
+      "sill",
       "sash",
       "sashSpan",
       "hinge",

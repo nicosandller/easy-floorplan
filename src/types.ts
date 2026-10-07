@@ -306,6 +306,18 @@ export interface Opening {
    */
   ceilingHeight?: number;
   /**
+   * A **window**'s sill height, as a fraction of the wall height (default
+   * `0.35`, what every window stood on before this existed). `0` is a
+   * floor-to-ceiling window — a French window, a glazed wall — whose glass
+   * starts at the floor; `0.6` a high bathroom or kitchen window.
+   *
+   * Only the 3D view reads it: a plan draws a window the same at any height,
+   * as a plan does, and the light it lets in is worked out on the plan too.
+   * Clamped to 0..{@link MAX_SILL} so there is always glass above it. Doors,
+   * passages and skylights have no sill and ignore it.
+   */
+  sill?: number;
+  /**
    * Optional entity (e.g. a contact `binary_sensor` or a `cover`) whose state
    * drives whether the opening is drawn open or closed. When unset, doors are
    * drawn open (swing symbol) and windows closed, matching a static floor plan.

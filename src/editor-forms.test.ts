@@ -151,6 +151,30 @@ describe("openingForm", () => {
     expect(names({ ...win, motion: "fixed" } as Opening)).not.toContain("sashSpan");
   });
 
+  it("asks for a sill on a window, and nowhere else", () => {
+    const names = (o: Opening) => openingForm(o).fields.map((x) => x.name);
+    expect(names({ ...door, type: "window" } as Opening)).toContain("sill");
+    expect(names(door)).not.toContain("sill");
+    expect(names({ ...door, type: "passage" } as Opening)).not.toContain("sill");
+    expect(names({ ...door, type: "skylight" } as Opening)).not.toContain("sill");
+  });
+
+  it("keeps the default sill out of the YAML and 0 in it", () => {
+    const form = openingForm({ ...door, type: "window" } as Opening);
+    expect(form.data.sill).toBe(0.35);
+    expect(form.toPatch({ sill: 0.35 })).toEqual({ sill: undefined });
+    expect(form.toPatch({ sill: 0 })).toEqual({ sill: 0 });
+    expect(form.toPatch({ sill: 0.6 })).toEqual({ sill: 0.6 });
+    expect(openingForm({ ...door, type: "window", sill: 0 } as Opening).data.sill).toBe(0);
+  });
+
+  it("drops the sill when a window becomes something that has none", () => {
+    const form = openingForm({ ...door, type: "window", sill: 0 } as Opening);
+    expect(form.toPatch({ type: "door" })).toMatchObject({ type: "door", sill: undefined });
+    expect(form.toPatch({ type: "skylight" })).toMatchObject({ sill: undefined });
+    expect(form.toPatch({ type: "passage" })).toMatchObject({ sill: undefined });
+  });
+
   it("names the field for the opening it is on (review of #218)", () => {
     // Offered on doors as well — a sidelight door is ordinary — but a door's
     // remainder is a panel, not glass, so the wording has to follow the type.
@@ -2146,6 +2170,7 @@ describe("every field lands in exactly one panel group", () => {
       "length",
       "width",
       "ceilingHeight",
+      "sill",
       "sash",
       "sashSpan",
       "hinge",
@@ -2202,6 +2227,7 @@ describe("every field lands in exactly one panel group", () => {
       { motion: "roll", entity: "cover.g" },
       { type: "window", motion: "fixed" },
       { type: "window", sash: "single", sashSpan: 0.4 },
+      { type: "window", sill: 0 },
       { shutterEntity: "binary_sensor.s", shutterStyle: "swing" },
       { shutterEntity: "cover.s", shutterStyle: "roll", entity: "binary_sensor.a" },
       { entity: "binary_sensor.a", showIcon: true },
