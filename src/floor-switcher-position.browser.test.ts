@@ -366,6 +366,58 @@ async function typeInto(ed: FloorplanCardEditor, field: HTMLInputElement, value:
   await ed.updateComplete;
 }
 
+describe("switcher appearance survives editing its position", () => {
+  afterEach(() => { document.body.innerHTML = ""; });
+  const appearance = { style: "buttons", layout: "horizontal" } as const;
+
+  it("edits style and layout, previews them, and saves them without needing a position", async () => {
+    const t = await mountEditor();
+    await openSwitcherPanel(t.ed);
+    for (const [id, value] of [["style", "buttons"], ["layout", "horizontal"]]) {
+      const select = t.ed.shadowRoot!.querySelector<HTMLSelectElement>(`#floor-switcher-${id}`)!;
+      select.value = value;
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+      await t.ed.updateComplete;
+    }
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual(appearance);
+    expect(getComputedStyle(t.handle()).flexDirection).toBe("row");
+    expect(getComputedStyle(t.handle()).gap).toBe("8px");
+    expect(t.handle().querySelector(".sh-btn")!.getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
+    // Reload what the host saved, rather than relying on the current form state.
+    const reloaded = await mountEditor(JSON.parse(JSON.stringify(t.emitted[t.emitted.length - 1])));
+    await openSwitcherPanel(reloaded.ed);
+    expect(reloaded.ed.shadowRoot!.querySelector<HTMLSelectElement>("#floor-switcher-style")!.value).toBe("buttons");
+    expect(reloaded.ed.shadowRoot!.querySelector<HTMLSelectElement>("#floor-switcher-layout")!.value).toBe("horizontal");
+  });
+
+  it("preserves appearance on a drag and undo", async () => {
+    const t = await mountEditor({ floorSwitcher: appearance });
+    await t.dragTo(100, 120);
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual({ ...appearance, x: 100, y: 120 });
+    (t.ed as unknown as { _undo(): void })._undo();
+    await t.ed.updateComplete;
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual(appearance);
+  });
+
+  it("preserves appearance when typing or clearing a coordinate", async () => {
+    const t = await mountEditor({ floorSwitcher: { ...appearance, x: 60, y: 100 } });
+    const [x, y] = await openSwitcherPanel(t.ed);
+    await typeInto(t.ed, y, "40");
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual({ ...appearance, x: 60, y: 40 });
+    await typeInto(t.ed, x, "");
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual(appearance);
+  });
+
+  it("preserves appearance when returning to the corner", async () => {
+    const t = await mountEditor({ floorSwitcher: { ...appearance, x: 60, y: 100 } });
+    await openSwitcherPanel(t.ed);
+    [...t.ed.shadowRoot!.querySelectorAll<HTMLButtonElement>("button")]
+      .find(b => b.textContent?.trim() === "Back to the corner")!.click();
+    await t.ed.updateComplete;
+    expect(t.emitted[t.emitted.length - 1]?.floorSwitcher).toEqual(appearance);
+  });
+});
+
 describe("the coordinate fields are a real way to place it", () => {
   afterEach(() => {
     document.body.innerHTML = "";

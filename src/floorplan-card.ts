@@ -3,6 +3,7 @@ import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
 import { keyed } from "lit/directives/keyed.js";
 import { validateYCoordinates } from "./config-coordinates";
+import { floorSwitcherClasses, floorSwitcherStyles } from "./floor-switcher";
 import type {
   HomeAssistant,
   FloorplanCardConfig,
@@ -1990,7 +1991,7 @@ export class FloorplanCard extends LitElement {
                and the position is chosen against the view people spend their
                time in, which is the unzoomed one. -->
           ${floors.length > 1
-            ? this._renderFloorSwitcher(floors, active, compact, c, rot)
+            ? this._renderFloorSwitcher(floors, active, c, rot)
             : nothing}
         </div>
         </div>
@@ -2006,8 +2007,7 @@ export class FloorplanCard extends LitElement {
   private _renderFloorSwitcher(
     floors: Floor[],
     active: Floor,
-    compact = false,
-    c?: FloorplanCardConfig,
+    c: FloorplanCardConfig,
     rot: PlanRotation = 0,
   ): TemplateResult {
     // Where the author put it (issue #281), mapped into the displayed frame
@@ -2015,16 +2015,17 @@ export class FloorplanCard extends LitElement {
     // the house. Absent, the CSS corner it has always used stands — the class
     // is what switches between the two, so an unpositioned plan emits no
     // inline style at all and is byte-identical to before.
-    const at = c ? floorSwitcherAnchor(c) : undefined;
+    const at = floorSwitcherAnchor(c);
     const placed = at
-      ? rotatePlanPoint(at.x, at.y, cssNumber(c!.width, DEFAULT_WIDTH), cssNumber(c!.height, DEFAULT_HEIGHT), rot)
+      ? rotatePlanPoint(at.x, at.y, cssNumber(c.width, DEFAULT_WIDTH), cssNumber(c.height, DEFAULT_HEIGHT), rot)
       : undefined;
-    const dims = c
-      ? rotatedCanvasSize(cssNumber(c.width, DEFAULT_WIDTH), cssNumber(c.height, DEFAULT_HEIGHT), rot)
-      : { w: 1, h: 1 };
+    const dims = rotatedCanvasSize(cssNumber(c.width, DEFAULT_WIDTH), cssNumber(c.height, DEFAULT_HEIGHT), rot);
     return html`
       <div
-        class="floor-switcher ${compact ? "row" : ""} ${placed ? "placed" : ""}"
+        class="floor-switcher ${floorSwitcherClasses(c)} ${placed ? "placed" : ""}"
+        part="floor-switcher"
+        role="group"
+        aria-label="Select floor"
         style=${placed
           ? `left:${(placed.x / dims.w) * 100}%; top:${(placed.y / dims.h) * 100}%;`
           : nothing}
@@ -2036,9 +2037,14 @@ export class FloorplanCard extends LitElement {
           const accent = f.id === active.id ? cssColor(f.color) : undefined;
           return html`
             <button
-              class=${f.id === active.id ? "active" : ""}
+              type="button"
+              class="floor-button ${f.id === active.id ? "active" : ""}"
+              part=${f.id === active.id ? "floor-button floor-button-active" : "floor-button"}
+              data-floor-id=${f.id}
               title=${f.name}
-              style=${accent ? `background:${accent};border-color:${accent};` : nothing}
+              aria-label=${f.name}
+              aria-pressed=${f.id === active.id ? "true" : "false"}
+              style=${accent ? `--fp-floor-accent:${accent};` : nothing}
               @click=${() => this._goToFloor(floors, f.id)}
             >
               ${f.short || f.name}
@@ -2057,6 +2063,7 @@ export class FloorplanCard extends LitElement {
   static styles = [
     skinTokens,
     skinPalettes,
+    floorSwitcherStyles,
     css`
     ha-card {
       height: 100%;
@@ -2209,9 +2216,6 @@ export class FloorplanCard extends LitElement {
       position: absolute;
       top: 8px;
       right: 8px;
-      display: flex;
-      flex-direction: column;
-      gap: 4px;
       pointer-events: auto;
       z-index: 1;
     }
@@ -2222,6 +2226,7 @@ export class FloorplanCard extends LitElement {
        left the card just set does nothing but stretch it. */
     .floor-switcher.placed {
       right: auto;
+      width: max-content;
       transform: translate(-50%, -50%);
     }
     /* Centred on its anchor in both axes, so the point you drop it on is the
@@ -2234,42 +2239,20 @@ export class FloorplanCard extends LitElement {
        floors is exactly the case a row is worst at — better a second short
        row than buttons off the edge of the card. Right-aligned so the row
        grows back toward the title rather than through it. */
-    .floor-switcher.row {
-      flex-direction: row;
-      flex-wrap: wrap;
-      justify-content: flex-end;
-    }
     /* Room for the title chip on the left, so a long floor name and a long
        title don't meet in the middle — the chip's own max-width leaves the
        same margin from the other side. Only when there *is* a chip: a compact
        card with no title has the whole strip, and reserving 44% of it would
        wrap the buttons for nothing. */
-    .stage.compact-title .floor-switcher.row {
+    .stage.compact-title .floor-switcher.row:not(.placed) {
       left: 44%;
     }
     .floor-switcher button {
       cursor: pointer;
-      border: 1px solid var(--fp-skin-badge-border, var(--divider-color, #ccc));
-      background: var(--fp-skin-badge-bg, var(--card-background-color, #fff));
-      color: var(--fp-skin-text, var(--primary-text-color));
-      border-radius: 6px;
-      padding: 4px 8px;
-      font-size: 12px;
-      line-height: 1;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-      max-width: 120px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
     }
-    .floor-switcher button.active {
-      background: var(--fp-skin-accent, var(--primary-color, #03a9f4));
-      /* Its own ink, not the badge's: this sits on --fp-skin-accent, and the
-         skin whose accent wants dark ink is not necessarily the one whose
-         active badge does. Left at the theme's text-on-primary, Pastel and
-         Tron print near-white on a pale blue and a bright cyan. */
-      color: var(--fp-skin-accent-ink, var(--text-primary-color, #fff));
-      border-color: var(--fp-skin-accent, var(--primary-color, #03a9f4));
+    .floor-switcher button:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
+      outline-offset: 2px;
     }
     /* The title, drawn inside the plan (issue #152). Styled as a chip rather
        than as a heading: it is sitting *on* the drawing, and 24px of bare text
