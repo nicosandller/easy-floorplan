@@ -70,7 +70,7 @@ quotes when saving while retaining the required quotes around `'y'`.
 | `palette`    | Palette[]| —                  | Named colours for this plan, referenced from any colour field as `var(--fp-color-<name>)`. See [Named colors](appearance.md#named-colors). |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see [Floor](#floor)).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
-| `floorSwitcher` | `{x, y}` | top-right corner | Where the floor buttons sit on the plan, in canvas units — the point the block is centred on. Drag it on the editor canvas. Follows `rotation` like every other anchor. See [Where the floor switcher sits](appearance.md#where-the-floor-switcher-sits). |
+| `floorSwitcher` | object | classic, automatic layout, top-right corner | Optional `style: default` or `buttons` (larger dashboard buttons); `layout: auto`, `horizontal` or `vertical`. Optional `x` and `y` place the centre in canvas units and follow `rotation`. Style and layout work without coordinates. See [Floor button appearance](appearance.md#floor-button-appearance) and [position](appearance.md#where-the-floor-switcher-sits). |
 | `walls`      | Wall[]   | `[]`               | Wall segments (single-floor / floor 1).      |
 | `openings`   | Opening[]| `[]`               | Doors, windows, skylights and passages.      |
 | `items`      | Item[]   | `[]`               | Entity devices.                              |

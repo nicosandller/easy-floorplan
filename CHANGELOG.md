@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Floor selection buttons can use a dashboard theme preset and an explicit horizontal
+  or vertical layout (#353). The editor previews both; CSS variables, parts and floor
+  id selectors support custom appearances. Existing plans keep the classic style.
 - Ambient daylight (`ambientDaylight: true`) now follows solid wall outlines and
   openings instead of named Area boundaries (#319). Interior partitions block the
   wash, and open or glazed doors can carry it into neighbouring rooms within its

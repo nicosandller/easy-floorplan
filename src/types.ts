@@ -2075,7 +2075,8 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   /** Id of the floor shown first. Falls back to the first floor. */
   defaultFloor?: string;
   /**
-   * Where the floor switcher sits on the plan (issue #281), in canvas units —
+   * Appearance, layout (#353), and position of the floor switcher (#281).
+   * Both coordinates are optional; a position needs both, in canvas units —
    * the point the block of buttons is centred on.
    *
    * If unset, it stays pinned to the plan's top-right corner, which is where it
@@ -2093,7 +2094,14 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * Off-canvas coordinates are honoured rather than clamped — a plan whose
    * walls stop short of the canvas has legitimate empty margin to park it in.
    */
-  floorSwitcher?: { x: number; y: number };
+  floorSwitcher?: {
+    x?: number;
+    y?: number;
+    /** Classic small labels (default), or larger Home Assistant themed buttons. */
+    style?: "default" | "buttons";
+    /** Auto follows compactHeader: horizontal when compact, otherwise vertical. */
+    layout?: "auto" | "horizontal" | "vertical";
+  };
   /** Optional history replay controls and playback defaults. */
   historyReplay?: HistoryReplayConfig;
   walls?: Wall[];
