@@ -142,7 +142,15 @@ import {
 } from "./render";
 import { deadSpacesCached } from "./dead-space";
 import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
-import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
+import {
+  skinStyle,
+  skinTokens,
+  MAX_SKIN_WALL_WIDTH,
+  SKIN_ACCENT,
+  SKIN_PAPER,
+  SKIN_TEXT,
+  SKIN_WALL,
+} from "./skins";
 import {
   paletteStyle,
   paletteKey,
@@ -224,6 +232,48 @@ import {
   type FormField,
   type FormSpec,
 } from "./editor-forms";
+
+import {
+  TRACE_DEFAULT_OPACITY,
+  calibrateTrace,
+  fitTrace,
+  isPdf,
+  loadTraceFile,
+  renderPdfPage,
+  resizeTraceWidth,
+  traceSize,
+  traceTransform,
+  type Point as TracePoint,
+  type TraceTemplate,
+} from "./editor-trace";
+
+/**
+ * Where the thickness new walls are drawn at is remembered, per browser. It is
+ * how you like to draw, not part of any one plan, so it stays out of the
+ * config — and survives closing the editor, which is when it used to reset.
+ */
+const WALL_THICKNESS_KEY = "easy-floorplan:wall-thickness";
+
+function readWallThickness(): number | undefined {
+  try {
+    const v = Number(localStorage.getItem(WALL_THICKNESS_KEY));
+    return v >= 2 && v <= MAX_SKIN_WALL_WIDTH ? v : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function writeWallThickness(v: number | undefined): void {
+  try {
+    if (v === undefined) localStorage.removeItem(WALL_THICKNESS_KEY);
+    else localStorage.setItem(WALL_THICKNESS_KEY, String(v));
+  } catch {
+    /* storage blocked (private window, previews) — the session still keeps it */
+  }
+}
+
+/** How strongly a reference floor shows under the one being drawn. */
+const REF_FLOOR_OPACITY = 0.3;
 
 const formLabel = (s: FormField): string => s.label;
 const formHelper = (s: FormField): string | undefined => s.helper;
@@ -428,6 +478,12 @@ export class FloorplanCardEditor extends LitElement {
   /** Default length applied to a freshly placed door/window. User-editable from the context bar. */
   @state() private _defaultOpeningLength = 60;
   /**
+   * Thickness the next wall is drawn at; `undefined` is the default
+   * WALL_THICKNESS. Follows the last thickness you set — here in the Wall
+   * tool's bar, or on a wall you edited — so a plan drawn at 6 stays at 6.
+   */
+  @state() private _defaultWallThickness: number | undefined = readWallThickness();
+  /**
    * The same, for skylights, and separately — a roof light is not the size of
    * a door. Two numbers because it has two sides, and both are set before
    * placing for the same reason the opening length is: a rectangle you have to
@@ -556,6 +612,32 @@ export class FloorplanCardEditor extends LitElement {
    * shows. A dense plan is much easier to aim at without them.
    */
   @state() private _hideLabels = false;
+  /**
+   * Trace templates, by floor id — a PDF or image of an existing plan under
+   * the canvas to draw over. Editor view state only, like `_hideLabels`:
+   * never written to the config, so the card never sees it and it is gone
+   * once the editor closes.
+   */
+  @state() private _traces: ReadonlyMap<string, TraceTemplate> = new Map();
+  /** A canvas gesture that belongs to the template rather than the plan. */
+  @state() private _traceMode: "move" | "calibrate" | null = null;
+  /** Calibration so far: the points picked, and the length typed for them. */
+  @state() private _traceCalib: { a?: TracePoint; b?: TracePoint; distance: number } = {
+    // A door: the editor's default opening, so the likeliest thing to click.
+    distance: 60,
+  };
+  /**
+   * Reference floor per floor id: another floor's walls shown faintly under
+   * this one (and snapped to), so an upper storey can be traced over the one
+   * below. Editor view state, never saved — like the trace template.
+   */
+  @state() private _refFloors: ReadonlyMap<string, { floorId: string; opacity: number }> =
+    new Map();
+  @state() private _traceBusy = false;
+  @state() private _traceError = "";
+  /** Move mode's drag: where it started and where the template was then. */
+  private _traceDrag: { pointerId: number; start: TracePoint; x0: number; y0: number } | null =
+    null;
   /** Live touch points on the canvas wrap, for pinch-zoom (issue #38). */
   private _pinchPts = new Map<number, { x: number; y: number }>();
   /** Pinch baseline: finger distance, zoom, and centroid (content coords) at pinch start. */
@@ -640,6 +722,7 @@ export class FloorplanCardEditor extends LitElement {
     this._dragMoves.cancel();
     this._flushDrag();
     this._drag = null;
+    this._traceDrag = null;
     // Same reasoning for the switcher (issue #281): removal takes the capture
     // with it, so the gesture is over either way. `_config` is the host's only
     // copy of where it was dropped, so hand that over rather than rolling back
@@ -973,9 +1056,38 @@ export class FloorplanCardEditor extends LitElement {
     return snap ? { x: this._snap(pt.x), y: this._snap(pt.y) } : { x: pt.x, y: pt.y };
   }
 
+  /**
+   * The reference floor's walls, while one is shown under this floor — ids
+   * prefixed so they can never collide with this floor's own (a floor added
+   * by copying keeps its walls' ids).
+   */
+  private _refWalls(): Wall[] {
+    const ref = this._refFloor();
+    return ref ? ref.walls.map((w) => ({ ...w, id: `ref:${w.id}` })) : [];
+  }
+
+  /**
+   * Walls a new point may snap to: this floor's, plus the reference floor's
+   * while it is shown — tracing the floor below onto this one means landing
+   * exactly on its corners, not a few units off them.
+   */
+  private _snapWalls(): Wall[] {
+    const own = this._floor().walls;
+    const ref = this._refWalls();
+    return ref.length ? [...own, ...ref] : own;
+  }
+
+  /** Remember the thickness new walls are drawn at (clamped like the wall form). */
+  private _setDefaultWallThickness(v: number): void {
+    if (!Number.isFinite(v)) return;
+    const t = Math.min(MAX_SKIN_WALL_WIDTH, Math.max(2, Math.round(v)));
+    this._defaultWallThickness = t === WALL_THICKNESS ? undefined : t;
+    writeWallThickness(this._defaultWallThickness);
+  }
+
   /** Nearest existing wall endpoint within ENDPOINT_SNAP, or null. */
   private _nearestCorner(rawX: number, rawY: number): { x: number; y: number } | null {
-    return nearestCorner(this._floor().walls, rawX, rawY, ENDPOINT_SNAP);
+    return nearestCorner(this._snapWalls(), rawX, rawY, ENDPOINT_SNAP);
   }
 
   /** Snap a raw point to a nearby existing wall endpoint, else to the snap step. */
@@ -995,7 +1107,13 @@ export class FloorplanCardEditor extends LitElement {
     exclude?: { areaId: string; vertexIndex: number }
   ): AreaPoint {
     return (
-      nearestAreaSnapPoint(this._floor(), rawX, rawY, ENDPOINT_SNAP, exclude) ?? {
+      nearestAreaSnapPoint(
+        { walls: this._snapWalls(), areas: this._floor().areas },
+        rawX,
+        rawY,
+        ENDPOINT_SNAP,
+        exclude
+      ) ?? {
         x: this._snap(rawX),
         y: this._snap(rawY),
       }
@@ -1014,7 +1132,7 @@ export class FloorplanCardEditor extends LitElement {
   ): { x: number; y: number } {
     let best: { x: number; y: number } | null = null;
     let bestDist = ENDPOINT_SNAP;
-    for (const w of this._floor().walls) {
+    for (const w of this._snapWalls()) {
       for (const end of [1, 2] as const) {
         if (moving.has(`${w.id}:${end}`)) continue;
         const x = end === 1 ? w.x1 : w.x2;
@@ -1037,7 +1155,7 @@ export class FloorplanCardEditor extends LitElement {
     rawY: number
   ): { x: number; y: number } {
     return snapWallEnd(
-      this._floor().walls,
+      this._snapWalls(),
       x1,
       y1,
       rawX,
@@ -1270,6 +1388,12 @@ export class FloorplanCardEditor extends LitElement {
         this._floorMenuOpen = false;
         this._addMenuOpen = false;
         this._addQuery = "";
+        return;
+      }
+      if (this._traceMode) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        this._endTraceMode();
         return;
       }
       if (
@@ -1580,7 +1704,13 @@ export class FloorplanCardEditor extends LitElement {
       const d = this._draft;
       this._draft = null;
       if (d.x1 !== d.x2 || d.y1 !== d.y2) {
-        const wall: Wall = { id: uid("wall"), ...d };
+        const t = this._defaultWallThickness;
+        const wall: Wall = {
+          id: uid("wall"),
+          ...d,
+          // The default stays out of the YAML, like every other default.
+          ...(t !== undefined && t !== WALL_THICKNESS ? { thickness: t } : {}),
+        };
         this._commitFloor({ walls: [...this._floor().walls, wall] });
         this._selection = [{ kind: "wall", id: wall.id }];
       }
@@ -2444,6 +2574,7 @@ export class FloorplanCardEditor extends LitElement {
     if (id === this._activeFloorId) return;
     this._activeFloorId = id;
     this._clearSel();
+    this._endTraceMode();
   }
 
   /**
@@ -3431,6 +3562,517 @@ export class FloorplanCardEditor extends LitElement {
     return lines;
   }
 
+  // -------------------------------------------------------------------------
+  // Trace template — editor-only tracing paper (see editor-trace.ts)
+  // -------------------------------------------------------------------------
+
+  /** The active floor's template, if one is loaded. */
+  private _trace(): TraceTemplate | undefined {
+    return this._traces.get(this._activeFloorId);
+  }
+
+  /** Replace (or with `undefined`, drop) a floor's template — the active one by default. */
+  private _setTrace(next: TraceTemplate | undefined, floorId = this._activeFloorId): void {
+    const prev = this._traces.get(floorId);
+    // A rendered PDF page is a few MB of PNG; free it as soon as nothing shows it.
+    if (prev && prev.src !== next?.src) URL.revokeObjectURL(prev.src);
+    const map = new Map(this._traces);
+    if (next) map.set(floorId, next);
+    else map.delete(floorId);
+    this._traces = map;
+  }
+
+  private _patchTrace(patch: Partial<TraceTemplate>): void {
+    const t = this._trace();
+    if (t) this._setTrace({ ...t, ...patch });
+  }
+
+  private _endTraceMode(): void {
+    this._traceMode = null;
+    this._traceDrag = null;
+    this._traceCalib = { distance: this._traceCalib.distance };
+  }
+
+  private _startTraceMode(mode: "move" | "calibrate"): void {
+    if (this._traceMode === mode) {
+      this._endTraceMode();
+      return;
+    }
+    this._endTraceMode();
+    // Tracing is only useful with the template showing.
+    this._patchTrace({ visible: true });
+    this._traceMode = mode;
+    this._canvasWrap?.focus({ preventScroll: true });
+  }
+
+  private async _loadTrace(file: File): Promise<void> {
+    this._traceBusy = true;
+    this._traceError = "";
+    // The floor it was loaded for, even if you switch floors while a PDF renders.
+    const floorId = this._activeFloorId;
+    try {
+      const r = await loadTraceFile(file);
+      const prev = this._traces.get(floorId);
+      // Replacing a plan keeps the placement you already calibrated when the
+      // new raster is the same shape — a revised print of the same drawing.
+      const keep = prev && prev.pw === r.pw && prev.ph === r.ph;
+      this._setTrace(
+        {
+          src: r.src,
+          name: file.name,
+          pw: r.pw,
+          ph: r.ph,
+          ...(keep
+            ? { x: prev.x, y: prev.y, scale: prev.scale, rotation: prev.rotation }
+            : { ...fitTrace(r.pw, r.ph, this._config.width, this._config.height), rotation: 0 }),
+          opacity: prev?.opacity ?? TRACE_DEFAULT_OPACITY,
+          visible: true,
+          page: r.page,
+          pages: r.pages,
+          file: isPdf(file) ? file : undefined,
+        },
+        floorId
+      );
+    } catch (err) {
+      this._traceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      this._traceBusy = false;
+    }
+  }
+
+  /** Show another page of the loaded PDF, keeping the placement. */
+  private async _setTracePage(page: number): Promise<void> {
+    const t = this._trace();
+    if (!t?.file || page === t.page) return;
+    const floorId = this._activeFloorId;
+    this._traceBusy = true;
+    this._traceError = "";
+    try {
+      const r = await renderPdfPage(t.file, page);
+      // Removed or replaced while this page rendered: drop the render.
+      if (this._traces.get(floorId)?.src !== t.src) {
+        URL.revokeObjectURL(r.src);
+        return;
+      }
+      // Pages of one set are usually the same sheet size; if this one isn't,
+      // keep its width on the canvas rather than its pixel scale.
+      const scale = r.pw === t.pw ? t.scale : (t.pw * t.scale) / r.pw;
+      this._setTrace(
+        { ...this._traces.get(floorId)!, src: r.src, pw: r.pw, ph: r.ph, page: r.page, scale },
+        floorId
+      );
+    } catch (err) {
+      this._traceError = err instanceof Error ? err.message : String(err);
+    } finally {
+      this._traceBusy = false;
+    }
+  }
+
+  /** The floor shown under the active one, if it still exists and isn't itself. */
+  private _refFloor(): Floor | undefined {
+    const ref = this._refFloors.get(this._activeFloorId);
+    if (!ref || ref.floorId === this._activeFloorId) return undefined;
+    return (this._config.floors ?? []).find((f) => f.id === ref.floorId);
+  }
+
+  private _setRefFloor(next: { floorId: string; opacity: number } | undefined): void {
+    const map = new Map(this._refFloors);
+    if (next) map.set(this._activeFloorId, next);
+    else map.delete(this._activeFloorId);
+    this._refFloors = map;
+  }
+
+  /** The reference floor's walls: faint, dashed where they are dividers, never hit. */
+  private _renderRefFloor(): TemplateResult | typeof nothing {
+    const ref = this._refFloor();
+    if (!ref?.walls.length) return nothing;
+    const opacity = this._refFloors.get(this._activeFloorId)?.opacity ?? REF_FLOOR_OPACITY;
+    return svg`<g class="ref-floor" opacity=${opacity} pointer-events="none">
+      ${ref.walls.map(
+        (w) => svg`<line x1=${w.x1} y1=${w.y1} x2=${w.x2} y2=${w.y2}
+                         class=${w.divider ? "divider" : ""}
+                         stroke-width=${w.kind === "railing"
+                           ? WALL_THICKNESS / 3
+                           : (w.thickness ?? WALL_THICKNESS)} />`
+      )}
+    </g>`;
+  }
+
+  /** The reference-floor controls, inside the Trace template group. */
+  private _renderRefFloorControls(): TemplateResult {
+    const others = (this._config.floors ?? []).filter((f) => f.id !== this._activeFloorId);
+    const ref = this._refFloors.get(this._activeFloorId);
+    const shown = this._refFloor();
+    if (!others.length) {
+      return html`<p class="hint">
+        Add a second floor to show one under the other as a tracing reference.
+      </p>`;
+    }
+    return html`
+      <div class="row">
+        <label title="Another floor's walls, shown faintly under this one to trace over">
+          Floor under
+        </label>
+        <select
+          @change=${(e: Event) => {
+            const floorId = (e.target as HTMLSelectElement).value;
+            this._setRefFloor(
+              floorId ? { floorId, opacity: ref?.opacity ?? REF_FLOOR_OPACITY } : undefined
+            );
+          }}
+        >
+          <option value="" .selected=${!shown}>None</option>
+          ${others.map(
+            (f) => html`<option value=${f.id} .selected=${shown?.id === f.id}>${f.name}</option>`
+          )}
+        </select>
+      </div>
+      ${shown
+        ? html`<div class="row">
+            <label>Opacity</label>
+            <input
+              class="trace-range"
+              type="range"
+              min="0.05"
+              max="1"
+              step="0.05"
+              .value=${String(ref?.opacity ?? REF_FLOOR_OPACITY)}
+              @input=${(e: Event) =>
+                this._setRefFloor({
+                  floorId: shown.id,
+                  opacity: Number((e.target as HTMLInputElement).value),
+                })}
+            />
+          </div>`
+        : nothing}
+    `;
+  }
+
+  /** The template itself, drawn under the grid and everything on the plan. */
+  private _renderTraceLayer(): TemplateResult | typeof nothing {
+    const t = this._trace();
+    if (!t?.visible) return nothing;
+    return svg`<g class="trace" transform=${traceTransform(t)} opacity=${t.opacity}
+                  pointer-events="none">
+      <image href=${t.src} x="0" y="0" width=${t.pw} height=${t.ph}
+             preserveAspectRatio="none" />
+    </g>`;
+  }
+
+  /**
+   * While moving or calibrating the template: a sheet over the whole canvas
+   * that takes the pointer, so a click meant for the template can't select
+   * the wall drawn on top of it — plus the calibration points picked so far.
+   */
+  private _renderTraceOverlay(): TemplateResult | typeof nothing {
+    if (!this._traceMode || !this._trace()) return nothing;
+    const { width, height } = this._config;
+    const r = Math.max(width, height) / 160;
+    const { a, b } = this._traceCalib;
+    const mark = (p: TracePoint, label: string) => svg`
+      <g class="trace-mark">
+        <circle cx=${p.x} cy=${p.y} r=${r} />
+        <line x1=${p.x - r * 2} y1=${p.y} x2=${p.x + r * 2} y2=${p.y} />
+        <line x1=${p.x} y1=${p.y - r * 2} x2=${p.x} y2=${p.y + r * 2} />
+        <text x=${p.x + r * 1.6} y=${p.y - r * 1.6} font-size=${r * 3}>${label}</text>
+      </g>`;
+    return svg`
+      ${a && b
+        ? svg`<line class="trace-measure" x1=${a.x} y1=${a.y} x2=${b.x} y2=${b.y} />`
+        : nothing}
+      ${a ? mark(a, "A") : nothing}
+      ${b ? mark(b, "B") : nothing}
+      <rect class="trace-sheet ${this._traceMode}" x="0" y="0" width=${width} height=${height}
+            @pointerdown=${this._onTraceDown}
+            @pointermove=${this._onTraceMove}
+            @pointerup=${this._onTraceUp}
+            @pointercancel=${this._onTraceUp} />`;
+  }
+
+  private _onTraceDown(ev: PointerEvent): void {
+    // The svg's own handler would start a marquee or a wall under the sheet.
+    ev.stopPropagation();
+    if (ev.button !== 0) return;
+    // One gesture at a time, as on the canvas: keep the original pointer.
+    if (this._traceDrag) return;
+    const t = this._trace();
+    if (!t) return;
+    const p = this._toVirtual(ev, false);
+    if (this._traceMode === "move") {
+      this._traceDrag = { pointerId: ev.pointerId, start: p, x0: t.x, y0: t.y };
+      this._capturePointer(ev);
+      return;
+    }
+    // Calibrate: A, then B, then a third click starts over from a new A.
+    const { a, b, distance } = this._traceCalib;
+    this._traceCalib = a && !b ? { a, b: p, distance } : { a: p, distance };
+  }
+
+  private _onTraceMove(ev: PointerEvent): void {
+    ev.stopPropagation();
+    const d = this._traceDrag;
+    if (!d || ev.pointerId !== d.pointerId) return;
+    if (ev.buttons === 0) {
+      this._traceDrag = null;
+      return;
+    }
+    const p = this._toVirtual(ev, false);
+    this._patchTrace({ x: d.x0 + p.x - d.start.x, y: d.y0 + p.y - d.start.y });
+  }
+
+  private _onTraceUp(ev: PointerEvent): void {
+    ev.stopPropagation();
+    if (this._traceDrag?.pointerId !== ev.pointerId) return;
+    this._traceDrag = null;
+    this._releasePointer(ev);
+  }
+
+  /**
+   * What "units" are, said in the parts the editor draws — the scale a plan is
+   * calibrated to is the same one every door, window and wall is measured in,
+   * so a door clicked on the plan and typed as 60 fits the editor's own door.
+   */
+  private _unitsHint(): string {
+    const opening = this._defaultOpeningLength;
+    const wall = this._defaultWallThickness ?? WALL_THICKNESS;
+    return (
+      `Units are the editor's own measure, the same for every part: a door or window is ` +
+      `${opening}, a wall ${wall} thick, one grid square ${this.grid}. Scale the plan so ` +
+      `its doors measure ${opening} and new doors, windows and walls fit it.`
+    );
+  }
+
+  private _applyTraceCalibration(): void {
+    const t = this._trace();
+    const { a, b, distance } = this._traceCalib;
+    if (!t || !a || !b || !(distance > 0)) return;
+    this._setTrace(calibrateTrace(t, a, b, distance));
+    this._endTraceMode();
+  }
+
+  /** The context bar while the template owns the canvas. */
+  private _renderTraceContext(): TemplateResult {
+    if (this._traceMode === "move") {
+      return html`
+        <span class="ctx-hint">Drag to move the template under the plan.</span>
+        <button class="active" @click=${() => this._endTraceMode()}>Done</button>
+      `;
+    }
+    const { a, b, distance } = this._traceCalib;
+    if (!a || !b) {
+      return html`
+        <span class="ctx-hint">
+          ${a
+            ? "Now click the other end (B)."
+            : `Click one end (A) of a door on the plan — or anything else whose size in units you know. ${this._unitsHint()}`}
+        </span>
+        <button @click=${() => this._endTraceMode()}>Cancel</button>
+      `;
+    }
+    const measured = Math.hypot(b.x - a.x, b.y - a.y);
+    return html`
+      <span class="ctx-hint">A–B measures ${Math.round(measured)} units now. It should be</span>
+      <label class="ctx-field">
+        <input
+          class="num"
+          type="number"
+          min="1"
+          step="1"
+          .value=${String(distance)}
+          title=${this._unitsHint()}
+          @input=${(e: Event) => {
+            this._traceCalib = {
+              ...this._traceCalib,
+              distance: Number((e.target as HTMLInputElement).value) || 0,
+            };
+          }}
+          @keydown=${(e: KeyboardEvent) => {
+            if (e.key === "Enter") this._applyTraceCalibration();
+          }}
+        />
+        units
+      </label>
+      <button class="active" ?disabled=${!(distance > 0)} @click=${this._applyTraceCalibration}>
+        Apply scale
+      </button>
+      <button @click=${() => this._endTraceMode()}>Cancel</button>
+    `;
+  }
+
+  /** The side-panel group: load, place, scale and drop the template. */
+  private _renderTracePanel(): TemplateResult {
+    const t = this._trace();
+    const picker = html`<input
+      class="trace-file"
+      type="file"
+      accept="application/pdf,.pdf,image/*"
+      hidden
+      @change=${(e: Event) => {
+        const input = e.target as HTMLInputElement;
+        const file = input.files?.[0];
+        input.value = "";
+        if (file) void this._loadTrace(file);
+      }}
+    />`;
+    const pick = (e: Event) =>
+      (
+        (e.currentTarget as HTMLElement).parentElement?.querySelector(
+          "input.trace-file"
+        ) as HTMLInputElement | null
+      )?.click();
+    const status = html`${this._traceBusy ? html`<p class="hint">Loading…</p>` : nothing}${this
+      ._traceError
+      ? html`<p class="hint trace-error">${this._traceError}</p>`
+      : nothing}`;
+    if (!t) {
+      return html`
+        <p class="hint">
+          Lay a PDF or image of an existing plan under the canvas and draw your walls over
+          it. Editor only — it is never saved and the card never shows it.
+        </p>
+        <div class="row">
+          ${picker}
+          <button ?disabled=${this._traceBusy} @click=${pick}>
+            <ha-icon icon="mdi:file-upload-outline"></ha-icon> Load PDF or image…
+          </button>
+        </div>
+        ${status} ${this._renderRefFloorControls()}
+      `;
+    }
+    const num = (
+      label: string,
+      value: number,
+      set: (v: number) => void,
+      opts: { title?: string; step?: string; min?: string } = {}
+    ) => html`
+      <div class="row">
+        <label title=${opts.title ?? nothing}>${label}</label>
+        <input
+          type="number"
+          step=${opts.step ?? "any"}
+          min=${opts.min ?? nothing}
+          title=${opts.title ?? nothing}
+          .value=${String(Math.round(value * 100) / 100)}
+          @change=${(e: Event) => {
+            const v = Number((e.target as HTMLInputElement).value);
+            if (Number.isFinite(v)) set(v);
+          }}
+        />
+      </div>
+    `;
+    return html`
+      <div class="row">
+        <label>File</label>
+        <span class="trace-name" title=${t.name}>${t.name}</span>
+      </div>
+      ${t.pages && t.pages > 1
+        ? html`<div class="row">
+            <label>Page</label>
+            <select
+              ?disabled=${this._traceBusy}
+              @change=${(e: Event) =>
+                void this._setTracePage(Number((e.target as HTMLSelectElement).value))}
+            >
+              ${Array.from(
+                { length: t.pages },
+                (_, i) =>
+                  html`<option value=${i + 1} .selected=${i + 1 === t.page}>
+                    ${i + 1} of ${t.pages}
+                  </option>`
+              )}
+            </select>
+          </div>`
+        : nothing}
+      <div class="row">
+        <label>Show</label>
+        <input
+          type="checkbox"
+          .checked=${t.visible}
+          @change=${(e: Event) =>
+            this._patchTrace({ visible: (e.target as HTMLInputElement).checked })}
+        />
+      </div>
+      <div class="row">
+        <label>Opacity</label>
+        <input
+          class="trace-range"
+          type="range"
+          min="0.05"
+          max="1"
+          step="0.05"
+          .value=${String(t.opacity)}
+          @input=${(e: Event) =>
+            this._patchTrace({ opacity: Number((e.target as HTMLInputElement).value) })}
+        />
+      </div>
+      <div class="row trace-actions">
+        <label>Scale</label>
+        <button
+          class=${this._traceMode === "calibrate" ? "active" : ""}
+          aria-pressed=${this._traceMode === "calibrate"}
+          title="Click both ends of something on the plan, then type how many units it should be"
+          @click=${() => this._startTraceMode("calibrate")}
+        >
+          <ha-icon icon="mdi:ruler"></ha-icon> Set by 2 points
+        </button>
+      </div>
+      <p class="hint">${this._unitsHint()}</p>
+      ${num(
+        "Width",
+        traceSize(t).w,
+        (v) => {
+          if (v > 0) this._setTrace(resizeTraceWidth(t, v));
+        },
+        {
+          title: "The template's width on the canvas, in units (keeps its proportions)",
+          min: "1",
+        }
+      )}
+      <div class="row trace-actions">
+        <label>Position</label>
+        <button
+          class=${this._traceMode === "move" ? "active" : ""}
+          aria-pressed=${this._traceMode === "move"}
+          title="Drag the template on the canvas"
+          @click=${() => this._startTraceMode("move")}
+        >
+          <ha-icon icon="mdi:cursor-move"></ha-icon> Move
+        </button>
+        <button
+          title="Fit the whole template inside the canvas again"
+          @click=${() =>
+            this._patchTrace({
+              ...fitTrace(t.pw, t.ph, this._config.width, this._config.height),
+              rotation: 0,
+            })}
+        >
+          Fit
+        </button>
+      </div>
+      ${num("X", t.x, (x) => this._patchTrace({ x }))}
+      ${num("Y", t.y, (y) => this._patchTrace({ y }))}
+      ${num("Rotation", t.rotation, (rotation) => this._patchTrace({ rotation }), {
+        title: "Degrees clockwise, about the template's centre",
+        step: "0.5",
+      })}
+      <div class="row">
+        ${picker}
+        <button ?disabled=${this._traceBusy} @click=${pick}>Replace…</button>
+        <button
+          title="Remove the template — it is not part of the plan, so nothing else changes"
+          @click=${() => {
+            this._endTraceMode();
+            this._setTrace(undefined);
+          }}
+        >
+          <ha-icon icon="mdi:delete-outline"></ha-icon> Remove
+        </button>
+      </div>
+      ${status} ${this._renderRefFloorControls()}
+      <p class="hint">Editor only — never saved, never shown on the card.</p>
+    `;
+  }
+
   private _isSel(kind: string, id: string): boolean {
     return this._selection.some((s) => s.kind === kind && s.id === id);
   }
@@ -3446,7 +4088,10 @@ export class FloorplanCardEditor extends LitElement {
     let label: string;
     let body: TemplateResult;
 
-    if (t === "wall") {
+    if (this._traceMode) {
+      label = "Trace";
+      body = this._renderTraceContext();
+    } else if (t === "wall") {
       label = "Wall";
       body = html`
         <button
@@ -3459,6 +4104,24 @@ export class FloorplanCardEditor extends LitElement {
         >
           straighten
         </button>
+        <label class="ctx-field">
+          Thickness
+          <input
+            class="num"
+            type="number"
+            min="2"
+            max=${MAX_SKIN_WALL_WIDTH}
+            step="1"
+            .value=${String(this._defaultWallThickness ?? WALL_THICKNESS)}
+            title="Thickness of the next walls you draw; kept until you change it"
+            @change=${(e: Event) => {
+              const input = e.target as HTMLInputElement;
+              // Empty/invalid input is NaN, so it keeps the last thickness.
+              this._setDefaultWallThickness(input.valueAsNumber);
+              input.value = String(this._defaultWallThickness ?? WALL_THICKNESS);
+            }}
+          />
+        </label>
         <span class="ctx-hint">Drag to draw. Endpoints snap to nearby corners to close rooms.</span>
       `;
     } else if (t === "tracker") {
@@ -3729,6 +4392,7 @@ export class FloorplanCardEditor extends LitElement {
                   aria-pressed=${this._tool === t}
                   title=${TOOL_META[t].label}
                   @click=${() => {
+                    this._endTraceMode();
                     this._tool = t;
                     this._draft = null;
                     this._draftTracker = null;
@@ -3800,6 +4464,28 @@ export class FloorplanCardEditor extends LitElement {
             ></ha-icon>
             Labels
           </button>
+
+          <!-- Trace template: show / hide the floor's tracing paper without
+               opening its panel. Only there when this floor has one. -->
+          ${this._trace()
+            ? html`<button
+                class="icon-btn"
+                aria-pressed=${!this._trace()!.visible}
+                title=${this._trace()!.visible
+                  ? "Hide the trace template — see the plan on its own"
+                  : "Show the trace template under the plan"}
+                @click=${() => {
+                  const visible = !this._trace()!.visible;
+                  if (!visible) this._endTraceMode();
+                  this._patchTrace({ visible });
+                }}
+              >
+                <ha-icon
+                  icon=${this._trace()!.visible ? "mdi:layers-outline" : "mdi:layers-off-outline"}
+                ></ha-icon>
+                Trace
+              </button>`
+            : nothing}
 
           <span class="divider"></span>
 
@@ -4029,7 +4715,9 @@ export class FloorplanCardEditor extends LitElement {
                             preserveAspectRatio=${imageFitRatio(floor.imageFit)}
                             opacity=${floor.imageOpacity ?? 1} />`
                 : nothing}
+              ${this._renderTraceLayer()}
               ${this._renderGrid()}
+              ${this._renderRefFloor()}
               ${repeat(
                 floor.areas ?? [],
                 (a, i) => a.id || i,
@@ -4144,6 +4832,7 @@ export class FloorplanCardEditor extends LitElement {
                               class="marquee" />`
                   : nothing
               }
+              ${this._renderTraceOverlay()}
             </svg>`
             )}
             <div class="items">
@@ -5582,6 +6271,12 @@ export class FloorplanCardEditor extends LitElement {
           })
         )}
         ${this._renderGroup(
+          // Beside the floor image because it looks like one, but it is the
+          // opposite: tracing paper for the editor, never saved.
+          "Trace template",
+          this._renderTracePanel()
+        )}
+        ${this._renderGroup(
           // How the card is framed on the dashboard, as opposed to what is
           // drawn inside it. Set once for a surface and rarely touched again.
           "Display",
@@ -6479,9 +7174,12 @@ export class FloorplanCardEditor extends LitElement {
       if (!w) return html`${nothing}`;
       const length = Math.round(Math.hypot(w.x2 - w.x1, w.y2 - w.y1));
       return html`
-        ${this._renderForm(wallForm(w), (patch, live) =>
-          this._applyElementPatch("wall", w.id, patch, live)
-        )}
+        ${this._renderForm(wallForm(w), (patch, live) => {
+          this._applyElementPatch("wall", w.id, patch, live);
+          // A thickness you set on a wall is the one you are drawing at.
+          const t = (patch as Partial<Wall>).thickness;
+          if (!live && typeof t === "number") this._setDefaultWallThickness(t);
+        })}
         <div class="row">
           <label>Length</label>
           <input
@@ -6794,6 +7492,63 @@ export class FloorplanCardEditor extends LitElement {
     .context-bar .ctx-hint {
       font-size: 12px;
       color: var(--secondary-text-color);
+    }
+    /* Trace template (editor only). The sheet takes the pointer while the
+       template is being moved or calibrated; the marks keep a screen-pixel
+       stroke so they stay aimable at any zoom. */
+    .ref-floor line {
+      stroke: var(--primary-color, #03a9f4);
+      stroke-linecap: round;
+    }
+    .ref-floor line.divider {
+      stroke-dasharray: 8 6;
+    }
+    .trace-sheet {
+      fill: transparent;
+      pointer-events: all;
+    }
+    .trace-sheet.move {
+      cursor: move;
+    }
+    .trace-sheet.calibrate {
+      cursor: crosshair;
+    }
+    .trace-mark,
+    .trace-measure {
+      pointer-events: none;
+    }
+    .trace-mark circle,
+    .trace-mark line,
+    .trace-measure {
+      fill: none;
+      stroke: #e91e63;
+      stroke-width: 2px;
+      vector-effect: non-scaling-stroke;
+    }
+    .trace-measure {
+      stroke-dasharray: 6 4;
+    }
+    .trace-mark text {
+      fill: #e91e63;
+      font-weight: 600;
+    }
+    .trace-name {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-size: 13px;
+    }
+    .trace-range {
+      flex: 1;
+      min-width: 0;
+    }
+    .trace-actions {
+      flex-wrap: wrap;
+    }
+    .trace-error {
+      color: var(--error-color, #db4437);
     }
     .context-bar .ctx-count {
       font-size: 12px;
