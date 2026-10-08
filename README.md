@@ -11,7 +11,11 @@ and control your home in 2D or 3D.
 [Installation](#installation) · [Your first plan](#create-your-first-plan) · [Documentation](#documentation)
 
 <a name="what-you-can-end-up-with"></a>
-<img width="1080" height="608" alt="Easy Floorplan demo" src="https://github.com/user-attachments/assets/98abaddc-b713-492f-be85-ca5f778f3779" />
+
+https://github.com/user-attachments/assets/8a156cb4-92c2-477a-9b7e-63de15f9b470
+
+20-second overview: draw walls and doors, connect a Home Assistant entity,
+control lights, and view the plan in 3D.
 
 ## Features
 
