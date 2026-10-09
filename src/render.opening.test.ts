@@ -318,6 +318,79 @@ describe("renderSunlight — the markup, not just the geometry", () => {
     expect(s).not.toContain("scale(80 ");
   });
 
+  describe("a balcony behind a railing", () => {
+    // Railing along y=100, the balcony's side walls down to the house wall at
+    // y=200, and a glazed door in that wall. The sun comes in from -y. The
+    // railing is not in the walls, as the card hands them over: the sun goes
+    // over it.
+    const rail: Wall = { id: "r", x1: 100, y1: 100, x2: 300, y2: 100, kind: "railing" };
+    const sides = [
+      { id: "sl", x1: 100, y1: 100, x2: 100, y2: 200 },
+      { id: "sr", x1: 300, y1: 100, x2: 300, y2: 200 },
+    ];
+    const house = { id: "h", x1: 0, y1: 200, x2: 400, y2: 200 };
+    const door = { ...win, id: "d", type: "door", glazed: true, y: 200, length: 120 } as Opening;
+    const lit = (openings: Opening[], railings?: Wall[]) =>
+      serialize(
+        renderSunlight([...sides, house], openings, 400, 400, "sun", {
+          dir: sun,
+          openAmount: () => 0,
+          shutterOpen: () => undefined,
+          railings,
+        })
+      );
+
+    it("lights the balcony floor along the railing, not only the door behind it", () => {
+      // The door was always lit — the sun reaches it over the railing — but
+      // nothing lit the floor in front of it, so the light seemed to start
+      // at the door.
+      const before = lit([door]);
+      expect(before).not.toContain("points=100,100 300,100");
+      const after = lit([door], [rail]);
+      expect(after).toContain("points=100,100 300,100");
+    });
+
+    it("carries the railing's light on through the glazed door, as the one source", () => {
+      // The door's own beam on top of the railing's lit the room behind it
+      // twice over — the second sun #177 / #178 removed for a doorway behind
+      // a window, back again behind a railing.
+      const s = lit([door], [rail]);
+      expect(s.match(/class="fp-sunbeam"/g)?.length).toBe(1);
+      expect(falloff(s, "sun-rb0")!.along).toBeCloseTo(SUN_REACH * 400, 0);
+    });
+
+    it("adds no second beam for a window in the railing", () => {
+      // The railing's beam already covers the window's gap. Drawn twice,
+      // that stretch of floor came out brighter than the rest.
+      const inRail = { ...win, id: "w2", x: 200, y: 100 } as Opening;
+      const s = lit([door, inRail], [rail]);
+      expect(s.match(/class="fp-sunbeam"/g)?.length).toBe(1);
+      expect(s).not.toContain("points=170,100 230,100");
+    });
+
+    it("keeps a railing's ids when an opening is added", () => {
+      // Numbered in with the openings, a new window would renumber the
+      // railing's gradient and leave its polygon on a stale paint server.
+      const other = { ...win, id: "o2", x: 360, y: 200, length: 40 } as Opening;
+      for (const s of [lit([door], [rail]), lit([door, other], [rail])]) {
+        expect(s).toContain("id=sun-rb0");
+      }
+    });
+
+    it("throws no light from a railing the sun cannot reach", () => {
+      // Light from +y: the house wall stands between the railing and the sun.
+      const s = serialize(
+        renderSunlight([...sides, house], [], 400, 400, "sun", {
+          dir: { x: 0, y: -1 },
+          openAmount: () => 0,
+          shutterOpen: () => undefined,
+          railings: [rail],
+        })
+      );
+      expect(s).toBe(serialize(nothing));
+    });
+  });
+
   it("an opening switched out of the sunlight is wall to it (#177)", () => {
     // The solid front door the plan draws open because nothing is bound to it.
     const shut = { ...win, type: "door", sunlight: false } as Opening;

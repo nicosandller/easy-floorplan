@@ -5343,6 +5343,22 @@ function openingEnds(o: Opening): [AreaPoint, AreaPoint] {
 }
 
 /**
+ * A railing as the gap the sun comes in by: an opening spanning it end to end.
+ * Only its position, length and angle are read — it is never asked how far it
+ * is open, since a railing is always clear.
+ */
+function railingGap(w: Wall): Opening {
+  return {
+    id: w.id,
+    type: "window",
+    x: (w.x1 + w.x2) / 2,
+    y: (w.y1 + w.y2) / 2,
+    length: Math.hypot(w.x2 - w.x1, w.y2 - w.y1),
+    angle: (Math.atan2(w.y2 - w.y1, w.x2 - w.x1) * 180) / Math.PI,
+  };
+}
+
+/**
  * Ray-casting point-in-polygon test. Points exactly on an edge may resolve
  * either way (not a documented guarantee) — every caller only needs an
  * approximate "did this land inside" answer, not exact edge semantics.
@@ -5532,6 +5548,15 @@ export interface SunlightOptions {
    * {@link FloorplanCardConfig.skylightDrop} for why it is stated that way.
    */
   drop?: number;
+  /**
+   * The plan's railings. They are not in the `walls` handed to
+   * {@link renderSunlight} — the sun goes over them — but they are where it
+   * comes in: each one admits light along its whole length, as a gap that is
+   * always clear. Without them a balcony behind a railing stayed dark while
+   * the glass door at its back lit the room beyond, the sun having come over
+   * the railing for the door and nowhere else.
+   */
+  railings?: readonly Wall[];
   light?: string;
   /**
    * `null` draws the light without darkening anything else — the patches
@@ -5550,7 +5575,7 @@ export function renderSunlight(
   id: string,
   opts: SunlightOptions,
 ): SVGTemplateResult | typeof nothing {
-  const { dir, openAmount, shutterOpen, strength = 1 } = opts;
+  const { dir, openAmount, shutterOpen, strength = 1, railings = [] } = opts;
   const direct =
     typeof opts.direct === "number" && Number.isFinite(opts.direct)
       ? Math.max(0, Math.min(1, opts.direct))
@@ -5671,6 +5696,53 @@ export function renderSunlight(
   // Each beam keeps the opening it came from: the fade runs from that
   // opening's own centre along the light, so every patch dims over its own
   // length rather than sharing one gradient across the plan.
+  // Railings stand in the way here, and only here. Light that reached a door
+  // over a railing is the railing's beam, carried on through the door's gap —
+  // the door is not a second sun, any more than a doorway behind a window is
+  // (#177 / #178). Counted as a source too, it lit the room beyond twice.
+  const sourceWalls = railings.length ? [...walls, ...railings] : walls;
+  /** The beam through a gap in a wall — an opening's, or a railing's — clear by `f`. */
+  const gapBeam = (
+    o: Opening,
+    ids: { lightId: string; shadeId: string; fadeId: string; shadowMaskId: string; clipId: string },
+    f: number,
+  ) => {
+    if (!sunReachesOpening(o, sourceWalls, dir)) return undefined;
+    // How far the light gets before a wall stops it. The falloff is measured
+    // against this, so a patch is faint by the time it ends however deep or
+    // shallow the room is.
+    const along = sunTravelDistance(o, dir, blockers, reach);
+    // …and how wide it is, measured across the light rather than along the
+    // wall: a gap seen obliquely admits a narrower beam than its own length.
+    const [ga, gb] = openingEnds(o);
+    const gx = gb.x - ga.x;
+    const gy = gb.y - ga.y;
+    const width = Math.abs(gx * dir.y - gy * dir.x) * f;
+    // Half of it, because the gradient below is scaled by *semi*-axes: the
+    // ellipse reaches `across` from the beam's middle, and the beam only has
+    // half its width to give on each side (issue #206).
+    const halfWidth = width / 2;
+    return {
+      ...ids,
+      sky: false,
+      // The outline runs past the falloff, so the ellipse is what bounds the
+      // patch and never the polygon's flat far edge.
+      points: polyPoints(sunBeamPolygon(o, dir, along + o.length, f)),
+      cx: o.x,
+      cy: o.y,
+      along,
+      across: Math.max(1, halfWidth * SUN_ACROSS),
+      angle: (Math.atan2(dir.y, dir.x) * 180) / Math.PI,
+      // A beam has no edge to soften — it fades along its own length — so it
+      // has no second polygon, and no shadow set of its own either: the wall
+      // openings all share the one global shadow mask.
+      haloPoints: "",
+      halo: undefined as undefined | { cx: number; cy: number; angle: number; along: number; across: number },
+      haloLightId: "",
+      haloShadeId: "",
+      shadows: [] as string[],
+    };
+  };
   const beams = openings.map((o, i) => {
     const ids = {
       lightId: `${id}-b${i}`,
@@ -5717,42 +5789,25 @@ export function renderSunlight(
         shadows: downwindShadows(o),
       };
     }
-    if (!sunReachesOpening(o, walls, dir)) return undefined;
-    // How far the light gets before a wall stops it. The falloff is measured
-    // against this, so a patch is faint by the time it ends however deep or
-    // shallow the room is.
-    const along = sunTravelDistance(o, dir, blockers, reach);
-    // …and how wide it is, measured across the light rather than along the
-    // wall: a gap seen obliquely admits a narrower beam than its own length.
-    const [ga, gb] = openingEnds(o);
-    const gx = gb.x - ga.x;
-    const gy = gb.y - ga.y;
-    const width = Math.abs(gx * dir.y - gy * dir.x) * clear(o);
-    // Half of it, because the gradient below is scaled by *semi*-axes: the
-    // ellipse reaches `across` from the beam's middle, and the beam only has
-    // half its width to give on each side (issue #206).
-    const halfWidth = width / 2;
-    return {
-      ...ids,
-      sky: false,
-      // The outline runs past the falloff, so the ellipse is what bounds the
-      // patch and never the polygon's flat far edge.
-      points: polyPoints(sunBeamPolygon(o, dir, along + o.length, f)),
-      cx: o.x,
-      cy: o.y,
-      along,
-      across: Math.max(1, halfWidth * SUN_ACROSS),
-      angle: (Math.atan2(dir.y, dir.x) * 180) / Math.PI,
-      // A beam has no edge to soften — it fades along its own length — so it
-      // has no second polygon, and no shadow set of its own either: the wall
-      // openings all share the one global shadow mask.
-      haloPoints: "",
-      halo: undefined as undefined | { cx: number; cy: number; angle: number; along: number; across: number },
-      haloLightId: "",
-      haloShadeId: "",
-      shadows: [] as string[],
-    };
+    // An opening in a railing adds nothing: the railing's own beam below
+    // already covers its whole length, and a second one over the same gap
+    // drew that stretch of floor twice as bright as the rest of the balcony.
+    if (railings.some((w) => pointWallDist(o.x, o.y, w) <= OPENING_ON_WALL_EPS)) return undefined;
+    return gapBeam(o, ids, f);
   });
+  // The railings after the openings, under ids of their own: numbered in with
+  // the openings, adding a window would renumber every railing's gradient —
+  // the stale-paint-server failure the comment above is about.
+  const railingBeams = railings.map((w, j) =>
+    gapBeam(railingGap(w), {
+      lightId: `${id}-rb${j}`,
+      shadeId: `${id}-rs${j}`,
+      fadeId: `${id}-rf${j}`,
+      shadowMaskId: `${id}-rk${j}`,
+      clipId: `${id}-rc${j}`,
+    }, 1),
+  );
+  beams.push(...railingBeams);
   if (!beams.some((b) => b !== undefined)) return nothing;
   const shadows = shadowPolys.map(polyPoints);
   const pad = WALL_THICKNESS;
