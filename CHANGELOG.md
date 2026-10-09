@@ -19,3 +19,7 @@
   See the [ambient daylight guide](docs/ambient-daylight.md) for the geometry limits.
 - Ambient daylight remains off by default. The direct sunlight and device-light
   layers keep their existing behaviour.
+- Sunlight now lights the floor behind a railing along its whole length. Before,
+  the sun reached a glazed balcony door over the railing, but the balcony floor in
+  front of it stayed dark, so the light seemed to start at the door. The door now
+  carries the railing's light on into the room instead of adding a second patch.

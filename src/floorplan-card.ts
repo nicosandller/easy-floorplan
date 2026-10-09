@@ -1522,7 +1522,7 @@ export class FloorplanCard extends LitElement {
       : blockingWallSegments;
     // What each opening lets through, for every light that comes in by them —
     // the sun, and after dark the moon.
-    const openingLight: Pick<SunlightOptions, "openAmount" | "shutterOpen" | "drop"> = {
+    const openingLight: Pick<SunlightOptions, "openAmount" | "shutterOpen" | "drop" | "railings"> = {
       // The gap each style actually clears, both leaves included — the same
       // reading the lamps get above, and for the same reason (#145): `entity`
       // alone leaves a door whose *second* panel is open reading as shut, and
@@ -1547,6 +1547,9 @@ export class FloorplanCard extends LitElement {
       // twice and pin every patch under its own skylight at noon. Bounded at
       // the sink, in skylightDropFraction.
       drop: c.skylightDrop,
+      // Where the light comes in over a balcony's edge rather than through
+      // an opening. Kept out of blockingWallSegments, so passed on their own.
+      railings: roomWallSegments.filter((w) => isRailing(w) && !w.divider),
     };
     // The moon (issue #201), where it is at the moment being drawn: the
     // replayed one during replay, so a replayed night shows that night's moon.

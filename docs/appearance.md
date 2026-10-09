@@ -303,6 +303,11 @@ between the sun and the balcony door behind it, so no sunlight ever came in that
 Set a wall's **Kind** to **Railing** and it is drawn thin, and light carries on over it —
 a lamp's pool spills past the edge, and the sun reaches the door again.
 
+The sun comes in over the whole length of a railing, so it lights the balcony floor and
+not only the door behind it. A glazed or open door carries that same light on into the
+room; it does not add a second patch of its own. A window or door in the railing adds
+none either, as the railing already lets the light through there.
+
 ![Before and after: a lamp pool clipped at the balcony edge, then spilling over a thin railing with sunlight entering the balcony door](img/balcony-railing.png)
 
 ```yaml
