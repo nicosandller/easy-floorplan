@@ -399,6 +399,13 @@ npx vite --host 127.0.0.1 --port 5261
 Open [the 3D preview](http://127.0.0.1:5261/docker/3d-preview.html). It imports the
 actual card source and supplies simulated entities. Change the viewing corner,
 wall height and opacity; toggle doors, the roof window and its blind, and day/night; tap a room to check zoom.
+The card’s Rotate left/right buttons animate 90° turns in 3D.
+
+Run `node docker/verify-rotation.mjs` for a real-browser motion/layout check of
+this preview and the larger demo plan. It writes sampled animation frames,
+desktop/mobile screenshots and local frame timings to `.claude/rotation/`
+(or the output directory passed as the first argument).
+
 The icon placeholder is local to this preview. Use the HA container above to
 check real entity services, HA icons, editor selectors and history playback.
 

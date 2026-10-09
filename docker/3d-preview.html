@@ -16,7 +16,7 @@
   output { display: block; min-height: 24px; margin-top: 16px; color: #b9cadd; }
 </style>
 <h1>One floorplan, a new point of view</h1>
-<p>Local development preview with simulated entities. Tap a room to zoom or a door to change its state.</p>
+<p>Local development preview with simulated entities. Use the card’s rotation buttons to turn around the house. Tap a room to zoom or a door to change its state.</p>
 <nav aria-label="Preview controls">
   <label>View <select id="view"><option value="3d">3D</option><option value="2d">2D</option></select></label>
   <label>Corner <select id="rotation"><option>0</option><option>90</option><option>180</option><option>270</option></select></label>
@@ -37,7 +37,7 @@
   const rectangle = (x, y, w, h) => [{x,y}, {x:x+w,y}, {x:x+w,y:y+h}, {x,y:y+h}];
   const config = {
     type: 'custom:easy-floorplan-card', width: 700, height: 480,
-    view: '3d', wallHeight: 60, wallOpacity: 0.65, overlayScale: 'plan',
+    view: '3d', showViewControls: true, wallHeight: 60, wallOpacity: 0.65, overlayScale: 'plan',
     sunlight: true, sunBearing: 0, ambientDaylight: true,
     walls: [
       ['n',80,80,620,80], ['e',620,80,620,400], ['s',620,400,80,400],

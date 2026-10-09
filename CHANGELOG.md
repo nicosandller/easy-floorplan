@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Animate live 3D quarter-turns around the floorplan, keeping labels, devices
+  and room focus aligned. Repeated clicks can continue or reverse a turn; reset
+  cancels it, and reduced motion keeps turns immediate (#354).
+
 - Add a live Line art appearance and optional controls for 2D/3D, appearance,
   quarter-turn rotation and reset. Device states, opening actions and room zoom
   stay interactive. Configure them under Project → Display; new plans include

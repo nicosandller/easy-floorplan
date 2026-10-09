@@ -26,6 +26,7 @@
  * separation and visible-face depth decide the order of overlapping solids.
  */
 import { svg, nothing, type SVGTemplateResult } from "lit";
+import { rotationBasis } from "./rotation";
 import { cssNumber, cssIdent } from "./css-safe";
 import type { WallKind } from "./types";
 import { OPENING_ON_WALL_EPS } from "./dead-space";
@@ -101,6 +102,8 @@ export interface DisplayFrame {
   wallHeight: number;
   /** Screen-space margin for wall caps at the canvas boundary. */
   padding?: number;
+  /** Fixed floor span for live orbit controls; fits the full rotation without zoom pulsing. */
+  orbitSpan?: number;
 }
 
 /**
@@ -110,7 +113,8 @@ export interface DisplayFrame {
  */
 export function projectedCanvasSize(f: DisplayFrame): { w: number; h: number } {
   if (f.projection !== "iso") return { w: f.w, h: f.h };
-  return { w: (f.w + f.h) * ISO_COS + 2 * (f.padding ?? 0), h: (f.w + f.h) * ISO_SIN + f.wallHeight + 2 * (f.padding ?? 0) };
+  const span = f.orbitSpan ?? f.w + f.h;
+  return { w: span * ISO_COS + 2 * (f.padding ?? 0), h: span * ISO_SIN + f.wallHeight + 2 * (f.padding ?? 0) };
 }
 
 /**
@@ -120,9 +124,10 @@ export function projectedCanvasSize(f: DisplayFrame): { w: number; h: number } {
  */
 export function projectPlanPoint(x: number, y: number, f: DisplayFrame, z = 0): Pt {
   if (f.projection !== "iso") return { x, y };
+  const margin = ((f.orbitSpan ?? f.w + f.h) - f.w - f.h) / 2;
   return {
-    x: (x - y) * ISO_COS + f.h * ISO_COS + (f.padding ?? 0),
-    y: (x + y) * ISO_SIN + f.wallHeight - z + (f.padding ?? 0),
+    x: (x - y) * ISO_COS + (f.h + margin) * ISO_COS + (f.padding ?? 0),
+    y: (x + y + margin) * ISO_SIN + f.wallHeight - z + (f.padding ?? 0),
   };
 }
 
@@ -148,7 +153,8 @@ export function projectPlanDirection(dx: number, dy: number, f: DisplayFrame): P
 export function planProjectionTransform(f: DisplayFrame): string {
   if (f.projection !== "iso") return "";
   const n = (v: number) => String(+v.toFixed(6));
-  return `matrix(${n(ISO_COS)} ${n(ISO_SIN)} ${n(-ISO_COS)} ${n(ISO_SIN)} ${n(f.h * ISO_COS + (f.padding ?? 0))} ${n(f.wallHeight + (f.padding ?? 0))})`;
+  const origin = projectPlanPoint(0, 0, f);
+  return `matrix(${n(ISO_COS)} ${n(ISO_SIN)} ${n(-ISO_COS)} ${n(ISO_SIN)} ${n(origin.x)} ${n(origin.y)})`;
 }
 
 /**
@@ -173,8 +179,10 @@ export function elevationShift(z: number, rot: number): Pt {
       return { x: z, y: z };
     case 270:
       return { x: z, y: -z };
-    default:
-      return { x: -z, y: -z };
+    default: {
+      const { cos, sin } = rotationBasis(rot);
+      return { x: -z * (cos + sin), y: z * (sin - cos) };
+    }
   }
 }
 
