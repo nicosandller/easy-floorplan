@@ -206,6 +206,7 @@ export interface IsoSolid {
 export interface IsoWallInput {
   id: string;
   kind?: WallKind;
+  height?: number;
   x1: number;
   y1: number;
   x2: number;
@@ -295,7 +296,8 @@ export function wallSolids(
     const dy = w.y2 - w.y1;
     const len = Math.hypot(dx, dy);
     if (!(len > 1e-6)) continue;
-    const height = wallHeight * (w.kind === "railing" ? RAILING_HEIGHT_FRACTION : 1);
+    const baseHeight = w.height ?? wallHeight;
+    const height = baseHeight * (w.kind === "railing" ? RAILING_HEIGHT_FRACTION : 1);
     const kind = w.kind === "railing" ? "railing" : "wall";
     const d = { x: dx / len, y: dy / len };
     const n = { x: -d.y, y: d.x };

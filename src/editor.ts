@@ -6696,7 +6696,7 @@ export class FloorplanCardEditor extends LitElement {
       if (!w) return html`${nothing}`;
       const length = Math.round(Math.hypot(w.x2 - w.x1, w.y2 - w.y1));
       return html`
-        ${this._renderEssentialForm(wallForm(w), ["x1", "y1", "x2", "y2", "thickness", "kind"], (patch, live) =>
+        ${this._renderEssentialForm(wallForm(w), ["x1", "y1", "x2", "y2", "thickness", "height", "kind"], (patch, live) =>
           this._applyElementPatch("wall", w.id, patch, live)
         )}
         <div class="row">

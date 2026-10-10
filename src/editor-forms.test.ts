@@ -39,6 +39,7 @@ import {
 } from "./types";
 import { DEFAULT_SKIN, SKINS, MAX_SKIN_WALL_WIDTH } from "./skins";
 import { DEFAULT_SUN_BEARING, SUN_REACH } from "./render";
+import { MAX_WALL_HEIGHT } from "./projection";
 
 const fields: FormField[] = [
   { name: "name", label: "Name", selector: { text: {} } },
@@ -1182,6 +1183,20 @@ describe("wallForm / projectForm / floorImageForm", () => {
       (f) => f.name === "thickness"
     )!;
     expect((field.selector.number as { max: number }).max).toBe(MAX_SKIN_WALL_WIDTH);
+  });
+
+  it("wall reflects a custom height in its data and patches it", () => {
+    const form = wallForm({ id: "w", x1: 0, y1: 0, x2: 1, y2: 1, height: 120 });
+    expect(form.data.height).toBe(120);
+    expect(form.toPatch({ height: 120 })).toEqual({ height: 120 });
+    expect(form.toPatch({ height: undefined })).toEqual({ height: undefined });
+  });
+
+  it("wall's height slider is capped at MAX_WALL_HEIGHT", () => {
+    const field = wallForm({ id: "w", x1: 0, y1: 0, x2: 1, y2: 1 }).fields.find(
+      (f) => f.name === "height"
+    )!;
+    expect((field.selector.number as { max: number }).max).toBe(MAX_WALL_HEIGHT);
   });
 
   it("project fields are required numbers with min 1", () => {
