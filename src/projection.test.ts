@@ -367,6 +367,12 @@ describe("transparent wall geometry", () => {
     const drawing = flatten(renderIsoSolids([chunks[1]]));
     expect((drawing.match(/class="fp-iso-shade"/g) ?? []).length).toBe(1);
   });
+  it("uses per-wall height override when specified", () => {
+    const defaultChunks = wallSolids([{ id: "wall", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8 }], [], 60);
+    const customChunks = wallSolids([{ id: "wall", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8, height: 120 }], [], 60);
+    expect(defaultChunks[0].z1).toBe(60);
+    expect(customChunks[0].z1).toBe(120);
+  });
   it("includes a screen margin in both the SVG transform and overlay coordinates", () => {
     const frame = { ...iso(), padding: 14 };
     const size = projectedCanvasSize(frame);

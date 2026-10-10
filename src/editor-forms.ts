@@ -2163,6 +2163,14 @@ export function wallForm(w: Wall): FormSpec {
           number: { min: 2, max: MAX_SKIN_WALL_WIDTH, step: 1, mode: "slider", unit_of_measurement: "px" },
         },
       },
+      {
+        name: "height",
+        label: "Height",
+        helper: "Override height for 3D view (leave empty to use default card wall height)",
+        selector: {
+          number: { min: 0, max: MAX_WALL_HEIGHT, step: 1, mode: "slider", unit_of_measurement: "px" },
+        },
+      },
       // Issue #182. A dropdown rather than a switch: a railing is one kind of
       // line that is not a wall, and open-plan dividers are the next one asked
       // about (#288).
@@ -2182,12 +2190,14 @@ export function wallForm(w: Wall): FormSpec {
       x2: Math.round(w.x2),
       y2: Math.round(w.y2),
       thickness: w.thickness ?? WALL_THICKNESS,
+      height: w.height,
       kind: w.kind ?? "wall",
     },
     // Keep the defaults out of the YAML so untouched walls stay terse.
     toPatch: (p) => {
       const out = { ...p };
       if ("thickness" in p && p.thickness === WALL_THICKNESS) out.thickness = undefined;
+      if ("height" in p && (p.height === undefined || p.height === null || typeof p.height !== "number")) out.height = undefined;
       if ("kind" in p) out.kind = p.kind === "railing" ? "railing" : undefined;
       return out;
     },
