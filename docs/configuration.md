@@ -290,6 +290,12 @@ See [Skylights](lighting.md#skylights) for what the sun does with one and
 | `locked`      | boolean                                | `false`      | Pinned in place in the editor: it still selects, edits and deletes, but never moves, and it yields the click to anything unlocked on top of it. The editor writes it; the rendered card ignores it. See [Locking elements in place](../README.md#locking-elements-in-place). |
 | `hide*` / `hideBadge*` / `hideState*` | — | — | Twenty-four keys that hide the device, its badge or its label from a second entity's state. Documented in full under [Advanced Hiding Logic](behavior.md#advanced-hiding-logic); the editor groups them under **Visibility**. |
 
+A light's `brightness` reading uses a rounded percentage in a value badge,
+matching the label (`128` becomes `50%`). An explicitly selected brightness
+reading falls back to the icon when absent or null. Automatic selection may
+choose another numeric reading. A `brightness` attribute from another entity
+domain stays raw.
+
 ### Cast light
 
 Set `glow: true` on a light and it pools its own color and brightness onto the plan,

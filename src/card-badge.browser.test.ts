@@ -112,6 +112,91 @@ describe("badge contents on the rendered card", () => {
   });
 });
 
+describe("a light's brightness badge reads percent, on the card too (issue #359)", () => {
+  // The issue's exact device: a light whose badge reads its brightness
+  // reading, with no label shown. The label path words that reading through
+  // HA's own attribute formatter as a percentage; the badge printed the raw
+  // 0-255 number instead. Here the card is mounted with the issue's config,
+  // down to the keys the reporter pasted.
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  async function mountLight(
+    state: { state: string; attributes?: Record<string, unknown> },
+    extra?: Partial<FloorItem>,
+  ) {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    host.style.height = "540px";
+    document.body.appendChild(host);
+
+    const card = document.createElement("easy-floorplan-card") as FloorplanCard;
+    card.setConfig({
+      type: "custom:easy-floorplan-card",
+      width: 1000,
+      height: 600,
+      floors: [{
+        id: "f1", name: "Floor 1", walls: [], openings: [], texts: [], furniture: [], trackers: [], areas: [],
+        items: [{
+          id: "item_27locph",
+          entity: "light.office_main_lights",
+          x: 176.86,
+          y: 141.63,
+          kind: "light",
+          showState: true,
+          size: 24,
+          readings: [{ attribute: "brightness" }],
+          badgeContent: "value",
+          display: "badge",
+          badgeEntity: 0,
+          ...extra,
+        } as unknown as FloorItem],
+      }],
+    } as FloorplanCardConfig);
+    card.hass = {
+      states: {
+        "light.office_main_lights": {
+          entity_id: "light.office_main_lights",
+          attributes: {},
+          ...state,
+        },
+      },
+      entities: {},
+      formatEntityState: (st: { state: string }) => st.state,
+    } as unknown as FloorplanCard["hass"];
+    host.appendChild(card);
+    await card.updateComplete;
+
+    const root = card.shadowRoot!;
+    return {
+      badgeValue: () => root.querySelector(".badge .badge-value")?.textContent?.trim(),
+      badgeIcon: () => root.querySelector(".badge ha-icon")?.getAttribute("icon") ?? undefined,
+    };
+  }
+
+  it("shows the dimmer as a percentage while the light is on", async () => {
+    const t = await mountLight({ state: "on", attributes: { brightness: 128 } });
+    expect(t.badgeValue()).toBe("50%");
+    expect(t.badgeIcon()).toBeUndefined();
+  });
+
+  it("keeps the full range readable: min, mid and max", async () => {
+    expect((await mountLight({ state: "on", attributes: { brightness: 1 } })).badgeValue())
+      .toBe("0%");
+    expect((await mountLight({ state: "on", attributes: { brightness: 128 } })).badgeValue())
+      .toBe("50%");
+    expect((await mountLight({ state: "on", attributes: { brightness: 255 } })).badgeValue())
+      .toBe("100%");
+  });
+
+  it.each([{}, { brightness: null }])("falls back to the icon for an off light with no numeric brightness (%j)", async (attributes) => {
+    const t = await mountLight({ state: "off", attributes });
+    expect(t.badgeValue()).toBeUndefined();
+    expect(t.badgeIcon()).toBeTruthy();
+  });
+});
+
 describe("an attribute reading is worded by HA, on the card too (issue #260)", () => {
   // A cover's position is a bare number on the state object; the "%" comes
   // from HA's own attribute formatter. The editor hands the real `hass` to the

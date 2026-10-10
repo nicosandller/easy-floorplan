@@ -2449,6 +2449,32 @@ const DOMAIN_BADGE_READING: Record<string, { attribute: string; unit: string }> 
   humidifier: { attribute: "current_humidity", unit: "%" },
 };
 
+/**
+ * Attributes the badge cannot print as the number on the wire, keyed by the
+ * domain of the entity being read. A light's `brightness` is 0-255, and HA's
+ * own attribute formatter, the one a label reads through, words it as
+ * `Math.round((value / 255) * 100)` with a `%`. The badge deliberately skips
+ * that formatter ({@link badgeValue}: display precision and full units do not
+ * fit in a circle), so it has to apply the conversion itself: the same reading
+ * must not read "50%" in a label and "128" in a badge (issue #359).
+ *
+ * Only conversions HA itself defines for the domain's attribute, nothing
+ * invented here; a `brightness` reading off any other domain stays raw.
+ */
+const DOMAIN_ATTRIBUTE_BADGE_TEXT: Record<string, Record<string, (n: number) => string>> = {
+  light: {
+    brightness: (n) => `${Math.round((n / 255) * 100)}%`,
+  },
+};
+
+/**
+ * One attribute's badge text under its own domain's conversion, or undefined
+ * when the attribute has none and the number is printed as it stands.
+ */
+function attributeBadgeText(entity: string, attribute: string, n: number): string | undefined {
+  return DOMAIN_ATTRIBUTE_BADGE_TEXT[entity.split(".")[0]]?.[attribute]?.(n);
+}
+
 /** A finite number from a state/attribute value, or undefined. Booleans and blanks are not readings. */
 function numericReading(raw: unknown): number | undefined {
   if (raw == null || typeof raw === "boolean") return undefined;
@@ -2589,14 +2615,20 @@ export function badgeReading(
   const primary = (): string | undefined => {
     const st = hass.states[item.entity as string];
     const attrs = st?.attributes as Record<string, unknown> | undefined;
-    const reading = DOMAIN_BADGE_READING[(item.entity as string).split(".")[0]];
+    const entity = item.entity as string;
+    const reading = DOMAIN_BADGE_READING[entity.split(".")[0]];
     if (item.attribute) {
       const n = numericReading(attrs?.[item.attribute]);
       // A unit only when we know it belongs to *this* attribute:
       // `unit_of_measurement` describes the state, not an arbitrary attribute,
       // so borrowing it here would label a battery percentage "°C".
-      if (n !== undefined)
+      if (n !== undefined) {
+        // A domain-worded attribute (a light's brightness) brings its own
+        // text, unit included; only the rest borrow a unit from the table.
+        const worded = attributeBadgeText(entity, item.attribute, n);
+        if (worded !== undefined) return worded;
         return compactNumber(n) + (item.attribute === reading?.attribute ? reading.unit : "");
+      }
     }
     if (reading) {
       const n = numericReading(attrs?.[reading.attribute]);
@@ -2616,7 +2648,10 @@ export function badgeReading(
     const attrs = st?.attributes as Record<string, unknown> | undefined;
     if (r.attribute) {
       const n = numericReading(attrs?.[r.attribute]);
-      return n === undefined ? undefined : compactNumber(n);
+      if (n === undefined) return undefined;
+      // Same domain wording as the configured attribute above, so a brightness
+      // reading in the pool (the issue's config) reads percent too.
+      return attributeBadgeText(entity, r.attribute, n) ?? compactNumber(n);
     }
     const n = numericReading(st?.state);
     return n === undefined ? undefined : formatReading(n, attrs?.unit_of_measurement);
