@@ -652,8 +652,9 @@ selecting a view in the editor removes the old alias.
   tops, and the canvas includes a margin for wall caps at its edges.
 - Lower **Wall height** or **Wall opacity** to reveal more of a room. Everything
   standing in the wall plane fades together, doors and shutters included, while
-  glass keeps its own tint and furniture stays solid inside the room. Height remains
-  a fixed 60 canvas units by default while we experiment with different plan sizes.
+  glass keeps its own tint and furniture stays solid inside the room. Height is
+  60 canvas units by default, and can be customized globally (`wallHeight`) or
+  overridden on individual walls (`height`).
   Zero height lays the flat plan on an isometric floor: walls, furniture and opening
   symbols drawn exactly as the 2D view draws them.
 
@@ -684,6 +685,25 @@ Very acute wall joins are bevelled to avoid long spikes; their caps can still
 overlap and show a faint darker patch when walls are translucent.
 Furniture still uses a shared height. Pin-shaped device markers and per-symbol
 heights are also follow-ups.
+
+### Wall height
+
+Individual walls can override the card's global `wallHeight` with their own `height` property
+(from `0` to `400` canvas units):
+
+```yaml
+walls:
+  - id: wall_bar
+    x1: 100
+    y1: 150
+    x2: 180
+    y2: 150
+    height: 30 # half-wall / counter
+```
+
+Select any wall in the editor to adjust the **Height** slider under wall properties.
+- **Low walls and partitions**: Setting a lower height (e.g. `25`–`35`) creates half-walls, bar counters, pony walls, or partitions that don't block the view of furniture or room interiors behind them.
+- **Opening height matching**: Doors, windows, and passages placed along a wall automatically inherit the wall's height (`height * 0.85`), keeping the frame proportionate. When a wall is taller than standard height (`60`), a wall header (lintel) is drawn above standard doors and openings.
 
 For a local preview with simulated entities and view, height, opacity and state
 controls, see [the development preview](../docker/README.md#3d-development-preview).

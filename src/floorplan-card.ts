@@ -174,6 +174,7 @@ import {
   planProjectionTransform,
   elevationShift,
   wallSolids,
+  openingWallHeight,
   furnitureSolid,
   renderIsoSolids,
   FURNITURE_HEIGHT_FRACTION,
@@ -989,7 +990,8 @@ export class FloorplanCard extends LitElement {
         const wSolids = wallSolids(mappedWalls, mappedOpenings, outdoorWallHeight, false);
         solids.push(...wSolids.map((s) => shiftIsoSolidZ(s, zOffset)));
         for (const o of lvlOpenings) {
-          const oSolids = openingSolids(o, this._travelling(o, this._openingStyle(o, renderHass)), map, outdoorWallHeight);
+          const h = openingWallHeight(o, lvlWalls, outdoorWallHeight);
+          const oSolids = openingSolids(o, this._travelling(o, this._openingStyle(o, renderHass)), map, h);
           solids.push(...oSolids.map((s) => shiftIsoSolidZ(s, zOffset)));
         }
         const lvlRoofs = lvlFloors.flatMap((f) => getFloorRoofs(f));
@@ -1011,7 +1013,8 @@ export class FloorplanCard extends LitElement {
       });
       solids.push(...wallSolids(mappedOwnWalls, mappedOwnOpenings, outdoorWallHeight, false));
       for (const o of ownOpenings) {
-        solids.push(...openingSolids(o, this._travelling(o, this._openingStyle(o, renderHass)), map, outdoorWallHeight));
+        const h = openingWallHeight(o, ownWalls, outdoorWallHeight);
+        solids.push(...openingSolids(o, this._travelling(o, this._openingStyle(o, renderHass)), map, h));
       }
       const activeRoofs = getFloorRoofs(active);
       solids.push(...roofSolids(unzoomedRoofs(activeRoofs, active.areas), map, outdoorWallHeight));
@@ -1046,7 +1049,8 @@ export class FloorplanCard extends LitElement {
       });
       solids.push(...wallSolids(walls, openings, frame.wallHeight, false));
       for (const o of effectiveOpenings) {
-        solids.push(...openingSolids(o, this._travelling(o, this._openingStyle(o, renderHass)), map, frame.wallHeight));
+        const h = openingWallHeight(o, standingWalls, frame.wallHeight);
+        solids.push(...openingSolids(o, this._travelling(o, this._openingStyle(o, renderHass)), map, h));
       }
     }
 

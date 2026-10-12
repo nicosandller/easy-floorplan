@@ -10,7 +10,7 @@ import {
 import {
   elevationShift, furnitureSolid, FURNITURE_HEIGHT_FRACTION, OUTDOOR_WALL_HEIGHT_MULTIPLIER,
   normalizeProjection, normalizeWallHeight, planProjectionTransform, projectPlanPoint,
-  projectedCanvasSize, renderIsoSolids, wallSolids, type DisplayFrame, type IsoSolid,
+  projectedCanvasSize, renderIsoSolids, wallSolids, openingWallHeight, type DisplayFrame, type IsoSolid,
 } from "./projection";
 import { openingSolids } from "./projection-openings";
 import { LINE_INK, solidEdgeRenderer } from "./line-art";
@@ -55,7 +55,10 @@ export function createLineArtSvg(c: FloorplanCardConfig, floor: Floor, rot: Plan
       return { ...w, x1: a.x, y1: a.y, x2: b.x, y2: b.y,
         thickness: wallThickness(w.thickness) * (isRailing(w) ? RAILING_WEIGHT : 1) };
     }), floor.openings.map((o) => ({ ...o, ...map(o.x, o.y), angle: o.angle + rot })), frame.wallHeight, false));
-    for (const o of floor.openings) solids.push(...openingSolids(o, openingStyle(o), map, frame.wallHeight));
+    for (const o of floor.openings) {
+      const h = openingWallHeight(o, floor.walls, frame.wallHeight);
+      solids.push(...openingSolids(o, openingStyle(o), map, h));
+    }
     const h = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(h, rot);
     for (const f of floor.furniture) solids.push(furnitureSolid(f, map, h, PAPER,

@@ -72,6 +72,11 @@ export interface Wall {
    */
   thickness?: number;
   /**
+   * Per-wall height override in canvas units (0..MAX_WALL_HEIGHT).
+   * When unset, the wall defaults to the card's overall `wallHeight` configuration.
+   */
+  height?: number;
+  /**
    * What the line stands for (issue #182). Unset is a full-height `wall`.
    *
    * A `railing` is the low edge of a balcony, terrace or gallery: it is drawn

@@ -18,6 +18,8 @@ import {
   elevate,
   elevationShift,
   wallSolids,
+  openingWall,
+  openingWallHeight,
   furnitureSolid,
   solidDepth,
   roofSolids,
@@ -292,6 +294,45 @@ describe("wallSolids", () => {
   });
 });
 
+describe("openingWall and openingWallHeight", () => {
+  const wallA = { id: "w_a", x1: 0, y1: 0, x2: 200, y2: 0, thickness: 8, height: 120 };
+  const wallB = { id: "w_b", x1: 200, y1: 0, x2: 200, y2: 200, thickness: 8, height: 40 };
+  const railing = { id: "w_rail", x1: 0, y1: 200, x2: 200, y2: 200, thickness: 4, kind: "railing" as const };
+  const plainWall = { id: "w_plain", x1: 0, y1: 0, x2: 0, y2: 200, thickness: 8 };
+
+  it("finds the wall an opening is placed on", () => {
+    const doorOnA = { x: 100, y: 0, length: 40, angle: 0, type: "door" as const };
+    const doorOnB = { x: 200, y: 100, length: 40, angle: 90, type: "door" as const };
+    const offWall = { x: 50, y: 50, length: 40, angle: 0, type: "door" as const };
+    const skylight = { x: 100, y: 0, length: 40, angle: 0, type: "skylight" as const };
+
+    expect(openingWall(doorOnA, [wallA, wallB])?.id).toBe("w_a");
+    expect(openingWall(doorOnB, [wallA, wallB])?.id).toBe("w_b");
+    expect(openingWall(offWall, [wallA, wallB])).toBeUndefined();
+    expect(openingWall(skylight, [wallA, wallB])).toBeUndefined();
+  });
+
+  it("calculates opening height by inheriting from the underlying wall", () => {
+    const doorOnA = { x: 100, y: 0, length: 40, angle: 0, type: "door" as const };
+    const doorOnB = { x: 200, y: 100, length: 40, angle: 90, type: "door" as const };
+    const passageOnRail = { x: 100, y: 200, length: 40, angle: 0, type: "passage" as const };
+    const doorOnPlain = { x: 0, y: 100, length: 40, angle: 90, type: "door" as const };
+    const floatingDoor = { x: 50, y: 50, length: 40, angle: 0, type: "door" as const };
+
+    const walls = [wallA, wallB, railing, plainWall];
+    // Inherits wallA's height of 120
+    expect(openingWallHeight(doorOnA, walls, 60)).toBe(120);
+    // Inherits wallB's height of 40
+    expect(openingWallHeight(doorOnB, walls, 60)).toBe(40);
+    // Inherits railing's fraction (60 * 0.5 = 30)
+    expect(openingWallHeight(passageOnRail, walls, 60)).toBe(30);
+    // Falls back to card's defaultWallHeight for plain wall with no height override
+    expect(openingWallHeight(doorOnPlain, walls, 60)).toBe(60);
+    // Falls back to defaultWallHeight when not on any wall
+    expect(openingWallHeight(floatingDoor, walls, 60)).toBe(60);
+  });
+});
+
 describe("furnitureSolid", () => {
   const same = (x: number, y: number) => ({ x, y });
   it("stands the piece's rectangle up about its centre", () => {
@@ -400,6 +441,12 @@ describe("transparent wall geometry", () => {
     // A middle chunk only presents its long near face and top, never a rib.
     const drawing = flatten(renderIsoSolids([chunks[1]]));
     expect((drawing.match(/class="fp-iso-shade"/g) ?? []).length).toBe(1);
+  });
+  it("uses per-wall height override when specified", () => {
+    const defaultChunks = wallSolids([{ id: "wall", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8 }], [], 60);
+    const customChunks = wallSolids([{ id: "wall", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8, height: 120 }], [], 60);
+    expect(defaultChunks[0].z1).toBe(60);
+    expect(customChunks[0].z1).toBe(120);
   });
   it("includes a screen margin in both the SVG transform and overlay coordinates", () => {
     const frame = { ...iso(), padding: 14 };

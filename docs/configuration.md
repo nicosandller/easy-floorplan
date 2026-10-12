@@ -44,7 +44,7 @@ quotes when saving while retaining the required quotes around `'y'`.
 | `appearance` | string | `normal` | `line-art` draws crisp outlines on white while keeping device states and actions live. See [Live appearance and view controls](appearance.md#live-appearance-and-view-controls). |
 | `showViewControls` | boolean | `false` (enabled for new plans) | Show 2D/3D, Normal/Line art, quarter-turn rotation and reset controls below the plan. Viewer choices stay local to this card. |
 | `showExport` | boolean | `false` | Offer an optional SVG download in the view controls, or an **Export SVG** button when those controls are hidden. Downloads static line art of the active floor in the current view and rotation. See [SVG export](appearance.md#svg-export). |
-| `wallHeight` | number | `60` | Standing wall height in canvas units, clamped to 0–400. Ignored in 2D. |
+| `wallHeight` | number | `60` | Standing wall height in canvas units, clamped to 0–400. Ignored in 2D. Can be overridden per wall via `height`. |
 | `wallOpacity` | number | `1` | Standing wall opacity, clamped to 0–1. Furniture and opening panels keep their own paint. Ignored in 2D. |
 | `showDeadSpaces` | boolean | `false` | Hatch every space the walls seal off that no door or window reaches, worked out from the walls and openings themselves. See [Dead spaces](behavior.md#dead-spaces). |
 | `sunDimming` | boolean | `false` | Dim through dusk, brighten through dawn, from the HA instance's sun. See [Follow the sun](lighting.md#follow-the-sun). |
@@ -191,12 +191,18 @@ device still needs confirmation.
 
 ## Wall
 
-`{ id, x1, y1, x2, y2, thickness?, kind?, locked? }` — endpoints in virtual units.
+`{ id, x1, y1, x2, y2, thickness?, height?, kind?, locked? }` — endpoints in virtual units.
 
 **`thickness`** is the stroke width in virtual units, set per wall by the **Thickness**
 slider in the editor. It defaults to `8` and is capped at `10`: a doorway is cut through
 the wall layer with a mask sized off the shared default, not per wall, so a wall drawn
 wider than the cap would not be fully cleared by its own door or window.
+
+**`height`** is the standing wall height in canvas units (`0..400`) in 3D isometric view
+(`view: 3d` / `projection: iso`). When unset, the wall defaults to the card's overall
+`wallHeight` setting (default `60`). Openings (doors, windows, passages) placed along the
+wall automatically scale to match its height. Editor: **Height**. See
+[Wall height](appearance.md#wall-height).
 
 **`kind`** is `wall` (the default, never written) or `railing` — the low edge of a
 balcony, terrace or gallery. A railing is drawn at 40% of the wall weight, lamp light and
