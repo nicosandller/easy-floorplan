@@ -243,4 +243,45 @@ describe("spatial painter order (#321)", () => {
     expect(sorted[0]!.id).toBe("slab_curte");
     expect(sorted[1]!.id).toBe("roof_second_floor");
   });
+
+  it("orders ground slab over subterranean basement walls even when basement wall depth exceeds slab depth", () => {
+    // A ground slab (like Curte) can have its centroid in the middle of the property,
+    // while a subterranean basement wall chunk in the south has a higher depth value.
+    // The ground slab sits at ground level (z1 = 0) while the basement wall is underground (z1 <= 0),
+    // so the ground slab must occlude the subterranean wall (slab sorts after wall in painter's order).
+    const groundSlab: IsoSolid = {
+      kind: "roof",
+      id: "slab_curte",
+      isSlab: true,
+      base: [
+        { x: 200, y: 200 },
+        { x: 1500, y: 200 },
+        { x: 1500, y: 1500 },
+        { x: 200, y: 1500 },
+      ],
+      z0: -6,
+      z1: 0,
+      color: "#44aa44",
+    };
+
+    const subterraneanWall: IsoSolid = {
+      kind: "wall",
+      id: "wall_basement_south",
+      base: [
+        { x: 1000, y: 1000 },
+        { x: 1050, y: 1000 },
+        { x: 1050, y: 1010 },
+        { x: 1000, y: 1010 },
+      ],
+      z0: -150,
+      z1: 0,
+      color: "#999999",
+    };
+
+    const sorted = sortIsoSolids([groundSlab, subterraneanWall]);
+    // Painter's order: subterranean wall is drawn first (background), ground slab is drawn on top (foreground)
+    expect(sorted[0]!.id).toBe("wall_basement_south");
+    expect(sorted[1]!.id).toBe("slab_curte");
+  });
 });
+

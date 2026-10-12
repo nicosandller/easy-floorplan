@@ -368,7 +368,7 @@ export function wallSolids(
         });
       }
       if (hasHeader) {
-        const openingTop = s.type === "window" ? height * GLASS_FRACTION : Math.min(height, DEFAULT_WALL_HEIGHT);
+        const openingTop = height * GLASS_FRACTION;
         if (height > openingTop + 1e-4) {
           pieces(s.s0, s.s1, height, kind, openingTop);
         }

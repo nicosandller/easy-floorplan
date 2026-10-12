@@ -188,10 +188,13 @@ export function sortIsoSolids(solids: readonly IsoSolid[]): IsoSolid[] {
         direction = a.depth < b.depth - EPS ? 1 : a.depth > b.depth + EPS ? -1 : a.i < b.i ? 1 : -1;
       }
     } else if (aIsSlab !== bIsSlab) {
-      // Ground slabs are beneath elevated structures (walls, roofs, furniture) and must never occlude them.
       const [slab, other] = aIsSlab ? [a, b] : [b, a];
-      if (other.s.z1 > slab.s.z1 + EPS && other.s.z0 >= slab.s.z0 - EPS) {
+      if (other.s.z1 > slab.s.z1 + EPS) {
+        // Elevated structures standing above the ground slab occlude the ground slab.
         direction = aIsSlab ? 1 : -1;
+      } else {
+        // Subterranean structures beneath or flush with the ground slab are occluded by the ground slab above them.
+        direction = aIsSlab ? -1 : 1;
       }
     }
 

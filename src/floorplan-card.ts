@@ -214,10 +214,7 @@ import { renderAmbientDaylightLayer } from "./ambient-daylight-integration";
 import {
   rectAreaSideWalls,
   isSameWallSegment,
-  filterExternalIndoorWalls,
-  filterExternalOpenings,
   isAreaCoveredByUpper,
-  filterLowerWallsByUpperCoverage,
 } from "./editor-geometry";
 import { ReplayControllerImpl } from "./replay-history/replay-controller";
 import { createReplayPanelProps, renderReplayPanel } from "./replay-history/replay-panel";
@@ -902,9 +899,6 @@ export class FloorplanCard extends LitElement {
       const hassSource = renderHass ?? this.hass;
       const baseLevel = resolveFloorLevel(active, floors, hassSource);
       const indoorFloors = floors.filter((f) => !f.isOutdoor);
-      const hasLowerLevels = indoorFloors.some(
-        (f) => resolveFloorLevel(f, floors, hassSource) < baseLevel
-      );
       const levelMap = new Map<number, Floor[]>();
       for (const f of indoorFloors) {
         const lvl = resolveFloorLevel(f, floors, hassSource);
@@ -938,69 +932,63 @@ export class FloorplanCard extends LitElement {
         const lvlAreas = lvlFloors.flatMap((f) => f.areas);
         const lvlOpenings = lvlFloors.flatMap((f) => f.openings);
 
-        const extWalls = isLower
-          ? filterLowerWallsByUpperCoverage(lvlWalls, upperCoveragePolygons, 8, rot)
-          : filterExternalIndoorWalls(lvlWalls, lvlAreas);
-        const extOpenings = filterExternalOpenings(lvlOpenings, extWalls);
         const visibleAreas = isLower
           ? lvlAreas.filter((a) => !isAreaCoveredByUpper(a, upperCoveragePolygons))
           : lvlAreas;
 
-        if (zOffset !== 0 || hasLowerLevels) {
-          if (visibleAreas.length > 0) {
-            for (const a of visibleAreas) {
-              if (!a.points || a.points.length < 3) continue;
-              const mappedPts = a.points.map((p) => map(p.x, p.y));
-              const tone = areaColor(a, a.entity ? renderHass?.states[a.entity]?.state : undefined) ||
-                cssColorOr(a.color, outdoorZoneDefaultColor(a.zoneKind) ?? "#d6d6d6");
-              solids.push(shiftIsoSolidZ({
-                kind: "roof",
-                id: `slab_${a.id}`,
-                isSlab: true,
-                base: mappedPts,
-                z0: -6,
-                z1: 0,
-                color: tone,
-                opacity: a.opacity !== undefined ? cssNumber(a.opacity, 1) : 1,
-              }, zOffset));
+        if (visibleAreas.length > 0) {
+          for (const a of visibleAreas) {
+            if (!a.points || a.points.length < 3) continue;
+            const mappedPts = a.points.map((p) => map(p.x, p.y));
+            const tone = areaColor(a, a.entity ? renderHass?.states[a.entity]?.state : undefined) ||
+              cssColorOr(a.color, outdoorZoneDefaultColor(a.zoneKind) ?? "#d6d6d6");
+            solids.push(shiftIsoSolidZ({
+              kind: "roof",
+              id: `slab_${a.id}`,
+              isSlab: true,
+              base: mappedPts,
+              z0: -6,
+              z1: 0,
+              color: tone,
+              opacity: a.opacity !== undefined ? cssNumber(a.opacity, 1) : 1,
+            }, zOffset));
+          }
+        } else if (lvlWalls.length >= 3) {
+          const rings = deadSpacesCached(lvlWalls, []);
+          for (let i = 0; i < rings.length; i++) {
+            const ring = rings[i]!;
+            if (ring.length < 3) continue;
+            const centroid = polygonCentroid(ring);
+            if (isLower && centroid && upperCoveragePolygons.some((poly) => pointInPolygon(poly, centroid.x, centroid.y))) {
+              continue;
             }
-          } else if (lvlWalls.length >= 3) {
-            const rings = deadSpacesCached(lvlWalls, []);
-            for (let i = 0; i < rings.length; i++) {
-              const ring = rings[i]!;
-              if (ring.length < 3) continue;
-              const centroid = polygonCentroid(ring);
-              if (isLower && centroid && upperCoveragePolygons.some((poly) => pointInPolygon(poly, centroid.x, centroid.y))) {
-                continue;
-              }
-              const mappedPts = ring.map((p) => map(p.x, p.y));
-              solids.push(shiftIsoSolidZ({
-                kind: "roof",
-                id: `slab_ring_${lvl}_${i}`,
-                isSlab: true,
-                base: mappedPts,
-                z0: -6,
-                z1: 0,
-                color: "#d6d6d6",
-              }, zOffset));
-            }
+            const mappedPts = ring.map((p) => map(p.x, p.y));
+            solids.push(shiftIsoSolidZ({
+              kind: "roof",
+              id: `slab_ring_${lvl}_${i}`,
+              isSlab: true,
+              base: mappedPts,
+              z0: -6,
+              z1: 0,
+              color: "#d6d6d6",
+            }, zOffset));
           }
         }
 
-        const mappedWalls = extWalls.map((w) => {
+        const mappedWalls = lvlWalls.map((w) => {
           const a = map(w.x1, w.y1);
           const b = map(w.x2, w.y2);
           return { id: w.id, kind: w.kind, height: w.height, x1: a.x, y1: a.y, x2: b.x, y2: b.y,
             thickness: wallThickness(w.thickness) * (isRailing(w) ? RAILING_WEIGHT : 1) };
         });
-        const mappedOpenings = extOpenings.map((o) => {
+        const mappedOpenings = lvlOpenings.map((o) => {
           const p = map(o.x, o.y);
           return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
         });
 
         const wSolids = wallSolids(mappedWalls, mappedOpenings, outdoorWallHeight, false);
         solids.push(...wSolids.map((s) => shiftIsoSolidZ(s, zOffset)));
-        for (const o of extOpenings) {
+        for (const o of lvlOpenings) {
           const oSolids = openingSolids(o, this._travelling(o, this._openingStyle(o, renderHass)), map, outdoorWallHeight);
           solids.push(...oSolids.map((s) => shiftIsoSolidZ(s, zOffset)));
         }
@@ -1016,7 +1004,7 @@ export class FloorplanCard extends LitElement {
         return { id: w.id, kind: w.kind, height: w.height, x1: a.x, y1: a.y, x2: b.x, y2: b.y,
           thickness: wallThickness(w.thickness) * (isRailing(w) ? RAILING_WEIGHT : 1) };
       });
-      const ownOpenings = filterExternalOpenings(active.openings, ownWalls);
+      const ownOpenings = active.openings;
       const mappedOwnOpenings = ownOpenings.map((o) => {
         const p = map(o.x, o.y);
         return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
@@ -1722,25 +1710,17 @@ export class FloorplanCard extends LitElement {
       matchingIndoorFloors = getFloors(c).filter((f) => !f.isOutdoor);
     }
     const indoorWalls = matchingIndoorFloors.flatMap((f) => f.walls);
-    const indoorAreas = matchingIndoorFloors.flatMap((f) => f.areas);
-    const indoorExternalWalls = active.isOutdoor
-      ? filterExternalIndoorWalls(indoorWalls, indoorAreas)
-      : indoorWalls;
     const indoorOpenings = matchingIndoorFloors.flatMap((f) => f.openings);
-    const indoorExternalOpenings = active.isOutdoor
-      ? filterExternalOpenings(indoorOpenings, indoorExternalWalls)
-      : indoorOpenings;
-
     const ownWalls = active.isOutdoor
-      ? active.walls.filter((w) => !indoorExternalWalls.some((iw) => isSameWallSegment(w, iw)))
+      ? active.walls.filter((w) => !indoorWalls.some((iw) => isSameWallSegment(w, iw)))
       : active.walls;
 
     const effectiveOpenings = active.isOutdoor
-      ? [...active.openings.filter((o) => !indoorExternalOpenings.some((io) => io.id === o.id)), ...indoorExternalOpenings]
+      ? [...active.openings.filter((o) => !indoorOpenings.some((io) => io.id === o.id)), ...indoorOpenings]
       : [...active.openings, ...indoorOpenings];
 
     const generatedRoomWalls = active.areas.flatMap((a) => rectAreaSideWalls(a.id, a.points, a.sideWalls ?? {}));
-    const roomWallSegments = [...ownWalls, ...(active.isOutdoor ? indoorExternalWalls : indoorWalls), ...generatedRoomWalls];
+    const roomWallSegments = [...ownWalls, ...indoorWalls, ...generatedRoomWalls];
     // In 3D a divider stays a line on the floor: it marks where one room ends,
     // not a wall, so it is the one segment that does not stand up.
     const standingWallSegments = standing ? roomWallSegments.filter((w) => !w.divider) : [];

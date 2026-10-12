@@ -3,12 +3,180 @@ width: 2000
 height: 1500
 grid: 20
 overlayScale: fixed
-title: Basement
+title: 3D Stacked House
 view: 3d
+defaultFloor: floor_6dy5nao
 grid_options:
   rows: auto
   columns: full
 floors:
+  - id: floor_eflic7c
+    name: 3rd
+    walls:
+      - id: wall_kytp2gx
+        x1: 420
+        y1: 220
+        x2: 420
+        y2: 1120
+      - id: wall_4r7ugr6
+        x1: 420
+        y1: 1120
+        x2: 1100
+        y2: 1120
+      - id: wall_a514o3l
+        x1: 420
+        y1: 220
+        x2: 1100
+        y2: 220
+      - id: wall_6x2dkym
+        x1: 660
+        y1: 960
+        x2: 660
+        y2: 1120
+      - id: wall_x2jhg7r
+        x1: 580
+        y1: 960
+        x2: 660
+        y2: 960
+      - id: wall_uzo0sob
+        x1: 660
+        y1: 960
+        x2: 1100
+        y2: 960
+      - id: wall_nfnvsth
+        x1: 500
+        y1: 960
+        x2: 580
+        y2: 960
+      - id: wall_e5oisfc
+        x1: 500
+        y1: 960
+        x2: 500
+        y2: 1040
+      - id: wall_plivwc9
+        x1: 580
+        y1: 960
+        x2: 580
+        y2: 1040
+      - id: wall_fjrlalf
+        x1: 580
+        y1: 1040
+        x2: 500
+        y2: 1040
+      - id: wall_xzfgmqu
+        x1: 1100
+        y1: 1120
+        x2: 1100
+        y2: 220
+    openings:
+      - id: door_z5o2m2t
+        type: door
+        x: 700
+        'y': 960
+        length: 60
+        angle: 0
+      - id: door_ltdgr11
+        type: door
+        x: 1100
+        'y': 900
+        length: 60
+        angle: -90
+      - id: window_f558n1e
+        type: window
+        x: 878.7003533138403
+        'y': 1120
+        length: 120
+        angle: 0
+      - id: window_a9c6mtq
+        type: window
+        x: 1100
+        'y': 539.9668109061884
+        length: 360
+        angle: -90
+      - id: window_171j23u
+        type: window
+        x: 879.2858856756625
+        'y': 220
+        length: 120
+        angle: 0
+      - id: window_0ns20un
+        type: window
+        x: 620.0079547317212
+        'y': 220
+        length: 120
+        angle: 0
+      - id: window_fkger6o
+        type: window
+        x: 420
+        'y': 510.9112296769315
+        length: 140
+        angle: 90
+      - id: window_h3f36gx
+        type: window
+        x: 420
+        'y': 792.1886947023484
+        length: 140
+        angle: 90
+      - id: passage_o2y1aok
+        type: passage
+        x: 1100
+        'y': 280
+        length: 60
+        angle: -90
+    items: []
+    texts: []
+    furniture:
+      - id: furn_wox65j6
+        type: stairs
+        x: 460.4577917815413
+        'y': 1034.882241734235
+        w: 60
+        h: 160
+        angle: 0
+        goToFloor:
+          floor: floor_i5t9saa
+    trackers: []
+    areas:
+      - id: area_bmrswri
+        points:
+          - x: 1100
+            'y': 220
+          - x: 1320
+            'y': 220
+          - x: 1320
+            'y': 1120
+          - x: 1100
+            'y': 1120
+        showName: true
+        name: Terrace
+    roofs:
+      - id: roof_9ufmpxx
+        type: gable
+        points:
+          - x: 420
+            'y': 220
+          - x: 1100
+            'y': 220
+          - x: 1100
+            'y': 1120
+          - x: 420
+            'y': 1120
+        height: 200
+        ridge: vertical
+      - id: roof_a26wodi
+        type: gable
+        points:
+          - x: 760
+            'y': 520
+          - x: 1100
+            'y': 520
+          - x: 1100
+            'y': 820
+          - x: 760
+            'y': 820
+        height: 200
+        ridge: horizontal
+    haFloor: '3'
   - id: floor_i5t9saa
     name: 2nd
     walls:
@@ -318,7 +486,20 @@ floors:
         showName: true
         name: BedroomR
     haFloor: '2'
-    roofs: []
+    roofs:
+      - id: roof_otrax7z
+        type: shed
+        points:
+          - x: 1220
+            'y': 220
+          - x: 1320
+            'y': 220
+          - x: 1320
+            'y': 1120
+          - x: 1220
+            'y': 1120
+        height: 36
+        highSide: left
   - id: floor_98eiwsv
     name: 1st
     walls:
@@ -662,7 +843,7 @@ floors:
     haFloor: '1'
     roofs:
       - id: roof_xda67z4
-        type: shed
+        type: flat
         points:
           - x: 1320
             'y': 220
@@ -672,8 +853,7 @@ floors:
             'y': 540
           - x: 1320
             'y': 540
-        height: 36
-        highSide: left
+        height: 8
   - id: floor_main
     name: Basement
     walls:
@@ -1130,6 +1310,7 @@ floors:
         showName: false
         name: Gradina
         color: '#06f202'
+        opacity: 1
       - id: area_siiwh2x
         points:
           - x: 420
@@ -1142,6 +1323,7 @@ floors:
             'y': 220
         showName: true
         name: Casa
+        opacity: 1
       - id: area_wlqgwqj
         points:
           - x: 1800
@@ -1164,7 +1346,7 @@ floors:
     isOutdoor: true
     roofs:
       - id: roof_wz0ojb9
-        type: shed
+        type: hip
         points:
           - x: 1580
             'y': 1260
@@ -1175,168 +1357,6 @@ floors:
           - x: 1580
             'y': 1500
         height: 36
-        highSide: right
-  - id: floor_eflic7c
-    name: 3rd
-    walls:
-      - id: wall_kytp2gx
-        x1: 420
-        y1: 220
-        x2: 420
-        y2: 1120
-      - id: wall_4r7ugr6
-        x1: 420
-        y1: 1120
-        x2: 1100
-        y2: 1120
-      - id: wall_a514o3l
-        x1: 420
-        y1: 220
-        x2: 1100
-        y2: 220
-      - id: wall_6x2dkym
-        x1: 660
-        y1: 960
-        x2: 660
-        y2: 1120
-      - id: wall_x2jhg7r
-        x1: 580
-        y1: 960
-        x2: 660
-        y2: 960
-      - id: wall_uzo0sob
-        x1: 660
-        y1: 960
-        x2: 1100
-        y2: 960
-      - id: wall_nfnvsth
-        x1: 500
-        y1: 960
-        x2: 580
-        y2: 960
-      - id: wall_e5oisfc
-        x1: 500
-        y1: 960
-        x2: 500
-        y2: 1040
-      - id: wall_plivwc9
-        x1: 580
-        y1: 960
-        x2: 580
-        y2: 1040
-      - id: wall_fjrlalf
-        x1: 580
-        y1: 1040
-        x2: 500
-        y2: 1040
-      - id: wall_xzfgmqu
-        x1: 1100
-        y1: 1120
-        x2: 1100
-        y2: 220
-    openings:
-      - id: door_z5o2m2t
-        type: door
-        x: 700
-        'y': 960
-        length: 60
-        angle: 0
-      - id: door_ltdgr11
-        type: door
-        x: 1100
-        'y': 900
-        length: 60
-        angle: -90
-      - id: window_f558n1e
-        type: window
-        x: 878.7003533138403
-        'y': 1120
-        length: 120
-        angle: 0
-      - id: window_a9c6mtq
-        type: window
-        x: 1100
-        'y': 539.9668109061884
-        length: 360
-        angle: -90
-      - id: window_171j23u
-        type: window
-        x: 879.2858856756625
-        'y': 220
-        length: 120
-        angle: 0
-      - id: window_0ns20un
-        type: window
-        x: 620.0079547317212
-        'y': 220
-        length: 120
-        angle: 0
-      - id: window_fkger6o
-        type: window
-        x: 420
-        'y': 510.9112296769315
-        length: 140
-        angle: 90
-      - id: window_h3f36gx
-        type: window
-        x: 420
-        'y': 792.1886947023484
-        length: 140
-        angle: 90
-    items: []
-    texts: []
-    furniture:
-      - id: furn_wox65j6
-        type: stairs
-        x: 460.4577917815413
-        'y': 1034.882241734235
-        w: 60
-        h: 160
-        angle: 0
-        goToFloor:
-          floor: floor_i5t9saa
-    trackers: []
-    areas:
-      - id: area_bmrswri
-        points:
-          - x: 1100
-            'y': 220
-          - x: 1320
-            'y': 220
-          - x: 1320
-            'y': 1120
-          - x: 1100
-            'y': 1120
-        showName: true
-        name: Terrace
-    roofs:
-      - id: roof_9ufmpxx
-        type: gable
-        points:
-          - x: 420
-            'y': 220
-          - x: 1100
-            'y': 220
-          - x: 1100
-            'y': 1120
-          - x: 420
-            'y': 1120
-        height: 36
-        ridge: vertical
-      - id: roof_a26wodi
-        type: gable
-        points:
-          - x: 760
-            'y': 520
-          - x: 1100
-            'y': 520
-          - x: 1100
-            'y': 820
-          - x: 760
-            'y': 820
-        height: 36
-        ridge: horizontal
-    haFloor: '3'
 appearance: normal
 showViewControls: true
 showExport: true

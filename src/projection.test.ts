@@ -264,7 +264,7 @@ describe("wallSolids", () => {
     const door = { x: 100, y: 0, length: 40, angle: 0, type: "door" as const };
     const fullHeight = 150;
     const solids = wallSolids([wall], [door], fullHeight);
-    const headers = solids.filter((s) => s.kind === "wall" && s.z0 === DEFAULT_WALL_HEIGHT && s.z1 === fullHeight);
+    const headers = solids.filter((s) => s.kind === "wall" && s.z0 === fullHeight * GLASS_FRACTION && s.z1 === fullHeight);
     expect(headers.length).toBeGreaterThan(0);
     expect(headers[0].base.some((p) => p.x >= 80 && p.x <= 120)).toBe(true);
 
