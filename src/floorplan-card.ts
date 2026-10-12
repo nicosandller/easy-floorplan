@@ -14,6 +14,8 @@ import type {
   OverlayScale,
   RenderHass,
   Wall,
+  Roof,
+  AreaPoint,
 } from "./types";
 import { buildRenderHass } from "./replay-history/render-state-service";
 import "./replay-history/history-timeline";
@@ -36,6 +38,8 @@ import {
   PRESS_IN_MS,
   PRESS_OUT_MS,
   getFloors,
+  getFloorRoofs,
+  resolveFloorLevel,
   trackerPresenceDetected,
   newPlanConfig,
   FURNITURE_COLOR,
@@ -118,6 +122,8 @@ import {
   normalizeOverlayMinWidth,
   overlayLength,
   renderSunlight,
+  renderOutdoorSunlight,
+  outdoorZoneDefaultColor,
   cloudCover,
   cloudCoverEntityOf,
   sunThroughCloud,
@@ -153,6 +159,8 @@ import {
   IDENTITY_ZOOM,
   wallThickness,
   RAILING_WEIGHT,
+  polygonCentroid,
+  pointInPolygon,
   type PlanRotation,
   type OpeningStyle,
 } from "./render";
@@ -169,7 +177,11 @@ import {
   furnitureSolid,
   renderIsoSolids,
   FURNITURE_HEIGHT_FRACTION,
+  OUTDOOR_WALL_HEIGHT_MULTIPLIER,
+  shiftIsoSolidZ,
+  roofSolids,
   type DisplayFrame,
+  type IsoSolid,
 } from "./projection";
 import { openingSolids } from "./projection-openings";
 import { downloadLineArtSvg } from "./line-art-export";
@@ -199,7 +211,14 @@ import {
 } from "./actions";
 import { actionHandler } from "./action-handler";
 import { renderAmbientDaylightLayer } from "./ambient-daylight-integration";
-import { rectAreaSideWalls } from "./editor-geometry";
+import {
+  rectAreaSideWalls,
+  isSameWallSegment,
+  filterExternalIndoorWalls,
+  filterExternalOpenings,
+  isAreaCoveredByUpper,
+  filterLowerWallsByUpperCoverage,
+} from "./editor-geometry";
 import { ReplayControllerImpl } from "./replay-history/replay-controller";
 import { createReplayPanelProps, renderReplayPanel } from "./replay-history/replay-panel";
 
@@ -707,13 +726,31 @@ export class FloorplanCard extends LitElement {
    * framing all come from this one description, so the layers cannot drift
    * apart.
    */
-  private _frame(c: FloorplanCardConfig, rot: PlanRotation): DisplayFrame {
+  private _frame(c: FloorplanCardConfig, rot: PlanRotation, activeFloor?: Floor, renderHass?: RenderHass): DisplayFrame {
+    const active = activeFloor ?? this._activeFloor(c);
     const d = rotatedCanvasSize(cssNumber(c.width, DEFAULT_WIDTH), cssNumber(c.height, DEFAULT_HEIGHT), rot);
+    const baseWallHeight = normalizeWallHeight(c.wallHeight);
+    let wallHeight = baseWallHeight;
+    let lowerDepth = 0;
+    if (active?.isOutdoor) {
+      const floors = getFloors(c);
+      const indoorFloors = floors.filter((f) => !f.isOutdoor);
+      const hassSource = renderHass ?? this.hass;
+      const baseLevel = resolveFloorLevel(active, floors, hassSource);
+      const levels = indoorFloors.map((f) => resolveFloorLevel(f, floors, hassSource));
+      const maxLevel = levels.length ? Math.max(...levels) : baseLevel;
+      const minLevel = levels.length ? Math.min(...levels) : baseLevel;
+      const upperLevels = Math.max(0, maxLevel - baseLevel);
+      const lowerLevels = Math.max(0, baseLevel - minLevel);
+      wallHeight = baseWallHeight * OUTDOOR_WALL_HEIGHT_MULTIPLIER * (upperLevels + 1);
+      lowerDepth = baseWallHeight * OUTDOOR_WALL_HEIGHT_MULTIPLIER * lowerLevels;
+    }
     return {
       w: d.w,
       h: d.h,
       projection: normalizeProjection(c.view ?? c.projection),
-      wallHeight: normalizeWallHeight(c.wallHeight),
+      wallHeight,
+      lowerDepth,
       padding: 2 + Math.max(WALL_THICKNESS, ...getFloors(c).flatMap((f) => f.walls.map((w) => wallThickness(w.thickness)))),
     };
   }
@@ -826,6 +863,7 @@ export class FloorplanCard extends LitElement {
   private _renderIsoLayer(
     active: Floor,
     standingWalls: readonly Wall[],
+    effectiveOpenings: readonly Opening[],
     c: FloorplanCardConfig,
     rot: PlanRotation,
     frame: DisplayFrame,
@@ -841,31 +879,197 @@ export class FloorplanCard extends LitElement {
       animate && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches ? OPENING_TWEEN_MS : 0
     );
     const map = (x: number, y: number) => rotatePlanPoint(x, y, c.width, c.height, rot);
-    const walls = standingWalls.map((w) => {
-      const a = map(w.x1, w.y1);
-      const b = map(w.x2, w.y2);
-      return { id: w.id, kind: w.kind, x1: a.x, y1: a.y, x2: b.x, y2: b.y,
-        thickness: wallThickness(w.thickness) * (isRailing(w) ? RAILING_WEIGHT : 1) };
-    });
-    const openings = active.openings.map((o) => {
-      const p = map(o.x, o.y);
-      // The rotation turns directions along with points.
-      return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
-    });
-    const solids = wallSolids(walls, openings, frame.wallHeight, false);
-    for (const o of active.openings) {
-      solids.push(...openingSolids(o, this._travelling(o, this._openingStyle(o, renderHass)), map, frame.wallHeight));
+    const baseWallHeight = normalizeWallHeight(c.wallHeight);
+    const outdoorWallHeight = baseWallHeight * OUTDOOR_WALL_HEIGHT_MULTIPLIER;
+    const solids: IsoSolid[] = [];
+
+    if (active.isOutdoor) {
+      const unzoomedAreas = (areas: readonly Area[]) =>
+        this._zoomedAreaId ? areas.filter((a) => a.id !== this._zoomedAreaId) : areas;
+      const unzoomedRoofs = (roofs: readonly Roof[], allAreas: readonly Area[]) => {
+        if (!this._zoomedAreaId) return roofs;
+        const zoomedArea = allAreas.find((a) => a.id === this._zoomedAreaId);
+        return roofs.filter((r) => {
+          if (r.id === this._zoomedAreaId) return false;
+          if (zoomedArea && zoomedArea.points && zoomedArea.points.length >= 3) {
+            const c = polygonCentroid(zoomedArea.points);
+            if (c && pointInPolygon(r.points, c.x, c.y)) return false;
+          }
+          return true;
+        });
+      };
+      const floors = getFloors(c);
+      const hassSource = renderHass ?? this.hass;
+      const baseLevel = resolveFloorLevel(active, floors, hassSource);
+      const indoorFloors = floors.filter((f) => !f.isOutdoor);
+      const hasLowerLevels = indoorFloors.some(
+        (f) => resolveFloorLevel(f, floors, hassSource) < baseLevel
+      );
+      const levelMap = new Map<number, Floor[]>();
+      for (const f of indoorFloors) {
+        const lvl = resolveFloorLevel(f, floors, hassSource);
+        const list = levelMap.get(lvl) ?? [];
+        list.push(f);
+        levelMap.set(lvl, list);
+      }
+
+      const upperCoveragePolygons: (readonly AreaPoint[])[] = [];
+      for (const f of floors) {
+        if (resolveFloorLevel(f, floors, hassSource) >= baseLevel) {
+          for (const a of f.areas) {
+            if (a.points && a.points.length >= 3) {
+              upperCoveragePolygons.push(a.points);
+            }
+          }
+          if (!f.isOutdoor && f.walls.length >= 3 && f.areas.length === 0) {
+            for (const ring of deadSpacesCached(f.walls, [])) {
+              if (ring.length >= 3) {
+                upperCoveragePolygons.push(ring);
+              }
+            }
+          }
+        }
+      }
+
+      for (const [lvl, lvlFloors] of Array.from(levelMap.entries()).sort((a, b) => a[0] - b[0])) {
+        const isLower = lvl < baseLevel;
+        const zOffset = (lvl - baseLevel) * outdoorWallHeight;
+        const lvlWalls = lvlFloors.flatMap((f) => f.walls);
+        const lvlAreas = lvlFloors.flatMap((f) => f.areas);
+        const lvlOpenings = lvlFloors.flatMap((f) => f.openings);
+
+        const extWalls = isLower
+          ? filterLowerWallsByUpperCoverage(lvlWalls, upperCoveragePolygons, 8, rot)
+          : filterExternalIndoorWalls(lvlWalls, lvlAreas);
+        const extOpenings = filterExternalOpenings(lvlOpenings, extWalls);
+        const visibleAreas = isLower
+          ? lvlAreas.filter((a) => !isAreaCoveredByUpper(a, upperCoveragePolygons))
+          : lvlAreas;
+
+        if (zOffset !== 0 || hasLowerLevels) {
+          if (visibleAreas.length > 0) {
+            for (const a of visibleAreas) {
+              if (!a.points || a.points.length < 3) continue;
+              const mappedPts = a.points.map((p) => map(p.x, p.y));
+              const tone = areaColor(a, a.entity ? renderHass?.states[a.entity]?.state : undefined) ||
+                cssColorOr(a.color, outdoorZoneDefaultColor(a.zoneKind) ?? "#d6d6d6");
+              solids.push(shiftIsoSolidZ({
+                kind: "roof",
+                id: `slab_${a.id}`,
+                isSlab: true,
+                base: mappedPts,
+                z0: -6,
+                z1: 0,
+                color: tone,
+                opacity: a.opacity !== undefined ? cssNumber(a.opacity, 1) : 1,
+              }, zOffset));
+            }
+          } else if (lvlWalls.length >= 3) {
+            const rings = deadSpacesCached(lvlWalls, []);
+            for (let i = 0; i < rings.length; i++) {
+              const ring = rings[i]!;
+              if (ring.length < 3) continue;
+              const centroid = polygonCentroid(ring);
+              if (isLower && centroid && upperCoveragePolygons.some((poly) => pointInPolygon(poly, centroid.x, centroid.y))) {
+                continue;
+              }
+              const mappedPts = ring.map((p) => map(p.x, p.y));
+              solids.push(shiftIsoSolidZ({
+                kind: "roof",
+                id: `slab_ring_${lvl}_${i}`,
+                isSlab: true,
+                base: mappedPts,
+                z0: -6,
+                z1: 0,
+                color: "#d6d6d6",
+              }, zOffset));
+            }
+          }
+        }
+
+        const mappedWalls = extWalls.map((w) => {
+          const a = map(w.x1, w.y1);
+          const b = map(w.x2, w.y2);
+          return { id: w.id, kind: w.kind, height: w.height, x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+            thickness: wallThickness(w.thickness) * (isRailing(w) ? RAILING_WEIGHT : 1) };
+        });
+        const mappedOpenings = extOpenings.map((o) => {
+          const p = map(o.x, o.y);
+          return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
+        });
+
+        const wSolids = wallSolids(mappedWalls, mappedOpenings, outdoorWallHeight, false);
+        solids.push(...wSolids.map((s) => shiftIsoSolidZ(s, zOffset)));
+        for (const o of extOpenings) {
+          const oSolids = openingSolids(o, this._travelling(o, this._openingStyle(o, renderHass)), map, outdoorWallHeight);
+          solids.push(...oSolids.map((s) => shiftIsoSolidZ(s, zOffset)));
+        }
+        const lvlRoofs = lvlFloors.flatMap((f) => getFloorRoofs(f));
+        const rSolids = roofSolids(unzoomedRoofs(lvlRoofs, lvlAreas), map, outdoorWallHeight);
+        solids.push(...rSolids.map((s) => shiftIsoSolidZ(s, zOffset)));
+      }
+
+      const ownWalls = standingWalls.filter((w) => !indoorFloors.some((f) => f.walls.some((iw) => isSameWallSegment(w, iw))));
+      const mappedOwnWalls = ownWalls.map((w) => {
+        const a = map(w.x1, w.y1);
+        const b = map(w.x2, w.y2);
+        return { id: w.id, kind: w.kind, height: w.height, x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+          thickness: wallThickness(w.thickness) * (isRailing(w) ? RAILING_WEIGHT : 1) };
+      });
+      const ownOpenings = filterExternalOpenings(active.openings, ownWalls);
+      const mappedOwnOpenings = ownOpenings.map((o) => {
+        const p = map(o.x, o.y);
+        return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
+      });
+      solids.push(...wallSolids(mappedOwnWalls, mappedOwnOpenings, outdoorWallHeight, false));
+      for (const o of ownOpenings) {
+        solids.push(...openingSolids(o, this._travelling(o, this._openingStyle(o, renderHass)), map, outdoorWallHeight));
+      }
+      const activeRoofs = getFloorRoofs(active);
+      solids.push(...roofSolids(unzoomedRoofs(activeRoofs, active.areas), map, outdoorWallHeight));
+      for (const a of unzoomedAreas(active.areas)) {
+        if (!a.points || a.points.length < 3) continue;
+        const mappedPts = a.points.map((p) => map(p.x, p.y));
+        const tone = areaColor(a, a.entity ? renderHass?.states[a.entity]?.state : undefined) ||
+          cssColorOr(a.color, outdoorZoneDefaultColor(a.zoneKind) ?? "#d6d6d6");
+        const opacity = a.opacity !== undefined ? cssNumber(a.opacity, 1) : 1;
+        solids.push({
+          kind: "roof",
+          id: `slab_${a.id}`,
+          isSlab: true,
+          base: mappedPts,
+          z0: -6,
+          z1: 0,
+          color: tone,
+          opacity,
+        });
+      }
+
+    } else {
+      const walls = standingWalls.map((w) => {
+        const a = map(w.x1, w.y1);
+        const b = map(w.x2, w.y2);
+        return { id: w.id, kind: w.kind, height: w.height, x1: a.x, y1: a.y, x2: b.x, y2: b.y,
+          thickness: wallThickness(w.thickness) * (isRailing(w) ? RAILING_WEIGHT : 1) };
+      });
+      const openings = effectiveOpenings.map((o) => {
+        const p = map(o.x, o.y);
+        return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
+      });
+      solids.push(...wallSolids(walls, openings, frame.wallHeight, false));
+      for (const o of effectiveOpenings) {
+        solids.push(...openingSolids(o, this._travelling(o, this._openingStyle(o, renderHass)), map, frame.wallHeight));
+      }
     }
-    const height = frame.wallHeight * FURNITURE_HEIGHT_FRACTION;
-    // The glyph is drawn in plan coordinates, so it is lifted by the plan-space
-    // shift that reads as "up" once rotated and projected.
-    const lift = elevationShift(height, rot);
+
+    const furnitureHeight = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
+    const lift = elevationShift(furnitureHeight, rot);
     for (const f of active.furniture) {
       solids.push(
         furnitureSolid(
           f,
           map,
-          height,
+          furnitureHeight,
           furnitureTone(f),
           svg`<g transform=${rotTransform || nothing}>
                 <g transform="translate(${lift.x} ${lift.y})">${drawFurniture(f)}</g>
@@ -873,10 +1077,41 @@ export class FloorplanCard extends LitElement {
         )
       );
     }
-    const byId = new Map(active.openings.map((o) => [o.id, o]));
+    const allOpenings = [
+      ...active.openings,
+      ...getFloors(c).filter((f) => !f.isOutdoor).flatMap((f) => f.openings),
+    ];
+    const byId = new Map(allOpenings.map((o) => [o.id, o]));
+    const allAreas = getFloors(c).flatMap((f) => f.areas);
+    const allRoofs = getFloors(c).flatMap((f) => getFloorRoofs(f));
+    const areaById = new Map(allAreas.map((a) => [a.id, a]));
+    const roofById = new Map(allRoofs.map((r) => [r.id, r]));
     const solidEdges = c.appearance === "line-art" ? solidEdgeRenderer(solids, LINE_INK) : undefined;
     return renderIsoSolids(solids, (solid, drawing) => {
       if (solidEdges) drawing = svg`${drawing}${solidEdges(solid)}`;
+      if (solid.kind === "roof" && solid.id && !solid.isSlab && !solid.id.startsWith("slab_")) {
+        let a = areaById.get(solid.id);
+        if (!a) {
+          const roof = roofById.get(solid.id);
+          if (roof && roof.points && roof.points.length >= 3) {
+            const rc = polygonCentroid(roof.points);
+            if (rc) {
+              a = allAreas.find((ar) => ar.points && ar.points.length >= 3 && pointInPolygon(ar.points, rc.x, rc.y));
+            }
+          }
+        }
+        if (a) {
+          const acts = areaHasActions(a);
+          return svg`<g class="fp-iso-roof-button"
+              role=${acts ? "button" : nothing} tabindex=${acts ? "0" : nothing}
+              aria-label=${a.name || a.id}
+              @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) => this._onAreaAction(ev, a)}
+              .actionHandler=${actionHandler({
+                hasHold: hasAction(areaActionForGesture(a, "hold")?.config),
+                hasDoubleClick: hasAction(areaActionForGesture(a, "double_tap")?.config),
+              })}>${drawing}</g>`;
+        }
+      }
       if (solid.kind !== "panel" && solid.kind !== "opening-hit") return drawing;
       const o = byId.get(solid.id!);
       if (!o || !openingIsPressable(o, this._featuresOf)) return drawing;
@@ -1433,7 +1668,7 @@ export class FloorplanCard extends LitElement {
     // transform below; the HTML overlay remaps per point in _renderItem /
     // _renderText. Both must use the same mapping (rotatePlanPoint).
     const rot = normalizePlanRotation(resolvePlanRotation(c, this._portrait) + this._rotationOffset);
-    const frame = this._frame(c, rot);
+    const frame = this._frame(c, rot, active, renderHass);
     const dims = projectedCanvasSize(frame);
     const rotTransform = planRotationTransform(c.width, c.height, rot);
     // The isometric view (issue #261): one more transform outside the
@@ -1480,9 +1715,32 @@ export class FloorplanCard extends LitElement {
     // Generated room walls (the sideWalls of every rectangle area): each drawn
     // side adds a wall — or a divider, which blocks nothing and draws as its
     // dashed self. They join the drawn walls for rendering, but only the
-    // non-divider ones stand in the way of light and seal off space.
+    let matchingIndoorFloors = active.isOutdoor && active.haFloor
+      ? getFloors(c).filter((f) => !f.isOutdoor && f.haFloor !== undefined && String(f.haFloor) === String(active.haFloor))
+      : [];
+    if (active.isOutdoor && matchingIndoorFloors.length === 0) {
+      matchingIndoorFloors = getFloors(c).filter((f) => !f.isOutdoor);
+    }
+    const indoorWalls = matchingIndoorFloors.flatMap((f) => f.walls);
+    const indoorAreas = matchingIndoorFloors.flatMap((f) => f.areas);
+    const indoorExternalWalls = active.isOutdoor
+      ? filterExternalIndoorWalls(indoorWalls, indoorAreas)
+      : indoorWalls;
+    const indoorOpenings = matchingIndoorFloors.flatMap((f) => f.openings);
+    const indoorExternalOpenings = active.isOutdoor
+      ? filterExternalOpenings(indoorOpenings, indoorExternalWalls)
+      : indoorOpenings;
+
+    const ownWalls = active.isOutdoor
+      ? active.walls.filter((w) => !indoorExternalWalls.some((iw) => isSameWallSegment(w, iw)))
+      : active.walls;
+
+    const effectiveOpenings = active.isOutdoor
+      ? [...active.openings.filter((o) => !indoorExternalOpenings.some((io) => io.id === o.id)), ...indoorExternalOpenings]
+      : [...active.openings, ...indoorOpenings];
+
     const generatedRoomWalls = active.areas.flatMap((a) => rectAreaSideWalls(a.id, a.points, a.sideWalls ?? {}));
-    const roomWallSegments = [...active.walls, ...generatedRoomWalls];
+    const roomWallSegments = [...ownWalls, ...(active.isOutdoor ? indoorExternalWalls : indoorWalls), ...generatedRoomWalls];
     // In 3D a divider stays a line on the floor: it marks where one room ends,
     // not a wall, so it is the one segment that does not stand up.
     const standingWallSegments = standing ? roomWallSegments.filter((w) => !w.divider) : [];
@@ -1493,7 +1751,7 @@ export class FloorplanCard extends LitElement {
         : roomWallSegments
     );
     const deadSpaceRings = c.showDeadSpaces
-      ? deadSpacesCached(blockingWallSegments, active.openings)
+      ? deadSpacesCached(blockingWallSegments, effectiveOpenings)
       : [];
     // Walls as light meets them (issue #143): open doors and windows are holes,
     // exactly as the plan draws them. Computed once here rather than inside
@@ -1505,7 +1763,7 @@ export class FloorplanCard extends LitElement {
     // state change the card takes.
     const castsLight = c.sunDimming || active.items.some((it) => it.glow);
     const lightWalls = castsLight
-      ? wallsLightPassesThrough(blockingWallSegments, active.openings, (o) =>
+      ? wallsLightPassesThrough(blockingWallSegments, effectiveOpenings, (o) =>
           // Both leaves, and the travel each style actually has (issue #145):
           // asking `entity` alone left a door whose *second* panel was open
           // still blocking light outright. Glass admits it whole regardless
@@ -1567,7 +1825,7 @@ export class FloorplanCard extends LitElement {
     // the night back the way a lamp's pool does.
     const moonLayer = (id: string, light: string) =>
       moon
-        ? renderSunlight(blockingWallSegments, active.openings, c.width, c.height, id, {
+        ? (active.isOutdoor ? renderOutdoorSunlight : renderSunlight)(blockingWallSegments, active.isOutdoor ? [] : effectiveOpenings, c.width, c.height, id, {
             ...openingLight,
             dir: moon.dir,
             strength: moon.strength,
@@ -1750,7 +2008,7 @@ export class FloorplanCard extends LitElement {
                  state and sun elevation through the same replay-aware state
                  source as every other light layer, so a replayed plan shows the
                  daylight of the moment being replayed rather than of now. -->
-            ${renderAmbientDaylightLayer(
+            ${active.isOutdoor ? nothing : renderAmbientDaylightLayer(
               active,
               c,
               renderHass,
@@ -1800,13 +2058,13 @@ export class FloorplanCard extends LitElement {
                  has the last word — at night there is nothing to let in. -->
             ${
               c.sunlight
-                ? renderSunlight(
+                ? (active.isOutdoor ? renderOutdoorSunlight : renderSunlight)(
                     // The same blocking set the lamps and dead space get
                     // (issue #290): generated room walls stop the sun too, and
                     // a divider never does. Railings are already out, so the
                     // sun passes over them (issue #182).
                     blockingWallSegments,
-                    active.openings,
+                    active.isOutdoor ? [] : effectiveOpenings,
                     c.width,
                     c.height,
                     `${this._wallMaskId}-sun`,
@@ -1855,7 +2113,7 @@ export class FloorplanCard extends LitElement {
             ${moon
               ? svg`<g class="fp-moonlight">${moonLayer(`${this._wallMaskId}-moon`, MOON_LIGHT_COLOR)}</g>`
               : nothing}
-            ${renderWallMask(active.openings, c.width, c.height, this._wallMaskId)}
+            ${renderWallMask(effectiveOpenings, c.width, c.height, this._wallMaskId)}
             ${(standing ? flatWallSegments : roomWallSegments).map(
                 (w) => svg`
                 <g class="fp-wall-neon"><line x1=${w.x1} y1=${w.y1} x2=${w.x2} y2=${w.y2}
@@ -1887,7 +2145,7 @@ export class FloorplanCard extends LitElement {
               // Unkeyed, Lit morphs floor A's openings into floor B's, and the
               // 0.5s leaf/panel transitions animate the leftover state — a
               // window briefly plays a door swing (issue #50).
-              standing ? [] : active.openings,
+              standing ? [] : effectiveOpenings,
               (o, i) => o.id || i,
               (o) => {
               const symbol = renderOpening(o, this._openingStyle(o, renderHass));
@@ -1938,7 +2196,7 @@ export class FloorplanCard extends LitElement {
                  stops responding (the lesson from #108). -->
             </g>
             ${standing
-              ? this._renderIsoLayer(active, standingWallSegments, c, rot, frame, rotTransform, drawFurniture, furnitureTone, renderHass,
+              ? this._renderIsoLayer(active, standingWallSegments, effectiveOpenings, c, rot, frame, rotTransform, drawFurniture, furnitureTone, renderHass,
                   // Scrubbing history jumps from state to state on purpose;
                   // easing between them would trail the scrubber.
                   !replayState.enabled)
@@ -2578,6 +2836,34 @@ export class FloorplanCard extends LitElement {
     }
     .fp-iso-furniture .fp-iso-top {
       fill: var(--fp-skin-bg, var(--card-background-color, #fff));
+    }
+    .fp-iso-roof .fp-iso-face, polygon.fp-iso-roof {
+      fill: var(--fp-iso-color, #8d6e63);
+      stroke: rgba(0, 0, 0, 0.28);
+      stroke-width: 1.2;
+      stroke-linejoin: round;
+      pointer-events: none;
+    }
+    .fp-iso-roof.fp-iso-slab .fp-iso-face,
+    .fp-iso-slab .fp-iso-face,
+    .fp-iso-roof[data-id^="slab_"] .fp-iso-face {
+      stroke: none;
+    }
+    .fp-iso-roof-line {
+      stroke: rgba(0, 0, 0, 0.28);
+      stroke-width: 1.2;
+      stroke-linecap: round;
+      pointer-events: none;
+    }
+    .fp-iso-roof-button {
+      cursor: pointer;
+    }
+    .fp-iso-roof-button .fp-iso-face,
+    .fp-iso-roof-button polygon.fp-iso-roof {
+      pointer-events: auto;
+    }
+    .fp-iso-roof-button:focus-visible {
+      outline: 2px solid var(--primary-color, #03a9f4);
     }
     .fp-iso-shade {
       fill: #000;

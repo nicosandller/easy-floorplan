@@ -81,6 +81,10 @@ export interface Wall {
    * off no dead space, since what it encloses is open to the air.
    */
   kind?: WallKind;
+  /** Custom height for 3D wall extrusion. */
+  height?: number;
+  /** Whether this wall explicitly marks an exterior building boundary (true) or interior partition (false). */
+  exterior?: boolean;
   /**
    * Pinned in place in the editor (issue #191).
    *
@@ -107,7 +111,7 @@ export interface Wall {
 }
 
 /** See {@link Wall.kind}. */
-export type WallKind = "wall" | "railing";
+export type WallKind = "wall" | "railing" | "external" | "interior";
 
 /**
  * What kind of hole in the building this is.
@@ -1309,6 +1313,8 @@ export interface Roof {
   locked?: boolean;
 }
 
+export type OutdoorZoneKind = "indoor" | "lawn" | "patio" | "pool" | "terrace" | "driveway" | "garden" | "courtyard";
+
 /**
  * A named room polygon, drawn point-by-point in the editor and closed by
  * clicking back on the starting vertex. Distinct from a {@link Floor} (a
@@ -1321,6 +1327,8 @@ export interface Area {
   points: AreaPoint[];
   /** Display name. Mirrors the linked HA area's name when `haArea` is set. */
   name?: string;
+  /** Categorizes the area type (e.g. indoor room vs outdoor lawn, patio, pool, driveway). */
+  zoneKind?: OutdoorZoneKind;
   /** Show the name label on the plan, centered on the polygon. Default true. */
   showName?: boolean;
   /**
@@ -1628,6 +1636,13 @@ export const FURNITURE_COLOR = "var(--fp-skin-furniture, #9e9e9e)";
 export interface Floor {
   id: string;
   name: string;
+  /** Whether this floor represents an outdoor courtyard area. */
+  isOutdoor?: boolean;
+  /**
+   * Explicit level number for 3D stacking (0 for ground floor, 1 for 1st floor, -1 for basement).
+   * When omitted, defaults to Home Assistant's floor level or its relative order in the floor list.
+   */
+  level?: number;
   /**
    * Optional link to a Home Assistant floor (its registry `floor_id`).
    * Selecting one in the editor names this floor after it; the id is kept so
@@ -2421,6 +2436,32 @@ function normalizeFloor(f: Floor): Floor {
  */
 export function getFloorRoofs(f: Floor): Roof[] {
   return f.roofs ?? [];
+}
+
+/**
+ * Determine the vertical storey level (Z index) for a floor.
+ * Prioritizes an explicit `level` on the floor, falls back to Home Assistant registry level,
+ * and finally defaults to 0-based index among indoor floors.
+ */
+export function resolveFloorLevel(f: Floor, allFloors: readonly Floor[], hass?: unknown): number {
+  if (typeof f.level === "number" && !isNaN(f.level)) {
+    return f.level;
+  }
+  if (f.haFloor !== undefined && f.haFloor !== "") {
+    const haFloors = haFloorsOf(hass);
+    const haMatch = haFloors.find((h) => h.floor_id === f.haFloor);
+    if (haMatch?.level != null) {
+      return haMatch.level;
+    }
+    const parsed = parseFloat(f.haFloor);
+    if (!isNaN(parsed)) {
+      return parsed;
+    }
+  }
+  const indoorFloors = allFloors.filter((fl) => !fl.isOutdoor);
+  const idx = indoorFloors.findIndex((fl) => fl.id === f.id);
+  if (idx !== -1) return idx;
+  return 0;
 }
 
 /**

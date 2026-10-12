@@ -3,7 +3,8 @@ import {
   pointInPolygon, 
   polygonCentroid, 
   textLabel, 
-  skylightWidth 
+  skylightWidth,
+  type PlanRotation,
 } from "./render";
 import { 
   AreaPoint, 
@@ -12,6 +13,7 @@ import {
   RectAreaSideWallState, 
   RectAreaSideWalls, 
   Wall, 
+  Opening,
   RECT_AREA_SIDES, 
   Floor, 
   RenderHass, 
@@ -814,3 +816,245 @@ export function cyclePick(
   const i = candidates.findIndex((c) => c.kind === current[0]!.kind && c.id === current[0]!.id);
   return i < 0 ? candidates[0]! : candidates[(i + 1) % candidates.length]!;
 }
+
+export function isSameWallSegment(w1: Wall, w2: Wall, eps = 1): boolean {
+  return (
+    (Math.hypot(w1.x1 - w2.x1, w1.y1 - w2.y1) <= eps && Math.hypot(w1.x2 - w2.x2, w1.y2 - w2.y2) <= eps) ||
+    (Math.hypot(w1.x1 - w2.x2, w1.y1 - w2.y2) <= eps && Math.hypot(w1.x2 - w2.x1, w1.y2 - w2.y1) <= eps)
+  );
+}
+
+export function distToWallSegment(x: number, y: number, w: { x1: number; y1: number; x2: number; y2: number }): number {
+  const vx = w.x2 - w.x1;
+  const vy = w.y2 - w.y1;
+  const len2 = vx * vx + vy * vy;
+  if (len2 === 0) return Math.hypot(x - w.x1, y - w.y1);
+  let t = ((x - w.x1) * vx + (y - w.y1) * vy) / len2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(x - (w.x1 + t * vx), y - (w.y1 + t * vy));
+}
+
+/**
+ * Determine if an indoor wall segment is an external perimeter wall
+ * rather than an interior partition wall between two indoor room areas.
+ */
+export function isExternalWall(
+  wall: Wall,
+  indoorAreas: readonly Area[],
+  indoorWalls: readonly Wall[] = []
+): boolean {
+  if (wall.divider) return false;
+  if (wall.exterior === false || wall.kind === "interior") return false;
+  if (wall.exterior === true || wall.kind === "external") return true;
+
+  const mx = (wall.x1 + wall.x2) / 2;
+  const my = (wall.y1 + wall.y2) / 2;
+  const dx = wall.x2 - wall.x1;
+  const dy = wall.y2 - wall.y1;
+  const len = Math.hypot(dx, dy);
+  if (len === 0) return false;
+
+  const eps = 2;
+  const nx = (-dy / len) * eps;
+  const ny = (dx / len) * eps;
+
+  const p1 = { x: mx + nx, y: my + ny };
+  const p2 = { x: mx - nx, y: my - ny };
+
+  if (indoorAreas.length > 0) {
+    const inArea1 = indoorAreas.some((a) => pointInPolygon(a.points, p1.x, p1.y));
+    const inArea2 = indoorAreas.some((a) => pointInPolygon(a.points, p2.x, p2.y));
+    return !(inArea1 && inArea2);
+  }
+
+  if (indoorWalls.length > 0) {
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const w of indoorWalls) {
+      if (w.x1 < minX) minX = w.x1; if (w.x2 < minX) minX = w.x2;
+      if (w.x1 > maxX) maxX = w.x1; if (w.x2 > maxX) maxX = w.x2;
+      if (w.y1 < minY) minY = w.y1; if (w.y2 < minY) minY = w.y2;
+      if (w.y1 > maxY) maxY = w.y1; if (w.y2 > maxY) maxY = w.y2;
+    }
+    const pad = 1;
+    const inBox1 = p1.x >= minX + pad && p1.x <= maxX - pad && p1.y >= minY + pad && p1.y <= maxY - pad;
+    const inBox2 = p2.x >= minX + pad && p2.x <= maxX - pad && p2.y >= minY + pad && p2.y <= maxY - pad;
+    if (inBox1 && inBox2) {
+      const touchEdge1 = Math.abs(wall.x1 - minX) < 1e-3 || Math.abs(wall.x1 - maxX) < 1e-3 || Math.abs(wall.y1 - minY) < 1e-3 || Math.abs(wall.y1 - maxY) < 1e-3;
+      const touchEdge2 = Math.abs(wall.x2 - minX) < 1e-3 || Math.abs(wall.x2 - maxX) < 1e-3 || Math.abs(wall.y2 - minY) < 1e-3 || Math.abs(wall.y2 - maxY) < 1e-3;
+      if (!touchEdge1 || !touchEdge2) return false;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Filter indoor walls to keep only external perimeter walls.
+ */
+export function filterExternalIndoorWalls(
+  indoorWalls: readonly Wall[],
+  indoorAreas: readonly Area[]
+): Wall[] {
+  return indoorWalls.filter((w) => isExternalWall(w, indoorAreas, indoorWalls));
+}
+
+/**
+ * Filter indoor openings to keep only those sitting on external walls.
+ */
+export function filterExternalOpenings(
+  openings: readonly Opening[],
+  externalWalls: readonly Wall[],
+  eps = 8
+): Opening[] {
+  if (!externalWalls.length) return [...openings];
+  return openings.filter((o) =>
+    externalWalls.some((w) => distToWallSegment(o.x, o.y, w) <= eps)
+  );
+}
+
+/**
+ * Split a set of walls at all points where other walls meet or cross them,
+ * preserving each wall's properties (kind, thickness, height, etc.).
+ */
+export function viewerDirection(rot: PlanRotation = 0): { x: number; y: number } {
+  switch (rot) {
+    case 90:
+      return { x: 1, y: -1 };
+    case 180:
+      return { x: -1, y: -1 };
+    case 270:
+      return { x: -1, y: 1 };
+    default:
+      return { x: 1, y: 1 };
+  }
+}
+
+/**
+ * Split wall segments wherever they intersect each other or cutting segments,
+ * preserving each wall's properties (kind, thickness, height, etc.).
+ */
+export function splitWallsAtJunctions(
+  walls: readonly Wall[],
+  extraSegments?: readonly { a: AreaPoint; b: AreaPoint }[],
+  eps = 1
+): Wall[] {
+  const allSegs = walls.map((w) => ({ a: { x: w.x1, y: w.y1 }, b: { x: w.x2, y: w.y2 } }));
+  const cutSegs = extraSegments && extraSegments.length > 0 ? [...allSegs, ...extraSegments] : allSegs;
+  const out: Wall[] = [];
+  for (let i = 0; i < walls.length; i++) {
+    const w = walls[i]!;
+    const s = allSegs[i]!;
+    const dx = s.b.x - s.a.x;
+    const dy = s.b.y - s.a.y;
+    const len = Math.hypot(dx, dy);
+    if (len <= eps) continue;
+    const cuts: number[] = [0, 1];
+    const tEps = eps / len;
+
+    for (let j = 0; j < cutSegs.length; j++) {
+      if (j === i) continue;
+      const o = cutSegs[j]!;
+      const ox = o.b.x - o.a.x;
+      const oy = o.b.y - o.a.y;
+      const denom = dx * oy - dy * ox;
+      if (Math.abs(denom) > 1e-9) {
+        const t = ((o.a.x - s.a.x) * oy - (o.a.y - s.a.y) * ox) / denom;
+        const u = ((o.a.x - s.a.x) * dy - (o.a.y - s.a.y) * dx) / denom;
+        const uEps = eps / Math.max(Math.hypot(ox, oy), 1e-9);
+        if (t > tEps && t < 1 - tEps && u >= -uEps && u <= 1 + uEps) cuts.push(t);
+        continue;
+      }
+      for (const p of [o.a, o.b]) {
+        const t = ((p.x - s.a.x) * dx + (p.y - s.a.y) * dy) / (len * len);
+        if (t <= tEps || t >= 1 - tEps) continue;
+        const px = s.a.x + t * dx;
+        const py = s.a.y + t * dy;
+        if (Math.hypot(p.x - px, p.y - py) <= eps) cuts.push(t);
+      }
+    }
+
+    cuts.sort((a, b) => a - b);
+    let segIdx = 0;
+    for (let k = 1; k < cuts.length; k++) {
+      const t0 = cuts[k - 1]!;
+      const t1 = cuts[k]!;
+      if (t1 - t0 <= tEps) continue;
+      out.push({
+        ...w,
+        id: cuts.length > 2 ? `${w.id}_s${segIdx++}` : w.id,
+        x1: s.a.x + t0 * dx,
+        y1: s.a.y + t0 * dy,
+        x2: s.a.x + t1 * dx,
+        y2: s.a.y + t1 * dy,
+      });
+    }
+  }
+  return out;
+}
+
+/**
+ * Test whether a lower-floor area is covered by upper-floor areas/rooms.
+ */
+export function isAreaCoveredByUpper(
+  area: Area,
+  upperPolygons: readonly (readonly AreaPoint[])[]
+): boolean {
+  if (!area.points || area.points.length < 3) return true;
+  if (!upperPolygons.length) return false;
+  const centroid = polygonCentroid(area.points);
+  if (centroid && upperPolygons.some((poly) => pointInPolygon(poly, centroid.x, centroid.y))) {
+    return true;
+  }
+  return area.points.every((p) => upperPolygons.some((poly) => pointInPolygon(poly, p.x, p.y)));
+}
+
+/**
+ * Filter lower-level walls by checking whether they are exposed to uncovered space.
+ * Walls where both sides are covered by upper-level areas/rooms are underground/subterranean
+ * and hidden.
+ * When rotation is provided, walls where an upper/outside area sits between the camera and the wall
+ * are hidden by that area; only walls viewed across an open uncovered zone are rendered.
+ */
+export function filterLowerWallsByUpperCoverage(
+  walls: readonly Wall[],
+  upperPolygons: readonly (readonly AreaPoint[])[],
+  normalOffset = 8,
+  rot?: PlanRotation
+): Wall[] {
+  if (!upperPolygons.length) return [...walls];
+  const polyEdges: { a: AreaPoint; b: AreaPoint }[] = [];
+  for (const poly of upperPolygons) {
+    for (let i = 0; i < poly.length; i++) {
+      polyEdges.push({ a: poly[i]!, b: poly[(i + 1) % poly.length]! });
+    }
+  }
+  const split = splitWallsAtJunctions(walls, polyEdges);
+  return split.filter((w) => {
+    if (w.divider) return false;
+    if (w.exterior === false || w.kind === "interior") return false;
+    const dx = w.x2 - w.x1;
+    const dy = w.y2 - w.y1;
+    const len = Math.hypot(dx, dy);
+    if (len <= 2) return false;
+    const mx = (w.x1 + w.x2) / 2;
+    const my = (w.y1 + w.y2) / 2;
+    const nx = -dy / len;
+    const ny = dx / len;
+    const p1 = { x: mx + nx * normalOffset, y: my + ny * normalOffset };
+    const p2 = { x: mx - nx * normalOffset, y: my - ny * normalOffset };
+    const cov1 = upperPolygons.some((poly) => pointInPolygon(poly, p1.x, p1.y));
+    const cov2 = upperPolygons.some((poly) => pointInPolygon(poly, p2.x, p2.y));
+    if (cov1 && cov2) return false;
+    if (!cov1 && !cov2) return true;
+    if (rot === undefined) return true;
+    const v = viewerDirection(rot);
+    const dot = nx * v.x + ny * v.y;
+    if (dot > 0.01) {
+      return !cov1;
+    } else if (dot < -0.01) {
+      return !cov2;
+    }
+    return true;
+  });
+}
+

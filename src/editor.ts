@@ -6835,7 +6835,7 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderEssentialForm(areaNameForm(a, haAreas.map((ha) => ha.name)), ["name"], (patch, live) =>
           this._applyElementPatch("area", a.id, areaNamePatch(patch, haAreas), live))}
         ${this._renderAreaLinkRow(a, haAreas)}
-        ${this._renderEssentialForm(aSpec, ["showName", "labelSize", "opacity"], aApply)}
+        ${this._renderEssentialForm(aSpec, ["zoneKind", "showName", "labelSize", "opacity"], aApply)}
         ${this._renderColorRow({
           label: "Fill color", value: a.color, swatch: "#03a9f4", placeholder: "Default",
           onLive: (color) => this._updateAreaLive(a.id, { color }),
@@ -7111,7 +7111,7 @@ export class FloorplanCardEditor extends LitElement {
       if (!w) return html`${nothing}`;
       const length = Math.round(Math.hypot(w.x2 - w.x1, w.y2 - w.y1));
       return html`
-        ${this._renderEssentialForm(wallForm(w), ["x1", "y1", "x2", "y2", "thickness", "kind"], (patch, live) =>
+        ${this._renderEssentialForm(wallForm(w), ["x1", "y1", "x2", "y2", "thickness", "kind", "exterior"], (patch, live) =>
           this._applyElementPatch("wall", w.id, patch, live)
         )}
         <div class="row">

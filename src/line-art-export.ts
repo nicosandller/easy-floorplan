@@ -8,7 +8,7 @@ import {
   rotatePlanPoint, wallThickness, type OpeningStyle, type PlanRotation,
 } from "./render";
 import {
-  elevationShift, furnitureSolid, FURNITURE_HEIGHT_FRACTION,
+  elevationShift, furnitureSolid, FURNITURE_HEIGHT_FRACTION, OUTDOOR_WALL_HEIGHT_MULTIPLIER,
   normalizeProjection, normalizeWallHeight, planProjectionTransform, projectPlanPoint,
   projectedCanvasSize, renderIsoSolids, wallSolids, type DisplayFrame, type IsoSolid,
 } from "./projection";
@@ -35,10 +35,11 @@ export function createLineArtSvg(c: FloorplanCardConfig, floor: Floor, rot: Plan
   const width = Math.max(1, cssNumber(c.width, DEFAULT_WIDTH));
   const height = Math.max(1, cssNumber(c.height, DEFAULT_HEIGHT));
   const walls = [...floor.walls, ...floor.areas.flatMap((a) => rectAreaSideWalls(a.id, a.points, a.sideWalls ?? {}))];
+  const baseWallHeight = normalizeWallHeight(c.wallHeight);
   const frame: DisplayFrame = {
     ...rotatedCanvasSize(width, height, rot),
     projection: normalizeProjection(c.view ?? c.projection),
-    wallHeight: normalizeWallHeight(c.wallHeight),
+    wallHeight: baseWallHeight * (floor.isOutdoor ? OUTDOOR_WALL_HEIGHT_MULTIPLIER : 1),
     padding: 2 + walls.reduce((max, w) => Math.max(max, wallThickness(w.thickness)), 8),
   };
   const dims = projectedCanvasSize(frame);
@@ -55,7 +56,7 @@ export function createLineArtSvg(c: FloorplanCardConfig, floor: Floor, rot: Plan
         thickness: wallThickness(w.thickness) * (isRailing(w) ? RAILING_WEIGHT : 1) };
     }), floor.openings.map((o) => ({ ...o, ...map(o.x, o.y), angle: o.angle + rot })), frame.wallHeight, false));
     for (const o of floor.openings) solids.push(...openingSolids(o, openingStyle(o), map, frame.wallHeight));
-    const h = frame.wallHeight * FURNITURE_HEIGHT_FRACTION;
+    const h = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(h, rot);
     for (const f of floor.furniture) solids.push(furnitureSolid(f, map, h, PAPER,
       svg`<g transform=${rotate || nothing}><g transform="translate(${lift.x} ${lift.y})">${drawFurniture(f)}</g></g>`));

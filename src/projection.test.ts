@@ -4,6 +4,7 @@ import { rotatePlanPoint, areaZoomTransform, type PlanRotation } from "./render"
 import {
   DEFAULT_WALL_HEIGHT,
   MAX_WALL_HEIGHT,
+  OUTDOOR_WALL_HEIGHT_MULTIPLIER,
   ISO_CHUNK,
   SILL_FRACTION,
   GLASS_FRACTION,
@@ -63,6 +64,10 @@ describe("normalizeWallHeight", () => {
     expect(normalizeWallHeight(-5)).toBe(0);
     expect(normalizeWallHeight(1e6)).toBe(MAX_WALL_HEIGHT);
   });
+  it("provides 2.5x multiplier for 3D outdoor area full wall height rendering", () => {
+    expect(OUTDOOR_WALL_HEIGHT_MULTIPLIER).toBe(2.5);
+    expect(DEFAULT_WALL_HEIGHT * OUTDOOR_WALL_HEIGHT_MULTIPLIER).toBe(150);
+  });
 });
 
 describe("projectedCanvasSize", () => {
@@ -73,6 +78,10 @@ describe("projectedCanvasSize", () => {
     const d = projectedCanvasSize(iso());
     expect(d.w).toBeCloseTo(1600 * COS, 6);
     expect(d.h).toBeCloseTo(800 + 60, 6);
+  });
+  it("includes lowerDepth for lower levels beneath the base elevation", () => {
+    const d = projectedCanvasSize({ ...iso(), lowerDepth: 90 });
+    expect(d.h).toBeCloseTo(800 + 60 + 90, 6);
   });
 });
 
@@ -251,12 +260,35 @@ describe("wallSolids", () => {
   it("draws nothing for a wall with no length", () => {
     expect(wallSolids([{ id: "w0", x1: 5, y1: 5, x2: 5, y2: 5, thickness: 8 }], [], H)).toHaveLength(0);
   });
+  it("renders a wall interval above windows and doors when wall height is full height (> DEFAULT_WALL_HEIGHT)", () => {
+    const door = { x: 100, y: 0, length: 40, angle: 0, type: "door" as const };
+    const fullHeight = 150;
+    const solids = wallSolids([wall], [door], fullHeight);
+    const headers = solids.filter((s) => s.kind === "wall" && s.z0 === DEFAULT_WALL_HEIGHT && s.z1 === fullHeight);
+    expect(headers.length).toBeGreaterThan(0);
+    expect(headers[0].base.some((p) => p.x >= 80 && p.x <= 120)).toBe(true);
+
+    const window = { x: 100, y: 0, length: 40, angle: 0, type: "window" as const };
+    const winSolids = wallSolids([wall], [window], fullHeight);
+    const winHeaders = winSolids.filter((s) => s.kind === "wall" && s.z0 === fullHeight * GLASS_FRACTION && s.z1 === fullHeight);
+    expect(winHeaders.length).toBeGreaterThan(0);
+  });
+
   it("stands a railing at half height while keeping a passage gap", () => {
     const rail = { ...wall, kind: "railing" as const, thickness: 3.2 };
     const solids = wallSolids([rail], [{ x: 100, y: 0, length: 40, angle: 0, type: "passage" }], H);
     expect(solids.length).toBeGreaterThan(0);
     expect(solids.every(s => s.kind === "railing" && s.z1 === H / 2)).toBe(true);
     for (const x of xs(solids)) expect(x <= 80 + 1e-9 || x >= 120 - 1e-9).toBe(true);
+  });
+  it("snaps opening spans near wall ends and omits residual wall stubs <= 2px", () => {
+    const w = { id: "w_stub", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8 };
+    // Door centered at 59 with length 80 spans 19 to 99 (leaves 1px <= 2px at end)
+    const d = { x: 59, y: 0, length: 80, angle: 0, type: "door" as const };
+    const solids = wallSolids([w], [d], H);
+    const wallPieces = solids.filter((s) => s.kind === "wall");
+    expect(wallPieces).toHaveLength(1);
+    expect(Math.max(...wallPieces[0]!.base.map((p) => p.x))).toBeCloseTo(19, 1);
   });
 });
 

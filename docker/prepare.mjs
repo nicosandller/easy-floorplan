@@ -188,6 +188,10 @@ const DASH_ID = "floorplan_demo";
 const DASH_URL = "floorplan-demo";
 const dashboardsFile = join(storageDir, "lovelace_dashboards");
 const dashConfigFile = join(storageDir, `lovelace.${DASH_ID}`);
+const THREE_FLOOR_DASH_ID = "floorplan_3floor";
+const THREE_FLOOR_DASH_URL = "3floor-house";
+const threeFloorConfigFile = join(storageDir, `lovelace.${THREE_FLOOR_DASH_ID}`);
+const threeFloorFixturePath = join(here, "..", "src", "fixtures", "3floorHouse.yaml");
 const reseed = process.argv.includes("--reseed");
 
 /** @type {StorageFile} */
@@ -207,6 +211,7 @@ if (existsSync(dashboardsFile)) {
   }
 }
 
+let dashboardsChanged = false;
 if (!dashboards.data.items.some((item) => item?.id === DASH_ID)) {
   dashboards.data.items.push({
     id: DASH_ID,
@@ -217,16 +222,36 @@ if (!dashboards.data.items.some((item) => item?.id === DASH_ID)) {
     require_admin: false,
     show_in_sidebar: true,
   });
-  mkdirSync(storageDir, { recursive: true });
-  writeFileSync(dashboardsFile, JSON.stringify(dashboards, null, 2));
+  dashboardsChanged = true;
   console.log("Registered the Floorplan Demo dashboard.");
 }
 
-if (!existsSync(dashConfigFile) || reseed) {
-  let yaml;
+if (existsSync(threeFloorFixturePath) && !dashboards.data.items.some((item) => item?.id === THREE_FLOOR_DASH_ID)) {
+  dashboards.data.items.push({
+    id: THREE_FLOOR_DASH_ID,
+    title: "3D Stacked House",
+    url_path: THREE_FLOOR_DASH_URL,
+    icon: "mdi:home-roof",
+    mode: "storage",
+    require_admin: false,
+    show_in_sidebar: true,
+  });
+  dashboardsChanged = true;
+  console.log("Registered the 3D Stacked House dashboard.");
+}
+
+if (dashboardsChanged) {
+  mkdirSync(storageDir, { recursive: true });
+  writeFileSync(dashboardsFile, JSON.stringify(dashboards, null, 2));
+}
+
+let yaml;
+const loadYaml = async () => {
+  if (yaml) return yaml;
   try {
     const mod = await import("js-yaml");
     yaml = mod.default ?? mod;
+    return yaml;
   } catch {
     console.error(
       "\nCannot read the demo plan: js-yaml is not installed.\n\n" +
@@ -237,8 +262,12 @@ if (!existsSync(dashConfigFile) || reseed) {
     );
     process.exit(1);
   }
+};
+
+if (!existsSync(dashConfigFile) || reseed) {
+  const y = await loadYaml();
   const seed = /** @type {{ views: unknown[] }} */ (
-    yaml.load(readFileSync(join(here, "config", "floorplan-demo.yaml"), "utf8"))
+    y.load(readFileSync(join(here, "config", "floorplan-demo.yaml"), "utf8"))
   );
   mkdirSync(storageDir, { recursive: true });
   writeFileSync(
@@ -261,4 +290,50 @@ if (!existsSync(dashConfigFile) || reseed) {
   );
 } else {
   console.log("Floorplan Demo dashboard already exists; keeping your edits (npm run ha:reseed to reset it).");
+}
+
+if (existsSync(threeFloorFixturePath)) {
+  if (!existsSync(threeFloorConfigFile) || reseed) {
+    const y = await loadYaml();
+    const cardConfig = y.load(readFileSync(threeFloorFixturePath, "utf8"));
+    mkdirSync(storageDir, { recursive: true });
+    writeFileSync(
+      threeFloorConfigFile,
+      JSON.stringify(
+        {
+          version: 1,
+          minor_version: 1,
+          key: `lovelace.${THREE_FLOOR_DASH_ID}`,
+          data: {
+            config: {
+              views: [
+                {
+                  title: "3D Stacked House",
+                  path: "house",
+                  type: "sections",
+                  max_columns: 4,
+                  sections: [
+                    {
+                      type: "grid",
+                      column_span: 4,
+                      cards: [cardConfig],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+    console.log(
+      reseed
+        ? "Reseeded the 3D Stacked House dashboard from src/fixtures/3floorHouse.yaml (UI edits discarded)."
+        : "Seeded the 3D Stacked House dashboard from src/fixtures/3floorHouse.yaml.",
+    );
+  } else {
+    console.log("3D Stacked House dashboard already exists; keeping your edits (npm run ha:reseed to reset it).");
+  }
 }

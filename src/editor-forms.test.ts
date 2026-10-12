@@ -1140,6 +1140,28 @@ describe("textForm / furnitureForm / trackerForm", () => {
     expect(out.tap_action).toEqual({ action: "toggle" });
   });
 
+  it("areaForm exposes zoneKind data and patches it", () => {
+    const form = areaForm({ id: "a", points: [], zoneKind: "lawn" } as never);
+    expect(form.data.zoneKind).toBe("lawn");
+    expect(form.toPatch({ zoneKind: "lawn" } as never)).toEqual({ zoneKind: "lawn" });
+    expect(form.toPatch({ zoneKind: "indoor" } as never)).toEqual({ zoneKind: undefined });
+  });
+
+  it("floorImageForm exposes isOutdoor data and patches it", () => {
+    const form = floorImageForm({ id: "f", name: "Courtyard", isOutdoor: true } as never);
+    expect(form.data.isOutdoor).toBe(true);
+    expect(form.toPatch({ isOutdoor: true } as never)).toEqual({ isOutdoor: true });
+    expect(form.toPatch({ isOutdoor: false } as never)).toEqual({ isOutdoor: undefined });
+  });
+
+  it("wallForm exposes exterior data and patches it", () => {
+    const form = wallForm({ id: "w", x1: 0, y1: 0, x2: 10, y2: 10, exterior: true });
+    expect(form.data.exterior).toBe("exterior");
+    expect(form.toPatch({ exterior: "exterior" })).toEqual({ exterior: true });
+    expect(form.toPatch({ exterior: "interior" })).toEqual({ exterior: false });
+    expect(form.toPatch({ exterior: "auto" })).toEqual({ exterior: undefined });
+  });
+
   it("non-sectional furniture has no chaise-side field or data", () => {
     const form = furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10 } as never);
     expect(form.fields.map((x) => x.name)).not.toContain("hand");
@@ -2179,11 +2201,12 @@ describe("every field lands in exactly one panel group", () => {
   ];
   const TRACKER_GROUPS = [["w", "h", "x", "y", "angle"], ["dotSize"]];
   const AREA_GROUPS = [
-    ["showName", "labelSize"],
+    ["zoneKind", "showName", "labelSize"],
     ["entity"],
     ["highlight", "opacity", "activeOpacity"],
     ["fitZoom", "zoom", "tap_action", "hold_action", "double_tap_action"],
   ];
+  const ROOF_GROUPS = [["type", "highSide", "ridge", "height", "overhang", "elevation"]];
 
   const check = (fields: { name: string }[], groups: string[][], what: string) => {
     const grouped = groups.flat();
@@ -2254,7 +2277,7 @@ describe("every field lands in exactly one panel group", () => {
     expect(formSlice(projectDisplayForm(cfg), DEVICES).fields.map((f) => f.name)).toEqual(DEVICES);
   });
 
-  it("covers every furniture, tracker and area field", () => {
+  it("covers every furniture, tracker, area and roof field", () => {
     const f = { id: "f", type: "sofa", x: 0, y: 0, w: 40, h: 40 } as Furniture;
     check(furnitureForm(f).fields, FURNITURE_GROUPS, "furniture");
     check(
@@ -2267,6 +2290,11 @@ describe("every field lands in exactly one panel group", () => {
     const a = { id: "a", points: [{ x: 0, y: 0 }] } as Area;
     check(areaForm(a).fields, AREA_GROUPS, "area");
     check(areaForm({ ...a, entity: "light.a", haArea: "kitchen" } as Area).fields, AREA_GROUPS, "area linked");
+    const r = { id: "r", type: "gable", points: [{ x: 0, y: 0 }] } as Roof;
+    check(roofForm(r).fields, ROOF_GROUPS, "roof gable");
+    check(roofForm({ ...r, type: "shed" } as Roof).fields, ROOF_GROUPS, "roof shed");
+    check(roofForm({ ...r, type: "flat" } as Roof).fields, ROOF_GROUPS, "roof flat");
+    check(roofForm({ ...r, type: "hip" } as Roof).fields, ROOF_GROUPS, "roof hip");
   });
 });
 

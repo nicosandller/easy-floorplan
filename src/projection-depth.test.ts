@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { furnitureSolid, wallSolids, roofSolids, roofCourseLines, type IsoSolid, type Pt } from "./projection";
+import { furnitureSolid, wallSolids, roofSolids, roofCourseLines, shiftIsoSolidZ, type IsoSolid, type Pt } from "./projection";
 import type { Roof } from "./types";
 import { sortIsoSolids } from "./projection-order";
 import { joinIsoWalls } from "./projection-joints";
@@ -155,9 +155,92 @@ describe("spatial painter order (#321)", () => {
     const lines = roofCourseLines(vertices);
     expect(lines.length).toBeGreaterThan(3);
     for (const [p1, p2] of lines) {
+      // In elevated coordinates: xElev = x - z, yElev = y - z
+      // When Z is constant across the line, deltaY / deltaX corresponds to the plan edge
       expect(Number.isFinite(p1.x) && Number.isFinite(p1.y)).toBe(true);
       expect(Number.isFinite(p2.x) && Number.isFinite(p2.y)).toBe(true);
       expect(p1.x).not.toEqual(p2.x);
     }
+  });
+
+  it("shifts lower level walls and slabs to negative Z elevations", () => {
+    const wall1 = { id: "basement_wall", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8 };
+    const outdoorWallHeight = 150;
+    const zOffset = -outdoorWallHeight; // level 0 vs baseLevel 1
+
+    const wSolids = wallSolids([wall1], [], outdoorWallHeight);
+    const shiftedWalls = wSolids.map((s) => shiftIsoSolidZ(s, zOffset));
+
+    for (const s of shiftedWalls) {
+      expect(s.z0).toBe(-outdoorWallHeight);
+      expect(s.z1).toBe(0);
+    }
+
+    const slab: IsoSolid = {
+      kind: "roof",
+      id: "slab_basement_garage",
+      isSlab: true,
+      base: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }],
+      z0: -6,
+      z1: 0,
+      color: "#888888",
+    };
+    const shiftedSlab = shiftIsoSolidZ(slab, zOffset);
+    expect(shiftedSlab.z0).toBe(-outdoorWallHeight - 6);
+    expect(shiftedSlab.z1).toBe(-outdoorWallHeight);
+
+    // Ground level slab at z=0 sits above the basement slab
+    const groundSlab: IsoSolid = {
+      kind: "roof",
+      id: "slab_first_floor",
+      isSlab: true,
+      base: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }],
+      z0: -6,
+      z1: 0,
+      color: "#cccccc",
+    };
+
+    const sorted = sortIsoSolids([groundSlab, shiftedSlab]);
+    // Slices sort back-to-front: lower basement slab is painted before/under ground slab
+    expect(sorted[0]!.id).toBe("slab_basement_garage");
+    expect(sorted[1]!.id).toBe("slab_first_floor");
+  });
+
+  it("orders ground slab underneath elevated roof even when slab depth exceeds roof depth", () => {
+    // Slabs spanning outdoors can have a centroid far to the south/east, giving them a larger depth
+    // value than a northern elevated roof. Ground slabs must always sort before elevated roofs.
+    const groundSlab: IsoSolid = {
+      kind: "roof",
+      id: "slab_curte",
+      isSlab: true,
+      base: [
+        { x: 200, y: 200 },
+        { x: 1500, y: 200 },
+        { x: 1500, y: 1500 },
+        { x: 200, y: 1500 },
+      ],
+      z0: -6,
+      z1: 0,
+      color: "#44aa44",
+    };
+
+    const elevatedRoof: IsoSolid = {
+      kind: "roof",
+      id: "roof_second_floor",
+      base: [
+        { x: 500, y: 500 },
+        { x: 700, y: 500 },
+        { x: 700, y: 700 },
+        { x: 500, y: 700 },
+      ],
+      z0: 300,
+      z1: 390,
+      color: "#8844aa",
+    };
+
+    // Even if ground slab is after elevated roof in input, it must sort before it
+    const sorted = sortIsoSolids([elevatedRoof, groundSlab]);
+    expect(sorted[0]!.id).toBe("slab_curte");
+    expect(sorted[1]!.id).toBe("roof_second_floor");
   });
 });

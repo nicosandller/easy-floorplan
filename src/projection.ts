@@ -86,6 +86,9 @@ export function normalizeWallOpacity(v: unknown): number {
   return Math.min(1, Math.max(0, cssNumber(v, 1)));
 }
 
+/** Multiplier for full-height external wall rendering when viewing 3D outside areas (~2.5m vs ~1m maquette). */
+export const OUTDOOR_WALL_HEIGHT_MULTIPLIER = 2.5;
+
 /**
  * The frame a plan is displayed in: its size once rotated (issue #33), and
  * how that rotated frame is projected. The card builds one per render and
@@ -99,6 +102,8 @@ export interface DisplayFrame {
   h: number;
   projection: PlanProjection;
   wallHeight: number;
+  /** Extra vertical headroom downwards for lower levels beneath base elevation. */
+  lowerDepth?: number;
   /** Screen-space margin for wall caps at the canvas boundary. */
   padding?: number;
 }
@@ -110,7 +115,10 @@ export interface DisplayFrame {
  */
 export function projectedCanvasSize(f: DisplayFrame): { w: number; h: number } {
   if (f.projection !== "iso") return { w: f.w, h: f.h };
-  return { w: (f.w + f.h) * ISO_COS + 2 * (f.padding ?? 0), h: (f.w + f.h) * ISO_SIN + f.wallHeight + 2 * (f.padding ?? 0) };
+  return {
+    w: (f.w + f.h) * ISO_COS + 2 * (f.padding ?? 0),
+    h: (f.w + f.h) * ISO_SIN + f.wallHeight + (f.lowerDepth ?? 0) + 2 * (f.padding ?? 0),
+  };
 }
 
 /**
@@ -195,6 +203,8 @@ export interface IsoSolid {
   /** Fill for a furniture block. Walls take the skin's wall colour from the stylesheet. */
   color?: string;
   opacity?: number;
+  /** Flag for outdoor terrain and ground floor slabs. */
+  isSlab?: boolean;
   /** Drawn on the top face, already positioned in the layer's frame. */
   top?: SVGTemplateResult;
   /** Explicit raised corners for a tilted opening panel or 3D roof face. */
@@ -205,9 +215,21 @@ export interface IsoSolid {
   sortDepth?: number;
 }
 
+export function shiftIsoSolidZ(solid: IsoSolid, zOffset: number): IsoSolid {
+  if (!zOffset) return solid;
+  return {
+    ...solid,
+    z0: solid.z0 + zOffset,
+    z1: solid.z1 + zOffset,
+    sortDepth: solid.sortDepth !== undefined ? solid.sortDepth + zOffset : undefined,
+    vertices: solid.vertices?.map((v) => ({ ...v, z: v.z + zOffset })),
+  };
+}
+
 export interface IsoWallInput {
   id: string;
   kind?: WallKind;
+  height?: number;
   x1: number;
   y1: number;
   x2: number;
@@ -255,8 +277,12 @@ function openingSpans(
     // in this wall" means one thing across the card.
     const off = Math.abs(rx * -d.y + ry * d.x);
     if (off > OPENING_ON_WALL_EPS) continue;
-    const s0 = Math.max(0, t - o.length / 2);
-    const s1 = Math.min(len, t + o.length / 2);
+    const rawS0 = t - o.length / 2;
+    const rawS1 = t + o.length / 2;
+    let s0 = Math.max(0, rawS0);
+    let s1 = Math.min(len, rawS1);
+    if (s0 <= 2) s0 = 0;
+    if (len - s1 <= 2) s1 = len;
     if (s1 - s0 <= 0) continue;
     spans.push({ s0, s1, type: o.type === "window" ? "window" : "door" });
   }
@@ -297,7 +323,8 @@ export function wallSolids(
     const dy = w.y2 - w.y1;
     const len = Math.hypot(dx, dy);
     if (!(len > 1e-6)) continue;
-    const height = wallHeight * (w.kind === "railing" ? RAILING_HEIGHT_FRACTION : 1);
+    const baseH = w.height ?? wallHeight;
+    const height = baseH * (w.kind === "railing" ? RAILING_HEIGHT_FRACTION : 1);
     const kind = w.kind === "railing" ? "railing" : "wall";
     const d = { x: dx / len, y: dy / len };
     const n = { x: -d.y, y: d.x };
@@ -314,21 +341,22 @@ export function wallSolids(
         endEdges: end.slice(1).map((_p, i) => i + 1),
         startEdges: start.slice(1).map((_p, i) => end.length + 1 + i) };
     };
-    const pieces = (s0: number, s1: number, z1: number, kind: IsoSolidKind) => {
+    const pieces = (s0: number, s1: number, z1: number, kind: IsoSolidKind, z0 = 0) => {
       const count = Math.max(1, Math.ceil((s1 - s0) / ISO_CHUNK));
       const step = (s1 - s0) / count;
       for (let i = 0; i < count; i++) {
         const shape = box(s0 + step * i, s0 + step * (i + 1));
-        out.push({ kind, id: w.id, base: shape.base, z0: 0, z1,
+        out.push({ kind, id: w.id, base: shape.base, z0, z1,
           hiddenEdges: [...(i < count - 1 || (s1 >= len && w.end) ? shape.endEdges : []),
             ...(i > 0 || (s0 <= 0 && w.start) ? shape.startEdges : [])] });
       }
     };
     const spans = openingSpans(w, openings, d, len);
     let cursor = 0;
+    const hasHeader = w.kind !== "railing" && height > DEFAULT_WALL_HEIGHT;
     for (const s of spans) {
       // Solid wall up to this opening. The cap only at the wall's real end.
-      if (s.s0 > cursor) pieces(cursor === 0 ? -half : cursor, s.s0, height, kind);
+      if (s.s0 - cursor > 2) pieces(cursor === 0 ? -half : cursor, s.s0, height, kind);
       if (s.type === "window") {
         pieces(s.s0, s.s1, height * SILL_FRACTION, "sill");
         if (includeGlass) out.push({
@@ -339,9 +367,15 @@ export function wallSolids(
           z1: height * GLASS_FRACTION,
         });
       }
+      if (hasHeader) {
+        const openingTop = s.type === "window" ? height * GLASS_FRACTION : Math.min(height, DEFAULT_WALL_HEIGHT);
+        if (height > openingTop + 1e-4) {
+          pieces(s.s0, s.s1, height, kind, openingTop);
+        }
+      }
       cursor = s.s1;
     }
-    if (cursor < len) pieces(cursor === 0 ? -half : cursor, len + half, height, kind);
+    if (len - cursor > 2) pieces(cursor === 0 ? -half : cursor, len + half, height, kind);
   }
   return out;
 }
@@ -1052,7 +1086,7 @@ export function renderIsoSolid(s: IsoSolid): SVGTemplateResult {
   const style = styleParts.length > 0 ? styleParts.join(";") : nothing;
 
   const top = points(s.base.map((p) => elevate(p, s.z1)));
-  return svg`<g class=${`fp-iso-solid fp-iso-${s.kind}`} data-id=${id}
+  return svg`<g class=${`fp-iso-solid fp-iso-${s.kind}${s.isSlab ? " fp-iso-slab" : ""}`} data-id=${id}
                 style=${style}>
     ${faces.map(
       (f) => svg`<polygon class="fp-iso-face" points=${f.pts} /><polygon class="fp-iso-shade" points=${f.pts} opacity=${f.shade} />`
