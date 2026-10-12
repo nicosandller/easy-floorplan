@@ -2,6 +2,8 @@
 
 Technical design specification for implementing outdoor courtyard areas, multi-floor vertical 3D stacking (leveraging Home Assistant native floors), custom outdoor zone assignments, and roof rendering with ambient daylight integration.
 
+![3D Stacked House Rendering with Courtyard and Cross-Gable Roofs](img/3D_house_rendering.png)
+
 ---
 
 ## 1. Feature Architecture Overview
@@ -282,4 +284,6 @@ A full production configuration demonstrating a 3-level stacked home with subter
 - **Level 1 (`1st`)**: Upper living spaces stacked directly on the foundation.
 - **Level -1 (`Basement`)**: Subterranean level with garage and driveway ramp (`Rampa`); underground walls covered by Level 1 are culled while the driveway entrance ramp remains visible in 3D.
 - **Ground Floor (`Outside`)**: Marked `isOutdoor: true`, containing courtyard perimeter fence walls, driveway gate, garden lawn (`Gradina`), walkway (`Aleie`), and a gazebo (`Foisor`) with a custom shed roof.
-- **Visual Proof**: Captured in `3D_house_rendering.png`.
+- **Visual Proof**: Captured in [`3D_house_rendering.png`](img/3D_house_rendering.png):
+
+  ![3D Stacked House Rendering](img/3D_house_rendering.png)

@@ -74,12 +74,13 @@ Use the **Roof** drawing tool from the editor toolbar or drawing tool picker.
 
 ---
 
-## 3D Isometric Rendering (Upcoming)
+## 3D Isometric Rendering
 
-Roof geometries support complete 3D solid calculation (including gable, hip, shed, and flat roof profiles, ridge calculations, eaves overhang, and cross-gable valley intersections). Full 3D solid rendering in isometric view (`projection: iso`) will be enabled under dedicated display conditions in a subsequent update. Currently, roofs are drawn, shaped, and managed in the 2D visual editor.
+Roof geometries support complete 3D solid calculation (including gable, hip, shed, and flat roof profiles, ridge calculations, eaves overhang, directional shading, and cross-gable valley intersections). In 3D isometric view (`view: 3d` / `projection: iso`), roofs are rendered above their floors when viewing an outdoor floor (`isOutdoor: true`) or dedicated 3D building stack:
 
-1. **Automatic Solid Generation**: (disabled until further notice) Roof geometry is projected into 3D isometric solids with directional shading and horizontal course lines along sloped planes.
+1. **Automatic Solid Generation**: Roof geometry is projected into 3D isometric solids with directional sun shading and horizontal tile course lines along sloped planes.
 2. **Cross-Gable Valley Intersection**: When multiple gable roofs intersect on the same floor (such as T-shaped or L-shaped house layouts), the geometry automatically calculates valley lines and trims intersecting faces cleanly.
 3. **Room Focus & Interior Peeking**:
    - Tapping a roof in 3D view zooms and focuses the room underneath (via `areaContainingPoint`).
    - When a room is zoomed into, the roof solid covering that room is automatically hidden so the interior layout, furniture, and devices are fully visible. Tapping again zooms back out and restores the roof.
+4. **Integration with Multi-Floor Stacking**: See [`outdoor-3d-stacking.md`](outdoor-3d-stacking.md) for multi-level building stacking, courtyard layers, and ambient daylight shadows.

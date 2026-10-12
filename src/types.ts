@@ -86,8 +86,6 @@ export interface Wall {
    * off no dead space, since what it encloses is open to the air.
    */
   kind?: WallKind;
-  /** Custom height for 3D wall extrusion. */
-  height?: number;
   /** Whether this wall explicitly marks an exterior building boundary (true) or interior partition (false). */
   exterior?: boolean;
   /**

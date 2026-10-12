@@ -1198,6 +1198,36 @@ floors:
         y1: 1120
         x2: 1320
         y2: 1120
+      - id: wall_llkbp6t
+        x1: 1320
+        y1: 520
+        x2: 1800
+        y2: 520
+        height: 8
+      - id: wall_k3yu5t7
+        x1: 1320
+        y1: 820
+        x2: 1800
+        y2: 820
+        height: 8
+      - id: wall_lj5pyjs
+        x1: 1800
+        y1: 520
+        x2: 2020
+        y2: 520
+        height: 8
+      - id: wall_o6c9qty
+        x1: 1800
+        y1: 820
+        x2: 2000
+        y2: 820
+        height: 8
+      - id: wall_9x0nezb
+        x1: 1800
+        y1: 940
+        x2: 2000
+        y2: 940
+        height: 8
     openings:
       - id: door_neitpdl
         type: door
@@ -1341,6 +1371,18 @@ floors:
         roofType: shed
         roofPitchSide: right
         roofPitch: 30
+      - id: area_ytm5gnv
+        points:
+          - x: 1800
+            'y': 820
+          - x: 2000
+            'y': 820
+          - x: 2000
+            'y': 940
+          - x: 1800
+            'y': 940
+        showName: true
+        name: Carare
     haFloor: '1'
     color: '#00ff62'
     isOutdoor: true
