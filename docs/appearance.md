@@ -21,6 +21,10 @@ skin: tron
 | `pastel` | Soft and low-contrast: muted mauve walls on blush paper, peach for active devices. Easy on a dashboard that stays on screen. |
 | `tron` | Neon on near-black: thin glowing cyan walls, amber for active devices, light text. Light pools read best here. |
 
+<img width="300" height="300" alt="Default skin" src="https://github.com/user-attachments/assets/ce2d6545-10f4-4aa2-bbd7-0dcae08c27f5" />
+<img width="300" height="300" alt="Odnetnin skin" src="https://github.com/user-attachments/assets/1d46f7a3-b894-4fcb-bdb9-a55270b8e4e4" />
+<img width="300" height="300" alt="Tron skin" src="https://github.com/user-attachments/assets/de5b0825-3bff-4817-8a26-8f887bab8c48" />
+
 A skin only supplies **fallbacks**, so anything you set on an element yourself still wins —
 a room's own `color`, a device's `activeColor`, a `background` on the plan. Switch skins
 freely without losing colors you chose by hand.
@@ -317,6 +321,87 @@ open to the air. It still takes doors and windows the way a wall does — a gate
 railing is a door — and an explicit **Thickness** is scaled down with it, so a railing
 stays thinner than the walls beside it.
 
+## Floor button appearance
+
+Choose **Project → Floor switcher → Style → Dashboard buttons** for larger floor
+buttons that use Home Assistant's theme colours and card radius. **Layout** chooses a
+horizontal row or vertical column independently of the compact header. Automatic keeps
+the existing behaviour: a column normally, a row with `compactHeader: true`.
+
+![The same floorplan with classic floor labels and dashboard buttons](../assets/issue-353/comparison.jpg)
+
+```yaml
+type: custom:easy-floorplan-card
+floorSwitcher:
+  style: buttons
+  layout: horizontal
+  'x': 200
+  'y': 152
+```
+
+Omit `x` and `y` to keep the top-right position. Classic (`style: default`) keeps the
+small labels and plan skin colours; Dashboard buttons use the dashboard theme even when
+the plan has a different skin. Both styles use each floor's existing `short` label and
+active `color`. The full name remains available as the tooltip and accessible name, and
+the selected floor is announced as pressed. Horizontal rows wrap on narrow cards.
+Moving the switcher or choosing **Back to the corner** preserves its style and layout.
+See the [phone and native editor checks](../assets/issue-353/README.md) for examples.
+
+For a custom look, set the switcher variables through your theme or
+[card-mod](https://github.com/thomasloven/lovelace-card-mod). They affect only floor
+buttons, leaving device badges and the rest of the plan's skin alone:
+
+```yaml
+card_mod:
+  style: |
+    ha-card {
+      --fp-floor-switcher-background: var(--secondary-background-color);
+      --fp-floor-switcher-color: var(--primary-text-color);
+      --fp-floor-switcher-active-background: #00695c;
+      --fp-floor-switcher-active-color: white;
+      --fp-floor-switcher-border-radius: 24px;
+      --fp-floor-switcher-border-width: 0px;
+      --fp-floor-switcher-padding: 12px 20px;
+      --fp-floor-switcher-gap: 8px;
+      --fp-floor-switcher-box-shadow: none;
+    }
+```
+
+All variables below start with `--fp-floor-switcher-`. Unset values come from the
+selected preset; explicit values override the preset and per-floor active colour.
+
+| Suffix | Controls |
+| --- | --- |
+| `background`, `color`, `border-color` | Resting button colours |
+| `active-background`, `active-color`, `active-border-color` | Selected button colours; active border defaults to the active background |
+| `border-width`, `border-radius`, `box-shadow` | Outline, corners and shadow |
+| `padding`, `gap` | Space inside and between buttons |
+| `font-size`, `font-weight` | Label typography |
+| `min-height`, `max-width` | Button dimensions; dashboard buttons default to at least 44px high, both styles limit labels to 120px wide |
+
+For CSS beyond these variables, card-mod can target `.floor-switcher`, `.floor-button`,
+`.floor-button.active`, or `[data-floor-id="your-floor-id"]`. For example:
+
+```yaml
+card_mod:
+  style: |
+    .floor-switcher .floor-button {
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .floor-switcher [data-floor-id="ground"].active {
+      background: linear-gradient(120deg, #00695c, #0277bd);
+      color: white;
+      border-color: transparent;
+    }
+```
+
+The card also exposes CSS parts `floor-switcher`, `floor-button` and
+`floor-button-active` for stylesheets outside its shadow root, for example
+`easy-floorplan-card::part(floor-button) { border-radius: 0; }`. These are styling hooks
+for the built-in floor controls; they do not embed other Lovelace cards. One-floor plans
+still have no switcher.
+
 ## Where the floor switcher sits
 
 The floor buttons have always been pinned to the plan's top-right corner. That is a guess
@@ -547,7 +632,8 @@ to give viewers these controls directly on the card:
 
 - **2D / 3D** changes the projection.
 - **Normal / Line art** changes the drawing style.
-- **Rotate left / right** moves through the four viewing directions in 90° steps.
+- **Rotate left / right** turns through the four viewing directions in 90° steps.
+  In 3D the house moves smoothly around its centre; in 2D it switches immediately.
 - **Reset view** returns to the saved view, appearance and rotation and zooms out.
 
 ![Live line art with view controls and simulated devices](img/line-art-live-desktop.png)
@@ -577,6 +663,21 @@ card also restores its defaults. Reset keeps the active floor selected. The 3D
 view uses the existing isometric renderer and four viewing corners, with no free
 orbit camera.
 
+A 3D quarter-turn takes about half a second. Click again to keep turning or
+reverse direction; the next movement starts from the current position. Labels
+stay upright, device and opening actions follow the drawing, and a focused room
+stays selected. The angle beside the buttons is the destination. Reset cancels
+an unfinished turn and restores the saved defaults.
+
+With view controls enabled, 3D reserves enough space for every intermediate
+angle, including when a room is focused. Long, narrow plans can therefore look
+slightly smaller than a fixed-corner view, but keep the same scale while turning.
+The system's **Reduce motion** preference makes turns instantaneous; changing it
+mid-turn immediately settles the view. Switching to 2D or changing the screen's
+orientation also settles an unfinished turn.
+
+![A smooth 90-degree turn with simulated entities](../assets/issue-354/rotation-after.gif)
+
 The toolbar follows the Home Assistant theme, wraps for narrow cards, and supports
 keyboard focus and touch. Try the [live preview](../docker/README.md#live-appearance-preview)
 with simulated lights, doors and both themes.
@@ -586,8 +687,8 @@ with simulated lights, doors and both themes.
 Enable **Project → Display → Allow SVG download**, or add `showExport: true`, for
 an optional download button at the end of the view controls. Without view controls,
 it appears as **Export SVG** below the plan. Select a floor, then download it.
-The download uses the current 2D or 3D view and display rotation,
-including orientation overrides. It always includes the full canvas, even while
+The download uses the current 2D or 3D view and the selected destination rotation
+(even while a turn is still moving), including orientation overrides. It always includes the full canvas, even while
 zoomed into a room. Open the SVG directly in a browser, print it, or insert it into
 a document or vector editor.
 

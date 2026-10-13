@@ -26,6 +26,7 @@
  * separation and visible-face depth decide the order of overlapping solids.
  */
 import { svg, nothing, type SVGTemplateResult } from "lit";
+import { rotationBasis } from "./rotation";
 import { cssNumber, cssIdent, cssColorOr } from "./css-safe";
 import type { WallKind, Wall, Roof, RoofType, AreaPoint, RectAreaSide, OpeningType } from "./types";
 import { OPENING_ON_WALL_EPS } from "./dead-space";
@@ -106,6 +107,8 @@ export interface DisplayFrame {
   lowerDepth?: number;
   /** Screen-space margin for wall caps at the canvas boundary. */
   padding?: number;
+  /** Fixed floor span for live orbit controls; fits the full rotation without zoom pulsing. */
+  orbitSpan?: number;
 }
 
 /**
@@ -115,9 +118,10 @@ export interface DisplayFrame {
  */
 export function projectedCanvasSize(f: DisplayFrame): { w: number; h: number } {
   if (f.projection !== "iso") return { w: f.w, h: f.h };
+  const span = f.orbitSpan ?? f.w + f.h;
   return {
-    w: (f.w + f.h) * ISO_COS + 2 * (f.padding ?? 0),
-    h: (f.w + f.h) * ISO_SIN + f.wallHeight + (f.lowerDepth ?? 0) + 2 * (f.padding ?? 0),
+    w: span * ISO_COS + 2 * (f.padding ?? 0),
+    h: span * ISO_SIN + f.wallHeight + (f.lowerDepth ?? 0) + 2 * (f.padding ?? 0),
   };
 }
 
@@ -128,9 +132,10 @@ export function projectedCanvasSize(f: DisplayFrame): { w: number; h: number } {
  */
 export function projectPlanPoint(x: number, y: number, f: DisplayFrame, z = 0): Pt {
   if (f.projection !== "iso") return { x, y };
+  const margin = ((f.orbitSpan ?? f.w + f.h) - f.w - f.h) / 2;
   return {
-    x: (x - y) * ISO_COS + f.h * ISO_COS + (f.padding ?? 0),
-    y: (x + y) * ISO_SIN + f.wallHeight - z + (f.padding ?? 0),
+    x: (x - y) * ISO_COS + (f.h + margin) * ISO_COS + (f.padding ?? 0),
+    y: (x + y + margin) * ISO_SIN + f.wallHeight - z + (f.padding ?? 0),
   };
 }
 
@@ -156,7 +161,8 @@ export function projectPlanDirection(dx: number, dy: number, f: DisplayFrame): P
 export function planProjectionTransform(f: DisplayFrame): string {
   if (f.projection !== "iso") return "";
   const n = (v: number) => String(+v.toFixed(6));
-  return `matrix(${n(ISO_COS)} ${n(ISO_SIN)} ${n(-ISO_COS)} ${n(ISO_SIN)} ${n(f.h * ISO_COS + (f.padding ?? 0))} ${n(f.wallHeight + (f.padding ?? 0))})`;
+  const origin = projectPlanPoint(0, 0, f);
+  return `matrix(${n(ISO_COS)} ${n(ISO_SIN)} ${n(-ISO_COS)} ${n(ISO_SIN)} ${n(origin.x)} ${n(origin.y)})`;
 }
 
 /**
@@ -181,8 +187,10 @@ export function elevationShift(z: number, rot: number): Pt {
       return { x: z, y: z };
     case 270:
       return { x: z, y: -z };
-    default:
-      return { x: -z, y: -z };
+    default: {
+      const { cos, sin } = rotationBasis(rot);
+      return { x: -z * (cos + sin), y: z * (sin - cos) };
+    }
   }
 }
 
@@ -380,18 +388,22 @@ export function wallSolids(
         { x: a.x + n.x * half, y: a.y + n.y * half }, { x: a.x - n.x * half, y: a.y - n.y * half }];
       const end = s1 >= len && w.end ? w.end : [
         { x: b.x + n.x * half, y: b.y + n.y * half }, { x: b.x - n.x * half, y: b.y - n.y * half }];
-      return { base: [start[0]!, ...end, ...start.slice(1).reverse()],
+      return {
+        base: [start[0]!, ...end, ...start.slice(1).reverse()],
         endEdges: end.slice(1).map((_p, i) => i + 1),
-        startEdges: start.slice(1).map((_p, i) => end.length + 1 + i) };
+        startEdges: start.slice(1).map((_p, i) => end.length + 1 + i)
+      };
     };
     const pieces = (s0: number, s1: number, z1: number, kind: IsoSolidKind, z0 = 0) => {
       const count = Math.max(1, Math.ceil((s1 - s0) / ISO_CHUNK));
       const step = (s1 - s0) / count;
       for (let i = 0; i < count; i++) {
         const shape = box(s0 + step * i, s0 + step * (i + 1));
-        out.push({ kind, id: w.id, base: shape.base, z0, z1,
+        out.push({
+          kind, id: w.id, base: shape.base, z0, z1,
           hiddenEdges: [...(i < count - 1 || (s1 >= len && w.end) ? shape.endEdges : []),
-            ...(i > 0 || (s0 <= 0 && w.start) ? shape.startEdges : [])] });
+          ...(i > 0 || (s0 <= 0 && w.start) ? shape.startEdges : [])]
+        });
       }
     };
     const spans = openingSpans(w, openings, d, len);
@@ -1056,8 +1068,8 @@ export function renderIsoSolid(s: IsoSolid): SVGTemplateResult {
     return svg`<polygon class=${`fp-iso-${s.kind}${s.glazed ? " fp-iso-glazed" : ""}`} data-id=${id}
                         style=${s.color ? `--fp-iso-color:${s.color}` : nothing}
                         points=${points(s.vertices
-                          ? s.vertices.map((p) => elevate(p, p.z))
-                          : [elevate(a, s.z0), elevate(b, s.z0), elevate(b, s.z1), elevate(a, s.z1)])} />`;
+      ? s.vertices.map((p) => elevate(p, p.z))
+      : [elevate(a, s.z0), elevate(b, s.z0), elevate(b, s.z1), elevate(a, s.z1)])} />`;
   }
   if (s.kind === "roof" && s.vertices) {
     const elevated = s.vertices.map((p) => elevate(p, p.z));
@@ -1132,8 +1144,8 @@ export function renderIsoSolid(s: IsoSolid): SVGTemplateResult {
   return svg`<g class=${`fp-iso-solid fp-iso-${s.kind}${s.isSlab ? " fp-iso-slab" : ""}`} data-id=${id}
                 style=${style}>
     ${faces.map(
-      (f) => svg`<polygon class="fp-iso-face" points=${f.pts} /><polygon class="fp-iso-shade" points=${f.pts} opacity=${f.shade} />`
-    )}
+    (f) => svg`<polygon class="fp-iso-face" points=${f.pts} /><polygon class="fp-iso-shade" points=${f.pts} opacity=${f.shade} />`
+  )}
     <polygon class="fp-iso-face fp-iso-top" points=${top} />
     ${s.top ?? nothing}
   </g>`;

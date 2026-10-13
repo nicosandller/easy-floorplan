@@ -2,11 +2,16 @@
 
 How the plan lights itself — from your own lights, and from the sun outside.
 
+For individual lamps, see [Cast light](configuration.md#cast-light).
+
 Back to the [README](../README.md).
 
 ## Follow the sun
 
 Set **`sunDimming: true`** and the plan dims through dusk and brightens through dawn.
+
+<img width="441" height="301" alt="Floorplan in daylight" src="https://github.com/user-attachments/assets/f3dbfc88-9d06-4f44-81dc-bf499cbd9bd3" />
+<img width="444" height="313" alt="Floorplan at night with lit rooms" src="https://github.com/user-attachments/assets/1590b710-d88f-4a34-986b-b08640a45f4c" />
 
 ```yaml
 type: custom:easy-floorplan-card

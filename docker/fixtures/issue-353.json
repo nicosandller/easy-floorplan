@@ -1,0 +1,434 @@
+{
+  "type": "custom:easy-floorplan-card",
+  "width": 400,
+  "height": 300,
+  "floorSwitcher": {
+    "x": 200,
+    "y": 260
+  },
+  "floors": [
+    {
+      "id": "ground",
+      "name": "Ground floor",
+      "short": "Ground",
+      "walls": [
+        {
+          "id": "north",
+          "x1": 35,
+          "y1": 35,
+          "x2": 365,
+          "y2": 35
+        },
+        {
+          "id": "east",
+          "x1": 365,
+          "y1": 35,
+          "x2": 365,
+          "y2": 205
+        },
+        {
+          "id": "south",
+          "x1": 365,
+          "y1": 205,
+          "x2": 35,
+          "y2": 205
+        },
+        {
+          "id": "west",
+          "x1": 35,
+          "y1": 205,
+          "x2": 35,
+          "y2": 35
+        },
+        {
+          "id": "partition",
+          "x1": 230,
+          "y1": 35,
+          "x2": 230,
+          "y2": 205
+        }
+      ],
+      "areas": [
+        {
+          "id": "ground-living",
+          "name": "Living room",
+          "points": [
+            {
+              "x": 35,
+              "y": 35
+            },
+            {
+              "x": 230,
+              "y": 35
+            },
+            {
+              "x": 230,
+              "y": 205
+            },
+            {
+              "x": 35,
+              "y": 205
+            }
+          ],
+          "color": "#d9e5ec",
+          "opacity": 0.65
+        },
+        {
+          "id": "ground-side",
+          "name": "Kitchen",
+          "points": [
+            {
+              "x": 230,
+              "y": 35
+            },
+            {
+              "x": 365,
+              "y": 35
+            },
+            {
+              "x": 365,
+              "y": 205
+            },
+            {
+              "x": 230,
+              "y": 205
+            }
+          ],
+          "color": "#dfdecf",
+          "opacity": 0.65
+        }
+      ],
+      "openings": [
+        {
+          "id": "entry",
+          "type": "door",
+          "x": 140,
+          "y": 205,
+          "length": 45,
+          "angle": 0
+        },
+        {
+          "id": "inner",
+          "type": "door",
+          "x": 230,
+          "y": 140,
+          "length": 40,
+          "angle": 90
+        },
+        {
+          "id": "window",
+          "type": "window",
+          "x": 130,
+          "y": 35,
+          "length": 65,
+          "angle": 0
+        }
+      ],
+      "furniture": [
+        {
+          "id": "main",
+          "type": "sofa",
+          "x": 95,
+          "y": 110,
+          "w": 90,
+          "h": 45,
+          "angle": 90
+        },
+        {
+          "id": "table",
+          "type": "table",
+          "x": 285,
+          "y": 100,
+          "w": 65,
+          "h": 40,
+          "angle": 0
+        }
+      ],
+      "items": [],
+      "texts": [],
+      "trackers": []
+    },
+    {
+      "id": "first",
+      "name": "First floor",
+      "short": "First",
+      "walls": [
+        {
+          "id": "north",
+          "x1": 35,
+          "y1": 35,
+          "x2": 365,
+          "y2": 35
+        },
+        {
+          "id": "east",
+          "x1": 365,
+          "y1": 35,
+          "x2": 365,
+          "y2": 205
+        },
+        {
+          "id": "south",
+          "x1": 365,
+          "y1": 205,
+          "x2": 35,
+          "y2": 205
+        },
+        {
+          "id": "west",
+          "x1": 35,
+          "y1": 205,
+          "x2": 35,
+          "y2": 35
+        },
+        {
+          "id": "partition",
+          "x1": 230,
+          "y1": 35,
+          "x2": 230,
+          "y2": 205
+        }
+      ],
+      "areas": [
+        {
+          "id": "first-living",
+          "name": "Bedroom",
+          "points": [
+            {
+              "x": 35,
+              "y": 35
+            },
+            {
+              "x": 230,
+              "y": 35
+            },
+            {
+              "x": 230,
+              "y": 205
+            },
+            {
+              "x": 35,
+              "y": 205
+            }
+          ],
+          "color": "#d9e5ec",
+          "opacity": 0.65
+        },
+        {
+          "id": "first-side",
+          "name": "Bathroom",
+          "points": [
+            {
+              "x": 230,
+              "y": 35
+            },
+            {
+              "x": 365,
+              "y": 35
+            },
+            {
+              "x": 365,
+              "y": 205
+            },
+            {
+              "x": 230,
+              "y": 205
+            }
+          ],
+          "color": "#dfdecf",
+          "opacity": 0.65
+        }
+      ],
+      "openings": [
+        {
+          "id": "entry",
+          "type": "door",
+          "x": 140,
+          "y": 205,
+          "length": 45,
+          "angle": 0
+        },
+        {
+          "id": "inner",
+          "type": "door",
+          "x": 230,
+          "y": 140,
+          "length": 40,
+          "angle": 90
+        },
+        {
+          "id": "window",
+          "type": "window",
+          "x": 130,
+          "y": 35,
+          "length": 65,
+          "angle": 0
+        }
+      ],
+      "furniture": [
+        {
+          "id": "main",
+          "type": "bed",
+          "x": 95,
+          "y": 110,
+          "w": 90,
+          "h": 85,
+          "angle": 0
+        },
+        {
+          "id": "table",
+          "type": "table",
+          "x": 285,
+          "y": 100,
+          "w": 65,
+          "h": 40,
+          "angle": 0
+        }
+      ],
+      "items": [],
+      "texts": [],
+      "trackers": []
+    },
+    {
+      "id": "loft",
+      "name": "Loft",
+      "short": "Loft",
+      "walls": [
+        {
+          "id": "north",
+          "x1": 35,
+          "y1": 35,
+          "x2": 365,
+          "y2": 35
+        },
+        {
+          "id": "east",
+          "x1": 365,
+          "y1": 35,
+          "x2": 365,
+          "y2": 205
+        },
+        {
+          "id": "south",
+          "x1": 365,
+          "y1": 205,
+          "x2": 35,
+          "y2": 205
+        },
+        {
+          "id": "west",
+          "x1": 35,
+          "y1": 205,
+          "x2": 35,
+          "y2": 35
+        },
+        {
+          "id": "partition",
+          "x1": 230,
+          "y1": 35,
+          "x2": 230,
+          "y2": 205
+        }
+      ],
+      "areas": [
+        {
+          "id": "loft-living",
+          "name": "Study",
+          "points": [
+            {
+              "x": 35,
+              "y": 35
+            },
+            {
+              "x": 230,
+              "y": 35
+            },
+            {
+              "x": 230,
+              "y": 205
+            },
+            {
+              "x": 35,
+              "y": 205
+            }
+          ],
+          "color": "#d9e5ec",
+          "opacity": 0.65
+        },
+        {
+          "id": "loft-side",
+          "name": "Storage",
+          "points": [
+            {
+              "x": 230,
+              "y": 35
+            },
+            {
+              "x": 365,
+              "y": 35
+            },
+            {
+              "x": 365,
+              "y": 205
+            },
+            {
+              "x": 230,
+              "y": 205
+            }
+          ],
+          "color": "#dfdecf",
+          "opacity": 0.65
+        }
+      ],
+      "openings": [
+        {
+          "id": "entry",
+          "type": "door",
+          "x": 140,
+          "y": 205,
+          "length": 45,
+          "angle": 0
+        },
+        {
+          "id": "inner",
+          "type": "door",
+          "x": 230,
+          "y": 140,
+          "length": 40,
+          "angle": 90
+        },
+        {
+          "id": "window",
+          "type": "window",
+          "x": 130,
+          "y": 35,
+          "length": 65,
+          "angle": 0
+        }
+      ],
+      "furniture": [
+        {
+          "id": "main",
+          "type": "table",
+          "x": 95,
+          "y": 110,
+          "w": 90,
+          "h": 85,
+          "angle": 0
+        },
+        {
+          "id": "table",
+          "type": "table",
+          "x": 285,
+          "y": 100,
+          "w": 65,
+          "h": 40,
+          "angle": 0
+        }
+      ],
+      "items": [],
+      "texts": [],
+      "trackers": []
+    }
+  ]
+}

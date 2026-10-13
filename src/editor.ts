@@ -5,6 +5,7 @@ import { editorWorkspaceStyles } from "./editor-workspace-styles";
 import { repeat } from "lit/directives/repeat.js";
 import { keyed } from "lit/directives/keyed.js";
 import { validateYCoordinates } from "./config-coordinates";
+import { floorSwitcherClasses, floorSwitcherStyles } from "./floor-switcher";
 import type {
   HomeAssistant,
   FloorplanCardConfig,
@@ -549,10 +550,13 @@ export class FloorplanCardEditor extends LitElement {
   private _switcherMoves = new FrameCoalescer<{ x: number; y: number }>(rafScheduler, (at) => {
     if (!this._switcherDrag) return;
     // Only the anchor moves. Unlike every other drag this one cannot change
-    // which entities the card watches — `floorSwitcher` is a point and binds
+    // which entities the card watches — `floorSwitcher` binds
     // nothing — so there is no `collectWatchedEntities` here: rescanning the
     // whole config per frame to arrive at the same set is work for nothing.
-    this._config = { ...this._config, floorSwitcher: { x: at.x, y: at.y } };
+    this._config = {
+      ...this._config,
+      floorSwitcher: { ...this._config.floorSwitcher, x: at.x, y: at.y },
+    };
   });
   /** A drag changed the config and the host has not been told yet. */
   private _dragDirty = false;
@@ -5705,7 +5709,7 @@ export class FloorplanCardEditor extends LitElement {
     const floors = c.floors ?? [];
     return html`
       <div
-        class="switcher-handle ${c.compactHeader === true ? "row" : ""} ${this
+        class="switcher-handle floor-switcher ${floorSwitcherClasses(c)} ${this
           ._switcherDrag
           ? "dragging"
           : ""} ${placed ? "" : "default"} ${this._tool === "select" ? "" : "passive"}"
@@ -5717,7 +5721,8 @@ export class FloorplanCardEditor extends LitElement {
         @lostpointercapture=${this._onSwitcherCancel}
       >
         ${floors.map(
-          (f: Floor) => html`<span class="sh-btn ${f.id === this._activeFloorId ? "active" : ""}"
+          (f: Floor) => html`<span class="sh-btn floor-button ${f.id === this._activeFloorId ? "active" : ""}"
+            style=${cssColor(f.color) ? `--fp-floor-accent:${cssColor(f.color)};` : nothing}
             >${f.short || f.name}</span
           >`
         )}
@@ -6293,6 +6298,32 @@ export class FloorplanCardEditor extends LitElement {
     const w = cssNumber(this._config.width, DEFAULT_WIDTH);
     const h = cssNumber(this._config.height, DEFAULT_HEIGHT);
     return html`
+      <!-- Appearance only matters once there is a switcher to see; a
+           one-floor plan would store a choice with no visible result. -->
+      ${floors.length > 1
+        ? html`
+          <div class="row">
+            <label for="floor-switcher-style">Style</label>
+            <select id="floor-switcher-style" .value=${this._config.floorSwitcher?.style ?? "default"}
+              @change=${(e: Event) => this._patchSwitcher({
+                style: (e.target as HTMLSelectElement).value as "default" | "buttons",
+              })}>
+              <option value="default">Classic</option>
+              <option value="buttons">Dashboard buttons</option>
+            </select>
+          </div>
+          <div class="row">
+            <label for="floor-switcher-layout">Layout</label>
+            <select id="floor-switcher-layout" .value=${this._config.floorSwitcher?.layout ?? "auto"}
+              @change=${(e: Event) => this._patchSwitcher({
+                layout: (e.target as HTMLSelectElement).value as "auto" | "horizontal" | "vertical",
+              })}>
+              <option value="auto">Automatic</option>
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
+            </select>
+          </div>`
+        : nothing}
       <div class="row col">
         <label>Position</label>
         ${floors.length > 1
@@ -6343,7 +6374,7 @@ export class FloorplanCardEditor extends LitElement {
               </div>
               ${at
                 ? html`<div class="row wide">
-                    <button @click=${() => this._patchConfig({ floorSwitcher: undefined })}>
+                    <button @click=${() => this._patchSwitcher({ x: undefined, y: undefined })}>
                       Back to the corner
                     </button>
                   </div>`
@@ -6356,6 +6387,19 @@ export class FloorplanCardEditor extends LitElement {
     `;
   }
 
+  /** Update appearance or placement without dropping the other settings. */
+  private _patchSwitcher(patch: NonNullable<FloorplanCardConfig["floorSwitcher"]>): void {
+    // A hand-written non-object (`floorSwitcher: "top-right"`) is invalid, and
+    // spreading a string would save it back as character-indexed keys.
+    const current = this._config.floorSwitcher;
+    const base = current && typeof current === "object" && !Array.isArray(current) ? current : {};
+    const next = { ...base, ...patch };
+    if (next.style === "default") delete next.style;
+    if (next.layout === "auto") delete next.layout;
+    const entries = Object.entries(next).filter(([, value]) => value !== undefined);
+    this._patchConfig({ floorSwitcher: entries.length ? Object.fromEntries(entries) : undefined });
+  }
+
   /**
    * Set one coordinate from the panel's number fields.
    *
@@ -6364,22 +6408,19 @@ export class FloorplanCardEditor extends LitElement {
    * honest answer is where the handle is actually drawn, since that is what
    * the field's placeholder has been showing.
    *
-   * An emptied field returns the switcher to the corner rather than storing a
-   * half-position: `floorSwitcher` is a point or it is nothing, which is the
-   * rule `floorSwitcherAnchor` enforces at the other end.
+   * An emptied field clears both coordinates while preserving appearance.
+   * `floorSwitcherAnchor` requires a complete position at the other end.
    */
   private _setSwitcherCoord(axis: "x" | "y", raw: string): void {
     const n = Number(raw);
     if (raw.trim() === "" || !Number.isFinite(n)) {
-      this._patchConfig({ floorSwitcher: undefined });
+      this._patchSwitcher({ x: undefined, y: undefined });
       return;
     }
     const w = cssNumber(this._config.width, DEFAULT_WIDTH);
     const h = cssNumber(this._config.height, DEFAULT_HEIGHT);
     const base = floorSwitcherAnchor(this._config) ?? switcherHandleHome(w, h);
-    this._patchConfig({
-      floorSwitcher: { ...base, [axis]: n },
-    });
+    this._patchSwitcher({ ...base, [axis]: n });
   }
 
   private _renderSymbolsPanel(): TemplateResult {
@@ -8666,9 +8707,7 @@ export class FloorplanCardEditor extends LitElement {
          perfectly and could not be picked up at all. */
       pointer-events: auto;
       transform: translate(-50%, -50%);
-      display: flex;
-      flex-direction: column;
-      gap: 3px;
+      width: max-content;
       cursor: grab;
       touch-action: none;
       z-index: 4;
@@ -8691,11 +8730,8 @@ export class FloorplanCardEditor extends LitElement {
        row can sit happily in a gap the real thing overflows. Wrapped and
        centred for the same reason the card's is wrapped — eight floors is
        exactly the case a row is worst at. */
-    .switcher-handle.row {
-      flex-direction: row;
-      flex-wrap: wrap;
+    .switcher-handle.floor-switcher.row {
       justify-content: center;
-      max-width: 50%;
     }
     /* Dimmed until it has been placed, so the canvas does not claim a position
        is stored when none is. Its tooltip says the same thing in words. */
@@ -8703,24 +8739,7 @@ export class FloorplanCardEditor extends LitElement {
       opacity: 0.55;
     }
     .switcher-handle .sh-btn {
-      border: 1px solid var(--divider-color, #ccc);
-      background: var(--card-background-color, #fff);
-      color: var(--primary-text-color);
-      border-radius: 6px;
-      padding: 3px 7px;
-      font-size: 11px;
-      line-height: 1;
-      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-      max-width: 110px;
-      overflow: hidden;
-      text-overflow: ellipsis;
-      white-space: nowrap;
       pointer-events: none;
-    }
-    .switcher-handle .sh-btn.active {
-      background: var(--primary-color, #03a9f4);
-      color: var(--text-primary-color, #fff);
-      border-color: var(--primary-color, #03a9f4);
     }
     .state-color-rule select {
       flex: 0 0 96px;
@@ -8862,6 +8881,7 @@ export class FloorplanCardEditor extends LitElement {
       --mdc-icon-size: 16px;
     }
   `,
+    floorSwitcherStyles,
     editorWorkspaceStyles,
   ];
 }
