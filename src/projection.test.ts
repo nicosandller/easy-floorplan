@@ -565,6 +565,39 @@ describe("roofSolids", () => {
     expect(slope0.base.some((p) => p.x === 100)).toBe(true);
   });
 
+  it("sanitises hostile roof colour and falls back to default (#8d6e63)", () => {
+    const roof: Roof = {
+      id: "r1",
+      points,
+      type: "flat",
+      elevation: 60,
+      height: 12,
+      color: "red;position:fixed;inset:0;z-index:99999;background-image:url(https://evil.example/x)",
+    };
+    const solids = roofSolids([roof], mapIdentity, 60);
+    expect(solids[0].color).toBe("#8d6e63");
+    const html = flatten(renderIsoSolids(solids));
+    expect(html).not.toContain("position:fixed");
+    expect(html).not.toContain("evil.example");
+    expect(html).toContain("--fp-iso-color:#8d6e63");
+  });
+
+  it("sanitises hostile roof colour for pitched roofs in renderIsoSolids", () => {
+    const roof: Roof = {
+      id: "r1",
+      points,
+      type: "gable",
+      elevation: 60,
+      height: 30,
+      color: "red;position:fixed;inset:0",
+    };
+    const solids = roofSolids([roof], mapIdentity, 60);
+    expect(solids.every((s) => s.color === "#8d6e63")).toBe(true);
+    const html = flatten(renderIsoSolids(solids));
+    expect(html).not.toContain("position:fixed");
+    expect(html).toContain("--fp-iso-color:#8d6e63");
+  });
+
   it("renders IsoSolid with opacity in renderIsoSolids", () => {
     const solid: IsoSolid = {
       kind: "roof",

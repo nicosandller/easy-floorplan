@@ -136,6 +136,14 @@ describe("cssColorOr — falls back on unsafe or missing", () => {
   it("falls back on undefined", () => {
     expect(cssColorOr(undefined, "var(--primary-color)")).toBe("var(--primary-color)");
   });
+  it("falls back on remote-fetch or overlay breakout", () => {
+    expect(
+      cssColorOr(
+        "red;position:fixed;inset:0;z-index:99999;background-image:url(https://evil.example/x)",
+        "#8d6e63"
+      )
+    ).toBe("#8d6e63");
+  });
 });
 
 describe("cssNumber — coerces size/angle fields, blocks breakouts", () => {

@@ -26,7 +26,7 @@
  * separation and visible-face depth decide the order of overlapping solids.
  */
 import { svg, nothing, type SVGTemplateResult } from "lit";
-import { cssNumber, cssIdent } from "./css-safe";
+import { cssNumber, cssIdent, cssColorOr } from "./css-safe";
 import type { WallKind, Wall, Roof, RoofType, AreaPoint, RectAreaSide, OpeningType } from "./types";
 import { OPENING_ON_WALL_EPS } from "./dead-space";
 import { openingIsSkylight } from "./types";
@@ -768,7 +768,7 @@ export function roofSolids(
     const defaultHeight = type === "flat" ? 8 : Math.round(defaultWallHeight * 0.6);
     const height = roof.height ?? defaultHeight;
     const overhang = roof.overhang ?? 0;
-    const color = roof.color || "#8d6e63";
+    const color = cssColorOr(roof.color, "#8d6e63");
     const highSide = roof.highSide;
     const ridge = roof.ridge;
 
