@@ -1005,7 +1005,19 @@ export function isAreaCoveredByUpper(
   if (centroid && upperPolygons.some((poly) => pointInPolygon(poly, centroid.x, centroid.y))) {
     return true;
   }
-  return area.points.every((p) => upperPolygons.some((poly) => pointInPolygon(poly, p.x, p.y)));
+  if (centroid) {
+    const interiorPoints = area.points.map((p) => ({
+      x: (p.x + centroid.x) / 2,
+      y: (p.y + centroid.y) / 2,
+    }));
+    if (
+      interiorPoints.length > 0 &&
+      interiorPoints.every((ip) => upperPolygons.some((poly) => pointInPolygon(poly, ip.x, ip.y)))
+    ) {
+      return true;
+    }
+  }
+  return false;
 }
 
 /**
