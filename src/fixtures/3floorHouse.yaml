@@ -81,6 +81,7 @@ floors:
         'y': 900
         length: 60
         angle: -90
+        entity: cover.living_room_window
       - id: window_f558n1e
         type: window
         x: 878.7003533138403
@@ -93,6 +94,7 @@ floors:
         'y': 539.9668109061884
         length: 360
         angle: -90
+        entity: cover.pergola_roof
       - id: window_171j23u
         type: window
         x: 879.2858856756625
@@ -176,7 +178,7 @@ floors:
             'y': 820
         height: 200
         ridge: horizontal
-    haFloor: '3'
+    level: 3
   - id: floor_i5t9saa
     name: 2nd
     walls:
@@ -485,7 +487,6 @@ floors:
             'y': 1120
         showName: true
         name: BedroomR
-    haFloor: '2'
     roofs:
       - id: roof_otrax7z
         type: shed
@@ -500,6 +501,7 @@ floors:
             'y': 1120
         height: 36
         highSide: left
+    level: 2
   - id: floor_98eiwsv
     name: 1st
     walls:
@@ -840,7 +842,6 @@ floors:
         showName: true
         name: Terrace
     short: Et1
-    haFloor: '1'
     roofs:
       - id: roof_xda67z4
         type: flat
@@ -854,6 +855,7 @@ floors:
           - x: 1320
             'y': 540
         height: 8
+    level: 1
   - id: floor_main
     name: Basement
     walls:
@@ -945,6 +947,7 @@ floors:
         tap_action:
           action: more-info
         glazed: true
+        entity: cover.garage_door
       - id: door_9uut9s5
         type: door
         x: 1159.4667432368685
@@ -1153,8 +1156,8 @@ floors:
             'y': 820
         showName: true
         name: Rampa
-    haFloor: '0'
     roofs: []
+    level: 0
   - id: floor_6dy5nao
     name: OUtside
     walls:
@@ -1241,6 +1244,7 @@ floors:
         inactiveColor: '#03a9f4'
         tap_action:
           action: more-info
+        entity: cover.hall_window
       - id: door_gpsab7f
         type: door
         x: 1800
@@ -1383,7 +1387,6 @@ floors:
             'y': 940
         showName: true
         name: Carare
-    haFloor: '1'
     color: '#00ff62'
     isOutdoor: true
     roofs:
@@ -1399,6 +1402,7 @@ floors:
           - x: 1580
             'y': 1500
         height: 36
+    level: 1
 appearance: normal
 showViewControls: true
 showExport: true
@@ -1410,3 +1414,4 @@ ambientDaylight: true
 sunlight: true
 north: 150
 sunDimming: true
+wallHeight: 100
