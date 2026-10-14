@@ -548,29 +548,6 @@ function createRoofFace(
   }
   if (pts3D.length < 3) return { kind: "roof", base: [], z0, z1, sortDepth };
 
-  const [a, b, c] = pts3D;
-  let shade = 0.12;
-  if (a && b && c) {
-    const u = { x: b.x - a.x, y: b.y - a.y, z: b.z - a.z };
-    const v = { x: c.x - a.x, y: c.y - a.y, z: c.z - a.z };
-    const nx = u.y * v.z - u.z * v.y;
-    const ny = u.z * v.x - u.x * v.z;
-    const nz = u.x * v.y - u.y * v.x;
-    const len = Math.hypot(nx, ny, nz) || 1;
-    const unx = nx / len, uny = ny / len, unz = nz / len;
-
-    if (unz > 0.7) {
-      shade = 0.08 + (unx > 0 ? 0.04 : 0) + (uny < 0 ? 0.08 : 0);
-    } else if (unx > 0.4) {
-      shade = SHADE_RIGHT;
-    } else if (uny < -0.4) {
-      shade = SHADE_FRONT;
-    } else {
-      shade = 0.28;
-    }
-  }
-
-  const screenPts = pts3D.map((p) => elevate(map(p.x, p.y), p.z));
   const basePts = pts3D.map((p) => map(p.x, p.y));
   const vert3D = pts3D.map((p) => ({ ...map(p.x, p.y), z: p.z }));
 
@@ -583,11 +560,23 @@ function createRoofFace(
     color,
     sortDepth,
     vertices: vert3D,
-    top: svg`<polygon class="fp-iso-face" points=${points(screenPts)} /><polygon class="fp-iso-shade" points=${points(screenPts)} opacity=${shade} />`,
   };
 }
 
+interface NormalizedRoof {
+  id: string;
+  type: RoofType;
+  points: AreaPoint[];
+  height: number;
+  elevation: number;
+  overhang: number;
+  color: string;
+  highSide?: RectAreaSide;
+  ridge?: "horizontal" | "vertical";
+}
+
 interface ParsedGableRoof {
+  norm: NormalizedRoof;
   id: string;
   minX: number;
   maxX: number;
@@ -788,18 +777,6 @@ export function roofSolids(
 ): IsoSolid[] {
   const solids: IsoSolid[] = [];
 
-  interface NormalizedRoof {
-    id: string;
-    type: RoofType;
-    points: AreaPoint[];
-    height: number;
-    elevation: number;
-    overhang: number;
-    color: string;
-    highSide?: RectAreaSide;
-    ridge?: "horizontal" | "vertical";
-  }
-
   const parsedGables: ParsedGableRoof[] = [];
   const otherRoofs: NormalizedRoof[] = [];
 
@@ -840,6 +817,7 @@ export function roofSolids(
       const rangeY = maxY - minY;
       const alongX = ridge ? ridge === "horizontal" : rangeX >= rangeY;
       parsedGables.push({
+        norm,
         id: norm.id,
         minX, maxX, minY, maxY,
         rangeX, rangeY,
@@ -889,16 +867,7 @@ export function roofSolids(
   const remainingRoofs: NormalizedRoof[] = [
     ...parsedGables
       .filter((g) => !handledGableIds.has(g.id))
-      .map((g) => ({
-        id: g.id,
-        type: "gable" as const,
-        points: [{ x: g.minX, y: g.minY }, { x: g.maxX, y: g.minY }, { x: g.maxX, y: g.maxY }, { x: g.minX, y: g.maxY }],
-        height: g.pitch,
-        elevation: g.z0,
-        overhang: 0,
-        color: g.color,
-        ridge: g.alongX ? ("horizontal" as const) : ("vertical" as const),
-      })),
+      .map((g) => g.norm),
     ...otherRoofs,
   ];
 

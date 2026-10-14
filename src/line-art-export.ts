@@ -30,7 +30,11 @@ export interface LineArtExport {
   filename: string;
 }
 
-/** Uses the card's full canvas and current rotation, never its transient zoom. */
+/**
+ * Uses the card's full canvas and current rotation, never its transient zoom.
+ * Exports a single floor's architectural line art without multi-story stacking
+ * or opaque roof caps, keeping room layouts visible.
+ */
 export function createLineArtSvg(c: FloorplanCardConfig, floor: Floor, rot: PlanRotation): LineArtExport {
   const width = Math.max(1, cssNumber(c.width, DEFAULT_WIDTH));
   const height = Math.max(1, cssNumber(c.height, DEFAULT_HEIGHT));

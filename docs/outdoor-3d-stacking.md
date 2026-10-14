@@ -79,7 +79,7 @@ All core phases have been fully implemented, verified, and integrated into `easy
 - [x] **Phase 1 — Outdoor Courtyard & Custom Zones**:
   - `isOutdoor?: boolean` floor toggle in config and visual editor.
   - Outdoor area zone kinds (`lawn`, `patio`, `terrace`, `driveway`, `garden`, `pool`) with distinct background fills and styling.
-  - External boundary wall extraction: `filterExternalIndoorWalls(...)` and `filterExternalOpenings(...)` to isolate building shells.
+  - Outdoor area rendering and ground-level terrain slabs.
 - [x] **Phase 2 — Multi-Floor 3D Stacking via HA Floors**:
   - `resolveFloorLevel(...)` detects floor elevation from Home Assistant native floor registry (`haFloor`) and floor array order.
   - Level-based vertical stacking: $z_{\text{offset}} = (L - L_{\text{base}}) \times \text{outdoorWallHeight}$.
@@ -124,15 +124,12 @@ When viewing an outdoor floor (`isOutdoor: true`), `_renderIsoLayer` groups indo
    Where `outdoorWallHeight = baseWallHeight * 2.5`. Both positive upper floors ($L > L_{\text{base}}$) and negative subterranean floors ($L < L_{\text{base}}$, such as basements) are naturally supported.
 2. **Subterranean Headroom & Canvas Scaling**:
    In `_frame(...)`, `lowerDepth` dynamically extends the canvas viewport downward whenever lower/basement levels exist ($L_{\text{base}} - \min(L)$), ensuring underground ramps and walkout garage walls remain within view without clipping.
-3. **Subterranean Exposure & Underground Wall Culling**:
-   Lower-level walls completely covered by upper-level room slabs are underground and automatically hidden.
-   - `splitWallsAtJunctions` cuts wall segments where they intersect upper area boundary loops.
-   - `filterLowerWallsByUpperCoverage` tests normal-offset sample points against upper coverage polygons. Walls covered on both sides are culled.
-   - For walkout basements or outdoor garage ramps, `viewerDirection(rot)` hides rear subterranean foundation walls covered from the camera's vantage point while rendering exposed front retaining walls.
+3. **Subterranean Exposure & Occlusion**:
+   Lower-level areas completely covered by upper-level room slabs are culled using `isAreaCoveredByUpper`. Subterranean foundation walls beneath ground level are occluded naturally by the isometric painter's algorithm order and ground slabs ($z_0 = -6, z_1 = 0$), while exposed walkout walls (such as basement walkout garage doors or open ramps) remain visible.
 4. **Floor Slabs**:
    Extrudes horizontal slab boxes ($Z \in [zOffset - 6, zOffset]$) using either the level's area polygons or boundary wall loops (`deadSpaces(lvlWalls, [])`). Ground slabs on the outdoor terrain are assigned $z_0 = -6, z_1 = 0$.
 5. **Exterior Walls & Openings**:
-   Filters out internal partition walls via `filterExternalIndoorWalls(...)` and draws full-height outdoor walls with lintels spanning above door/window openings (`filterExternalOpenings(...)`).
+   Draws full-height walls with lintels spanning above door/window openings (`openingSolids`), de-duplicating outdoor walls overlapping indoor perimeter walls via `isSameWallSegment`.
 
 ### 5.2 Dynamic Roof Auto-Hide on Area Focus
 To inspect what is inside a covered area (such as a patio or a room under a roof) without toggling configuration:
@@ -169,6 +166,9 @@ In isometric projection, rendering overlapping 3D polygons without z-buffer arti
    If non-convex wall geometries produce a topological cycle, Kahn's algorithm cycle breaker prioritizes discharging ground slabs first, preserving the visual integrity of elevated structures.
 4. **Micro-Geometry Pruning**:
    Wall segments and opening spans are guarded by a $2\text{px}$ minimum threshold, eliminating zero-width slivers and junction post glitches at wall corners.
+
+### 5.6 Line-Art SVG Export Parity Note
+Line-art export (`createLineArtSvg` via the card's "Export SVG" button) is designed specifically to output a clean 2D or 3D architectural blueprint of an individual floor (including its interior rooms, wall cutaways, openings, and furniture). When exporting an outdoor floor, the export captures that single level's boundaries and elements rather than compositing the entire multi-story stacked building or solid roof caps, ensuring interior plans remain legible.
 
 ---
 

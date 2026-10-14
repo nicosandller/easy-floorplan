@@ -22,13 +22,11 @@ import {
   rectAreaClamp,
   rectAreaSharedEdgeCouple,
   rectAreaSharedSides,
-  isExternalWall,
-  filterExternalIndoorWalls,
-  filterExternalOpenings,
   isSameWallSegment,
+  isAreaCoveredByUpper,
 } from "./editor-geometry";
 import type { OrigPos } from "./editor-geometry";
-import type { Area, Floor, Opening, RenderHass, Wall } from "./types";
+import type { Area, Floor, RenderHass, Wall } from "./types";
 
 const walls = [{ x1: 0, y1: 0, x2: 100, y2: 0 }];
 
@@ -1084,60 +1082,38 @@ describe("picking a skylight (issue #285)", () => {
   });
 });
 
-describe("external wall filtering for outdoor courtyard floors", () => {
-  const indoorAreas: Area[] = [
-    {
-      id: "room1",
+describe("multi-floor stacking geometry helpers", () => {
+  it("determines whether an area is covered by upper polygons", () => {
+    const areaA: Area = {
+      id: "a1",
       points: [
         { x: 100, y: 100 },
-        { x: 500, y: 100 },
-        { x: 500, y: 500 },
-        { x: 100, y: 500 },
+        { x: 400, y: 100 },
+        { x: 400, y: 400 },
+        { x: 100, y: 400 },
       ],
-    } as Area,
-    {
-      id: "room2",
-      points: [
-        { x: 500, y: 100 },
-        { x: 900, y: 100 },
-        { x: 900, y: 500 },
+    };
+    const upperCovering = [
+      [
+        { x: 50, y: 50 },
+        { x: 500, y: 50 },
         { x: 500, y: 500 },
+        { x: 50, y: 500 },
       ],
-    } as Area,
-  ];
+    ];
+    const upperDisjoint = [
+      [
+        { x: 600, y: 600 },
+        { x: 800, y: 600 },
+        { x: 800, y: 800 },
+        { x: 600, y: 800 },
+      ],
+    ];
 
-  const outerWall1 = { id: "top", x1: 100, y1: 100, x2: 900, y2: 100 } as Wall;
-  const outerWall2 = { id: "right", x1: 900, y1: 100, x2: 900, y2: 500 } as Wall;
-  const interiorWall = { id: "middle", x1: 500, y1: 100, x2: 500, y2: 500 } as Wall;
-  const dividerWall = { id: "div", x1: 500, y1: 100, x2: 500, y2: 500, divider: true } as Wall;
-  const explicitInterior = { id: "exp_int", x1: 100, y1: 100, x2: 900, y2: 100, kind: "interior" } as Wall;
-  const explicitExternal = { id: "exp_ext", x1: 500, y1: 100, x2: 500, y2: 500, kind: "external" } as Wall;
-  const explicitInteriorField = { id: "exp_int_f", x1: 100, y1: 100, x2: 900, y2: 100, exterior: false } as Wall;
-  const explicitExternalField = { id: "exp_ext_f", x1: 500, y1: 100, x2: 500, y2: 500, exterior: true } as Wall;
-
-  it("identifies external walls vs interior partition walls", () => {
-    expect(isExternalWall(outerWall1, indoorAreas)).toBe(true);
-    expect(isExternalWall(outerWall2, indoorAreas)).toBe(true);
-    expect(isExternalWall(interiorWall, indoorAreas)).toBe(false);
-    expect(isExternalWall(dividerWall, indoorAreas)).toBe(false);
-    expect(isExternalWall(explicitInterior, indoorAreas)).toBe(false);
-    expect(isExternalWall(explicitExternal, indoorAreas)).toBe(true);
-    expect(isExternalWall(explicitInteriorField, indoorAreas)).toBe(false);
-    expect(isExternalWall(explicitExternalField, indoorAreas)).toBe(true);
-  });
-
-  it("filters array of indoor walls to external perimeter walls", () => {
-    const walls = [outerWall1, outerWall2, interiorWall, dividerWall];
-    const filtered = filterExternalIndoorWalls(walls, indoorAreas);
-    expect(filtered.map((w) => w.id)).toEqual(["top", "right"]);
-  });
-
-  it("filters openings to those lying on external walls", () => {
-    const externalWalls = [outerWall1, outerWall2];
-    const doorOnOuterWall = { id: "o1", type: "door", x: 500, y: 100 } as Opening;
-    const passageOnInteriorWall = { id: "o2", type: "passage", x: 500, y: 300 } as Opening;
-    const filtered = filterExternalOpenings([doorOnOuterWall, passageOnInteriorWall], externalWalls);
-    expect(filtered.map((o) => o.id)).toEqual(["o1"]);
+    expect(isAreaCoveredByUpper(areaA, upperCovering)).toBe(true);
+    expect(isAreaCoveredByUpper(areaA, upperDisjoint)).toBe(false);
+    expect(isAreaCoveredByUpper(areaA, [])).toBe(false);
+    expect(isAreaCoveredByUpper({ id: "empty", points: [] } as any, upperCovering)).toBe(true);
   });
 
   it("detects identical wall segments in either direction", () => {
