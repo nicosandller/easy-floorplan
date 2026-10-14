@@ -28,7 +28,7 @@
 import { svg, nothing, type SVGTemplateResult } from "lit";
 import { rotationBasis } from "./rotation";
 import { cssNumber, cssIdent, cssColorOr } from "./css-safe";
-import type { WallKind, Wall, Roof, RoofType, AreaPoint, RectAreaSide, OpeningType } from "./types";
+import type { WallKind, Wall, OpeningType, Roof, RoofType, AreaPoint, RectAreaSide } from "./types";
 import { OPENING_ON_WALL_EPS } from "./dead-space";
 import { openingIsSkylight } from "./types";
 import { joinIsoWalls } from "./projection-joints";
