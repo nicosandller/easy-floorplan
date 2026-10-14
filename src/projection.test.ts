@@ -20,6 +20,8 @@ import {
   wallSolids,
   openingWall,
   openingWallHeight,
+  wallStandingHeight,
+  wallHeadroom,
   furnitureSolid,
   solidDepth,
   roofSolids,
@@ -65,6 +67,44 @@ describe("normalizeWallHeight", () => {
     expect(normalizeWallHeight("80")).toBe(80);
     expect(normalizeWallHeight(-5)).toBe(0);
     expect(normalizeWallHeight(1e6)).toBe(MAX_WALL_HEIGHT);
+    expect(normalizeWallHeight(undefined, 80)).toBe(80);
+    expect(normalizeWallHeight("invalid", 50)).toBe(50);
+  });
+});
+
+describe("wallStandingHeight and wallHeadroom", () => {
+  it("computes wall standing height respecting kind and overrides", () => {
+    expect(wallStandingHeight({}, 60)).toBe(60);
+    expect(wallStandingHeight({ height: 120 }, 60)).toBe(120);
+    expect(wallStandingHeight({ kind: "railing" }, 60)).toBe(30);
+    expect(wallStandingHeight({ kind: "railing", height: 100 }, 60)).toBe(50);
+    // Unnormalized height guards
+    expect(wallStandingHeight({ height: "invalid" as unknown as number }, 60)).toBe(60);
+    expect(wallStandingHeight({ height: -50 }, 60)).toBe(0);
+    expect(wallStandingHeight({ height: 9999 }, 60)).toBe(MAX_WALL_HEIGHT);
+  });
+
+  it("calculates headroom from the max of base wall height and all wall heights", () => {
+    expect(wallHeadroom(60, [])).toBe(60);
+    expect(wallHeadroom(60, [{ height: 40 }])).toBe(60);
+    expect(wallHeadroom(60, [{ height: 120 }])).toBe(120);
+    expect(wallHeadroom(60, [{ height: 100, kind: "railing" }])).toBe(60); // 100 * 0.5 = 50 <= 60
+    expect(wallHeadroom(60, [{ height: 160, kind: "railing" }])).toBe(80); // 160 * 0.5 = 80 > 60
+    expect(wallHeadroom(undefined, [{ height: 150 }])).toBe(150);
+  });
+
+  it("prevents clipping of tall walls near the plan origin", () => {
+    const tallWall = { id: "tall", x1: 0, y1: 0, x2: 100, y2: 0, height: 140 };
+    const baseWallHeight = 60;
+    const headroom = wallHeadroom(baseWallHeight, [tallWall]);
+    expect(headroom).toBe(140);
+    const frame: DisplayFrame = { ...iso(), wallHeight: headroom, padding: 14 };
+    const dims = projectedCanvasSize(frame);
+    expect(dims.h).toBeCloseTo(800 + 140 + 28, 6);
+    // A point at the top of the tall wall at (0, 0)
+    const topOfWall = projectPlanPoint(0, 0, frame, 140);
+    // With headroom = 140, y coordinate does not go negative (stays inside canvas at padding)
+    expect(topOfWall.y).toBeCloseTo(14, 6);
   });
   it("provides 2.5x multiplier for 3D outdoor area full wall height rendering", () => {
     expect(OUTDOOR_WALL_HEIGHT_MULTIPLIER).toBe(2.5);
@@ -292,6 +332,21 @@ describe("wallSolids", () => {
     expect(wallPieces).toHaveLength(1);
     expect(Math.max(...wallPieces[0]!.base.map((p) => p.x))).toBeCloseTo(19, 1);
   });
+  it("normalizes unparseable and out-of-range wall heights in wallSolids", () => {
+    const negWall = { id: "w_neg", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8, height: -30 };
+    const strWall = { id: "w_str", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8, height: "xyz" as unknown as number };
+    const giantWall = { id: "w_giant", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8, height: 9999 };
+
+    const negSolids = wallSolids([negWall], [], 60);
+    expect(negSolids[0].z1).toBe(0);
+    expect(negSolids[0].z0).toBe(0);
+
+    const strSolids = wallSolids([strWall], [], 60);
+    expect(strSolids[0].z1).toBe(60);
+
+    const giantSolids = wallSolids([giantWall], [], 60);
+    expect(giantSolids[0].z1).toBe(MAX_WALL_HEIGHT);
+  });
 });
 
 describe("openingWall and openingWallHeight", () => {
@@ -330,6 +385,33 @@ describe("openingWall and openingWallHeight", () => {
     expect(openingWallHeight(doorOnPlain, walls, 60)).toBe(60);
     // Falls back to defaultWallHeight when not on any wall
     expect(openingWallHeight(floatingDoor, walls, 60)).toBe(60);
+  });
+
+  it("resolves collinear walls at a junction by choosing the wall with greatest overlap", () => {
+    const colWallA = { id: "col_a", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8, height: 60 };
+    const colWallB = { id: "col_b", x1: 100, y1: 0, x2: 200, y2: 0, thickness: 8, height: 120 };
+
+    // Door at x=90, length=40 (spans [70, 110]): overlaps colWallA by 30, colWallB by 10
+    const doorNearA = { x: 90, y: 0, length: 40, angle: 0, type: "door" as const };
+    expect(openingWall(doorNearA, [colWallA, colWallB])?.id).toBe("col_a");
+    // Independent of array ordering
+    expect(openingWall(doorNearA, [colWallB, colWallA])?.id).toBe("col_a");
+
+    // Door at x=110, length=40 (spans [90, 130]): overlaps colWallA by 10, colWallB by 30
+    const doorNearB = { x: 110, y: 0, length: 40, angle: 0, type: "door" as const };
+    expect(openingWall(doorNearB, [colWallA, colWallB])?.id).toBe("col_b");
+    expect(openingWall(doorNearB, [colWallB, colWallA])?.id).toBe("col_b");
+  });
+
+  it("normalizes unparseable and out-of-range wall heights in openingWallHeight", () => {
+    const negWall = { id: "w_neg", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8, height: -30 };
+    const strWall = { id: "w_str", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8, height: "xyz" as unknown as number };
+    const giantWall = { id: "w_giant", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8, height: 9999 };
+
+    const door = { x: 50, y: 0, length: 40, angle: 0, type: "door" as const };
+    expect(openingWallHeight(door, [negWall], 60)).toBe(0);
+    expect(openingWallHeight(door, [strWall], 60)).toBe(60);
+    expect(openingWallHeight(door, [giantWall], 60)).toBe(MAX_WALL_HEIGHT);
   });
 });
 

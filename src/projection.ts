@@ -77,9 +77,31 @@ export function normalizeProjection(v: unknown): PlanProjection {
   return v === "iso" || v === "3d" ? "iso" : "plan";
 }
 
-/** Coerce a config `wallHeight` to `0..MAX_WALL_HEIGHT`, defaulting when unset or not a number. */
-export function normalizeWallHeight(v: unknown): number {
-  return Math.min(MAX_WALL_HEIGHT, Math.max(0, cssNumber(v, DEFAULT_WALL_HEIGHT)));
+/** Coerce a config `wallHeight` or per-wall height override to `0..MAX_WALL_HEIGHT`, defaulting when unset or not a number. */
+export function normalizeWallHeight(v: unknown, fallback = DEFAULT_WALL_HEIGHT): number {
+  return Math.min(MAX_WALL_HEIGHT, Math.max(0, cssNumber(v, fallback)));
+}
+
+/**
+ * Resolves the effective standing height of a wall, taking into account any custom
+ * height override (normalized), railing fraction, and falling back to baseWallHeight.
+ */
+export function wallStandingHeight(w: { height?: number; kind?: WallKind }, baseWallHeight: number): number {
+  const normBase = normalizeWallHeight(baseWallHeight);
+  const base = normalizeWallHeight(w.height, normBase);
+  return base * (w.kind === "railing" ? RAILING_HEIGHT_FRACTION : 1);
+}
+
+/**
+ * Calculates the required 3D headroom from the card's base wall height and
+ * any per-wall height overrides across all walls, ensuring tall walls fit the canvas.
+ */
+export function wallHeadroom(
+  baseWallHeight: unknown,
+  walls: readonly { height?: number; kind?: WallKind }[]
+): number {
+  const base = normalizeWallHeight(baseWallHeight);
+  return Math.max(base, ...walls.map((w) => wallStandingHeight(w, base)));
 }
 
 /** Wall opacity is independent of glass and furniture. */
@@ -262,6 +284,8 @@ interface Span {
 /**
  * Find the wall an opening is placed on, if any.
  * Matches using the same distance and parallel tolerances as openingSpans and dead-space.
+ * When multiple collinear walls match (e.g. at a junction), the one with the greatest
+ * opening overlap is chosen.
  */
 export function openingWall<W extends { x1: number; y1: number; x2: number; y2: number }>(
   o: { x: number; y: number; length: number; angle: number; type?: OpeningType },
@@ -269,6 +293,8 @@ export function openingWall<W extends { x1: number; y1: number; x2: number; y2: 
 ): W | undefined {
   if (o.type === "skylight") return undefined;
   const rad = (o.angle * Math.PI) / 180;
+  let bestWall: W | undefined;
+  let bestOverlap = -Infinity;
   for (const w of walls) {
     const dx = w.x2 - w.x1;
     const dy = w.y2 - w.y1;
@@ -282,9 +308,15 @@ export function openingWall<W extends { x1: number; y1: number; x2: number; y2: 
     const t = rx * d.x + ry * d.y;
     if (t < -o.length / 2 || t > len + o.length / 2) continue;
     const off = Math.abs(rx * -d.y + ry * d.x);
-    if (off <= OPENING_ON_WALL_EPS) return w;
+    if (off <= OPENING_ON_WALL_EPS) {
+      const overlap = Math.min(len, t + o.length / 2) - Math.max(0, t - o.length / 2);
+      if (overlap > bestOverlap) {
+        bestOverlap = overlap;
+        bestWall = w;
+      }
+    }
   }
-  return undefined;
+  return bestWall;
 }
 
 /**
@@ -296,10 +328,9 @@ export function openingWallHeight(
   walls: readonly (Wall | IsoWallInput)[],
   defaultWallHeight: number
 ): number {
+  const normDefault = normalizeWallHeight(defaultWallHeight);
   const w = openingWall(o, walls);
-  if (!w) return defaultWallHeight;
-  const base = w.height ?? defaultWallHeight;
-  return base * (w.kind === "railing" ? RAILING_HEIGHT_FRACTION : 1);
+  return w ? wallStandingHeight(w, normDefault) : normDefault;
 }
 
 /** The openings that sit on this wall, as spans along it, clipped and in order. */
@@ -361,6 +392,7 @@ export function wallSolids(
   wallHeight: number,
   includeGlass = true
 ): IsoSolid[] {
+  const normWallHeight = normalizeWallHeight(wallHeight);
   const out: IsoSolid[] = [];
   const joined = joinIsoWalls(walls, (w, start) => {
     const len = Math.hypot(w.x2 - w.x1, w.y2 - w.y1);
@@ -374,8 +406,7 @@ export function wallSolids(
     const dy = w.y2 - w.y1;
     const len = Math.hypot(dx, dy);
     if (!(len > 1e-6)) continue;
-    const baseH = w.height ?? wallHeight;
-    const height = baseH * (w.kind === "railing" ? RAILING_HEIGHT_FRACTION : 1);
+    const height = wallStandingHeight(w, normWallHeight);
     const kind = w.kind === "railing" ? "railing" : "wall";
     const d = { x: dx / len, y: dy / len };
     const n = { x: -d.y, y: d.x };
