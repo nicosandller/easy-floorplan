@@ -280,6 +280,9 @@ See [Skylights](lighting.md#skylights) for what the sun does with one and
 | `glow`        | boolean                                | `false`      | Cast a pool of light onto the plan (lights only). See [Cast light](#cast-light). |
 | `glowRadius`  | number                                 | `140`        | Radius of the cast pool at full brightness, in canvas units. A dimmer lamp casts a proportionally smaller pool, down to half this. |
 | `glowColor`   | string                                 | `#ffd9a0`    | Pool color for a bulb that can't report one; color-capable lights use their own. |
+| `stripLength` | number                                 | —            | Cast the light along a run this long, centred on the device, instead of from a point — an LED strip. Under `4` (or unset) is an ordinary point lamp. Only read with `glow`. See [LED strips](#led-strips). |
+| `stripAngle`  | number                                 | `0`          | Direction of the strip in degrees, measured on the plan: `0` runs to the right, `90` straight down. |
+| `stripSide`   | `both` \| `left` \| `right`            | `both`       | Which side of the strip it lights, as seen walking from its first end to its second. `left`/`right` for a strip on a wall, so it lights one room and not both. |
 | `badgeContent` | `icon` \| `value` \| `none`           | `icon`       | What the badge holds. `value` draws the reading inside it, falling back to the icon when there is no number; `none` leaves the label alone. |
 | `badgeEntity` | `primary` \| number                    | automatic    | Which reading a `value` badge shows: the device's own entity, or an index into `readings`. Unset picks the first with a number; set, only that one is read (an index past the end shows the icon). `secondary` is accepted as the legacy spelling of `0`. |
 | `showIcon`    | boolean                                | `true`       | **Deprecated** — use `badgeContent`. Honoured only when it is unset (`false` = `none`). |
@@ -355,6 +358,47 @@ theirs inside the frame and so clear at most half of it however wide open they a
 Pools are drawn above room fills but below furniture and walls, so light reads as cast onto
 the floor. Furniture under a lit lamp picks up about half the cast, enough to read as lit
 without turning into the color of the light. Pools never intercept clicks.
+
+### LED strips
+
+A strip is a light with a length. Give a cast-light device a `stripLength` and the light
+runs along a line centred on the device instead of pooling from its point — the same
+colour, brightness, state rules and actions as any other light, because it *is* one.
+
+```yaml
+items:
+  - id: kitchen_strip
+    entity: light.kitchen_led_strip
+    kind: light
+    'x': 300
+    'y': 100
+    glow: true
+    glowRadius: 90       # how far the light reaches from the strip
+    stripLength: 400     # the run, centred on x/y
+    stripAngle: 0        # along the plan's x axis
+    stripSide: right     # lights the room below the top wall, not the one above
+```
+
+The glow fades across the strip the way a lamp's fades from its centre, with rounded
+ends, so the run reads as one light rather than a row of beads. Walls stop it exactly as
+they stop a lamp, and the night clears along the run when [sun dimming](lighting.md#lit-rooms-hold-back-the-night)
+is on. The strip itself is drawn as a thin line — in the light's colour while it is on,
+dashed while it is off — so it never reads as a wall.
+
+A strip mounted on a wall should light only its own room: set `stripSide` to the side the
+room is on. `left` and `right` are as seen walking the strip from its first end (behind
+the device, against `stripAngle`) to its second. `both` is for a strip in free space,
+under a cabinet or along a shelf. A one-sided strip is drawn just in front of its wall on
+the lit side, so the line itself shows which room it lights.
+
+In the editor, turn on **LED strip** under the device's Cast light settings. Its two ends
+get handles on the plan, which drag and snap the way a wall's ends do; the device's icon
+still moves the whole strip. Drag both ends onto one wall and, while **Lit side** is on
+**Auto**, the strip lights the side it came from — the room you were laying it out in.
+Choosing **Both sides** keeps it lit on both, wherever it is dragged. An L-shaped run is two strips bound to the same light.
+
+In the 3D view the strip lies on the floor with its pool, so a standing wall that hides
+that bit of floor hides the strip too.
 
 ## Text
 

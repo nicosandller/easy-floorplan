@@ -4,6 +4,7 @@ import {
   polygonCentroid, 
   textLabel, 
   skylightWidth,
+  wallThickness,
 } from "./render";
 import { 
   AreaPoint, 
@@ -15,6 +16,7 @@ import {
   RECT_AREA_SIDES, 
   Floor, 
   RenderHass, 
+  StripSide,
   openingIsSkylight 
 } from "./types";
 
@@ -381,6 +383,66 @@ function nearestOf(
     }
   }
   return best;
+}
+
+/** Distance from a point to a wall segment. */
+function distToWall(x: number, y: number, w: WallSegment): number {
+  const dx = w.x2 - w.x1;
+  const dy = w.y2 - w.y1;
+  const len2 = dx * dx + dy * dy;
+  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - w.x1) * dx + (y - w.y1) * dy) / len2));
+  return Math.hypot(x - (w.x1 + t * dx), y - (w.y1 + t * dy));
+}
+
+/** How close both ends must be to one wall for a strip to count as on it. */
+export const STRIP_ON_WALL_EPS = 0.5;
+
+/**
+ * The side a strip laid onto a wall should light (issue #298, review on
+ * #372), or undefined when it is not on one.
+ *
+ * A strip snapped end to end along a wall sits on its centreline, and lit on
+ * both sides it would light the room behind the wall too — the very thing a
+ * strip on a wall must not do. So once both ends are on the same wall, it
+ * lights the side `from` is on: where the light was before it reached the
+ * wall, which is the room it was being laid out in. A `from` on the wall line
+ * itself — a lamp already placed on the wall — falls back to `inRoom`: the
+ * side that a room is on, when only one of them has one. A strip off every
+ * wall gets no side.
+ *
+ * The rooms are asked just past the wall's face, so the probe reads the
+ * wall's own `thickness` (second review on #372): a fixed distance lands
+ * inside a thick wall, where neither side is a room, and quietly leaves the
+ * strip lit on both.
+ */
+export function stripSideOnWall(
+  walls: readonly (WallSegment & Pick<Wall, "thickness">)[],
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  from: { x: number; y: number },
+  inRoom?: (x: number, y: number) => boolean
+): Exclude<StripSide, "both"> | undefined {
+  const on = walls.find(
+    (w) => distToWall(x1, y1, w) <= STRIP_ON_WALL_EPS && distToWall(x2, y2, w) <= STRIP_ON_WALL_EPS
+  );
+  if (!on) return undefined;
+  const len = Math.hypot(x2 - x1, y2 - y1);
+  if (len === 0) return undefined;
+  // Left of the run is (dy, -dx) on a y-down plan, as in stripRun.
+  const side = ((from.x - x1) * (y2 - y1) - (from.y - y1) * (x2 - x1)) / len;
+  if (Math.abs(side) > STRIP_ON_WALL_EPS) return side > 0 ? "left" : "right";
+  if (!inRoom) return undefined;
+  // Probe a wall's width past this wall's face, on each side of the middle.
+  const nx = (y2 - y1) / len;
+  const ny = -(x2 - x1) / len;
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2;
+  const probe = wallThickness(on.thickness) / 2 + WALL_THICKNESS;
+  const left = inRoom(mx + nx * probe, my + ny * probe);
+  const right = inRoom(mx - nx * probe, my - ny * probe);
+  return left === right ? undefined : left ? "left" : "right";
 }
 
 /** Nearest existing wall endpoint within `maxDist`, or null. */

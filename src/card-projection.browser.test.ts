@@ -177,3 +177,19 @@ describe("3D card integration", () => {
     expect(root.querySelector('.fp-wall[data-id="area-wall-nook-right"]')).toBeNull();
   });
 });
+
+describe("LED strips in 3D (issue #298, review on #372)", () => {
+  it("keeps an off strip on the floor, where its pool would be", async () => {
+    const { root } = await mount({
+      items: [
+        { id: "strip", kind: "light", entity: "light.strip", x: 200, y: 0, glow: true, stripLength: 300, stripAngle: 0, stripSide: "right" },
+      ],
+    });
+    // light.strip is unknown to hass: off, so there is no pool to see it by.
+    const line = root.querySelector<SVGLineElement>("line.fp-strip");
+    expect(line).toBeTruthy();
+    expect(line!.classList.contains("on")).toBe(false);
+    // Drawn on the north wall's room-side face, not down its centreline.
+    expect(Number(line!.getAttribute("y1"))).toBeGreaterThan(0);
+  });
+});

@@ -37,6 +37,8 @@ import {
   DEFAULT_ITEM_SIZE,
   DEFAULT_RIPPLE_SIZE,
   DEFAULT_GLOW_RADIUS,
+  DEFAULT_STRIP_LENGTH,
+  MIN_STRIP_LENGTH,
   DEFAULT_TEXT_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
   DEFAULT_SUN_MIN,
@@ -52,6 +54,7 @@ import {
   badgeContentOf,
   domainIconAnimation,
   entitySupportsGlow,
+  stripRun,
   isRippleEntity,
   normalizeOverlayScale,
   normalizeOverlayMinWidth,
@@ -1342,6 +1345,7 @@ export function itemEffectsForm(
   // of hass, so the control that turns it off does not vanish with it.
   const casts = entitySupportsGlow(entity) || !!it.glow;
   if (!canRipple && !casts) return undefined;
+  const strip = stripRun(it) !== undefined;
   const fields: FormField[] = [];
   if (canRipple) {
     fields.push({
@@ -1397,8 +1401,53 @@ export function itemEffectsForm(
           label: "Light color",
           helper: "Only for bulbs that can't report a color; others use their own",
           selector: { text: {} },
+        },
+        {
+          name: "strip",
+          label: "LED strip",
+          helper: "Casts along a run centred on the device; drag its ends on the plan",
+          selector: { boolean: {} },
         }
       );
+      if (strip) {
+        fields.push(
+          {
+            name: "stripLength",
+            label: "Strip length",
+            selector: { number: { min: MIN_STRIP_LENGTH, max: 2000, step: 1, mode: "box" } },
+          },
+          {
+            name: "stripAngle",
+            label: "Strip direction",
+            selector: {
+              number: { min: 0, max: 360, step: 1, mode: "slider", unit_of_measurement: "°" },
+            },
+          },
+          {
+            name: "stripSide",
+            label: "Lit side",
+            // The review on #372: the editor is where strips get laid out, so
+            // the warning belongs here and not only in the docs.
+            helper:
+              "On a wall, Left or Right, or it lights the room behind it too. Auto picks one when both ends are dragged onto a wall. Seen from its first end",
+            selector: {
+              select: {
+                mode: "dropdown",
+                // "Auto" is the unset side, which lights both until a drag lays
+                // the strip onto a wall. It is spelled out rather than shown
+                // as "Both sides", which would read as a choice the editor then
+                // overrides (second review on #372).
+                options: [
+                  { value: "auto", label: "Auto (both until laid on a wall)" },
+                  { value: "both", label: "Both sides" },
+                  { value: "left", label: "Left" },
+                  { value: "right", label: "Right" },
+                ],
+              },
+            },
+          }
+        );
+      }
     }
   }
   return {
@@ -1411,12 +1460,28 @@ export function itemEffectsForm(
       glow: it.glow ?? false,
       glowRadius: it.glowRadius ?? DEFAULT_GLOW_RADIUS,
       glowColor: it.glowColor ?? "",
+      strip,
+      stripLength: it.stripLength ?? DEFAULT_STRIP_LENGTH,
+      stripAngle: it.stripAngle ?? 0,
+      stripSide: it.stripSide ?? "auto",
     },
-    // "Ripple" is the other half of #127's three-key spelling — same expansion
-    // as the badge group's, with the badge mode read off the item.
     toPatch: (p) => {
-      if (!("ripple" in p)) return p;
-      const { ripple: ring, ...rest } = p;
+      let out = p;
+      // "LED strip" is a length, not a key of its own (issue #298): turning it
+      // on starts the run at a default length along the plan's x axis, and
+      // turning it off clears the run so the device is a point lamp again.
+      if ("strip" in out) {
+        const { strip: on, ...rest } = out;
+        out = on
+          ? { ...rest, stripLength: strip ? it.stripLength : DEFAULT_STRIP_LENGTH }
+          : { ...rest, stripLength: undefined, stripAngle: undefined, stripSide: undefined };
+      }
+      // "Auto" is no key at all: the side a drag may still choose.
+      if (out.stripSide === "auto") out = { ...out, stripSide: undefined };
+      // "Ripple" is the other half of #127's three-key spelling — same
+      // expansion as the badge group's, with the badge mode read off the item.
+      if (!("ripple" in out)) return out;
+      const { ripple: ring, ...rest } = out;
       return { ...rest, ...badgeModePatch(badgeModeOf(it), !!ring) };
     },
   };

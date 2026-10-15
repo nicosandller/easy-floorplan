@@ -65,6 +65,7 @@ import {
   trackerPresenceDetected,
   uid,
   DEFAULT_GLOW_RADIUS,
+  MIN_STRIP_LENGTH,
   RECT_AREA_SIDES,
 } from "./types";
 import {
@@ -74,6 +75,10 @@ import {
   imageFitRatio,
   editorGlowPaint,
   renderGlow,
+  renderStripLine,
+  stripFromEnds,
+  stripOutline,
+  stripRun,
   resolveOpeningAmount,
   openingIsActive,
   openingIsPassage,
@@ -165,6 +170,7 @@ import {
   applyDelta,
   areaContainingPoint,
   attachedCorners,
+  stripSideOnWall,
   elementsAtPoint,
   cyclePick,
   findElement,
@@ -314,6 +320,13 @@ interface Drag {
   areaVertex?: number;
   /** Set when dragging a single Area edge handle (index into its edges). */
   areaEdge?: number;
+  /** Set when dragging one end of an LED strip device (issue #298). */
+  stripEnd?: 1 | 2;
+  /**
+   * Whether this strip drag may choose the lit side — only while the device
+   * has none of its own, so a side someone picked is never overridden.
+   */
+  stripAutoSide?: boolean;
   /**
    * Endpoints of *other* walls that coincide with the dragged wall's
    * corner(s) and stretch along with it (issue #30). Hold Alt to detach and
@@ -1793,7 +1806,8 @@ export class FloorplanCardEditor extends LitElement {
     sel: Sel,
     endpoint?: 1 | 2,
     areaVertex?: number,
-    areaEdge?: number
+    areaEdge?: number,
+    stripEnd?: 1 | 2
   ): void {
     if (this._tool !== "select") return;
     ev.stopPropagation();
@@ -1801,7 +1815,8 @@ export class FloorplanCardEditor extends LitElement {
     this._canvasWrap?.focus({ preventScroll: true });
     // Endpoint/vertex/edge handles always operate on that single element; every
     // other click goes through the overlap-aware picker (issue #52).
-    const explicitHandle = endpoint != null || areaVertex != null || areaEdge != null;
+    const explicitHandle =
+      endpoint != null || areaVertex != null || areaEdge != null || stripEnd != null;
     const pick = explicitHandle ? sel : this._resolvePick(ev, sel);
     if (explicitHandle) this._selectOne(pick);
     else this._selectForPointer(ev, pick);
@@ -1821,8 +1836,12 @@ export class FloorplanCardEditor extends LitElement {
       endpoint,
       areaVertex,
       areaEdge,
+      stripEnd,
     };
     if (pick.kind === "wall") this._drag.attached = this._attachedCorners(pick.id, endpoint);
+    if (stripEnd && pick.kind === "item")
+      this._drag.stripAutoSide =
+        this._floor().items.find((i) => i.id === pick.id)?.stripSide === undefined;
     this._gesturePointer = ev.pointerId;
     this._capturePointer(ev);
   }
@@ -1988,6 +2007,39 @@ export class FloorplanCardEditor extends LitElement {
       drag.snapshot = this._history[this._history.length - 1];
     }
     const f = this._floor();
+
+    // One end of an LED strip (issue #298): the other end stays put, and the
+    // dragged one snaps exactly as a wall being drawn does — corners first,
+    // then straight runs, then the grid — so a strip lays along its wall.
+    if (drag.primary.kind === "item" && drag.stripEnd) {
+      const it = f.items.find((i) => i.id === drag.primary.id);
+      const run = it ? stripRun(it) : undefined;
+      if (!it || !run) return;
+      const fixed = drag.stripEnd === 1 ? { x: run.x2, y: run.y2 } : { x: run.x1, y: run.y1 };
+      const target = this._snapWallEnd(fixed.x, fixed.y, p.x, p.y);
+      // Dragged onto the other end, the run has no direction left: keep the
+      // last one rather than flipping it to 0°.
+      if (Math.hypot(target.x - fixed.x, target.y - fixed.y) < MIN_STRIP_LENGTH) return;
+      // Written end-first, so the strip's first end stays its first and a
+      // one-sided strip keeps lighting the same room.
+      const ends =
+        drag.stripEnd === 1
+          ? ([target.x, target.y, fixed.x, fixed.y] as const)
+          : ([fixed.x, fixed.y, target.x, target.y] as const);
+      const next: Partial<FloorItem> = stripFromEnds(...ends);
+      // Laid onto a wall, a strip lit on both sides would light the room
+      // behind it too: light the side the device was on before the drag.
+      // Re-decided every frame, so dragging it off the wall again undoes it.
+      if (drag.stripAutoSide) {
+        const before = drag.orig.get(`item:${it.id}`);
+        next.stripSide =
+          before?.kind === "pt"
+            ? stripSideOnWall(f.walls, ...ends, before, (x, y) => !!areaContainingPoint(f, x, y))
+            : undefined;
+      }
+      this._emitFloor({ items: f.items.map((i) => (i.id === it.id ? { ...i, ...next } : i)) });
+      return;
+    }
 
     // Single wall endpoint handle: snaps to nearby wall corners. Coincident
     // corners of other walls travel along (Alt detaches), so dragging a room
@@ -4336,12 +4388,15 @@ export class FloorplanCardEditor extends LitElement {
                 // are setting, which is the pool's size at full brightness. A
                 // guide that shrank as the bulb dimmed would move while you
                 // dragged it, and would never show the size you actually typed.
-                floor.items.map((it) =>
-                  it.glow && this._isSel("item", it.id)
-                    ? svg`<circle class="glow-guide" cx=${it.x} cy=${it.y}
-                                  r=${cssNumber(it.glowRadius, DEFAULT_GLOW_RADIUS)} />`
-                    : nothing
-                )
+                floor.items.map((it) => {
+                  if (!it.glow || !this._isSel("item", it.id)) return nothing;
+                  const r = cssNumber(it.glowRadius, DEFAULT_GLOW_RADIUS);
+                  // A strip's guide is its pool's own outline (issue #298).
+                  const run = stripRun(it);
+                  return run
+                    ? svg`<path class="glow-guide" d=${stripOutline(run, r)} />`
+                    : svg`<circle class="glow-guide" cx=${it.x} cy=${it.y} r=${r} />`;
+                })
               }
               ${floor.furniture.map((f) => this._renderFurnitureSel(f))}
               ${renderWallMask(floor.openings, c.width, c.height, this._wallMaskId)}
@@ -4362,6 +4417,7 @@ export class FloorplanCardEditor extends LitElement {
                   renderAreaBorder(a, undefined, `${this._wallMaskId}-area-${i}`)
                 )}
               </g>
+              ${floor.items.map((it) => this._renderStripSel(it))}
               ${repeat(
                 // Keyed by id: switching floors must create fresh DOM. Reused
                 // nodes would CSS-transition from the previous floor's opening
@@ -5092,6 +5148,32 @@ export class FloorplanCardEditor extends LitElement {
                 class="rows ${this._selectionPage === "properties" ? "essential-properties" : "category-properties"}">${this._renderSelectionEditor()}</div>`}
       </section>
     `;
+  }
+
+  /**
+   * An LED strip's run (issue #298), and — while its device is selected — a
+   * handle on each end, dragged like a wall's. The device's own icon still
+   * selects and moves it; the run follows because it is centred on the icon.
+   */
+  private _renderStripSel(it: FloorItem): TemplateResult | typeof nothing {
+    const run = it.glow ? stripRun(it) : undefined;
+    if (!run) return nothing;
+    const lit = editorGlowPaint(it, it.entity ? this.hass?.states[it.entity] : undefined);
+    // Pinned devices show no handles, as pinned walls do (issue #191).
+    const handles = this._isSel("item", it.id) && !it.locked;
+    return svg`
+      ${renderStripLine(run, lit?.color)}
+      ${
+        handles
+          ? svg`
+              <circle cx=${run.x1} cy=${run.y1} r="7" class="handle"
+                      @pointerdown=${(e: PointerEvent) =>
+                        this._startDrag(e, { kind: "item", id: it.id }, undefined, undefined, undefined, 1)} />
+              <circle cx=${run.x2} cy=${run.y2} r="7" class="handle"
+                      @pointerdown=${(e: PointerEvent) =>
+                        this._startDrag(e, { kind: "item", id: it.id }, undefined, undefined, undefined, 2)} />`
+          : nothing
+      }`;
   }
 
   private _renderWall(
@@ -8240,6 +8322,19 @@ export class FloorplanCardEditor extends LitElement {
     }
     .fp-glow {
       mix-blend-mode: screen;
+    }
+    /* An LED strip's run (issue #298), drawn as the card draws it. */
+    .fp-strip {
+      stroke: var(--secondary-text-color, #888);
+      stroke-width: 3;
+      stroke-linecap: round;
+      stroke-dasharray: 2 5;
+      opacity: 0.7;
+      pointer-events: none;
+    }
+    .fp-strip.on {
+      stroke-dasharray: none;
+      opacity: 1;
     }
     /* Radius guide for the selected cast-light device (issue #108). Outline
        only — it shows how far the light reaches without pretending it is on. */

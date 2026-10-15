@@ -926,6 +926,30 @@ export interface FloorItem {
    * Defaults to {@link DEFAULT_GLOW_COLOR}, a warm white.
    */
   glowColor?: string;
+  /**
+   * Cast the light along a run instead of from a point — an LED strip
+   * (issue #298). The run is centred on the device's `x`/`y`, so the icon sits
+   * at its middle and moving the device moves the whole strip with it.
+   *
+   * A strip is a light with a length rather than an element of its own: entity
+   * binding, colour, brightness, state rules, lock, copy/paste and undo are the
+   * device's and need nothing new. Unset, zero or below {@link MIN_STRIP_LENGTH}
+   * is the ordinary point pool. Only read while `glow` is on.
+   */
+  stripLength?: number;
+  /**
+   * Direction of the run in degrees, measured on the **plan** like
+   * {@link rippleDirection}: 0° runs to the right, 90° straight down. The
+   * strip's *first* end is the one behind the device, its second the one ahead.
+   */
+  stripAngle?: number;
+  /**
+   * Which side of the run it lights. A strip mounted on a wall lights one room,
+   * not both; `"left"` and `"right"` are as seen walking the strip from its
+   * first end to its second. Default `"both"`, for a run in free space — under
+   * a cabinet, along a shelf.
+   */
+  stripSide?: StripSide;
   /** Lovelace actions. Defaults: tap = toggle (controllable domains) or more-info; hold/double = none. */
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
@@ -939,6 +963,9 @@ export interface FloorItem {
 }
 
 export type ItemDisplay = "badge" | "ripple" | "iconRipple";
+
+/** Which side of its run an LED strip lights — see {@link FloorItem.stripSide}. */
+export type StripSide = "both" | "left" | "right";
 
 /** What a device badge holds — see {@link FloorItem.badgeContent} (issue #106). */
 export type BadgeContent = "icon" | "value" | "none";
@@ -1553,6 +1580,13 @@ export const DEFAULT_AREA_BORDER_WIDTH = 3;
 
 /** Radius of a light's cast pool, in canvas units (issue #6). */
 export const DEFAULT_GLOW_RADIUS = 140;
+/**
+ * Shortest run that draws as a strip (issue #298). Anything shorter is a point
+ * in all but name, and a zero-length run has no direction to light across.
+ */
+export const MIN_STRIP_LENGTH = 4;
+/** What turning a light into a strip starts it at, in canvas units. */
+export const DEFAULT_STRIP_LENGTH = 160;
 /**
  * Warm white, for a light that cannot report a color of its own — as the skin's
  * token (issue #122) so Tron's pools read cyan rather than tungsten, with the

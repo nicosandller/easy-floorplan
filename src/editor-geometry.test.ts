@@ -24,6 +24,7 @@ import {
   rectAreaSharedSides,
   isSameWallSegment,
   isAreaCoveredByUpper,
+  stripSideOnWall,
 } from "./editor-geometry";
 import type { OrigPos } from "./editor-geometry";
 import type { Area, Floor, RenderHass, Wall } from "./types";
@@ -1125,5 +1126,37 @@ describe("multi-floor stacking geometry helpers", () => {
     expect(isSameWallSegment(w1, w2)).toBe(true);
     expect(isSameWallSegment(w1, w3)).toBe(true);
     expect(isSameWallSegment(w1, w4)).toBe(false);
+  });
+});
+
+describe("stripSideOnWall (issue #298, review on #372)", () => {
+  const top = [{ x1: 100, y1: 100, x2: 500, y2: 100 }];
+
+  it("lights the side the light came from once both ends are on one wall", () => {
+    // Running east along the top wall: the room below is its right.
+    expect(stripSideOnWall(top, 100, 100, 500, 100, { x: 300, y: 250 })).toBe("right");
+    expect(stripSideOnWall(top, 100, 100, 500, 100, { x: 300, y: -50 })).toBe("left");
+    // Run the other way and the same room is on its left.
+    expect(stripSideOnWall(top, 500, 100, 100, 100, { x: 300, y: 250 })).toBe("left");
+  });
+
+  it("chooses nothing off the wall, or with only one end on it", () => {
+    expect(stripSideOnWall(top, 100, 140, 500, 140, { x: 300, y: 250 })).toBeUndefined();
+    expect(stripSideOnWall(top, 100, 100, 300, 300, { x: 300, y: 250 })).toBeUndefined();
+  });
+
+  it("asks the rooms when the light was already on the wall", () => {
+    const below = (_x: number, y: number) => y > 100;
+    expect(stripSideOnWall(top, 100, 100, 500, 100, { x: 300, y: 100 }, below)).toBe("right");
+    // Rooms on both sides, or none: no way to tell.
+    expect(stripSideOnWall(top, 100, 100, 500, 100, { x: 300, y: 100 }, () => true)).toBeUndefined();
+    expect(stripSideOnWall(top, 100, 100, 500, 100, { x: 300, y: 100 })).toBeUndefined();
+  });
+
+  it("asks past the face of a thick wall, not inside it", () => {
+    // 24 wide: its faces are 12 out, and the rooms start there.
+    const thick = [{ ...top[0]!, thickness: 24 }];
+    const below = (_x: number, y: number) => y > 112;
+    expect(stripSideOnWall(thick, 100, 100, 500, 100, { x: 300, y: 100 }, below)).toBe("right");
   });
 });
