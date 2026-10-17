@@ -7,11 +7,11 @@ export function solidDepth(s: IsoSolid): number {
     const n = s.vertices.length;
     return s.vertices.reduce((sum, v) => sum + v.x + v.y + v.z, 0) / n;
   }
-  const zAvg = (s.z0 + s.z1) / 2;
-  const xyAvg = s.base.length > 0
-    ? s.base.reduce((sum, p) => sum + p.x + p.y, 0) / s.base.length
-    : 0;
-  return xyAvg + zAvg;
+  const baseAvg = s.base.reduce((sum, p) => sum + p.x + p.y, 0) / (s.base.length || 1);
+  if (s.kind === "roof") {
+    return baseAvg + (s.z0 + s.z1) / 2;
+  }
+  return baseAvg;
 }
 
 interface Vertex extends Pt { z: number }
@@ -175,8 +175,8 @@ export function sortIsoSolids(solids: readonly IsoSolid[]): IsoSolid[] {
     if (a.xmax <= b.xmin + EPS || b.xmax <= a.xmin + EPS ||
       a.ymax <= b.ymin + EPS || b.ymax <= a.ymin + EPS || !overlaps(a.shadow, b.shadow)) continue;
 
-    const aIsSlab = Boolean(a.s.isSlab || a.s.id?.startsWith("slab_"));
-    const bIsSlab = Boolean(b.s.isSlab || b.s.id?.startsWith("slab_"));
+    const aIsSlab = Boolean(a.s.isSlab);
+    const bIsSlab = Boolean(b.s.isSlab);
 
     let direction = 0;
 
@@ -230,7 +230,7 @@ export function sortIsoSolids(solids: readonly IsoSolid[]): IsoSolid[] {
     let ready = waiting.findIndex(n => n.incoming === 0);
     if (ready < 0) {
       // In cyclic geometry, discharge ground slabs first so terrain is always painted beneath elevated structures.
-      ready = waiting.findIndex(n => n.s.isSlab || n.s.id?.startsWith("slab_"));
+      ready = waiting.findIndex(n => n.s.isSlab);
       if (ready < 0) ready = 0;
     }
     const [node] = waiting.splice(ready, 1);

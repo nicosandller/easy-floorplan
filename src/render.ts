@@ -6327,7 +6327,6 @@ export function renderSunlight(
  */
 export function renderOutdoorSunlight(
   walls: readonly Wall[],
-  _openings: readonly Opening[],
   width: number,
   height: number,
   id: string,

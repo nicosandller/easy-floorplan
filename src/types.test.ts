@@ -611,9 +611,11 @@ describe("resolveFloorLevel", () => {
     expect(resolveFloorLevel(f, [f], hass)).toBe(1);
   });
 
-  it("falls back to parsing numeric string in haFloor", () => {
-    const f = { ...makeFloor("Second"), haFloor: "2" };
-    expect(resolveFloorLevel(f, [f])).toBe(2);
+  it("falls back to index among indoor floors when haFloor has no registry match", () => {
+    const f0 = { ...makeFloor("First"), haFloor: "custom_floor" };
+    const f1 = { ...makeFloor("Second"), haFloor: "2" };
+    expect(resolveFloorLevel(f0, [f0, f1])).toBe(0);
+    expect(resolveFloorLevel(f1, [f0, f1])).toBe(1);
   });
 
   it("falls back to index among indoor floors", () => {

@@ -81,7 +81,7 @@ All core phases have been fully implemented, verified, and integrated into `easy
   - Outdoor area zone kinds (`lawn`, `patio`, `terrace`, `driveway`, `garden`, `pool`) with distinct background fills and styling.
   - Outdoor area rendering and ground-level terrain slabs.
 - [x] **Phase 2 — Multi-Floor 3D Stacking via HA Floors**:
-  - `resolveFloorLevel(...)` detects floor elevation from Home Assistant native floor registry (`haFloor`) and floor array order.
+  - `resolveFloorLevel(...)` detects floor elevation from explicit `floor.level`, falling back to Home Assistant native floor registry (`haFloor`) `level`, and finally indoor floor array order.
   - Level-based vertical stacking: $z_{\text{offset}} = (L - L_{\text{base}}) \times \text{outdoorWallHeight}$.
   - Shifted 3D solids via `shiftIsoSolidZ(solid, zOffset)` for exterior walls, doors/windows, floor slabs, and roofs.
   - Full-height door and window wall headers/lintels above openings (`z \in [sill + height, wallHeight]`).

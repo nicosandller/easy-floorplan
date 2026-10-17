@@ -323,14 +323,18 @@ describe("wallSolids", () => {
     expect(solids.every(s => s.kind === "railing" && s.z1 === H / 2)).toBe(true);
     for (const x of xs(solids)) expect(x <= 80 + 1e-9 || x >= 120 - 1e-9).toBe(true);
   });
-  it("snaps opening spans near wall ends and omits residual wall stubs <= 2px", () => {
+  it("preserves small wall stubs on indoor plans and omits <= 2px on outdoor plans", () => {
     const w = { id: "w_stub", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8 };
     // Door centered at 59 with length 80 spans 19 to 99 (leaves 1px <= 2px at end)
     const d = { x: 59, y: 0, length: 80, angle: 0, type: "door" as const };
-    const solids = wallSolids([w], [d], H);
-    const wallPieces = solids.filter((s) => s.kind === "wall");
-    expect(wallPieces).toHaveLength(1);
-    expect(Math.max(...wallPieces[0]!.base.map((p) => p.x))).toBeCloseTo(19, 1);
+    const indoorSolids = wallSolids([w], [d], H, false, false);
+    const indoorWallPieces = indoorSolids.filter((s) => s.kind === "wall");
+    expect(indoorWallPieces).toHaveLength(2);
+
+    const outdoorSolids = wallSolids([w], [d], H, false, true);
+    const outdoorWallPieces = outdoorSolids.filter((s) => s.kind === "wall");
+    expect(outdoorWallPieces).toHaveLength(1);
+    expect(Math.max(...outdoorWallPieces[0]!.base.map((p) => p.x))).toBeCloseTo(19, 1);
   });
   it("normalizes unparseable and out-of-range wall heights in wallSolids", () => {
     const negWall = { id: "w_neg", x1: 0, y1: 0, x2: 100, y2: 0, thickness: 8, height: -30 };

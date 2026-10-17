@@ -343,7 +343,8 @@ function openingSpans(
   w: IsoWallInput,
   openings: readonly IsoOpeningInput[],
   d: Pt,
-  len: number
+  len: number,
+  outdoor = false
 ): Span[] {
   const spans: Span[] = [];
   for (const o of openings) {
@@ -368,8 +369,10 @@ function openingSpans(
     const rawS1 = t + o.length / 2;
     let s0 = Math.max(0, rawS0);
     let s1 = Math.min(len, rawS1);
-    if (s0 <= 2) s0 = 0;
-    if (len - s1 <= 2) s1 = len;
+    if (outdoor) {
+      if (s0 <= 2) s0 = 0;
+      if (len - s1 <= 2) s1 = len;
+    }
     if (s1 - s0 <= 0) continue;
     spans.push({ s0, s1, type: o.type === "window" ? "window" : "door" });
   }
@@ -395,7 +398,8 @@ export function wallSolids(
   walls: readonly IsoWallInput[],
   openings: readonly IsoOpeningInput[],
   wallHeight: number,
-  includeGlass = true
+  includeGlass = true,
+  outdoor = false
 ): IsoSolid[] {
   const normWallHeight = normalizeWallHeight(wallHeight);
   const out: IsoSolid[] = [];
@@ -404,7 +408,7 @@ export function wallSolids(
     const d = { x: (w.x2 - w.x1) / len, y: (w.y2 - w.y1) / len };
     // A doorway or a low sill at a junction leaves its neighbour's end face
     // exposed. Do not miter it away as if another full-height wall met it.
-    return !openingSpans(w, openings, d, len).some(s => start ? s.s0 <= 1e-6 : s.s1 >= len - 1e-6);
+    return !openingSpans(w, openings, d, len, outdoor).some(s => start ? s.s0 <= 1e-6 : s.s1 >= len - 1e-6);
   });
   for (const w of joined) {
     const dx = w.x2 - w.x1;
@@ -442,12 +446,13 @@ export function wallSolids(
         });
       }
     };
-    const spans = openingSpans(w, openings, d, len);
+    const spans = openingSpans(w, openings, d, len, outdoor);
     let cursor = 0;
     const hasHeader = w.kind !== "railing" && height > DEFAULT_WALL_HEIGHT;
+    const minStub = outdoor ? 2 : 0;
     for (const s of spans) {
       // Solid wall up to this opening. The cap only at the wall's real end.
-      if (s.s0 - cursor > 2) pieces(cursor === 0 ? -half : cursor, s.s0, height, kind);
+      if (s.s0 - cursor > minStub) pieces(cursor === 0 ? -half : cursor, s.s0, height, kind);
       if (s.type === "window") {
         pieces(s.s0, s.s1, height * SILL_FRACTION, "sill");
         if (includeGlass) out.push({
@@ -466,7 +471,7 @@ export function wallSolids(
       }
       cursor = s.s1;
     }
-    if (len - cursor > 2) pieces(cursor === 0 ? -half : cursor, len + half, height, kind);
+    if (len - cursor > minStub) pieces(cursor === 0 ? -half : cursor, len + half, height, kind);
   }
   return out;
 }

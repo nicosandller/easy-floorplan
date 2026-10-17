@@ -1183,13 +1183,6 @@ describe("textForm / furnitureForm / trackerForm", () => {
     expect(form.toPatch({ isOutdoor: false } as never)).toEqual({ isOutdoor: undefined });
   });
 
-  it("wallForm exposes exterior data and patches it", () => {
-    const form = wallForm({ id: "w", x1: 0, y1: 0, x2: 10, y2: 10, exterior: true });
-    expect(form.data.exterior).toBe("exterior");
-    expect(form.toPatch({ exterior: "exterior" })).toEqual({ exterior: true });
-    expect(form.toPatch({ exterior: "interior" })).toEqual({ exterior: false });
-    expect(form.toPatch({ exterior: "auto" })).toEqual({ exterior: undefined });
-  });
 
   it("non-sectional furniture has no chaise-side field or data", () => {
     const form = furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10 } as never);

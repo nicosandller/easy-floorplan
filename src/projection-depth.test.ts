@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { furnitureSolid, wallSolids, roofSolids, roofCourseLines, shiftIsoSolidZ, type IsoSolid, type Pt } from "./projection";
 import type { Roof } from "./types";
-import { sortIsoSolids } from "./projection-order";
+import { sortIsoSolids, solidDepth } from "./projection-order";
 import { joinIsoWalls } from "./projection-joints";
 import { ambientPointInArea } from "./ambient-daylight";
 
@@ -283,5 +283,35 @@ describe("spatial painter order (#321)", () => {
     expect(sorted[0]!.id).toBe("wall_basement_south");
     expect(sorted[1]!.id).toBe("slab_curte");
   });
+
+  describe("solidDepth fallback calculation", () => {
+    it("does not include z in depth for wall and furniture solids", () => {
+      const base: Pt[] = [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 10 },
+        { x: 0, y: 10 },
+      ];
+      // Base average: (0+0 + 10+0 + 10+10 + 0+10) / 4 = 40 / 4 = 10
+      const wallSolid: IsoSolid = { kind: "wall", base, z0: 100, z1: 200 };
+      expect(solidDepth(wallSolid)).toBe(10);
+
+      const furniture: IsoSolid = { kind: "furniture", base, z0: 50, z1: 80 };
+      expect(solidDepth(furniture)).toBe(10);
+    });
+
+    it("includes z average in depth for roof solids", () => {
+      const base: Pt[] = [
+        { x: 0, y: 0 },
+        { x: 10, y: 0 },
+        { x: 10, y: 10 },
+        { x: 0, y: 10 },
+      ];
+      // Base avg: 10, z avg: (100 + 200) / 2 = 150 -> 160
+      const roofSolid: IsoSolid = { kind: "roof", base, z0: 100, z1: 200 };
+      expect(solidDepth(roofSolid)).toBe(160);
+    });
+  });
 });
+
 

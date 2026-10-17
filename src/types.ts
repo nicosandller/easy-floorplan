@@ -86,8 +86,6 @@ export interface Wall {
    * off no dead space, since what it encloses is open to the air.
    */
   kind?: WallKind;
-  /** Whether this wall explicitly marks an exterior building boundary (true) or interior partition (false). */
-  exterior?: boolean;
   /**
    * Pinned in place in the editor (issue #191).
    *
@@ -114,7 +112,7 @@ export interface Wall {
 }
 
 /** See {@link Wall.kind}. */
-export type WallKind = "wall" | "railing" | "external" | "interior";
+export type WallKind = "wall" | "railing";
 
 /**
  * What kind of hole in the building this is.
@@ -2498,10 +2496,6 @@ export function resolveFloorLevel(f: Floor, allFloors: readonly Floor[], hass?: 
     const haMatch = haFloors.find((h) => h.floor_id === f.haFloor);
     if (haMatch?.level != null) {
       return haMatch.level;
-    }
-    const parsed = parseFloat(f.haFloor);
-    if (!isNaN(parsed)) {
-      return parsed;
     }
   }
   const indoorFloors = allFloors.filter((fl) => !fl.isOutdoor);

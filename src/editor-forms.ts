@@ -2241,7 +2241,10 @@ export function roofForm(r: Roof, defaultWallHeight = 60): FormSpec {
       {
         name: "type",
         label: "Roof style",
-        helper: "Roof geometry; not shown on the card yet",
+        helper:
+          r.points && r.points.length > 4 && r.type !== "flat"
+            ? "Pitched roofs span their rectangular bounding box; combine intersecting rectangular roofs for complex footprints"
+            : "Roof geometry (rendered in 3D on outdoor floors)",
         selector: dropdown(
           opt("flat", "Flat slab"),
           opt("gable", "Gable pitch"),
@@ -2366,12 +2369,6 @@ export function wallForm(w: Wall): FormSpec {
             : "A railing is the low edge of a balcony, terrace or gallery",
         selector: dropdown(opt("wall", "Wall"), opt("railing", "Railing")),
       },
-      {
-        name: "exterior",
-        label: "Wall position",
-        helper: "Whether this wall forms an external building envelope or interior partition in 3D outdoor view",
-        selector: dropdown(opt("auto", "Auto-detect"), opt("exterior", "Exterior"), opt("interior", "Interior")),
-      },
     ],
     data: {
       x1: Math.round(w.x1),
@@ -2381,7 +2378,6 @@ export function wallForm(w: Wall): FormSpec {
       thickness: w.thickness ?? WALL_THICKNESS,
       height: w.height,
       kind: w.kind ?? "wall",
-      exterior: w.exterior === true || w.kind === "external" ? "exterior" : w.exterior === false || w.kind === "interior" ? "interior" : "auto",
     },
     // Keep the defaults out of the YAML so untouched walls stay terse.
     toPatch: (p) => {
@@ -2389,9 +2385,6 @@ export function wallForm(w: Wall): FormSpec {
       if ("thickness" in p && p.thickness === WALL_THICKNESS) out.thickness = undefined;
       if ("height" in p && (p.height === undefined || p.height === null || typeof p.height !== "number")) out.height = undefined;
       if ("kind" in p) out.kind = p.kind === "railing" ? "railing" : undefined;
-      if ("exterior" in p) {
-        out.exterior = p.exterior === "exterior" ? true : p.exterior === "interior" ? false : undefined;
-      }
       return out;
     },
   };

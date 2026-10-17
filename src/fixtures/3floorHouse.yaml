@@ -151,6 +151,30 @@ floors:
             'y': 1120
         showName: true
         name: Terrace
+      - id: area_ogmlwwr
+        points:
+          - x: 420
+            'y': 220
+          - x: 1100
+            'y': 220
+          - x: 1100
+            'y': 960
+          - x: 420
+            'y': 960
+        showName: true
+        name: DanceRoom
+      - id: area_vtt76y4
+        points:
+          - x: 660
+            'y': 960
+          - x: 1100
+            'y': 960
+          - x: 1100
+            'y': 1120
+          - x: 660
+            'y': 1120
+        showName: true
+        name: StorageRoom
     roofs:
       - id: roof_9ufmpxx
         type: gable
@@ -163,8 +187,9 @@ floors:
             'y': 1120
           - x: 420
             'y': 1120
-        height: 200
+        height: 150
         ridge: vertical
+        overhang: 50
       - id: roof_a26wodi
         type: gable
         points:
@@ -176,8 +201,9 @@ floors:
             'y': 820
           - x: 760
             'y': 820
-        height: 200
+        height: 150
         ridge: horizontal
+        overhang: 50
     level: 3
   - id: floor_i5t9saa
     name: 2nd
@@ -499,8 +525,9 @@ floors:
             'y': 1120
           - x: 1220
             'y': 1120
-        height: 36
+        height: 40
         highSide: left
+        overhang: 5
     level: 2
   - id: floor_98eiwsv
     name: 1st
@@ -855,6 +882,7 @@ floors:
           - x: 1320
             'y': 540
         height: 8
+        overhang: 10
     level: 1
   - id: floor_main
     name: Basement
@@ -1402,6 +1430,7 @@ floors:
           - x: 1580
             'y': 1500
         height: 36
+        overhang: 20
     level: 1
 appearance: normal
 showViewControls: true
