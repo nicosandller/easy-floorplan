@@ -33,6 +33,7 @@ control lights, and view the plan in 3D.
   presence ripples and track positions from distance sensors.
 - **Multiple floors** — switch between floors or navigate with a staircase.
 - **2D and 3D views** — display the same plan flat or with raised walls and furniture.
+- **Outdoor courtyard & 3D stacked house** — exterior view of the entire house stacking all levels at physical elevations, with ground slabs and 3D roofs.
 - **Appearance** — choose skins and named colors, add a background image to trace,
   and let the plan scale to your screen.
 
@@ -101,6 +102,7 @@ editor and locking finished elements in place.
 | <a name="skins"></a><a name="overlay-scale"></a><a name="compact-header"></a><a name="rotation-that-follows-the-screen"></a><a name="styling-hooks-card-mod"></a>[Appearance](docs/appearance.md) | Skins, colors, line art, SVG export, 3D view, room navigation, scaling and styling. |
 | <a name="dead-spaces"></a><a name="doors-on-locks"></a><a name="actions-on-rooms"></a><a name="stairs-that-change-floor"></a><a name="offline-devices"></a><a name="advanced-hiding-logic"></a>[Behaviour](docs/behavior.md) | Actions, visibility, floor navigation and unavailable entities. |
 | [Roofs](docs/roofs.md) | Roof styles (gable, hip, shed, flat), configuration, overhang, and editing |
+| [Outdoor 3D Stacking](docs/outdoor-3d-stacking.md) | Multi-floor exterior elevation, ground slabs, and roof rendering. |
 | [Furniture symbols](furniture/README.md) | Creating and contributing your own symbols. |
 | [Video walkthrough](https://youtu.be/M-b7xK-4Bpw) | A community setup guide in Italian. |
 

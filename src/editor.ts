@@ -6923,7 +6923,7 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderEssentialForm(areaNameForm(a, haAreas.map((ha) => ha.name)), ["name"], (patch, live) =>
           this._applyElementPatch("area", a.id, areaNamePatch(patch, haAreas), live))}
         ${this._renderAreaLinkRow(a, haAreas)}
-        ${this._renderEssentialForm(aSpec, ["showName", "labelSize", "opacity"], aApply)}
+        ${this._renderEssentialForm(aSpec, ["zoneKind", "showName", "labelSize", "opacity"], aApply)}
         ${this._renderColorRow({
           label: "Fill color", value: a.color, swatch: "#03a9f4", placeholder: "Default",
           onLive: (color) => this._updateAreaLive(a.id, { color }),

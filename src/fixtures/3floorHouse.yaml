@@ -1,0 +1,1446 @@
+type: custom:easy-floorplan-card
+width: 2000
+height: 1500
+grid: 20
+overlayScale: fixed
+title: 3D Stacked House
+view: 3d
+defaultFloor: floor_6dy5nao
+grid_options:
+  rows: auto
+  columns: full
+floors:
+  - id: floor_eflic7c
+    name: 3rd
+    walls:
+      - id: wall_kytp2gx
+        x1: 420
+        y1: 220
+        x2: 420
+        y2: 1120
+      - id: wall_4r7ugr6
+        x1: 420
+        y1: 1120
+        x2: 1100
+        y2: 1120
+      - id: wall_a514o3l
+        x1: 420
+        y1: 220
+        x2: 1100
+        y2: 220
+      - id: wall_6x2dkym
+        x1: 660
+        y1: 960
+        x2: 660
+        y2: 1120
+      - id: wall_x2jhg7r
+        x1: 580
+        y1: 960
+        x2: 660
+        y2: 960
+      - id: wall_uzo0sob
+        x1: 660
+        y1: 960
+        x2: 1100
+        y2: 960
+      - id: wall_nfnvsth
+        x1: 500
+        y1: 960
+        x2: 580
+        y2: 960
+      - id: wall_e5oisfc
+        x1: 500
+        y1: 960
+        x2: 500
+        y2: 1040
+      - id: wall_plivwc9
+        x1: 580
+        y1: 960
+        x2: 580
+        y2: 1040
+      - id: wall_fjrlalf
+        x1: 580
+        y1: 1040
+        x2: 500
+        y2: 1040
+      - id: wall_xzfgmqu
+        x1: 1100
+        y1: 1120
+        x2: 1100
+        y2: 220
+    openings:
+      - id: door_z5o2m2t
+        type: door
+        x: 700
+        'y': 960
+        length: 60
+        angle: 0
+      - id: door_ltdgr11
+        type: door
+        x: 1100
+        'y': 900
+        length: 60
+        angle: -90
+        entity: cover.living_room_window
+      - id: window_f558n1e
+        type: window
+        x: 878.7003533138403
+        'y': 1120
+        length: 120
+        angle: 0
+      - id: window_a9c6mtq
+        type: window
+        x: 1100
+        'y': 539.9668109061884
+        length: 360
+        angle: -90
+        entity: cover.pergola_roof
+      - id: window_171j23u
+        type: window
+        x: 879.2858856756625
+        'y': 220
+        length: 120
+        angle: 0
+      - id: window_0ns20un
+        type: window
+        x: 620.0079547317212
+        'y': 220
+        length: 120
+        angle: 0
+      - id: window_fkger6o
+        type: window
+        x: 420
+        'y': 510.9112296769315
+        length: 140
+        angle: 90
+      - id: window_h3f36gx
+        type: window
+        x: 420
+        'y': 792.1886947023484
+        length: 140
+        angle: 90
+      - id: passage_o2y1aok
+        type: passage
+        x: 1100
+        'y': 280
+        length: 60
+        angle: -90
+    items: []
+    texts: []
+    furniture:
+      - id: furn_wox65j6
+        type: stairs
+        x: 460.4577917815413
+        'y': 1034.882241734235
+        w: 60
+        h: 160
+        angle: 0
+        goToFloor:
+          floor: floor_i5t9saa
+    trackers: []
+    areas:
+      - id: area_bmrswri
+        points:
+          - x: 1100
+            'y': 220
+          - x: 1320
+            'y': 220
+          - x: 1320
+            'y': 1120
+          - x: 1100
+            'y': 1120
+        showName: true
+        name: Terrace
+      - id: area_ogmlwwr
+        points:
+          - x: 420
+            'y': 220
+          - x: 1100
+            'y': 220
+          - x: 1100
+            'y': 960
+          - x: 420
+            'y': 960
+        showName: true
+        name: DanceRoom
+      - id: area_vtt76y4
+        points:
+          - x: 660
+            'y': 960
+          - x: 1100
+            'y': 960
+          - x: 1100
+            'y': 1120
+          - x: 660
+            'y': 1120
+        showName: true
+        name: StorageRoom
+    roofs:
+      - id: roof_9ufmpxx
+        type: gable
+        points:
+          - x: 420
+            'y': 220
+          - x: 1100
+            'y': 220
+          - x: 1100
+            'y': 1120
+          - x: 420
+            'y': 1120
+        height: 150
+        ridge: vertical
+        overhang: 50
+      - id: roof_a26wodi
+        type: gable
+        points:
+          - x: 760
+            'y': 520
+          - x: 1100
+            'y': 520
+          - x: 1100
+            'y': 820
+          - x: 760
+            'y': 820
+        height: 150
+        ridge: horizontal
+        overhang: 50
+    level: 3
+  - id: floor_i5t9saa
+    name: 2nd
+    walls:
+      - id: wall_ost2tda
+        x1: 420
+        y1: 220
+        x2: 420
+        y2: 1120
+      - id: wall_qt9d9dm
+        x1: 420
+        y1: 1120
+        x2: 1320
+        y2: 1120
+      - id: wall_o8ehsp6
+        x1: 420
+        y1: 220
+        x2: 1320
+        y2: 220
+      - id: wall_d6xz927
+        x1: 660
+        y1: 960
+        x2: 660
+        y2: 1120
+      - id: wall_8823ob2
+        x1: 940
+        y1: 680
+        x2: 420
+        y2: 680
+      - id: wall_dcxcnmx
+        x1: 580
+        y1: 960
+        x2: 660
+        y2: 960
+      - id: wall_axoei3f
+        x1: 1020
+        y1: 760
+        x2: 1320
+        y2: 760
+      - id: wall_mgh1z18
+        x1: 1320
+        y1: 220
+        x2: 1320
+        y2: 1120
+      - id: wall_grbdpxz
+        x1: 660
+        y1: 960
+        x2: 720
+        y2: 960
+      - id: wall_j0k4zqb
+        x1: 720
+        y1: 960
+        x2: 780
+        y2: 900
+      - id: wall_pb3rxy3
+        x1: 780
+        y1: 900
+        x2: 1120
+        y2: 900
+      - id: wall_hdzf814
+        x1: 740
+        y1: 220
+        x2: 740
+        y2: 680
+      - id: wall_dyjtdog
+        x1: 900
+        y1: 220
+        x2: 900
+        y2: 680
+      - id: wall_aw4n07l
+        x1: 1020
+        y1: 900
+        x2: 1020
+        y2: 760
+      - id: wall_oegmkxk
+        x1: 1020
+        y1: 760
+        x2: 940
+        y2: 680
+      - id: wall_wvw8t9x
+        x1: 740
+        y1: 620
+        x2: 900
+        y2: 620
+      - id: wall_lbyw8gf
+        x1: 500
+        y1: 960
+        x2: 580
+        y2: 960
+      - id: wall_cry7q2s
+        x1: 500
+        y1: 960
+        x2: 500
+        y2: 1040
+      - id: wall_nxfvi7x
+        x1: 580
+        y1: 960
+        x2: 580
+        y2: 1040
+      - id: wall_ch8io5h
+        x1: 580
+        y1: 1040
+        x2: 500
+        y2: 1040
+      - id: wall_jokh2az
+        x1: 1120
+        y1: 1120
+        x2: 1120
+        y2: 900
+      - id: wall_yeu6ybd
+        x1: 1120
+        y1: 980
+        x2: 1320
+        y2: 980
+      - id: wall_pdyrrwh
+        x1: 820
+        y1: 220
+        x2: 820
+        y2: 620
+    openings:
+      - id: door_m1a4z6x
+        type: door
+        x: 749.9254426840635
+        'y': 930.0745573159365
+        length: 60
+        angle: -45
+        flipH: true
+      - id: door_4jv8vv8
+        type: door
+        x: 626.3037336905871
+        'y': 680
+        length: 60
+        angle: 180
+        flipH: true
+      - id: door_3usu8bz
+        type: door
+        x: 740
+        'y': 451.09899231127673
+        length: 140
+        angle: 90
+        sashSpan: 0.05
+      - id: door_fc8wv45
+        type: door
+        x: 900
+        'y': 451.80712345600864
+        length: 140
+        angle: 90
+        sashSpan: 0.05
+      - id: door_1f01fj0
+        type: door
+        x: 821.3925352925942
+        'y': 680
+        length: 150
+        angle: 180
+        sashSpan: 0.05
+      - id: door_n7w6hn9
+        type: door
+        x: 981.2456314072692
+        'y': 721.2456314072692
+        length: 60
+        angle: -135
+        flipH: true
+      - id: door_itkt78h
+        type: door
+        x: 1020
+        'y': 857.9485088536813
+        length: 60
+        angle: -90
+        flipV: true
+      - id: door_zhjlqfe
+        type: door
+        x: 1120
+        'y': 1083.8897949673815
+        length: 60
+        angle: -90
+      - id: window_r2dd2m7
+        type: window
+        x: 420
+        'y': 501.84952907023563
+        length: 140
+        angle: 90
+      - id: window_08mjexd
+        type: window
+        x: 420
+        'y': 792.4341798695247
+        length: 140
+        angle: 90
+      - id: window_m3cl8nz
+        type: window
+        x: 1320
+        'y': 480
+        length: 180
+        angle: 90
+      - id: window_73s5ol9
+        type: window
+        x: 880
+        'y': 1120
+        length: 120
+        angle: 0
+      - id: window_3bgx9r7
+        type: window
+        x: 1320
+        'y': 874.8863913255362
+        length: 60
+        angle: 90
+    items: []
+    texts: []
+    furniture:
+      - id: furn_h4milq1
+        type: stairs
+        x: 540
+        'y': 1040
+        w: 200
+        h: 130
+        angle: 0
+        goToFloor: down
+    trackers: []
+    areas:
+      - id: area_pslwymx
+        points:
+          - x: 820
+            'y': 220
+          - x: 820
+            'y': 620
+          - x: 900
+            'y': 620
+          - x: 900
+            'y': 680
+          - x: 940
+            'y': 680
+          - x: 1020
+            'y': 760
+          - x: 1320
+            'y': 760
+          - x: 1320
+            'y': 220
+        showName: true
+        name: Bedroom
+        haArea: bedroom
+      - id: area_peyn9m3
+        points:
+          - x: 420
+            'y': 220
+          - x: 820
+            'y': 220
+          - x: 820
+            'y': 620
+          - x: 740
+            'y': 620
+          - x: 740
+            'y': 680
+          - x: 420
+            'y': 680
+        showName: true
+        name: BedroomM
+      - id: area_lsm79em
+        points:
+          - x: 1320
+            'y': 760
+          - x: 1320
+            'y': 980
+          - x: 1120
+            'y': 980
+          - x: 1120
+            'y': 900
+          - x: 1020
+            'y': 900
+          - x: 1020
+            'y': 760
+        showName: true
+        name: Bathroom2
+      - id: area_km8ci2g
+        points:
+          - x: 940
+            'y': 680
+          - x: 1020
+            'y': 760
+          - x: 1020
+            'y': 900
+          - x: 780
+            'y': 900
+          - x: 720
+            'y': 960
+          - x: 420
+            'y': 960
+          - x: 420
+            'y': 680
+        showName: true
+        name: UpStairs
+      - id: area_y0g2afj
+        points:
+          - x: 660
+            'y': 960
+          - x: 720
+            'y': 960
+          - x: 780
+            'y': 900
+          - x: 1120
+            'y': 900
+          - x: 1120
+            'y': 980
+          - x: 1320
+            'y': 980
+          - x: 1320
+            'y': 1120
+          - x: 660
+            'y': 1120
+        showName: true
+        name: BedroomR
+    roofs:
+      - id: roof_otrax7z
+        type: shed
+        points:
+          - x: 1220
+            'y': 220
+          - x: 1320
+            'y': 220
+          - x: 1320
+            'y': 1120
+          - x: 1220
+            'y': 1120
+        height: 40
+        highSide: left
+        overhang: 5
+    level: 2
+  - id: floor_98eiwsv
+    name: 1st
+    walls:
+      - id: wall_v7vqyaj
+        x1: 420
+        y1: 220
+        x2: 420
+        y2: 1120
+      - id: wall_5r5zunk
+        x1: 420
+        y1: 1120
+        x2: 960
+        y2: 1120
+      - id: wall_ohgfcmm
+        x1: 420
+        y1: 220
+        x2: 1320
+        y2: 220
+      - id: wall_n3p9z7h
+        x1: 660
+        y1: 920
+        x2: 660
+        y2: 1120
+      - id: wall_4dxmza0
+        x1: 1320
+        y1: 760
+        x2: 800
+        y2: 760
+      - id: wall_m0ipuea
+        x1: 880
+        y1: 220
+        x2: 880
+        y2: 760
+      - id: wall_87lk3uu
+        x1: 1120
+        y1: 760
+        x2: 1120
+        y2: 920
+      - id: wall_3beqt21
+        x1: 1320
+        y1: 220
+        x2: 1320
+        y2: 920
+      - id: wall_p0mpvph
+        x1: 1120
+        y1: 920
+        x2: 1100
+        y2: 1000
+      - id: wall_cqs78nq
+        x1: 960
+        y1: 1120
+        x2: 1040
+        y2: 1080
+      - id: wall_lyptqqd
+        x1: 1100
+        y1: 1000
+        x2: 1040
+        y2: 1080
+      - id: wall_fxql5n5
+        x1: 500
+        y1: 960
+        x2: 580
+        y2: 960
+      - id: wall_zq0ttg6
+        x1: 500
+        y1: 960
+        x2: 500
+        y2: 1040
+      - id: wall_148le8z
+        x1: 500
+        y1: 1040
+        x2: 580
+        y2: 1040
+      - id: wall_12k66se
+        x1: 580
+        y1: 960
+        x2: 580
+        y2: 1040
+      - id: wall_43use8q
+        x1: 1220
+        y1: 840
+        x2: 1220
+        y2: 760
+      - id: wall_k2nynzd
+        x1: 1320
+        y1: 920
+        x2: 1120
+        y2: 920
+      - id: wall_wghejci
+        x1: 660
+        y1: 920
+        x2: 1120
+        y2: 920
+      - id: wall_jjflexe
+        x1: 1320
+        y1: 220
+        x2: 1380
+        y2: 220
+      - id: wall_q03d7um
+        x1: 1320
+        y1: 540
+        x2: 1380
+        y2: 540
+    openings:
+      - id: door_ntujhla
+        type: door
+        x: 953.8618451751535
+        'y': 760
+        length: 60
+        angle: 180
+        flipV: true
+        flipH: true
+      - id: door_it8ywqp
+        type: door
+        x: 1120
+        'y': 869.1072037810234
+        length: 60
+        angle: 90
+        flipV: true
+        flipH: true
+      - id: door_zvl4d2t
+        type: door
+        x: 1030.0412103914261
+        'y': 920
+        length: 60
+        angle: 180
+      - id: door_cibiyn6
+        type: door
+        x: 874.0814305684995
+        'y': 1120
+        length: 90
+        angle: 0
+        flipV: true
+        invert: true
+      - id: window_077mx2w
+        type: window
+        x: 420
+        'y': 732.192894885153
+        length: 160
+        angle: 90
+      - id: window_8ag5g7v
+        type: window
+        x: 420
+        'y': 413.40581893843
+        length: 160
+        angle: 90
+      - id: window_tz4f66j
+        type: window
+        x: 466.19519723102695
+        'y': 1120
+        length: 80
+        angle: 0
+      - id: window_suz7p06
+        type: window
+        x: 613.5367469324905
+        'y': 1120
+        length: 80
+        angle: 0
+      - id: window_beqymp5
+        type: window
+        x: 1320
+        'y': 410.4373759741777
+        length: 150
+        angle: 90
+      - id: window_9mr52qd
+        type: window
+        x: 1000
+        'y': 1100
+        length: 80
+        angle: -26.56505117707799
+      - id: window_he64nlf
+        type: window
+        x: 1073.6
+        'y': 1035.2
+        length: 98
+        angle: 126.86989764584402
+      - id: window_1blzi5o
+        type: window
+        x: 1109.4117647058824
+        'y': 962.3529411764706
+        length: 80
+        angle: 104.0362434679265
+      - id: window_9wgjz5c
+        type: window
+        x: 1320
+        'y': 860
+        length: 60
+        angle: 90
+      - id: window_vmuzkhw
+        type: window
+        x: 1320
+        'y': 675.251580066099
+        length: 150
+        angle: 90
+    items: []
+    texts: []
+    furniture:
+      - id: furn_0t1v0oa
+        type: stairs
+        x: 460
+        'y': 1040
+        w: 60
+        h: 130
+        goToFloor: down
+        color: '#af5604'
+        angle: 180
+      - id: furn_716g5y7
+        type: waterHeater
+        x: 928.3721812042124
+        'y': 254.2622071185835
+        w: 52
+        h: 52
+        angle: 0
+        entity: number.cazan_maximum_temperature
+      - id: furn_odagjxe
+        type: sectional
+        x: 740
+        'y': 320
+        w: 230
+        h: 180
+        angle: 0
+      - id: furn_l0o74xy
+        type: tv
+        x: 440
+        'y': 420
+        w: 110
+        h: 18
+        angle: 90
+      - id: furn_r5sjecr
+        type: table
+        x: 1140
+        'y': 600
+        w: 120
+        h: 80
+        angle: 0
+      - id: furn_qmzuzc8
+        type: ladderShelf
+        x: 700
+        'y': 1020
+        w: 110
+        h: 40
+        angle: 90
+      - id: furn_4fc93v9
+        type: stairs
+        x: 620
+        'y': 1040
+        w: 60
+        h: 130
+        goToFloor: up
+        color: '#af5604'
+        angle: 0
+      - id: furn_oby6h3u
+        type: stairs
+        x: 540
+        'y': 1080
+        w: 60
+        h: 75
+        goToFloor: up
+        color: '#af5604'
+        angle: 270
+      - id: furn_yu2xfpg
+        type: fridge
+        x: 896.4858979044834
+        'y': 380.31372150870584
+        w: 60
+        h: 64
+        angle: 0
+    trackers: []
+    areas:
+      - id: area_p0nbc69
+        points:
+          - x: 420
+            'y': 220
+          - x: 880
+            'y': 220
+          - x: 880
+            'y': 760
+          - x: 1120
+            'y': 760
+          - x: 1120
+            'y': 920
+          - x: 420
+            'y': 920
+        showName: true
+        name: Living Room
+        haArea: living_room
+      - id: area_k1np56t
+        points:
+          - x: 880
+            'y': 220
+          - x: 880
+            'y': 760
+          - x: 1320
+            'y': 760
+          - x: 1320
+            'y': 220
+        showName: true
+        name: Kitchen
+        haArea: kitchen
+      - id: area_qlmxow8
+        points:
+          - x: 1120
+            'y': 760
+          - x: 1120
+            'y': 920
+          - x: 1320
+            'y': 920
+          - x: 1320
+            'y': 760
+        showName: true
+        name: Bathroom 1
+        haArea: bathroom_1
+      - id: area_qb9rlzg
+        points:
+          - x: 660
+            'y': 920
+          - x: 660
+            'y': 1120
+          - x: 960
+            'y': 1120
+          - x: 1040
+            'y': 1080
+          - x: 1100
+            'y': 1000
+          - x: 1120
+            'y': 920
+        showName: true
+      - id: area_7yxgbx0
+        points:
+          - x: 1320
+            'y': 220
+          - x: 1380
+            'y': 220
+          - x: 1380
+            'y': 540
+          - x: 1320
+            'y': 540
+        showName: true
+        name: Terrace
+    short: Et1
+    roofs:
+      - id: roof_xda67z4
+        type: flat
+        points:
+          - x: 1320
+            'y': 220
+          - x: 1380
+            'y': 220
+          - x: 1380
+            'y': 540
+          - x: 1320
+            'y': 540
+        height: 8
+        overhang: 10
+    level: 1
+  - id: floor_main
+    name: Basement
+    walls:
+      - id: wall_5cje370
+        x1: 420
+        y1: 220
+        x2: 420
+        y2: 1120
+      - id: wall_4ma90f7
+        x1: 420
+        y1: 1120
+        x2: 1320
+        y2: 1120
+      - id: wall_x1kog27
+        x1: 1320
+        y1: 220
+        x2: 1320
+        y2: 1120
+      - id: wall_3ldmaq7
+        x1: 420
+        y1: 220
+        x2: 1320
+        y2: 220
+      - id: wall_m2x4buo
+        x1: 1320
+        y1: 820
+        x2: 1800
+        y2: 820
+      - id: wall_yu0nnyp
+        x1: 1320
+        y1: 520
+        x2: 1800
+        y2: 520
+      - id: wall_xxnrx87
+        x1: 660
+        y1: 220
+        x2: 660
+        y2: 1120
+      - id: wall_39s44cr
+        x1: 1320
+        y1: 860
+        x2: 660
+        y2: 860
+      - id: wall_airvc9q
+        x1: 1320
+        y1: 420
+        x2: 660
+        y2: 420
+      - id: wall_oh8f10b
+        x1: 860
+        y1: 240
+        x2: 860
+        y2: 420
+      - id: wall_cw066oa
+        x1: 420
+        y1: 720
+        x2: 660
+        y2: 720
+      - id: wall_rxdzq38
+        x1: 500
+        y1: 940
+        x2: 500
+        y2: 860
+      - id: wall_g1ah8om
+        x1: 500
+        y1: 860
+        x2: 580
+        y2: 860
+      - id: wall_r2560tg
+        x1: 580
+        y1: 860
+        x2: 580
+        y2: 940
+      - id: wall_2qavqv3
+        x1: 580
+        y1: 940
+        x2: 500
+        y2: 940
+    openings:
+      - id: door_mbm6tg3
+        type: door
+        x: 1320
+        'y': 670.6484598443786
+        length: 280
+        angle: 90
+        motion: roll
+        activeColor: '#c62828'
+        inactiveColor: '#03a9f4'
+        tap_action:
+          action: more-info
+        glazed: true
+        entity: cover.garage_door
+      - id: door_9uut9s5
+        type: door
+        x: 1159.4667432368685
+        'y': 420
+        length: 60
+        angle: 180
+        flipV: true
+      - id: door_pixlunj
+        type: door
+        x: 660
+        'y': 456.43365009913174
+        length: 60
+        angle: 90
+        invert: true
+      - id: door_h5t8olk
+        type: door
+        x: 624.2122366829336
+        'y': 720
+        length: 60
+        angle: 0
+        flipH: true
+      - id: passage_0v6fe41
+        type: passage
+        x: 702.0646428596987
+        'y': 860
+        length: 60
+        angle: 180
+      - id: passage_zm9d6ih
+        type: passage
+        x: 860
+        'y': 327.92933651454393
+        length: 60
+        angle: 90
+    items: []
+    texts:
+      - id: text_gstkisl
+        x: 1300
+        'y': 500
+        text: Rampa
+        size: 16
+    furniture:
+      - id: furn_25q42am
+        type: stairs
+        x: 460
+        'y': 920
+        w: 60
+        h: 170
+        goToFloor: up
+        color: '#af5604'
+      - id: furn_i5fzpiz
+        type: sofa
+        x: 460
+        'y': 480
+        w: 120
+        h: 50
+        angle: 270
+        color: '#393737'
+      - id: furn_c27md1r
+        type: table
+        x: 520
+        'y': 660
+        w: 120
+        h: 80
+        angle: 0
+      - id: furn_vqvojun
+        type: ladderShelf
+        x: 1040
+        'y': 266
+        w: 370
+        h: 40
+        angle: 0
+      - id: furn_3vbuanh
+        type: ladderShelf
+        x: 760
+        'y': 260
+        w: 200
+        h: 40
+        angle: 0
+      - id: furn_wb45fou
+        type: ladderShelf
+        x: 920
+        'y': 1080
+        w: 500
+        h: 40
+        angle: 0
+      - id: furn_6eqlekc
+        type: stairs
+        x: 620
+        'y': 920
+        w: 60
+        h: 170
+        angle: 180
+        color: '#af5604'
+      - id: furn_iast4kn
+        type: stairs
+        x: 540
+        'y': 980
+        w: 60
+        h: 80
+        angle: 270
+        color: '#af5604'
+      - id: furn_hsam0db
+        type: ladderShelf
+        x: 560
+        'y': 260
+        w: 200
+        h: 40
+        angle: 0
+      - id: furn_eyjqvk0
+        type: rug
+        x: 920
+        'y': 640
+        w: 300
+        h: 150
+        angle: 0
+    trackers: []
+    areas:
+      - id: area_ctsu1vx
+        points:
+          - x: 1320
+            'y': 860
+          - x: 660
+            'y': 860
+          - x: 660
+            'y': 1120
+          - x: 1320
+            'y': 1120
+        showName: true
+        name: Instrumente
+        haArea: instrumente
+        filterEntities: false
+      - id: area_mslvd7w
+        points:
+          - x: 860
+            'y': 220
+          - x: 860
+            'y': 420
+          - x: 1320
+            'y': 420
+          - x: 1320
+            'y': 220
+        showName: true
+        name: StorageRoom
+        haArea: storageroom
+      - id: area_urt1k5o
+        points:
+          - x: 660
+            'y': 420
+          - x: 660
+            'y': 860
+          - x: 1320
+            'y': 860
+          - x: 1320
+            'y': 420
+        showName: true
+        name: Garage
+        haArea: garage
+      - id: area_hvgre5p
+        points:
+          - x: 660
+            'y': 220
+          - x: 660
+            'y': 720
+          - x: 420
+            'y': 720
+          - x: 420
+            'y': 220
+        showName: true
+        name: Office
+        haArea: office
+      - id: area_b4sds0f
+        points:
+          - x: 660
+            'y': 220
+          - x: 660
+            'y': 420
+          - x: 860
+            'y': 420
+          - x: 860
+            'y': 220
+        showName: true
+        name: Beci
+        haArea: beci
+      - id: area_h5cgxjq
+        points:
+          - x: 660
+            'y': 720
+          - x: 420
+            'y': 720
+          - x: 420
+            'y': 1020
+          - x: 660
+            'y': 1020
+        showName: true
+        name: UnderStairs
+        haArea: basement
+      - id: area_fr664hg
+        points:
+          - x: 1320
+            'y': 520
+          - x: 1800
+            'y': 520
+          - x: 1800
+            'y': 820
+          - x: 1320
+            'y': 820
+        showName: true
+        name: Rampa
+    roofs: []
+    level: 0
+  - id: floor_6dy5nao
+    name: OUtside
+    walls:
+      - id: wall_216t853
+        x1: 1800
+        y1: 0
+        x2: 1800
+        y2: 1500
+      - id: wall_990s4fq
+        x1: 1800
+        y1: 1500
+        x2: 300
+        y2: 1500
+      - id: wall_65k5dhe
+        x1: 1800
+        y1: 0
+        x2: 100
+        y2: 0
+      - id: wall_yko6p41
+        x1: 100
+        y1: 0
+        x2: 300
+        y2: 1500
+      - id: wall_074dvnt
+        x1: 1320
+        y1: 1120
+        x2: 1320
+        y2: 1020
+      - id: wall_n6flgr8
+        x1: 1320
+        y1: 1020
+        x2: 1220
+        y2: 1020
+      - id: wall_lytvypk
+        x1: 1220
+        y1: 1020
+        x2: 1220
+        y2: 1120
+      - id: wall_ph77hv0
+        x1: 1220
+        y1: 1120
+        x2: 1320
+        y2: 1120
+      - id: wall_llkbp6t
+        x1: 1320
+        y1: 520
+        x2: 1800
+        y2: 520
+        height: 8
+      - id: wall_k3yu5t7
+        x1: 1320
+        y1: 820
+        x2: 1800
+        y2: 820
+        height: 8
+      - id: wall_lj5pyjs
+        x1: 1800
+        y1: 520
+        x2: 2020
+        y2: 520
+        height: 8
+      - id: wall_o6c9qty
+        x1: 1800
+        y1: 820
+        x2: 2000
+        y2: 820
+        height: 8
+      - id: wall_9x0nezb
+        x1: 1800
+        y1: 940
+        x2: 2000
+        y2: 940
+        height: 8
+    openings:
+      - id: door_neitpdl
+        type: door
+        x: 1800
+        'y': 666.831544404184
+        length: 280
+        angle: 90
+        motion: roll
+        glazed: true
+        activeColor: '#c62828'
+        inactiveColor: '#03a9f4'
+        tap_action:
+          action: more-info
+        entity: cover.hall_window
+      - id: door_gpsab7f
+        type: door
+        x: 1800
+        'y': 873.6213851097286
+        length: 90
+        angle: 90
+        flipH: true
+        flipV: true
+        invert: true
+      - id: door_1loe7cn
+        type: door
+        x: 113.43518640630451
+        'y': 100.76389804728383
+        length: 60
+        angle: 82.40535663140855
+        invert: true
+    items: []
+    texts: []
+    furniture: []
+    trackers: []
+    areas:
+      - id: area_08992p6
+        points:
+          - x: 1440
+            'y': 520
+          - x: 1320
+            'y': 520
+          - x: 1320
+            'y': 220
+          - x: 420
+            'y': 220
+          - x: 420
+            'y': 1120
+          - x: 1320
+            'y': 1120
+          - x: 1320
+            'y': 820
+          - x: 1800
+            'y': 820
+          - x: 1800
+            'y': 1260
+          - x: 1580
+            'y': 1260
+          - x: 1580
+            'y': 1380
+          - x: 300
+            'y': 1380
+          - x: 300
+            'y': 100
+          - x: 1440
+            'y': 100
+        showName: true
+        name: Curte
+        haArea: curte
+        color: '#7d7d7d'
+        stateColor:
+          - above: 0
+            color: '#ff0000'
+        opacity: 1
+      - id: area_mclzikw
+        points:
+          - x: 1800
+            'y': 520
+          - x: 1800
+            'y': 820
+          - x: 2000
+            'y': 820
+          - x: 2000
+            'y': 520
+        showName: true
+        name: Aleie
+        haArea: aleie
+        opacity: 1
+        color: '#212121'
+      - id: area_d4r9d78
+        points:
+          - x: 1800
+            'y': 520
+          - x: 1440
+            'y': 520
+          - x: 1440
+            'y': 100
+          - x: 300
+            'y': 100
+          - x: 300
+            'y': 1380
+          - x: 1580
+            'y': 1380
+          - x: 1580
+            'y': 1500
+          - x: 300
+            'y': 1500
+          - x: 100
+            'y': 0
+          - x: 1800
+            'y': 0
+        showName: false
+        name: Gradina
+        color: '#06f202'
+        opacity: 1
+      - id: area_siiwh2x
+        points:
+          - x: 420
+            'y': 220
+          - x: 420
+            'y': 1120
+          - x: 1320
+            'y': 1120
+          - x: 1320
+            'y': 220
+        showName: true
+        name: Casa
+        opacity: 1
+      - id: area_wlqgwqj
+        points:
+          - x: 1800
+            'y': 1260
+          - x: 1580
+            'y': 1260
+          - x: 1580
+            'y': 1500
+          - x: 1800
+            'y': 1500
+        showName: true
+        name: Foisor
+        color: '#4e0808'
+        hasRoof: true
+        roofType: shed
+        roofPitchSide: right
+        roofPitch: 30
+      - id: area_ytm5gnv
+        points:
+          - x: 1800
+            'y': 820
+          - x: 2000
+            'y': 820
+          - x: 2000
+            'y': 940
+          - x: 1800
+            'y': 940
+        showName: true
+        name: Carare
+    color: '#00ff62'
+    isOutdoor: true
+    roofs:
+      - id: roof_wz0ojb9
+        type: hip
+        points:
+          - x: 1580
+            'y': 1260
+          - x: 1800
+            'y': 1260
+          - x: 1800
+            'y': 1500
+          - x: 1580
+            'y': 1500
+        height: 36
+        overhang: 20
+    level: 1
+appearance: normal
+showViewControls: true
+showExport: true
+compactHeader: true
+zoomedOverlayScale: auto
+roomFocus: true
+showDeadSpaces: true
+ambientDaylight: true
+sunlight: true
+north: 150
+sunDimming: true
+wallHeight: 100

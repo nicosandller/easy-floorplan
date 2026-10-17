@@ -22,6 +22,8 @@ import {
   rectAreaClamp,
   rectAreaSharedEdgeCouple,
   rectAreaSharedSides,
+  isSameWallSegment,
+  isAreaCoveredByUpper,
   stripSideOnWall,
 } from "./editor-geometry";
 import type { OrigPos } from "./editor-geometry";
@@ -1091,6 +1093,52 @@ describe("picking a skylight (issue #285)", () => {
     expect(elementsAtPoint(withDoor, 200, 200, opts)[0]).toEqual({ kind: "opening", id: "d" });
     expect(elementsAtPoint(withDoor, 200, 206, opts)[0]).toEqual({ kind: "opening", id: "d" });
     expect(elementsAtPoint(withDoor, 200, 220, opts).map((s) => s.kind)).not.toContain("opening");
+  });
+});
+
+describe("multi-floor stacking geometry helpers", () => {
+  it("determines whether an area is covered by upper polygons", () => {
+    const areaA: Area = {
+      id: "a1",
+      points: [
+        { x: 100, y: 100 },
+        { x: 400, y: 100 },
+        { x: 400, y: 400 },
+        { x: 100, y: 400 },
+      ],
+    };
+    const upperCovering = [
+      [
+        { x: 50, y: 50 },
+        { x: 500, y: 50 },
+        { x: 500, y: 500 },
+        { x: 50, y: 500 },
+      ],
+    ];
+    const upperDisjoint = [
+      [
+        { x: 600, y: 600 },
+        { x: 800, y: 600 },
+        { x: 800, y: 800 },
+        { x: 600, y: 800 },
+      ],
+    ];
+
+    expect(isAreaCoveredByUpper(areaA, upperCovering)).toBe(true);
+    expect(isAreaCoveredByUpper(areaA, upperDisjoint)).toBe(false);
+    expect(isAreaCoveredByUpper(areaA, [])).toBe(false);
+    expect(isAreaCoveredByUpper({ id: "empty", points: [] } as any, upperCovering)).toBe(true);
+  });
+
+  it("detects identical wall segments in either direction", () => {
+    const w1 = { x1: 100, y1: 100, x2: 500, y2: 100 } as Wall;
+    const w2 = { x1: 100, y1: 100, x2: 500, y2: 100 } as Wall;
+    const w3 = { x1: 500, y1: 100, x2: 100, y2: 100 } as Wall;
+    const w4 = { x1: 100, y1: 100, x2: 500, y2: 200 } as Wall;
+
+    expect(isSameWallSegment(w1, w2)).toBe(true);
+    expect(isSameWallSegment(w1, w3)).toBe(true);
+    expect(isSameWallSegment(w1, w4)).toBe(false);
   });
 });
 

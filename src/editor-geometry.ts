@@ -4,7 +4,7 @@ import {
   polygonCentroid, 
   textLabel, 
   skylightWidth,
-  wallThickness
+  wallThickness,
 } from "./render";
 import { 
   AreaPoint, 
@@ -877,3 +877,40 @@ export function cyclePick(
   const i = candidates.findIndex((c) => c.kind === current[0]!.kind && c.id === current[0]!.id);
   return i < 0 ? candidates[0]! : candidates[(i + 1) % candidates.length]!;
 }
+
+export function isSameWallSegment(w1: Wall, w2: Wall, eps = 1): boolean {
+  return (
+    (Math.hypot(w1.x1 - w2.x1, w1.y1 - w2.y1) <= eps && Math.hypot(w1.x2 - w2.x2, w1.y2 - w2.y2) <= eps) ||
+    (Math.hypot(w1.x1 - w2.x2, w1.y1 - w2.y2) <= eps && Math.hypot(w1.x2 - w2.x1, w1.y2 - w2.y1) <= eps)
+  );
+}
+
+/**
+ * Test whether a lower-floor area is covered by upper-floor areas/rooms.
+ */
+export function isAreaCoveredByUpper(
+  area: Area,
+  upperPolygons: readonly (readonly AreaPoint[])[]
+): boolean {
+  if (!area.points || area.points.length < 3) return true;
+  if (!upperPolygons.length) return false;
+  const centroid = polygonCentroid(area.points);
+  if (centroid && upperPolygons.some((poly) => pointInPolygon(poly, centroid.x, centroid.y))) {
+    return true;
+  }
+  if (centroid) {
+    const interiorPoints = area.points.map((p) => ({
+      x: (p.x + centroid.x) / 2,
+      y: (p.y + centroid.y) / 2,
+    }));
+    if (
+      interiorPoints.length > 0 &&
+      interiorPoints.every((ip) => upperPolygons.some((poly) => pointInPolygon(poly, ip.x, ip.y)))
+    ) {
+      return true;
+    }
+  }
+  return false;
+}
+
+

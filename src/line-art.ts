@@ -83,6 +83,7 @@ export const lineArtStyles = css`
   .line-art .fp-floor-image { filter: grayscale(1); }
   .line-art .fp-area { stroke: var(--fp-line-ink); stroke-width: 0.6; }
   .line-art .fp-iso-face { fill: #fff; stroke: none; }
+  .line-art .fp-iso-roof-line { stroke: var(--fp-line-ink); stroke-width: 0.6; opacity: 0.6; }
   .line-art .fp-iso-shade { display: none; }
   .line-art .fp-iso-panel, .line-art .fp-iso-glass {
     fill: #fff;
