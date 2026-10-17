@@ -209,6 +209,8 @@ import {
   furnitureForm,
   isLiveField,
   formSlice,
+  actionFieldNames,
+  actionYamlPatch,
   itemEntityForm,
   itemIdentityForm,
   itemShowStateForm,
@@ -497,6 +499,20 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _projectOpen = false;
   @state() private _selectionPage = "properties";
   @state() private _projectPage = "plan";
+  /**
+   * Behavior's actions as YAML rather than dropdowns (issue #314). One switch
+   * for every element, as HA's own is per editor: whoever needs YAML for one
+   * badge's tap usually needs it for the next.
+   */
+  @state() private _actionYaml = false;
+  /** Why the last code edit was not applied; cleared by the next good one. */
+  @state() private _actionYamlError = "";
+  /**
+   * `ha-yaml-editor` reads its value once, so the editor is re-keyed when the
+   * actions change from outside it (another element, undo) — but not when the
+   * change is its own echo, which would throw the cursor away mid-word.
+   */
+  private _actionYamlSeen = { key: "", json: "", gen: 0 };
   @state() private _mobileInspector = false;
   @state() private _previewCollapsed = false;
   @state() private _keyboardOpen = false;
@@ -2972,8 +2988,13 @@ export class FloorplanCardEditor extends LitElement {
       Look: "Plan style", Project: "Canvas", Display: "View & scale", Color: "State colors",
       "Floor image": `Background · ${this._floor().name}`,
     } as Record<string, string>)[title] ?? title;
+    const codeSwitch = title === "Behavior" && customElements.get("ha-yaml-editor")
+      ? html`<button type="button" class="cfg-group-mode" aria-pressed=${this._actionYaml}
+          @click=${() => { this._actionYaml = !this._actionYaml; this._actionYamlError = ""; }}
+        >${this._actionYaml ? "Show visual editor" : "Show code editor"}</button>`
+      : nothing;
     return html`<section class="cfg-group" data-group=${title}>
-      <h3 class="cfg-group-title">${label}</h3>${content}
+      <div class="cfg-group-head"><h3 class="cfg-group-title">${label}</h3>${codeSwitch}</div>${content}
     </section>`;
   }
 
@@ -4372,6 +4393,14 @@ export class FloorplanCardEditor extends LitElement {
     spec: FormSpec,
     apply: (patch: Record<string, unknown>, live: boolean) => void
   ): TemplateResult {
+    const actionNames = this._actionYaml && customElements.get("ha-yaml-editor") ? actionFieldNames(spec) : [];
+    if (actionNames.length) {
+      // `moreInfoEntity` is the dropdown's stand-in for `tap_action.entity`,
+      // which the YAML holds itself; showing both would let them disagree.
+      const rest = spec.fields.filter((f) => !actionNames.includes(f.name) && f.name !== "moreInfoEntity");
+      return html`${rest.length ? this._renderForm({ ...spec, fields: rest }, apply) : nothing}
+        ${this._renderActionYaml(spec, actionNames, apply)}`;
+    }
     if (customElements.get("ha-form")) {
       const draft = this._numberDraft;
       const data = draft?.form.isConnected && spec.fields.some((field) => field.name === draft.name)
@@ -4417,6 +4446,49 @@ export class FloorplanCardEditor extends LitElement {
       ${spec.fields.some((field) => "ui_action" in field.selector)
         ? html`<p class="hint action-editor-note">Edit tap, hold and double-tap actions in the Home Assistant editor.</p>`
         : nothing}`;
+  }
+
+  /** The Behavior group's actions in HA's own YAML editor (issue #314). */
+  private _renderActionYaml(
+    spec: FormSpec,
+    names: string[],
+    apply: (patch: Record<string, unknown>, live: boolean) => void
+  ): TemplateResult {
+    const value: Record<string, unknown> = {};
+    for (const name of names) if (spec.data[name] != null) value[name] = spec.data[name];
+    const primary = this._primary();
+    const key = primary ? `${primary.kind}:${primary.id}` : "";
+    const json = JSON.stringify(value);
+    const seen = this._actionYamlSeen;
+    if (seen.key !== key || seen.json !== json) {
+      this._actionYamlSeen = { key, json, gen: seen.gen + 1 };
+    }
+    return html`<div class="action-yaml">
+      ${keyed(this._actionYamlSeen.gen, html`<ha-yaml-editor
+        .hass=${this.hass}
+        .defaultValue=${value}
+        @value-changed=${(ev: CustomEvent<{ value: unknown; isValid?: boolean }>) => {
+          ev.stopPropagation();
+          if (ev.detail.isValid === false) return;
+          const result = actionYamlPatch(ev.detail.value, names);
+          if ("error" in result) {
+            this._actionYamlError = result.error;
+            return;
+          }
+          this._actionYamlError = "";
+          const next: Record<string, unknown> = {};
+          for (const name of names) if (result.patch[name] !== undefined) next[name] = result.patch[name];
+          const nextJson = JSON.stringify(next);
+          if (nextJson === this._actionYamlSeen.json) return;
+          this._actionYamlSeen = { ...this._actionYamlSeen, json: nextJson };
+          // Live, like typing in a field: one undo step per burst of edits.
+          apply(spec.toPatch(result.patch), true);
+        }}
+      ></ha-yaml-editor>`)}
+      ${this._actionYamlError
+        ? html`<p class="hint action-yaml-error" role="alert">${this._actionYamlError}</p>`
+        : nothing}
+    </div>`;
   }
 
   private _renderEssentialForm(

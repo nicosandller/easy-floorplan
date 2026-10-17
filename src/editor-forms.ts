@@ -206,6 +206,50 @@ export function formSlice(spec: FormSpec, names: readonly string[]): FormSpec {
   return { fields, data: spec.data, toPatch: spec.toPatch };
 }
 
+/**
+ * The tap/hold/double-tap fields of a form, which the Behavior group can show
+ * as YAML instead (issue #314): some actions — a popup card's, say — exist only
+ * in YAML, and the whole card's code editor is a long way to go for one press.
+ */
+export function actionFieldNames(spec: FormSpec): string[] {
+  return spec.fields.filter((f) => "ui_action" in f.selector).map((f) => f.name);
+}
+
+/**
+ * Turn what the Behavior code editor parsed into a patch for `names`. A key
+ * that is missing clears that action, as deleting its lines should. Anything
+ * that is not one of `names`, or not an action, is refused as a whole rather
+ * than half-applied, and the message says which line to look at.
+ */
+export function actionYamlPatch(
+  value: unknown,
+  names: readonly string[]
+): { patch: Record<string, unknown> } | { error: string } {
+  if (value == null) value = {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return { error: `Expected ${names.join(", ")} as keys.` };
+  }
+  const doc = value as Record<string, unknown>;
+  const unknownKeys = Object.keys(doc).filter((k) => !names.includes(k));
+  if (unknownKeys.length) {
+    return { error: `Only ${names.join(", ")} belong here, not ${unknownKeys.join(", ")}.` };
+  }
+  const patch: Record<string, unknown> = {};
+  for (const name of names) {
+    const action = doc[name];
+    if (action == null) {
+      patch[name] = undefined;
+      continue;
+    }
+    if (typeof action !== "object" || Array.isArray(action) ||
+        typeof (action as Record<string, unknown>).action !== "string") {
+      return { error: `${name} needs an "action:" line.` };
+    }
+    patch[name] = action;
+  }
+  return { patch };
+}
+
 const angleField = (): FormField => ({
   name: "angle",
   label: "Angle",
