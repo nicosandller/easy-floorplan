@@ -21,6 +21,7 @@ import "./replay-history/history-timeline";
 import "./replay-history/replay-panel";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, contrastText } from "./css-safe";
 import { paletteStyle, paletteKey, resolvePaletteColor } from "./palette";
+import { roomTintPaints, roomTintScheme, roomTintsOf } from "./room-tints";
 import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
@@ -1523,6 +1524,14 @@ export class FloorplanCard extends LitElement {
     const deadSpaceRings = c.showDeadSpaces
       ? deadSpacesCached(blockingWallSegments, active.openings)
       : [];
+    // Automatic room tints: the resting fill of every uncoloured room, aligned
+    // with active.areas. All undefined unless `roomTints: auto`, and never in
+    // line art, which paints every room white.
+    const roomTints = roomTintPaints(
+      active.areas,
+      lineArt ? "off" : roomTintsOf(c),
+      roomTintScheme(this.hass, c.skin)
+    );
     // Walls as light meets them (issue #143): open doors and windows are holes,
     // exactly as the plan draws them. Computed once here rather than inside
     // each pool — every lamp sweeps the same walls, and the sun-dimming
@@ -1755,7 +1764,7 @@ export class FloorplanCard extends LitElement {
                           preserveAspectRatio=${imageFitRatio(active.imageFit)}
                           opacity=${active.imageOpacity ?? 1} />`
               : nothing}
-            ${active.areas?.map((a) => {
+            ${active.areas?.map((a, areaIndex) => {
               // Rooms answer gestures now (issue #181). The hit target is
               // unconditional, as it always was — every room zooms — so only
               // the role and the tab stop are earned by having an action.
@@ -1774,7 +1783,8 @@ export class FloorplanCard extends LitElement {
                     })}>
                   ${renderArea(lineArt ? { ...a, color: "#fff", opacity: 1,
                     activeOpacity: a.activeOpacity ?? a.opacity ?? 0.25 } : a,
-                    areaColor(a, a.entity ? renderHass?.states[a.entity]?.state : undefined))}
+                    areaColor(a, a.entity ? renderHass?.states[a.entity]?.state : undefined),
+                    roomTints[areaIndex])}
                 </g>`;
             })}
             <!-- Diffuse sky light (PR #204). Reads its opening travel, shutter

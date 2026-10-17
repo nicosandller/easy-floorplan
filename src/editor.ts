@@ -151,6 +151,7 @@ import {
 import { deadSpacesCached } from "./dead-space";
 import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
 import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
+import { roomTintPaints, roomTintScheme, roomTintsOf, type RoomTintPaint } from "./room-tints";
 import {
   paletteStyle,
   paletteKey,
@@ -225,6 +226,7 @@ import {
   projectPressForm,
   projectReplayForm,
   projectSkinForm,
+  projectRoomTintsForm,
   projectSunForm,
   projectReliefForm,
   textForm,
@@ -3807,6 +3809,13 @@ export class FloorplanCardEditor extends LitElement {
     const deadSpaceRings = c.showDeadSpaces
       ? deadSpacesCached(blockingWallSegments, floor.openings)
       : [];
+    // Automatic room tints, as the card draws them — the editor previews the
+    // resting look, so a room picks up its tint the moment it is drawn.
+    const roomTints = roomTintPaints(
+      floor.areas ?? [],
+      roomTintsOf(c),
+      roomTintScheme(this.hass, c.skin)
+    );
     // Walls as light meets them (issue #143), same as the card — so dropping a
     // door into a wall spills the pool through it while you are still drawing.
     // Skipped entirely on a floor with no cast light, which is most of them:
@@ -4173,7 +4182,7 @@ export class FloorplanCardEditor extends LitElement {
               ${repeat(
                 floor.areas ?? [],
                 (a, i) => a.id || i,
-                (a) => this._renderAreaSel(a, scopingAreaId)
+                (a, i) => this._renderAreaSel(a, scopingAreaId, roomTints[i])
               )}
               <!-- Dead spaces (issue #88), same layer position as the card so
                    what you draw is what you get. Live while you draw: closing
@@ -5235,7 +5244,7 @@ export class FloorplanCardEditor extends LitElement {
     this._updateArea(a.id, { sideWalls: Object.keys(sideWalls).length ? sideWalls : undefined });
   }
 
-  private _renderAreaSel(a: Area, scopingId?: string): TemplateResult {
+  private _renderAreaSel(a: Area, scopingId?: string, tint?: RoomTintPaint): TemplateResult {
     const selected = this._isSel("area", a.id);
     const scoping = a.id === scopingId;
     const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
@@ -5246,7 +5255,7 @@ export class FloorplanCardEditor extends LitElement {
     return svg`
       <g class="area-hit ${selected ? "selected" : ""} ${scoping ? "scoping" : ""}">
         ${scoping ? svg`<polygon points=${pts} class="area-scoping" />` : nothing}
-        ${renderArea(a)}
+        ${renderArea(a, undefined, tint)}
         <polygon points=${pts} class="area-hit-shape"
                  @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "area", id: a.id })} />
         ${selected ? svg`<polygon points=${pts} class="area-outline" />` : nothing}
@@ -5859,6 +5868,7 @@ export class FloorplanCardEditor extends LitElement {
             onLive: (background) => this._patchConfigLive({ background }),
             onCommit: (background) => this._patchConfig({ background }),
           }),
+          this._renderForm(projectRoomTintsForm(c), patch),
           this._renderForm(projectDeadSpaceForm(c), patch)
         )}
         ${this._renderGroup(

@@ -4273,6 +4273,38 @@ describe("renderArea", () => {
     expect(markup).toContain("fill-opacity=0.2");
   });
 
+  describe("with a room tint (roomTints: auto)", () => {
+    const tint = { color: "var(--fp-room-tint-2, #3f86c4)", opacity: 0.18 };
+
+    it("rests at the tint instead of the accent", () => {
+      const markup = flattenMarkup(renderArea({ id: "a", points: square }, undefined, tint));
+      expect(markup).toContain(`fill=${tint.color}`);
+      expect(markup).toContain("fill-opacity=0.18");
+      expect(markup).not.toContain(SKIN_ACCENT);
+    });
+
+    it("never paints over a room's own colour, even if a caller passes one", () => {
+      const markup = flattenMarkup(
+        renderArea({ id: "a", points: square, color: "#ff0000", opacity: 0.6 }, undefined, tint)
+      );
+      expect(markup).toContain("fill=#ff0000");
+      expect(markup).toContain("fill-opacity=0.6");
+    });
+
+    it("gives way to a live fill and its activeOpacity", () => {
+      const a = { id: "a", points: square, activeOpacity: 0.5 };
+      const markup = flattenMarkup(renderArea(a, "#4caf50", tint));
+      expect(markup).toContain("fill=#4caf50");
+      expect(markup).toContain("fill-opacity=0.5");
+    });
+
+    it("stays the fill under highlight: border, where the live colour goes to the outline", () => {
+      const a = { id: "a", points: square, highlight: "border" as const };
+      const markup = flattenMarkup(renderArea(a, "#4caf50", tint));
+      expect(markup).toContain(`fill=${tint.color}`);
+    });
+  });
+
   it("never strokes — the outline is renderAreaBorder's pass, above the walls", () => {
     const cases: Area[] = [
       { id: "a", points: square },

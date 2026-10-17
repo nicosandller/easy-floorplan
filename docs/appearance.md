@@ -152,6 +152,43 @@ palette:
     color: var(--primary-color)
 ```
 
+## Room tints
+
+A plan whose rooms have no colour of their own draws them all in the same accent wash.
+Turn on **Look → Room tints** and each of those rooms gets a soft tint of its own instead:
+
+```yaml
+type: custom:easy-floorplan-card
+roomTints: auto
+```
+
+Rooms that share a wall never share a tint, and a room keeps its tint from one load to the
+next — it is picked from the room's id, moving on round the palette only when a neighbour
+already holds it. Adding a room elsewhere on the plan leaves the others alone; adding one
+beside a room can move that neighbour. Rooms meeting only at a corner count as apart.
+
+It only fills in a room's resting colour. A room with its own `color` keeps it, and a live
+`stateColor` or `activeColor` still takes over the fill (or the outline, under
+`highlight: border`) exactly as without tints. A tinted room rests at `0.18` opacity unless
+it sets its own `opacity`. Line art stays white, and the 3D view tints the same floors.
+
+There are eight tints, each with a value for light paper and a lighter one for dark: Home
+Assistant's dark mode picks the side, and so does a skin whose paper is fixed (`tron` is
+dark; `odnetnin` and `pastel` are light). To change one, set `--fp-room-tint-1` …
+`--fp-room-tint-8` in a theme or with card-mod, or add a [named color](#named-colors) called
+`Room tint 1` … `Room tint 8`:
+
+| | Light | Dark |
+| --- | --- | --- |
+| 1 sage | `#5f9a68` | `#9fd8a8` |
+| 2 sky | `#3f86c4` | `#8ec8f2` |
+| 3 lilac | `#8c6cc0` | `#c8b0f2` |
+| 4 sand | `#b48a48` | `#e6c790` |
+| 5 teal | `#2f9a90` | `#7fdcd0` |
+| 6 rose | `#bf6a8a` | `#f2aac4` |
+| 7 slate | `#6a7c96` | `#b6c4da` |
+| 8 olive | `#8c9640` | `#d0d884` |
+
 ## Top-hinged windows
 
 *"My windows are hinged at the top and swing out at the bottom."*

@@ -20,6 +20,7 @@ import {
   projectDisplayForm,
   projectPressForm,
   projectSkinForm,
+  projectRoomTintsForm,
   projectSunForm,
   projectReliefForm,
   projectDeadSpaceForm,
@@ -1432,6 +1433,18 @@ describe("wallForm / projectForm / floorImageForm", () => {
       pressEffect: "sparkle",
     } as never);
     expect(form.data.pressEffect).toBe(DEFAULT_PRESS_EFFECT);
+  });
+
+  it("room tints offers off and automatic, and keeps off out of the YAML", () => {
+    const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+    const form = projectRoomTintsForm(base);
+    expect(form.fields.map((x) => x.name)).toEqual(["roomTints"]);
+    const options = (form.fields[0].selector.select as { options: { value: string }[] }).options;
+    expect(options.map((o) => o.value)).toEqual(["off", "auto"]);
+    expect(form.data.roomTints).toBe("off");
+    expect(projectRoomTintsForm({ ...base, roomTints: "auto" }).data.roomTints).toBe("auto");
+    expect(form.toPatch({ roomTints: "auto" })).toEqual({ roomTints: "auto" });
+    expect(form.toPatch({ roomTints: "off" })).toEqual({ roomTints: undefined });
   });
 
   it("skin reads back a skin we don't ship as the default, matching what it renders as", () => {

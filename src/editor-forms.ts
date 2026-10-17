@@ -84,6 +84,7 @@ import {
 import { normalizeProjection, normalizeWallHeight, normalizeWallOpacity, MAX_WALL_HEIGHT } from "./projection";
 import { defaultItemAction } from "./actions";
 import { DEFAULT_SKIN, SKINS, findSkin, MAX_SKIN_WALL_WIDTH } from "./skins";
+import { roomTintsOf } from "./room-tints";
 
 /** One ha-form schema item, extended with our label/helper (read by computeLabel). */
 export interface FormField {
@@ -2371,6 +2372,27 @@ export function projectSkinForm(c: FloorplanCardConfig): FormSpec {
     toPatch: (p) =>
       // Default is the absence of a skin, so it stays out of the YAML.
       "skin" in p && p.skin === DEFAULT_SKIN ? { ...p, skin: undefined } : p,
+  };
+}
+
+/**
+ * Automatic room tints. A dropdown rather than a toggle because the stored
+ * value is `auto` — room for a second strategy later without a migration.
+ * Off is the absence of the key, so it stays out of the YAML.
+ */
+export function projectRoomTintsForm(c: FloorplanCardConfig): FormSpec {
+  return {
+    fields: [
+      {
+        name: "roomTints",
+        label: "Room tints",
+        helper: "Automatic gives each room without its own color a soft tint, different from its neighbors",
+        selector: dropdown(opt("off", "Off"), opt("auto", "Automatic")),
+      },
+    ],
+    data: { roomTints: roomTintsOf(c) },
+    toPatch: (p) =>
+      "roomTints" in p && p.roomTints !== "auto" ? { ...p, roomTints: undefined } : p,
   };
 }
 

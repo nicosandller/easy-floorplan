@@ -36,6 +36,11 @@ export interface HomeAssistant extends BaseHomeAssistant {
    * `attributes`.
    */
   entities?: Record<string, { icon?: string } | undefined>;
+  /**
+   * HA has carried `darkMode` on `themes` since 2021; `custom-card-helpers`
+   * predates it. Read by `roomTints` to pick each tint's dark side.
+   */
+  themes: BaseHomeAssistant["themes"] & { darkMode?: boolean };
 }
 
 /**
@@ -1841,6 +1846,15 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * an entry moves every element that names it. See `src/palette.ts`.
    */
   palette?: PaletteColor[];
+  /**
+   * `auto` gives every room without a `color` of its own a soft tint from a
+   * small built-in palette, picked so rooms that share a wall never share a
+   * tint and the same room keeps its tint from load to load. Off when unset,
+   * which renders every uncoloured room in the accent as it always has. Never
+   * touches a room's own colour or its live `stateColor`/`activeColor`. See
+   * `src/room-tints.ts`.
+   */
+  roomTints?: "auto" | "off";
   /**
    * How the HTML overlay (badges, labels, room names, text) is sized.
    *

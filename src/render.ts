@@ -6662,8 +6662,17 @@ export function renderDeadSpace(
  * is a separate pass, drawn above the walls by {@link renderAreaBorder}.
  * `color`/`opacity` are config-supplied style values, so they go through the
  * same injection allowlist as every other color/number field (see css-safe.ts).
+ *
+ * `rest` is the automatic room tint (`roomTints: auto`, see room-tints.ts):
+ * what an uncoloured room rests at instead of the accent. It never applies to a
+ * room with its own `color` — the caller passes none for one — and a live fill
+ * still wins over it, so state colouring and `highlight` behave as before.
  */
-export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
+export function renderArea(
+  a: Area,
+  liveColor?: string,
+  rest?: { color: string; opacity: number }
+): SVGTemplateResult {
   const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
   // `liveColor` has already been through the allowlist by areaColor(). When it
   // is present the area is "live" and `highlight` decides whether that color
@@ -6671,7 +6680,12 @@ export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
   const liveFill = liveColor !== undefined && (a.highlight ?? "fill") !== "border";
 
   // activeOpacity is a fill concern, so it only applies when the fill is live.
-  const opacity = liveFill ? a.activeOpacity ?? a.opacity : a.opacity;
+  // A room's own colour always beats a tint, whatever the caller passed.
+  const tint = a.color ? undefined : rest;
+  const opacity = liveFill ? a.activeOpacity ?? a.opacity : tint ? tint.opacity : a.opacity;
+  // A tint is a library constant built by roomTintFill, not config, so it
+  // needs no allowlist pass; the room's own colour still goes through one.
+  const restFill = tint ? tint.color : cssColorOr(a.color, SKIN_ACCENT);
 
   // Stroke stays pinned off rather than omitted: this element is reused across
   // live/rest updates, and stating it keeps the fill pass unable to draw an
@@ -6679,7 +6693,7 @@ export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
   return svg`<polygon class="fp-area" data-id=${cssIdent(a.id) ?? nothing}
                        data-entity=${cssEntityId(a.entity) ?? nothing}
                        points=${pts}
-                       fill=${liveFill ? liveColor : cssColorOr(a.color, SKIN_ACCENT)}
+                       fill=${liveFill ? liveColor : restFill}
                        fill-opacity=${cssNumber(opacity, DEFAULT_AREA_OPACITY)}
                        stroke="none"
                        stroke-width="0" />`;
