@@ -6797,6 +6797,43 @@ export function renderFurniture(
 }
 
 /**
+ * The piece as it stands right now (issue #196). A symbol with an `extend`
+ * — the awning, the curtain — is drawn at its config size only when fully
+ * extended; otherwise the moving side shrinks toward its start edge, down to
+ * the symbol's `min`, and the centre moves with it so that edge stays put on
+ * the wall. Every other piece, and one with no entity, comes back unchanged:
+ * an unbound awning draws extended, which is also how the editor shows it.
+ *
+ * The cover's position is read the way a shutter's is ({@link shutterAmount}),
+ * so a dropout fails to the retracted end rather than guessing.
+ */
+export function shownFurniture(
+  f: Furniture,
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+  catalog: SymbolCatalog = BUILTIN_SYMBOLS,
+): Furniture {
+  const ext = findSymbol(catalog, f.type)?.extend;
+  if (!ext || !f.entity) return f;
+  const open = shutterAmount(state);
+  const out = ext.open === "extended" ? open : 1 - open;
+  const k = ext.min + (1 - ext.min) * out;
+  if (k >= 1) return f;
+  const full = ext.axis === "w" ? f.w : f.h;
+  const shift = (full * (1 - k)) / 2;
+  // In the piece's own frame: toward the far edge along the moving axis. A
+  // mirrored piece starts from the right, so a curtain can gather either way.
+  const lx = ext.axis === "w" ? (f.hand === "left" ? -shift : shift) : 0;
+  const ly = ext.axis === "h" ? shift : 0;
+  const rad = ((f.angle ?? 0) * Math.PI) / 180;
+  return {
+    ...f,
+    x: f.x - (lx * Math.cos(rad) - ly * Math.sin(rad)),
+    y: f.y - (lx * Math.sin(rad) + ly * Math.cos(rad)),
+    ...(ext.axis === "w" ? { w: full * k } : { h: full * k }),
+  };
+}
+
+/**
  * Concentric pulsing rings for presence/movement devices. When `active`, the rings
  * animate (CSS keyframes `fp-ripple`, defined in each component's styles); when idle
  * only the faint center dot shows.

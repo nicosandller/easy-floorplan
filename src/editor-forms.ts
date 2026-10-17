@@ -1925,6 +1925,18 @@ export function furnitureForm(
             },
           ]
         : []),
+      // A curtain gathers at one end when open (issue #196). The symbol is
+      // drawn from its left edge, so mirroring it gathers it at the right.
+      ...(findSymbol(catalog, f.type)?.extend?.axis === "w"
+        ? [
+            {
+              name: "hand",
+              label: "Gathers at",
+              helper: "Which end it bunches up at when open",
+              selector: dropdown(opt("right", "left"), opt("left", "right")),
+            },
+          ]
+        : []),
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
       angleField(),
@@ -1934,7 +1946,14 @@ export function furnitureForm(
       {
         name: "entity",
         label: "Entity",
-        helper: areaScopeHelper(areaScope, "Optional — lets the drawing change color with a sensor"),
+        helper: areaScopeHelper(
+          areaScope,
+          // An awning or curtain is what the entity is for (issue #196).
+          findSymbol(catalog, f.type)?.extend
+            ? `The cover that moves it: drawn at its position, full size when fully ${
+                findSymbol(catalog, f.type)!.extend!.open === "extended" ? "open" : "closed"}`
+            : "Optional — lets the drawing change color with a sensor"
+        ),
         selector: areaScopedEntity(areaScope, f.entity),
       },
       // Clicking it changes floor (issue #121). Offered on any piece rather
@@ -1976,7 +1995,9 @@ export function furnitureForm(
     ],
     data: {
       type: f.type,
-      ...(f.type === "sectional" ? { hand: f.hand ?? "right" } : {}),
+      ...(f.type === "sectional" || findSymbol(catalog, f.type)?.extend?.axis === "w"
+        ? { hand: f.hand ?? "right" }
+        : {}),
       w: f.w,
       h: f.h,
       angle: f.angle ?? 0,

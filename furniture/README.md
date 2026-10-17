@@ -96,6 +96,27 @@ without doing anything.
 numeric `width`, `opacity`, `fillOpacity` or `dash` to override the role — see `rug.json`,
 which is a `body` at `0.08` with a dashed outline.
 
+## Pieces that move with a cover
+
+An awning or a curtain follows a `cover` entity's position (issue #196). Two optional keys
+say how, and both are numbers or fixed words, like everything else here:
+
+```jsonc
+"extend": { "axis": "h", "min": 0.06, "open": "extended" },
+"elevation": { "from": 0.74, "to": 0.78 }
+```
+
+- **`extend`**: the piece's `w × h` is its fully extended size. `axis` is the side that moves:
+  `h` grows away from the top edge, and `w` grows away from the left edge (the right edge once
+  the piece is mirrored with `hand: left`). `min` is the fraction left when fully retracted.
+  `open` says which way an open cover goes: an awning opens `extended`, a curtain opens
+  `retracted`. A piece with no entity bound draws at full size, which is also how the editor
+  shows it.
+- **`elevation`**: where the piece sits in the 3D view, as fractions of the wall height,
+  instead of standing on the floor. An awning is a sheet under the eaves.
+
+See `awning.json` and `curtain.json`.
+
 ## Drawing one
 
 1. Copy the closest existing file and change the numbers. Most glyphs are under a dozen parts.
