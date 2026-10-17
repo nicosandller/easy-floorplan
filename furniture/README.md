@@ -1,7 +1,7 @@
 # Furniture symbols
 
 Every glyph the card draws lives in this directory, one JSON file per symbol. Adding a new
-one is adding a file — no code and no build step. There is one list to keep in step: the
+one is adding a file — no code and no build step. Keep the symbol catalogue in step with the
 `FurnitureType` union in [`src/types.ts`](../src/types.ts), which is what a hand-written
 config autocompletes against. Add the id there and to the expected catalogue in
 `src/symbols.test.ts`. Run both `src/symbols.test.ts` and `src/render.test.ts` when
@@ -102,7 +102,8 @@ which is a `body` at `0.08` with a dashed outline.
 2. Try it without a PR: paste the JSON into **Project → Custom symbols** in the editor. It
    lands in your card's `symbols:` block and shows up in the picker beside the built-ins.
 3. When it looks right, drop it here as `<id>.json`, add the id to the `FurnitureType`
-   union in `src/types.ts`, run `npm test`, and open a pull request.
+   union in `src/types.ts` and the expected catalogue in `src/symbols.test.ts`. Run
+   `npm test -- src/symbols.test.ts src/render.test.ts`, then open a pull request.
 
 Check it at its default size *and* stretched: a glyph can be right by the numbers and wrong
 on screen. `npm run ha` (see [`docker/README.md`](../docker/README.md)) gets you
