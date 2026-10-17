@@ -74,6 +74,33 @@ describe("ambient daylight follows physical walls (#319)", () => {
     expect(visible(closed.clipPoints, 200, 150)).toBe(false);
   });
 
+  // Issue #360: a glazed gap that failed to close joined its room to the
+  // outside, so an always-open passage out of that room lit the next one.
+  describe("an interior passage is not a sky source (#360)", () => {
+    const passage: Opening = { ...door, id: "passage", type: "passage" };
+    const bay = (top: number, bottom: number) => [...outer.slice(0, 3),
+      { id: "left-top", x1: 0, y1: 0, x2: 0, y2: top },
+      { id: "left-bottom", x1: 0, y1: bottom, x2: 0, y2: 300 }, partition];
+
+    it("in a closed plan", () => {
+      const result = lights([...outer, partition], [window, passage])!;
+      expect(result[0]?.patch.openingId).toBe(window.id);
+      expect(result[1]).toBeUndefined();
+    });
+
+    it("when the window falls a few units short of its jambs", () => {
+      const result = lights(bay(110, 190), [window, passage])!;
+      expect(result[0]?.patch.openingId).toBe(window.id);
+      expect(result[1]).toBeUndefined();
+    });
+
+    it("when two windows side by side fill the gap", () => {
+      const pair = [{ ...window, y: 100, length: 100 }, { ...window, id: "second", y: 200, length: 100 }];
+      const result = lights(bay(50, 250), [...pair, passage])!;
+      expect(result.map(light => light?.patch.openingId)).toEqual([window.id, "second", undefined]);
+    });
+  });
+
   it("keeps the Area fallback for gaps without a supported wall opening", () => {
     const walls = outer.slice(0, 3);
     expect(lights(walls, [window])).toBeUndefined(); // Jambs do not reach either end.

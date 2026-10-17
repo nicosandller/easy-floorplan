@@ -46,20 +46,37 @@ function nearestWall(point: AreaPoint, walls: readonly Wall[]) {
   return best;
 }
 
-/** An explicit opening can close a run only when both jambs meet solid walls. */
+/**
+ * An explicit opening can close a run only when both jambs meet solid walls,
+ * or another opening that does: a glazed bay is often two windows side by
+ * side. A jamb gets the same nudge tolerance as an opening's centre. A gap
+ * left open here joins the room behind it to the outside, and every interior
+ * opening of that room then reads as a sky source (issue #360).
+ */
 function bridgeOpenings(walls: readonly Wall[], openings: readonly Opening[]): Wall[] {
-  const result = [...walls];
+  let spans: Wall[] = [];
   openings.forEach((o, index) => {
     if (openingIsSkylight(o) || !(o.length > 0)) return;
     if ((nearestWall(o, walls)?.distance ?? Infinity) <= WELD_EPS) return;
     const angle = o.angle * Math.PI / 180;
     const dx = Math.cos(angle) * o.length / 2, dy = Math.sin(angle) * o.length / 2;
-    const a = nearestWall({ x: o.x - dx, y: o.y - dy }, walls);
-    const b = nearestWall({ x: o.x + dx, y: o.y + dy }, walls);
-    if (!a || !b || a.distance > WELD_EPS || b.distance > WELD_EPS) return;
-    result.push({ id: `ambient-opening-${index}`, x1: a.point.x, y1: a.point.y, x2: b.point.x, y2: b.point.y });
+    spans.push({ id: `ambient-opening-${index}`, x1: o.x - dx, y1: o.y - dy, x2: o.x + dx, y2: o.y + dy });
   });
-  return result;
+  const jamb = (p: AreaPoint, span: Wall, others: readonly Wall[]) => {
+    const match = nearestWall(p, [...walls, ...others.filter(s => s !== span)]);
+    return match && match.distance <= OPENING_ON_WALL_EPS ? match.point : undefined;
+  };
+  const ends = (s: Wall): [AreaPoint, AreaPoint] => [{ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }];
+  // Drop dangling spans until every remaining jamb meets something that stays.
+  for (let n = -1; n !== spans.length;) {
+    n = spans.length;
+    const kept = spans;
+    spans = kept.filter(s => ends(s).every(p => jamb(p, s, kept)));
+  }
+  return [...walls, ...spans.map(s => {
+    const [a, b] = ends(s).map(p => jamb(p, s, spans)!);
+    return { id: s.id, x1: a!.x, y1: a!.y, x2: b!.x, y2: b!.y };
+  })];
 }
 
 /** Collinear pieces of the nearest supporting wall own the opening, not a
