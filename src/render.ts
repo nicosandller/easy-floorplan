@@ -4618,7 +4618,16 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
             shutterTone2,
             shutterAmt2
           )
-        : rollCurtain(o.length, shutterTone, shutterAmt)
+        : svg`${
+            // Up or moving, the track wears the shutter's accent (issue #375),
+            // as a roll-up door's does (#154): fully raised the curtain has
+            // scaled away, and without this line the colour only ever showed
+            // part-way down. Shut, the band covers the line, so none is drawn.
+            style.shutter.active
+              ? svg`<line x1=${-half} y1="0" x2=${half} y2="0"
+                    stroke=${shutterTone} stroke-width="0.75" />`
+              : nothing
+          }${rollCurtain(o.length, shutterTone, shutterAmt)}`
     }`;
   }
   const { sx, sy } = openingMirror(o);
