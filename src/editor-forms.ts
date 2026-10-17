@@ -1973,6 +1973,19 @@ export function furnitureForm(
         label: "Double-tap action",
         selector: { ui_action: { default_action: "none" } },
       },
+      // Whether those gestures get a visible icon (issue #362). Only asked
+      // once there is something for an icon to stand for: on decorative
+      // furniture the toggle would switch nothing.
+      ...(f.goToFloor || f.tap_action || f.hold_action || f.double_tap_action
+        ? [
+            {
+              name: "showIcon",
+              label: "Action icon",
+              helper: "Off: tap the furniture itself instead of the round icon",
+              selector: { boolean: {} },
+            },
+          ]
+        : []),
     ],
     data: {
       type: f.type,
@@ -1987,8 +2000,11 @@ export function furnitureForm(
       tap_action: f.tap_action,
       hold_action: f.hold_action,
       double_tap_action: f.double_tap_action,
+      showIcon: f.showIcon ?? true,
     },
-    toPatch: (p) => {
+    toPatch: (raw) => {
+      // On is the default, so only "off" is worth writing down.
+      const p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
       if (!("goToFloor" in p)) return p;
       const value = p.goToFloor;
       return {

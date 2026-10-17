@@ -426,7 +426,7 @@ there reads `—`, the same as a device's label.
 
 ## Furniture
 
-`{ id, type, x, y, w, h, angle?, hand?, color?, entity?, activeColor?, stateColor?, goToFloor?, tap_action?, hold_action?, double_tap_action?, locked? }`
+`{ id, type, x, y, w, h, angle?, hand?, color?, entity?, activeColor?, stateColor?, goToFloor?, tap_action?, hold_action?, double_tap_action?, showIcon?, locked? }`
 
 `type` names a **symbol** — one of the built-in symbols (`table`, `sofa`, `bed`,
 `fridge`, `stairs`, …; the full set is [`furniture/`](../furniture), a file each), or one you
@@ -453,6 +453,10 @@ has (same shape as a device's). `goToFloor` is to furniture what the zoom is to 
 a tap does when nothing else is set, so setting `tap_action` replaces it while hold and
 double-tap stay free. An action with no `entity` of its own uses the piece's. See
 [Actions on furniture](behavior.md#actions-on-furniture).
+
+**`showIcon: false`** hides the round action icon on a piece with an action or a floor
+destination. Tapping the drawing itself then runs it, instead of passing through to the
+room. Default `true`.
 
 ```yaml
 { id: plant1, type: plant, 'x': 300, 'y': 220, w: 40, h: 40,

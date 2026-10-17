@@ -31,6 +31,8 @@ import {
   DEFAULT_RIPPLE_WIDTH,
   DEFAULT_AREA_LABEL_SIZE,
   MIN_TOUCH_TARGET,
+  FURNITURE_ICON_SIZE,
+  FURNITURE_ICON_GLYPH,
   DEFAULT_SUN_MIN,
   DEFAULT_SUN_MAX,
   PRESS_SCALE,
@@ -1089,14 +1091,20 @@ export class FloorplanCard extends LitElement {
     executeAction(this, this.hass, { entity: press.entity }, press.config);
   }
 
-  /** The visible control owns gestures; the furniture drawing always lets room taps through. */
-  private _renderFurnitureAction(
+  /**
+   * What a piece of furniture answers to, or `undefined` for an inert piece.
+   *
+   * Shared by the two places its gestures can live: the visible icon, and —
+   * with `showIcon: false` (issue #362) — the drawing itself. Both must agree
+   * on the name, the gestures and which timers to arm, or hiding the icon
+   * would quietly change what a tap does.
+   */
+  private _furnitureControl(
     f: Furniture,
     c: FloorplanCardConfig,
-    rot: number,
     floors: readonly Floor[],
     activeId: string,
-  ): TemplateResult | typeof nothing {
+  ) {
     const to = furnitureFloorTarget(f, floors, activeId, c.defaultFloor);
     const runs = (gesture: "tap" | "hold" | "double_tap"): boolean => {
       const press = furnitureActionForGesture(f, gesture);
@@ -1107,7 +1115,7 @@ export class FloorplanCard extends LitElement {
     const hasDoubleClick = runs("double_tap");
     // A configured tap, even `none` or an unusable action, suppresses navigation.
     const goesToFloor = !!to && !furnitureActionForGesture(f, "tap");
-    if (!goesToFloor && !hasTap && !hasHold && !hasDoubleClick) return nothing;
+    if (!goesToFloor && !hasTap && !hasHold && !hasDoubleClick) return undefined;
 
     const tappable = hasTap || goesToFloor;
     const floorName = floors.find((floor) => floor.id === to)?.name;
@@ -1120,35 +1128,92 @@ export class FloorplanCard extends LitElement {
       ? (floors.findIndex((floor) => floor.id === to) > floors.findIndex((floor) => floor.id === activeId)
         ? "mdi:stairs-up" : "mdi:stairs-down")
       : hasTap ? "mdi:gesture-tap" : hasHold ? "mdi:gesture-tap-hold" : "mdi:gesture-double-tap";
+    const onAction = (ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
+      this._onFurnitureAction(ev, f, floors, to);
+    const onKeydown = (ev: KeyboardEvent) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      ev.preventDefault();
+      // Keyboard activation is always a tap, never the pointer's hold or
+      // double-tap recognizer. Register before actionHandler's listener.
+      ev.stopImmediatePropagation();
+      if (tappable && !ev.repeat) {
+        this._onFurnitureAction(new CustomEvent("action", { detail: { action: "tap" } }), f, floors, to);
+      }
+    };
+    return { tappable, hasHold, hasDoubleClick, name, gestures, icon, onAction, onKeydown };
+  }
+
+  /**
+   * The furniture drawing as its own hit target, for a piece whose icon is
+   * hidden (issue #362). A piece with an icon, or with nothing to do, is
+   * drawn as-is and passes taps through to the room (#323).
+   */
+  private _furnitureHit(
+    f: Furniture,
+    drawn: SVGTemplateResult,
+    c: FloorplanCardConfig,
+    floors: readonly Floor[],
+    activeId: string,
+  ): SVGTemplateResult {
+    if (f.showIcon !== false) return drawn;
+    const ctl = this._furnitureControl(f, c, floors, activeId);
+    if (!ctl) return drawn;
+    // An SVG tooltip is a <title> child; a title= attribute does nothing here.
+    return svg`<g class="fp-furniture-hit"
+        data-id=${cssIdent(f.id) ?? nothing}
+        role=${ctl.tappable ? "button" : "group"}
+        tabindex=${ctl.tappable ? "0" : nothing}
+        aria-label=${ctl.name}
+        aria-description=${`${ctl.gestures} actions`}
+        @action=${ctl.onAction}
+        @keydown=${ctl.onKeydown}
+        .actionHandler=${actionHandler({ hasHold: ctl.hasHold, hasDoubleClick: ctl.hasDoubleClick })}>
+      <title>${`${ctl.name} · ${ctl.gestures}`}</title>
+      ${drawn}
+    </g>`;
+  }
+
+  /** The visible control owns gestures; the furniture drawing always lets room taps through. */
+  private _renderFurnitureAction(
+    f: Furniture,
+    c: FloorplanCardConfig,
+    rot: number,
+    scale: OverlayScale,
+    floors: readonly Floor[],
+    activeId: string,
+  ): TemplateResult | typeof nothing {
+    // Hidden (issue #362): the drawing takes the gestures instead.
+    if (f.showIcon === false) return nothing;
+    const ctl = this._furnitureControl(f, c, floors, activeId);
+    if (!ctl) return nothing;
     // Upright HTML, anchored to the same elevated centre as the SVG glyph.
     // Floor-level coordinates would leave the control below the table in 3D.
     const frame = this._frame(c, rot);
     const at = rotatePlanPoint(f.x, f.y, c.width, c.height, rot);
     const p = projectPlanPoint(at.x, at.y, frame, normalizeWallHeight(c.wallHeight) * FURNITURE_HEIGHT_FRACTION);
     const d = projectedCanvasSize(frame);
+    // Sized like every other badge (issue #362): screen pixels under
+    // `overlayScale: fixed`, canvas units under `plan` — otherwise a plan that
+    // shrinks its devices with the card leaves these circles towering over
+    // the furniture they sit on.
+    const box = overlayLength(FURNITURE_ICON_SIZE, scale);
     return html`<div
         class="fp-furniture-link"
         data-id=${cssIdent(f.id) ?? nothing}
-        style="left:${(p.x / d.w) * 100}%;top:${(p.y / d.h) * 100}%;"
-        title=${`${name} · ${gestures}`}
-        role=${tappable ? "button" : "group"}
-        tabindex=${tappable ? "0" : nothing}
-        aria-label=${name}
-        aria-description=${`${gestures} actions`}
-        @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
-          this._onFurnitureAction(ev, f, floors, to)}
-        @keydown=${(ev: KeyboardEvent) => {
-          if (ev.key !== "Enter" && ev.key !== " ") return;
-          ev.preventDefault();
-          // Keyboard activation is always a tap, never the pointer's hold or
-          // double-tap recognizer. Register before actionHandler's listener.
-          ev.stopImmediatePropagation();
-          if (tappable && !ev.repeat) {
-            this._onFurnitureAction(new CustomEvent("action", { detail: { action: "tap" } }), f, floors, to);
-          }
-        }}
-        .actionHandler=${actionHandler({ hasHold, hasDoubleClick })}>
-      <ha-icon icon=${icon} aria-hidden="true"></ha-icon>
+        style="left:${(p.x / d.w) * 100}%;top:${(p.y / d.h) * 100}%;width:${box};height:${box};"
+        title=${`${ctl.name} · ${ctl.gestures}`}
+        role=${ctl.tappable ? "button" : "group"}
+        tabindex=${ctl.tappable ? "0" : nothing}
+        aria-label=${ctl.name}
+        aria-description=${`${ctl.gestures} actions`}
+        @action=${ctl.onAction}
+        @keydown=${ctl.onKeydown}
+        .actionHandler=${actionHandler({ hasHold: ctl.hasHold, hasDoubleClick: ctl.hasDoubleClick })}>
+      <ha-icon
+        icon=${ctl.icon}
+        aria-hidden="true"
+        style="--mdc-icon-size:${overlayLength(FURNITURE_ICON_GLYPH, scale)};"
+      ></ha-icon>
     </div>`;
   }
 
@@ -1479,11 +1544,11 @@ export class FloorplanCard extends LitElement {
     const dimPad = WALL_THICKNESS + (iso ? frame.wallHeight : 0);
     // One furniture glyph, flat. Drawn on the floor on the flat plan and on
     // top of its block under the isometric view — the same drawing either way.
-    const drawFurniture = (f: Furniture): SVGTemplateResult => renderFurniture(
+    const drawFurniture = (f: Furniture): SVGTemplateResult => this._furnitureHit(f, renderFurniture(
       f,
       furnitureColor(f, f.entity ? renderHass?.states[f.entity]?.state : undefined) ?? (lineArt ? LINE_INK : undefined),
       symbolCatalog(c.symbols)
-    );
+    ), c, floors, active.id);
     // The block's colour: what the glyph is drawn in, through the same allowlist.
     const furnitureTone = (f: Furniture): string =>
       furnitureColor(f, f.entity ? renderHass?.states[f.entity]?.state : undefined) ??
@@ -2021,7 +2086,7 @@ export class FloorplanCard extends LitElement {
             ${repeat(
               active.furniture,
               (f, i) => f.id || i,
-              (f) => this._renderFurnitureAction(f, c, rot, floors, active.id)
+              (f) => this._renderFurnitureAction(f, c, rot, scale, floors, active.id)
             )}
             ${repeat(
               // No entity filter: devices that exist physically but have no HA
@@ -2473,11 +2538,11 @@ export class FloorplanCard extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      /* The visible circle is the whole hit target. It stays finger-sized,
-         independent of canvas scale, projection and room zoom. */
+      /* The visible circle is the whole hit target. Under overlayScale: fixed
+         it stays finger-sized, independent of canvas scale, projection and
+         room zoom; under plan it scales with the drawing like the badges. */
       box-sizing: border-box;
-      width: ${MIN_TOUCH_TARGET}px;
-      height: ${MIN_TOUCH_TARGET}px;
+      /* width, height and the glyph size are inline: they follow overlayScale. */
       border-radius: 50%;
       border: 1px solid var(--fp-skin-text, var(--primary-text-color, #212121));
       background: var(--fp-skin-paper, var(--card-background-color, #fff));
@@ -2493,8 +2558,13 @@ export class FloorplanCard extends LitElement {
     }
     .fp-furniture-link ha-icon {
       display: flex;
-      --mdc-icon-size: 20px;
       pointer-events: none;
+    }
+    /* A piece whose icon is hidden (issue #362): the drawing is the target. */
+    .fp-furniture-hit { cursor: pointer; outline: none; }
+    .fp-furniture-hit .fp-furniture { pointer-events: auto; }
+    .fp-furniture-hit:focus-visible .fp-furniture {
+      outline: 2px solid var(--fp-skin-text, var(--primary-text-color, #212121));
     }
     .fp-furniture-link:focus-visible {
       outline: 2px solid var(--fp-skin-text, var(--primary-text-color, #212121));
