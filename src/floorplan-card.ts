@@ -47,6 +47,8 @@ import {
   openingHitSize,
   renderWallMask,
   imageFitRatio,
+  floorImage,
+  hassDarkMode,
   sunBrightness,
   resolveOpeningAmount,
   openingIsActive,
@@ -427,6 +429,8 @@ export class FloorplanCard extends LitElement {
     const prev = changed.get("hass") as HomeAssistant | undefined;
     if (!prev || !this.hass) return true;
     if (hassRenderInputsChanged(prev, this.hass, this._watchedEntities)) return true;
+    // The floor image can follow light/dark mode (issue #366).
+    if (hassDarkMode(prev) !== hassDarkMode(this.hass)) return true;
     // Entities that name a button but draw nothing. They have to invalidate a
     // render — a renamed entity, or one that did not exist at first paint,
     // otherwise leaves the label stuck at the name it first found — but they
@@ -1455,6 +1459,7 @@ export class FloorplanCard extends LitElement {
     const renderHass = buildRenderHass(this.hass, this._watchedEntities, this._replayController.historyService(), replayState.enabled, replayState.currentTime);
     const floors = getFloors(c);
     const active = this._activeFloor(c);
+    const bgImage = floorImage(active, hassDarkMode(this.hass));
     // Whole-plan display rotation (issue #33): the SVG rotates via one group
     // transform below; the HTML overlay remaps per point in _renderItem /
     // _renderText. Both must use the same mapping (rotatePlanPoint).
@@ -1750,10 +1755,11 @@ export class FloorplanCard extends LitElement {
             svg`<svg viewBox="0 0 ${dims.w} ${dims.h}" preserveAspectRatio="none">
             <g transform=${projTransform || nothing}>
             <g transform=${rotTransform || nothing}>
-            ${active.image
-              ? svg`<image class="fp-floor-image" href=${active.image} x="0" y="0" width=${c.width} height=${c.height}
+            ${bgImage
+              ? svg`<image class="fp-floor-image" href=${bgImage.href} x="0" y="0" width=${c.width} height=${c.height}
                           preserveAspectRatio=${imageFitRatio(active.imageFit)}
-                          opacity=${active.imageOpacity ?? 1} />`
+                          opacity=${active.imageOpacity ?? 1}
+                          style=${bgImage.filter ? `filter: ${bgImage.filter}` : nothing} />`
               : nothing}
             ${active.areas?.map((a) => {
               // Rooms answer gestures now (issue #181). The hit target is

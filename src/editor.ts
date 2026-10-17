@@ -72,6 +72,8 @@ import {
   renderOpening,
   renderWallMask,
   imageFitRatio,
+  floorImage,
+  hassDarkMode,
   editorGlowPaint,
   renderGlow,
   renderStripLine,
@@ -752,6 +754,8 @@ export class FloorplanCardEditor extends LitElement {
     // The HA-floor link select reads the floor registry.
     const floorsOf = (h: HomeAssistant) => (h as { floors?: unknown }).floors;
     if (floorsOf(prev) !== floorsOf(this.hass)) return true;
+    // The canvas image follows light/dark mode (issue #366).
+    if (hassDarkMode(prev) !== hassDarkMode(this.hass)) return true;
     return hassRenderInputsChanged(prev, this.hass, this._watchedEntities);
   }
 
@@ -3781,6 +3785,9 @@ export class FloorplanCardEditor extends LitElement {
     if (!this._config) return html`${nothing}`;
     const c = this._config;
     const floor = this._floor();
+    // The canvas follows HA's light/dark mode too, so what you trace over is
+    // what the card will show (issue #366).
+    const bgImage = floorImage(floor, hassDarkMode(this.hass));
     const floors = c.floors ?? [];
     const generatedWallSegments = this._roomWallSegments(floor);
     const blockingWallSegments = wallsThatBlock([...floor.walls, ...generatedWallSegments]);
@@ -4164,10 +4171,11 @@ export class FloorplanCardEditor extends LitElement {
                 height=${c.height}
                 fill=${c.background ?? SKIN_PAPER}
               />
-              ${floor.image
-                ? svg`<image href=${floor.image} x="0" y="0" width=${c.width} height=${c.height}
+              ${bgImage
+                ? svg`<image href=${bgImage.href} x="0" y="0" width=${c.width} height=${c.height}
                             preserveAspectRatio=${imageFitRatio(floor.imageFit)}
-                            opacity=${floor.imageOpacity ?? 1} />`
+                            opacity=${floor.imageOpacity ?? 1}
+                            style=${bgImage.filter ? `filter: ${bgImage.filter}` : nothing} />`
                 : nothing}
               ${this._renderGrid()}
               ${repeat(

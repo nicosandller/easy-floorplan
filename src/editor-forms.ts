@@ -2868,14 +2868,41 @@ export function floorImageForm(f: Floor): FormSpec {
       selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
     });
   }
+  // Dark mode (issue #366): a second image of your own, or the first inverted.
+  // The switch only means something without a dark image, so it goes then.
+  if (f.image || f.imageDark) {
+    fields.push({
+      name: "imageDark",
+      label: "Dark mode image",
+      helper: "Optional. Shown instead while Home Assistant is in dark mode",
+      selector: { text: {} },
+    });
+  }
+  if (f.image && !f.imageDark) {
+    fields.push({
+      name: "imageInvertDark",
+      label: "Invert in dark mode",
+      helper: "Dark lines on white become light lines on black",
+      selector: { boolean: {} },
+    });
+  }
   return {
     fields,
     data: {
       image: f.image ?? "",
       imageFit: f.imageFit ?? "stretch",
       imageOpacity: f.imageOpacity ?? 1,
+      imageDark: f.imageDark ?? "",
+      imageInvertDark: f.imageInvertDark ?? false,
     },
-    // "stretch" is the default, so keep it out of the YAML.
-    toPatch: (p) => ("imageFit" in p && p.imageFit === "stretch" ? { ...p, imageFit: undefined } : p),
+    toPatch: (p) => {
+      const out = { ...p };
+      // "stretch" is the default, so keep it out of the YAML.
+      if ("imageFit" in out && out.imageFit === "stretch") out.imageFit = undefined;
+      // Off and empty are the defaults too.
+      if ("imageInvertDark" in out && !out.imageInvertDark) out.imageInvertDark = undefined;
+      if ("imageDark" in out && !out.imageDark) out.imageDark = undefined;
+      return out;
+    },
   };
 }

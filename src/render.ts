@@ -6322,6 +6322,32 @@ export function renderSunlight(
 }
 
 /**
+ * Whether Home Assistant is showing its dark theme. `themes.darkMode` is the
+ * resolved answer — "auto" already settled against the device — but it is
+ * newer than the helper library's types, hence the cast.
+ */
+export function hassDarkMode(hass: unknown): boolean {
+  return !!(hass as { themes?: { darkMode?: boolean } } | undefined)?.themes?.darkMode;
+}
+
+/**
+ * Which background image a floor shows, and how, in light or dark mode
+ * (issue #366). A dark image of its own wins; otherwise the light one, inverted
+ * if asked. A floor with only a dark image shows nothing in light mode.
+ */
+export function floorImage(
+  floor: Pick<Floor, "image" | "imageDark" | "imageInvertDark">,
+  dark: boolean
+): { href: string; filter?: string } | undefined {
+  if (dark && floor.imageDark) return { href: floor.imageDark };
+  if (!floor.image) return undefined;
+  // invert() alone would turn a red radiator cyan; turning the hue back round
+  // keeps colours roughly what they were while light and dark swap.
+  if (dark && floor.imageInvertDark) return { href: floor.image, filter: "invert(1) hue-rotate(180deg)" };
+  return { href: floor.image };
+}
+
+/**
  * `preserveAspectRatio` for a floor's background image (issue #86).
  *
  * SVG already knows how to do this, so the fit option is a straight mapping
