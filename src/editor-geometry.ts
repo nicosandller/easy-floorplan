@@ -682,11 +682,12 @@ const PICK_ORDER: SelKind[] = [
   "furniture",
   "wall",
   "tracker",
-  "roof",
-  // Room polygons are the largest thing on the plan and usually cover
-  // everything else in the room, so they pick last — but they *are* in the
-  // list, so cycling can still reach them.
+  // Room polygons cover devices and walls, so they pick after specific elements.
   "area",
+  // Roof polygons are building-level envelopes that cover multiple rooms or the
+  // whole floor, so they pick after areas on first click — but cycling can still
+  // reach them.
+  "roof",
 ];
 
 /** Hit tolerances in virtual units. Wall matches the editor's fat hit stroke. */

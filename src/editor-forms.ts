@@ -82,7 +82,13 @@ import {
   openingIsGlazed,
   openingIsPassage,
 } from "./render";
-import { normalizeProjection, normalizeWallHeight, normalizeWallOpacity, MAX_WALL_HEIGHT } from "./projection";
+import {
+  normalizeProjection,
+  normalizeWallHeight,
+  normalizeWallOpacity,
+  MAX_WALL_HEIGHT,
+  defaultRoofHeight,
+} from "./projection";
 import { defaultItemAction } from "./actions";
 import { DEFAULT_SKIN, SKINS, findSkin, MAX_SKIN_WALL_WIDTH } from "./skins";
 
@@ -2222,16 +2228,20 @@ export function areaForm(a: Area): FormSpec {
   };
 }
 
+export { defaultRoofHeight };
+
 export function roofForm(r: Roof, defaultWallHeight = 60): FormSpec {
   const isShed = r.type === "shed";
   const isHipOrGable = r.type === "gable" || r.type === "hip";
-  const defaultHeight = r.type === "flat" ? 8 : Math.round(defaultWallHeight * 0.6);
+  const isFlat = r.type === "flat";
+  const defaultHeight = defaultRoofHeight(r.type ?? "gable", defaultWallHeight);
 
   return {
     fields: [
       {
         name: "type",
         label: "Roof style",
+        helper: "Roof geometry; not shown on the card yet",
         selector: dropdown(
           opt("flat", "Flat slab"),
           opt("gable", "Gable pitch"),
@@ -2268,23 +2278,21 @@ export function roofForm(r: Roof, defaultWallHeight = 60): FormSpec {
             },
           ]
         : []),
-      {
-        name: "height",
-        label: "Ridge height",
-        helper: "Ridge height above the eaves (canvas units)",
-        selector: { number: { min: 0, max: 200, step: 5, mode: "slider" as const } },
-      },
+      ...(!isFlat
+        ? [
+            {
+              name: "height",
+              label: "Ridge height",
+              helper: "Ridge height above eaves across footprint bounding box (canvas units)",
+              selector: { number: { min: 0, max: 200, step: 5, mode: "slider" as const } },
+            },
+          ]
+        : []),
       {
         name: "overhang",
         label: "Overhang / Eaves",
         helper: "Horizontal eaves projection beyond the footprint",
         selector: { number: { min: 0, max: 50, step: 1, mode: "slider" as const } },
-      },
-      {
-        name: "elevation",
-        label: "Base elevation override",
-        helper: "Optional override (defaults to wall height)",
-        selector: { number: { min: 0, max: 400, step: 5, mode: "slider" as const } },
       },
     ],
     data: {
@@ -2293,13 +2301,12 @@ export function roofForm(r: Roof, defaultWallHeight = 60): FormSpec {
       ridge: r.ridge ?? "auto",
       height: r.height ?? defaultHeight,
       overhang: r.overhang ?? 0,
-      elevation: r.elevation ?? defaultWallHeight,
     },
     toPatch: (p) => {
       let out = p;
       if ("type" in out) {
         if (out.type === "flat") {
-          out = { ...out, highSide: undefined, ridge: undefined, height: out.height ?? 8 };
+          out = { ...out, highSide: undefined, ridge: undefined };
         } else if (out.type !== "shed") {
           out = { ...out, highSide: undefined };
         }
@@ -2309,9 +2316,6 @@ export function roofForm(r: Roof, defaultWallHeight = 60): FormSpec {
       }
       if ("overhang" in out && (out.overhang === 0 || out.overhang === undefined)) {
         out = { ...out, overhang: undefined };
-      }
-      if ("elevation" in out && (out.elevation === defaultWallHeight || out.elevation === undefined)) {
-        out = { ...out, elevation: undefined };
       }
       return out;
     },

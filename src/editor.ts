@@ -254,10 +254,11 @@ const TOOL_META: Record<Tool, { icon: string; label: string }> = {
   // one number it is placed by (issue #309).
   passage: { icon: "mdi:arrow-expand-horizontal", label: "Passage" },
   window: { icon: "mdi:window-closed-variant", label: "Window" },
-  skylight: { icon: "mdi:window-open-variant", label: "Skylight" },
+  // Skylight uses home-roof to distinguish from standard windows.
+  skylight: { icon: "mdi:home-roof", label: "Skylight" },
   tracker: { icon: "mdi:crosshairs-gps", label: "Tracker" },
   area: { icon: "mdi:vector-polygon", label: "Area" },
-  roof: { icon: "mdi:home-roof", label: "Roof" },
+  roof: { icon: "mdi:home-outline", label: "Roof" },
 };
 
 const TOOLS: readonly Tool[] = [
@@ -304,7 +305,7 @@ const SEL_KIND_ICON: Record<SelKind, string> = {
   furniture: "mdi:sofa-outline",
   tracker: "mdi:crosshairs-gps",
   area: "mdi:floor-plan",
-  roof: "mdi:home-roof",
+  roof: "mdi:home-outline",
 };
 
 interface Drag {
@@ -1442,6 +1443,7 @@ export class FloorplanCardEditor extends LitElement {
     const fIds = movable("furniture");
     const trIds = movable("tracker");
     const aIds = movable("area");
+    const rIds = movable("roof");
     this._commitFloor({
       walls: f.walls.map((w) =>
         wIds.has(w.id) ? { ...w, x1: w.x1 + dx, y1: w.y1 + dy, x2: w.x2 + dx, y2: w.y2 + dy } : w
@@ -1457,6 +1459,9 @@ export class FloorplanCardEditor extends LitElement {
       ),
       areas: (f.areas ?? []).map((a) =>
         aIds.has(a.id) ? { ...a, points: a.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) } : a
+      ),
+      roofs: (f.roofs ?? []).map((r) =>
+        rIds.has(r.id) ? { ...r, points: r.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) } : r
       ),
     });
   }
@@ -2817,6 +2822,32 @@ export class FloorplanCardEditor extends LitElement {
 
   private _roofsOverPoint(x: number, y: number): Roof[] {
     return (this._floor().roofs ?? []).filter((r) => pointInPolygon(r.points, x, y));
+  }
+
+  private _renderRoofChips(roofs: readonly Roof[], label = "Roof above:"): TemplateResult | typeof nothing {
+    if (!roofs.length) return nothing;
+    return html`
+      <div class="related-elements">
+        <div class="related-label">${label}</div>
+        <div class="related-chips">
+          ${roofs.map(
+            (r) => html`
+              <button
+                class="chip-btn"
+                title="Select this roof"
+                @click=${() => {
+                  this._selection = [{ kind: "roof", id: r.id }];
+                  this._liveEditKey = null;
+                }}
+              >
+                <ha-icon icon="mdi:home-outline"></ha-icon>
+                ${`Roof · ${r.type ? r.type.charAt(0).toUpperCase() + r.type.slice(1) : "Roof"}`}
+              </button>
+            `
+          )}
+        </div>
+      </div>
+    `;
   }
 
   /** Drop the HA-area link but keep the name the user sees on the plan. */
@@ -5502,11 +5533,14 @@ export class FloorplanCardEditor extends LitElement {
 
   private _renderRoofSel(r: Roof): TemplateResult {
     const selected = this._isSel("roof", r.id);
+    const activeTool = this._tool === "roof";
     const pts = r.points.map((p) => `${p.x},${p.y}`).join(" ");
-    const color = r.color || "#8d6e63";
+    const color = cssColorOr(r.color, "#8d6e63");
+    const fill = selected || activeTool ? color : "none";
+    const fillOpacity = selected || activeTool ? "0.35" : "0";
     return svg`
       <g class="roof-hit ${selected ? "selected" : ""}">
-        <polygon points=${pts} class="roof-shape" fill=${color} fill-opacity="0.35" stroke=${color} stroke-width="1.5" stroke-dasharray="5,3" />
+        <polygon points=${pts} class="roof-shape" fill=${fill} fill-opacity=${fillOpacity} stroke=${color} stroke-width="1.5" stroke-dasharray="5,3" />
         <polygon points=${pts} class="area-hit-shape"
                  @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "roof", id: r.id })} />
         ${selected ? svg`<polygon points=${pts} class="area-outline" />` : nothing}
@@ -6617,30 +6651,7 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderEssentialForm(spec, ["length", "width", "angle", "ceilingHeight"], apply)}
         ${this._renderEssentialForm(spec, FloorplanCardEditor.OPENING_GROUPS[0][1].filter((name) =>
           !["length", "width", "angle", "ceilingHeight"].includes(name)), apply)}
-        ${roofsOver.length
-          ? html`
-              <div class="related-elements">
-                <div class="related-label">Roof above:</div>
-                <div class="related-chips">
-                  ${roofsOver.map(
-                    (r) => html`
-                      <button
-                        class="chip-btn"
-                        title="Select this roof"
-                        @click=${() => {
-                          this._selection = [{ kind: "roof", id: r.id }];
-                          this._liveEditKey = null;
-                        }}
-                      >
-                        <ha-icon icon="mdi:home-roof"></ha-icon>
-                        ${`Roof · ${r.type ? r.type.charAt(0).toUpperCase() + r.type.slice(1) : "Roof"}`}
-                      </button>
-                    `
-                  )}
-                </div>
-              </div>
-            `
-          : nothing}
+        ${this._renderRoofChips(roofsOver)}
       `;
       /** A group, skipped when this opening has none of its fields. */
       const group = (title: string, names: readonly string[], ...extra: unknown[]) => {
@@ -6749,30 +6760,7 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderEssentialForm(itemShowStateForm(it), ["showState"], apply)}
         ${this._renderEssentialForm(itemBadgeForm(it), ["size", "angle"], apply)}
         ${this._renderItemIconRow(it)}
-        ${roofsOver.length
-          ? html`
-              <div class="related-elements">
-                <div class="related-label">Roof above:</div>
-                <div class="related-chips">
-                  ${roofsOver.map(
-                    (r) => html`
-                      <button
-                        class="chip-btn"
-                        title="Select this roof"
-                        @click=${() => {
-                          this._selection = [{ kind: "roof", id: r.id }];
-                          this._liveEditKey = null;
-                        }}
-                      >
-                        <ha-icon icon="mdi:home-roof"></ha-icon>
-                        ${`Roof · ${r.type ? r.type.charAt(0).toUpperCase() + r.type.slice(1) : "Roof"}`}
-                      </button>
-                    `
-                  )}
-                </div>
-              </div>
-            `
-          : nothing}
+        ${this._renderRoofChips(roofsOver)}
       `;
       const entityState = it.entity ? this.hass?.states[it.entity] : undefined;
       const effects = itemEffectsForm(it, deviceClass, entityState);
@@ -6896,30 +6884,7 @@ export class FloorplanCardEditor extends LitElement {
           onCommit: (color) => this._updateFurniture(f.id, { color }),
         })}
         <div class="secondary-property">${this._renderEssentialForm(fSpec, ["type"], fApply)}</div>
-        ${roofsOver.length
-          ? html`
-              <div class="related-elements">
-                <div class="related-label">Roof above:</div>
-                <div class="related-chips">
-                  ${roofsOver.map(
-                    (r) => html`
-                      <button
-                        class="chip-btn"
-                        title="Select this roof"
-                        @click=${() => {
-                          this._selection = [{ kind: "roof", id: r.id }];
-                          this._liveEditKey = null;
-                        }}
-                      >
-                        <ha-icon icon="mdi:home-roof"></ha-icon>
-                        ${`Roof · ${r.type ? r.type.charAt(0).toUpperCase() + r.type.slice(1) : "Roof"}`}
-                      </button>
-                    `
-                  )}
-                </div>
-              </div>
-            `
-          : nothing}
+        ${this._renderRoofChips(roofsOver)}
       `;
       return html`
         ${FloorplanCardEditor.FURNITURE_GROUPS.filter(([title]) => title !== "Shape").map(([title, names]) =>
@@ -6964,33 +6929,10 @@ export class FloorplanCardEditor extends LitElement {
           onLive: (color) => this._updateAreaLive(a.id, { color }),
           onCommit: (color) => this._updateArea(a.id, { color }),
         })}
-        ${roofsOver.length
-          ? html`
-              <div class="related-elements">
-                <div class="related-label">Roofs above this room:</div>
-                <div class="related-chips">
-                  ${roofsOver.map(
-                    (r) => html`
-                      <button
-                        class="chip-btn"
-                        title="Select this roof"
-                        @click=${() => {
-                          this._selection = [{ kind: "roof", id: r.id }];
-                          this._liveEditKey = null;
-                        }}
-                      >
-                        <ha-icon icon="mdi:home-roof"></ha-icon>
-                        ${`Roof · ${r.type ? r.type.charAt(0).toUpperCase() + r.type.slice(1) : "Roof"}`}
-                      </button>
-                    `
-                  )}
-                </div>
-              </div>
-            `
-          : nothing}
+        ${this._renderRoofChips(roofsOver, "Roofs above this room:")}
         <div class="row wide">
           <button class="secondary" @click=${() => this._createRoofFromArea(a)}>
-            <ha-icon icon="mdi:home-roof"></ha-icon> Create Roof from Room
+            <ha-icon icon="mdi:home-outline"></ha-icon> Create Roof from Room
           </button>
         </div>
       `;
@@ -7090,6 +7032,9 @@ export class FloorplanCardEditor extends LitElement {
       const { areas, items, furniture, trackers } = this._elementsUnderRoof(r);
       const hasUnder = areas.length > 0 || items.length > 0 || furniture.length > 0 || trackers.length > 0;
       return html`
+        <p class="hint" style="margin-top: 0;">
+          Roofs are configured in the editor; 3D geometry is not shown on the card yet.
+        </p>
         ${this._renderForm(rSpec, rApply)}
         ${this._renderColorRow({
           label: "Roof color",

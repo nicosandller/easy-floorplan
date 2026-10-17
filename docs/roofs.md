@@ -58,7 +58,7 @@ Use the **Roof** drawing tool from the editor toolbar or drawing tool picker.
 
 ### Settings & Field Details
 
-- **Type (`type`)**: `gable`, `hip`, `shed`, or `flat`.
+- **Type (`type`)**: `gable`, `hip`, `shed`, or `flat`. Pitched roofs (`gable`, `hip`, `shed`) project sloped planes across their footprint bounding box. Complex footprints (such as L-shaped, T-shaped, or cross plans) should be composed by drawing multiple rectangular roofs that intersect, allowing cross-gable valleys and distinct ridges to generate cleanly.
 - **Height (`height`)**:
   - For pitched roofs (`gable`, `hip`, `shed`), this is the ridge height above the eaves in canvas units. Defaults to `round(wallHeight * 0.6)`.
   - For `flat` roofs, this is the thickness of the flat slab. Defaults to `8`.
@@ -69,7 +69,7 @@ Use the **Roof** drawing tool from the editor toolbar or drawing tool picker.
   - `bottom`: High side at canvas max-Y (bottom edge), sloping down toward top.
   - `left`: High side at canvas min-X (left edge), sloping down toward right.
   - `right`: High side at canvas max-X (right edge), sloping down toward left.
-- **Elevation (`elevation`)**: Optional base elevation override. By default, roofs rest directly on top of their floor's walls (`wallHeight`).
+- **Elevation (`elevation`)**: Optional base elevation override (`elevation?: number`). By default, roofs rest directly on top of their floor's walls (`z0 = floorBaseZ + wallHeight`) without requiring an explicit elevation field in the editor.
 - **Color (`color`)**: Custom roof surface color (hex or named color). Defaults to `#8d6e63`.
 
 ---

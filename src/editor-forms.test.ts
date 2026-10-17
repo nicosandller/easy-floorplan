@@ -28,6 +28,7 @@ import {
   areaNameForm,
   itemGroup7aForm,
   roofForm,
+  defaultRoofHeight,
 } from "./editor-forms";
 import { itemHasLabel } from "./render";
 import type { FormField } from "./editor-forms";
@@ -2843,7 +2844,7 @@ describe("roofForm", () => {
     expect(roofForm({ ...base, type: "shed" }).fields.map((f) => f.name)).toContain("highSide");
     expect(roofForm({ ...base, type: "gable" }).fields.map((f) => f.name)).not.toContain("highSide");
     expect(roofForm({ ...base, type: "hip" }).fields.map((f) => f.name)).not.toContain("highSide");
-    expect(roofForm({ ...base, type: "flat" }).fields.map((f) => f.name)).not.toContain("flat" === "flat" ? "highSide" : "something");
+    expect(roofForm({ ...base, type: "flat" }).fields.map((f) => f.name)).not.toContain("highSide");
   });
 
   it("shows ridge orientation only for gable and hip roofs", () => {
@@ -2853,18 +2854,31 @@ describe("roofForm", () => {
     expect(roofForm({ ...base, type: "flat" }).fields.map((f) => f.name)).not.toContain("ridge");
   });
 
-  it("cleans up irrelevant fields on type switch via toPatch", () => {
-    const spec = roofForm({ ...base, type: "shed", highSide: "top" });
-    // Switching from shed to gable drops highSide
-    const patch = spec.toPatch({ type: "gable" });
-    expect(patch.type).toBe("gable");
-    expect(patch.highSide).toBeUndefined();
+  it("shows ridge height only for pitched roofs, omitting it for flat slabs", () => {
+    expect(roofForm({ ...base, type: "gable" }).fields.map((f) => f.name)).toContain("height");
+    expect(roofForm({ ...base, type: "hip" }).fields.map((f) => f.name)).toContain("height");
+    expect(roofForm({ ...base, type: "shed" }).fields.map((f) => f.name)).toContain("height");
+    expect(roofForm({ ...base, type: "flat" }).fields.map((f) => f.name)).not.toContain("height");
   });
 
-  it("uses default flat slab height of 8 when switching to flat", () => {
-    const spec = roofForm({ ...base, type: "gable" });
+  it("does not expose elevation in form fields (rests on wall top by default)", () => {
+    expect(roofForm(base).fields.map((f) => f.name)).not.toContain("elevation");
+  });
+
+  it("cleans up irrelevant fields on type switch via toPatch without overwriting configured height", () => {
+    const spec = roofForm({ ...base, type: "shed", highSide: "top", height: 45 });
+    // Switching from shed to flat drops highSide and ridge, but preserves height
     const patch = spec.toPatch({ type: "flat" });
-    expect(patch.height).toBe(8);
+    expect(patch.type).toBe("flat");
+    expect(patch.highSide).toBeUndefined();
+    expect(patch.height).toBeUndefined();
+  });
+
+  it("calculates defaultRoofHeight correctly for each roof style", () => {
+    expect(defaultRoofHeight("flat", 60)).toBe(8);
+    expect(defaultRoofHeight("gable", 60)).toBe(36);
+    expect(defaultRoofHeight("hip", 100)).toBe(60);
+    expect(defaultRoofHeight("shed", 50)).toBe(30);
   });
 });
 

@@ -252,6 +252,19 @@ describe("elementsAtPoint / cyclePick (issue #52)", () => {
     ]);
   });
 
+  it("picks rooms before roofs on first click and cycles to roof", () => {
+    const withRoof = {
+      ...floor,
+      items: [], walls: [], openings: [], furniture: [], trackers: [], texts: [],
+      areas: [{ id: "a", points: [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 400 }, { x: 0, y: 400 }] }],
+      roofs: [{ id: "r", points: [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 400 }, { x: 0, y: 400 }] }],
+    } as unknown as Floor;
+    const candidates = elementsAtPoint(withRoof, 200, 200, opts);
+    expect(candidates.map((s) => s.kind)).toEqual(["area", "roof"]);
+    expect(cyclePick(candidates, [], false)).toEqual({ kind: "area", id: "a" });
+    expect(cyclePick(candidates, [{ kind: "area", id: "a" }], true)).toEqual({ kind: "roof", id: "r" });
+  });
+
   it("cyclePick steps down the stack on repeat clicks and wraps", () => {
     const c = elementsAtPoint(floor, 100, 200, opts);
     // First click at a fresh spot: most specific.

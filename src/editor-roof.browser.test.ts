@@ -167,4 +167,77 @@ describe("Roof tool in editor", () => {
     );
     expect(chip).toBeDefined();
   });
+
+  it("nudges a selected roof with arrow keys", async () => {
+    const t = await mountEditor();
+    const roof: Roof = {
+      id: "roof1",
+      type: "gable",
+      points: [
+        { x: 100, y: 100 },
+        { x: 300, y: 100 },
+        { x: 300, y: 300 },
+        { x: 100, y: 300 },
+      ],
+      height: 30,
+    };
+    (t.ed as any)._commitFloor({ roofs: [roof] });
+    (t.ed as any)._selection = [{ kind: "roof", id: "roof1" }];
+    await t.ed.updateComplete;
+
+    t.ed.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, composed: true, cancelable: true })
+    );
+    await t.ed.updateComplete;
+
+    const roofs = t.roofs();
+    expect(roofs[0]!.points[0]!.x).toBe(101);
+    expect(roofs[0]!.points[1]!.x).toBe(301);
+
+    // Locked roof does not move
+    (t.ed as any)._commitFloor({ roofs: [{ ...roofs[0]!, locked: true }] });
+    await t.ed.updateComplete;
+    t.ed.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "ArrowRight", bubbles: true, composed: true, cancelable: true })
+    );
+    await t.ed.updateComplete;
+    expect(t.roofs()[0]!.points[0]!.x).toBe(101);
+  });
+
+  it("prioritizes area over roof on first click and cycles to roof", async () => {
+    const t = await mountEditor();
+    const roof: Roof = {
+      id: "roof_over",
+      type: "gable",
+      points: [
+        { x: 50, y: 50 },
+        { x: 550, y: 50 },
+        { x: 550, y: 550 },
+        { x: 50, y: 550 },
+      ],
+      height: 30,
+    };
+    (t.ed as any)._commitFloor({ roofs: [roof] });
+    (t.ed as any)._tool = "select";
+    await t.ed.updateComplete;
+
+    // Both living_room (100..500) and roof_over (50..550) cover (300, 300)
+    const svg = t.root.querySelector<SVGSVGElement>("svg")!;
+    const r = svg.getBoundingClientRect();
+    const px = r.left + (300 / 1000) * r.width;
+    const py = r.top + (300 / 600) * r.height;
+
+    const hit = t.root.querySelector<SVGPolygonElement>(".roof-hit .area-hit-shape")!;
+    // First click on the spot: area is picked first
+    pointer(hit, "pointerdown", px, py);
+    pointer(hit, "pointerup", px, py);
+    await t.ed.updateComplete;
+    expect((t.ed as any)._selection).toEqual([{ kind: "area", id: "living_room" }]);
+
+    // Second click on the exact same spot: cycles to roof
+    pointer(hit, "pointerdown", px, py);
+    pointer(hit, "pointerup", px, py);
+    await t.ed.updateComplete;
+    expect((t.ed as any)._selection).toEqual([{ kind: "roof", id: "roof_over" }]);
+  });
 });

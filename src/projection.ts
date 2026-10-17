@@ -104,6 +104,11 @@ export function wallHeadroom(
   return Math.max(base, ...walls.map((w) => wallStandingHeight(w, base)));
 }
 
+/** Default ridge height or flat slab thickness for a roof style. */
+export function defaultRoofHeight(type: RoofType, wallHeight = DEFAULT_WALL_HEIGHT): number {
+  return type === "flat" ? 8 : Math.round(wallHeight * 0.6);
+}
+
 /** Wall opacity is independent of glass and furniture. */
 export function normalizeWallOpacity(v: unknown): number {
   return Math.min(1, Math.max(0, cssNumber(v, 1)));
@@ -678,7 +683,7 @@ function generateIntersectingGables(
       const zApex = Math.min(zPeakA, lastC.zPeak);
       const vApex = midVA + (zPeakA - zApex) / slopeA_south;
       const apexLast = makePt3D(midULast, vApex, zApex);
-      const valleyELast = makePt3D(maxULast, vFront, z0A);
+      const valleyELast = makePt3D(maxULast, vFront, lastC.z0);
       const rE = makePt3D(maxUA, midVA, zPeakA);
       const eE = makePt3D(maxUA, vFront, z0A);
       solids.push(createRoofFace(main.id, orderFace([apexLast, rE, eE, valleyELast]), map, main.color, z0A, zPeakA));
@@ -737,7 +742,7 @@ function generateIntersectingGables(
       const zApex = Math.min(zPeakA, lastC.zPeak);
       const vApex = midVA - (zPeakA - zApex) / slopeA_north;
       const apexLast = makePt3D(midULast, vApex, zApex);
-      const valleyELast = makePt3D(maxULast, vFront, z0A);
+      const valleyELast = makePt3D(maxULast, vFront, lastC.z0);
       const rE = makePt3D(maxUA, midVA, zPeakA);
       const eE = makePt3D(maxUA, vFront, z0A);
       solids.push(createRoofFace(main.id, orderFace([valleyELast, eE, rE, apexLast]), map, main.color, z0A, zPeakA));
@@ -785,7 +790,7 @@ export function roofSolids(
 
     const type: RoofType = roof.type ?? "gable";
     const elevation = roof.elevation ?? defaultWallHeight;
-    const defaultHeight = type === "flat" ? 8 : Math.round(defaultWallHeight * 0.6);
+    const defaultHeight = defaultRoofHeight(type, defaultWallHeight);
     const height = roof.height ?? defaultHeight;
     const overhang = roof.overhang ?? 0;
     const color = cssColorOr(roof.color, "#8d6e63");
@@ -844,7 +849,9 @@ export function roofSolids(
       const g2 = parsedGables[j]!;
       if (g1.alongX === g2.alongX) continue;
 
-      if (g1.rangeX * g1.rangeY < g2.rangeX * g2.rangeY) continue;
+      const a1 = g1.rangeX * g1.rangeY;
+      const a2 = g2.rangeX * g2.rangeY;
+      if (a1 < a2 || (a1 === a2 && i > j)) continue;
 
       if (g2.maxX <= g1.minX || g1.maxX <= g2.minX || g2.maxY <= g1.minY || g1.maxY <= g2.minY) continue;
 

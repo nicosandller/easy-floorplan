@@ -709,5 +709,51 @@ describe("roofSolids", () => {
     expect(html).toContain("opacity:0.5");
     expect(html).toContain("--fp-iso-color:#06f202");
   });
+
+  it("resolves equal-area intersecting gable roof pair without duplicate faces", () => {
+    // Symmetrical plus-shaped intersection: two 200x40 gables, both with area 8000
+    // g1 runs horizontally along X (0..200, 80..120) with ridge at y=100
+    // g2 runs vertically along Y (80..120, 0..200) with ridge at x=100
+    const g1: Roof = {
+      id: "g1",
+      type: "gable",
+      points: [{ x: 0, y: 80 }, { x: 200, y: 80 }, { x: 200, y: 120 }, { x: 0, y: 120 }],
+      height: 30,
+    };
+    const g2: Roof = {
+      id: "g2",
+      type: "gable",
+      points: [{ x: 80, y: 0 }, { x: 120, y: 0 }, { x: 120, y: 200 }, { x: 80, y: 200 }],
+      height: 30,
+    };
+    const solids = roofSolids([g1, g2], mapIdentity, 60);
+    // Exactly one gable becomes main and generates 8 intersecting solids, avoiding duplicates
+    expect(solids).toHaveLength(8);
+    expect(solids.every((s) => s.kind === "roof")).toBe(true);
+  });
+
+  it("sets valley point elevation from cross-gable eaves when elevations differ", () => {
+    // Main gable at elevation 60, cross-gable at lower elevation 40
+    const mainGable: Roof = {
+      id: "main",
+      type: "gable",
+      points: [{ x: 0, y: 80 }, { x: 240, y: 80 }, { x: 240, y: 140 }, { x: 0, y: 140 }],
+      elevation: 60,
+      height: 30,
+    };
+    const crossGable: Roof = {
+      id: "cross",
+      type: "gable",
+      points: [{ x: 80, y: 100 }, { x: 140, y: 100 }, { x: 140, y: 200 }, { x: 80, y: 200 }],
+      elevation: 40,
+      height: 25,
+    };
+    const solids = roofSolids([mainGable, crossGable], mapIdentity, 60);
+    expect(solids.length).toBeGreaterThan(0);
+    // Find the cross-gable front faces and verify they use cross-gable's eaves elevation (40)
+    const crossSolids = solids.filter((s) => s.id === "cross");
+    expect(crossSolids.length).toBeGreaterThanOrEqual(3);
+    expect(crossSolids.some((s) => s.z0 === 40)).toBe(true);
+  });
 });
 
