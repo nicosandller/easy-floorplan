@@ -648,14 +648,14 @@ describe("itemForm", () => {
     expect(names(item)).not.toContain("labelPosition");
   });
 
-  it("offers the three label positions, keeping the default out of the YAML (#180)", () => {
+  it("offers the label positions, keeping the default out of the YAML (#180)", () => {
     const labelled = { ...item, showName: true } as FloorItem;
     const form = itemForm(labelled);
     const field = form.fields.find((x) => x.name === "labelPosition")!;
     const opts = (field.selector as { select: { options: { value: string }[] } }).select.options.map(
       (o) => o.value
     );
-    expect(opts).toEqual(["below", "left", "right"]);
+    expect(opts).toEqual(["below", "above", "left", "right", "auto"]);
     expect(form.data.labelPosition).toBe("below");
     expect(
       itemForm({ ...labelled, labelPosition: "left" } as FloorItem).data.labelPosition
@@ -663,9 +663,13 @@ describe("itemForm", () => {
     // Below is the default, so it is not worth writing down.
     expect(form.toPatch({ labelPosition: "below" }).labelPosition).toBeUndefined();
     expect(form.toPatch({ labelPosition: "right" }).labelPosition).toBe("right");
+    expect(form.toPatch({ labelPosition: "auto" }).labelPosition).toBe("auto");
+    expect(
+      itemForm({ ...labelled, labelPosition: "above" } as FloorItem).data.labelPosition
+    ).toBe("above");
     // A hand-edited junk value reads back as what it renders as.
     expect(
-      itemForm({ ...labelled, labelPosition: "above" } as unknown as FloorItem).data.labelPosition
+      itemForm({ ...labelled, labelPosition: "atop" } as unknown as FloorItem).data.labelPosition
     ).toBe("below");
   });
 

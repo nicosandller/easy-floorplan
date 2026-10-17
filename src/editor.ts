@@ -147,7 +147,9 @@ import {
   normalizeOverlayScale,
   normalizeOverlayMinWidth,
   overlayLength,
+  wallThickness,
 } from "./render";
+import { autoLabelKey, measureLabelScene, rectToBox, type LabelSide } from "./label-placement";
 import { deadSpacesCached } from "./dead-space";
 import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
 import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
@@ -569,6 +571,20 @@ export class FloorplanCardEditor extends LitElement {
    * shows. A dense plan is much easier to aim at without them.
    */
   @state() private _hideLabels = false;
+  /**
+   * `labelPosition: auto` on the canvas: the side each auto label was given
+   * here. The editor runs the card's own chooser over its own canvas
+   * (label-placement.ts) rather than asking the card, so it is an
+   * approximation of the card's choice, not a copy of it: the canvas draws no
+   * room names, it is never rotated or projected, label-only devices keep a
+   * ghost badge, and a device with no card label is measured by its dim
+   * stand-in. On a plain 2D plan it lands on the same side.
+   */
+  private _autoSides = new Map<string, LabelSide>();
+  private _autoLabelSig: string[] = [];
+  private _autoLayoutKey?: string;
+  private _autoLayoutConfig?: unknown;
+  private _autoLayoutSerial = 0;
   /** Live touch points on the canvas wrap, for pinch-zoom (issue #38). */
   private _pinchPts = new Map<number, { x: number; y: number }>();
   /** Pinch baseline: finger distance, zoom, and centroid (content coords) at pinch start. */
@@ -757,6 +773,60 @@ export class FloorplanCardEditor extends LitElement {
 
   // ---- active floor access -----------------------------------------------
 
+  /**
+   * Place the canvas's `labelPosition: auto` labels, as the card does (see its
+   * `_syncAutoLabels`): only when the config, floor, zoom or a label's length
+   * changed, reads first and one more render if a side moved.
+   */
+  private _syncAutoLabels(): void {
+    if (this._hideLabels || !this._autoLabelSig.length || !this._config) return;
+    if (this._config !== this._autoLayoutConfig) {
+      this._autoLayoutConfig = this._config;
+      this._autoLayoutSerial++;
+    }
+    const key = `${this._autoLayoutSerial}|${this._activeFloorId}|${this._zoom}|${this._autoLabelSig.join(",")}`;
+    if (key === this._autoLayoutKey) return;
+    const stage = this.renderRoot.querySelector<HTMLElement>(".stage");
+    const overlay = stage?.querySelector<HTMLElement>(":scope > .items");
+    if (!stage || !overlay) return;
+    const r = overlay.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) return;
+    this._autoLayoutKey = key;
+    const c = this._config;
+    const floor = this._floor();
+    const sx = r.width / cssNumber(c.width, DEFAULT_WIDTH);
+    const sy = r.height / cssNumber(c.height, DEFAULT_HEIGHT);
+    const generated = floor.areas.flatMap((a) => rectAreaSideWalls(a.id, a.points, a.sideWalls ?? {}));
+    const walls = [...floor.walls, ...generated].map((w) => ({
+      x1: r.left + w.x1 * sx,
+      y1: r.top + w.y1 * sy,
+      x2: r.left + w.x2 * sx,
+      y2: r.top + w.y2 * sy,
+      half: (wallThickness(w.thickness) * sx) / 2,
+    }));
+    const sides = measureLabelScene({
+      items: [...overlay.querySelectorAll<HTMLElement>(":scope > .edit-item")],
+      autoKey: (el) => el.dataset.labelAuto,
+      solid: (el) => el.querySelector(":scope > .badge, :scope > .stack .badge"),
+      label: (el) => el.querySelector<HTMLElement>(":scope > .ilabel"),
+      current: this._autoSides,
+      marks: [...overlay.querySelectorAll(":scope > .shutter-mark")],
+      names: [...overlay.querySelectorAll(":scope > .edit-text")],
+      openings: [...stage.querySelectorAll("svg .fp-opening:not(.fp-opening-skylight)")],
+      walls,
+      bounds: rectToBox(stage.getBoundingClientRect()),
+      scalePlan: stage.classList.contains("scale-plan"),
+    });
+    let changed = false;
+    for (const [k, side] of sides) {
+      if (this._autoSides.get(k) !== side) {
+        this._autoSides.set(k, side);
+        changed = true;
+      }
+    }
+    if (changed) this.requestUpdate();
+  }
+
   private _floor(): Floor {
     const floors = this._config.floors ?? [];
     return floors.find((f) => f.id === this._activeFloorId) ?? floors[0];
@@ -820,6 +890,9 @@ export class FloorplanCardEditor extends LitElement {
         const selectionPreview = this._mobileInspector && !this._projectOpen && this._primary()
           && side && this._canvasWrap && side.getBoundingClientRect().top >= this._canvasWrap.getBoundingClientRect().bottom;
         if (this._fitToViewport && this._gesturePointer === null && !selectionPreview) this._fitView();
+        // The canvas changed size: auto labels measure again.
+        this._autoLayoutKey = undefined;
+        void this.updateComplete.then(() => this._syncAutoLabels());
         void this.updateComplete.then(() => this._keepSelectionInPreview());
       });
       this._canvasResize.observe(this._canvasWrap);
@@ -951,6 +1024,7 @@ export class FloorplanCardEditor extends LitElement {
    * fallback, which is already correct on the mobile dialog (transform: none).
    */
   protected updated(): void {
+    this._syncAutoLabels();
     // Re-asserted on every render while fullscreen (not just the transition):
     // idempotent via :popover-open, and it self-heals if the browser
     // force-hid the popover, e.g. across a disconnect/reconnect.
@@ -3781,6 +3855,8 @@ export class FloorplanCardEditor extends LitElement {
     if (!this._config) return html`${nothing}`;
     const c = this._config;
     const floor = this._floor();
+    // Refilled by _renderItemOverlay: what the auto labels on show say.
+    this._autoLabelSig = [];
     const floors = c.floors ?? [];
     const generatedWallSegments = this._roomWallSegments(floor);
     const blockingWallSegments = wallsThatBlock([...floor.walls, ...generatedWallSegments]);
@@ -5543,9 +5619,17 @@ export class FloorplanCardEditor extends LitElement {
     // #55). The editor must still show them — dimmed — or they could never be
     // found and edited again.
     const hiddenOnCard = itemHiddenWhenInactive(it, st?.state, this.hass);
+    // An auto label shows the side this canvas measured for it (see
+    // _syncAutoLabels), `below` until it has been measured.
+    const position = labelPositionOf(it);
+    const autoKey = position === "auto" ? autoLabelKey(it) : undefined;
+    const labelSide: LabelSide =
+      autoKey === undefined ? (position as LabelSide) : this._autoSides.get(autoKey) ?? "below";
+    if (autoKey !== undefined && !this._hideLabels) this._autoLabelSig.push(`${autoKey}:${label.length}`);
     return html`
       <div
         class="edit-item ${selected ? "selected" : ""} ${hiddenOnCard ? "card-hidden" : ""}"
+        data-label-auto=${autoKey ?? nothing}
         style="left:${(it.x / c.width) * 100}%; top:${(it.y / c.height) * 100}%;"
         @pointerdown=${(e: PointerEvent) => this._onOverlayDown(e, { kind: "item", id: it.id })}
         @pointermove=${this._onOverlayMove}
@@ -5561,7 +5645,7 @@ export class FloorplanCardEditor extends LitElement {
         ${this._hideLabels
         ? nothing
         : html`<span
-            class="ilabel ${cardLabel ? "live" : ""} ilabel-${labelPositionOf(it)}"
+            class="ilabel ${cardLabel ? "live" : ""} ilabel-${labelSide}"
             style="font-size:${overlayLength(
               cardLabel || it.labelSize != null ? itemLabelSize(it.labelSize) : 11,
               scale
@@ -7587,6 +7671,10 @@ export class FloorplanCardEditor extends LitElement {
     .stage.scale-plan .ilabel-right {
       left: calc(100% + 0.33em);
     }
+    .stage.scale-plan .ilabel-above {
+      top: auto;
+      bottom: calc(100% + 0.17em);
+    }
     /* Preview of the card's shutter badge. Inherits .items' pointer-events:
        none — the opening underneath stays clickable for selection and drag. */
     .shutter-mark {
@@ -8072,6 +8160,10 @@ export class FloorplanCardEditor extends LitElement {
     }
     .ilabel-right {
       left: calc(100% + 4px);
+    }
+    .ilabel-above {
+      top: auto;
+      bottom: calc(100% + 2px);
     }
     /* The card's own label line, drawn as the card draws it (issue #135):
        full-strength ink, and no width clamp — the card has none, and clipping

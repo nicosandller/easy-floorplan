@@ -1169,8 +1169,14 @@ export function itemLabelForm(it: FloorItem): FormSpec {
     {
       name: "labelPosition",
       label: "Label position",
-      helper: "Beside the badge instead of under it — a long reading then grows one way only",
-      selector: dropdown(opt("below", "Below"), opt("left", "Left"), opt("right", "Right")),
+      helper: "Beside the badge, a long reading grows one way only. Auto picks the side that stays clear of walls and other labels",
+      selector: dropdown(
+        opt("below", "Below"),
+        opt("above", "Above"),
+        opt("left", "Left"),
+        opt("right", "Right"),
+        opt("auto", "Auto")
+      ),
     },
     {
       name: "labelSize",

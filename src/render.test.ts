@@ -1099,10 +1099,13 @@ describe("itemHasLabel / labelPositionOf (issue #180)", () => {
     expect(labelPositionOf({ labelPosition: "below" })).toBe("below");
     expect(labelPositionOf({ labelPosition: "left" })).toBe("left");
     expect(labelPositionOf({ labelPosition: "right" })).toBe("right");
+    expect(labelPositionOf({ labelPosition: "above" })).toBe("above");
+    expect(labelPositionOf({ labelPosition: "auto" })).toBe("auto");
   });
 
   it("falls back to below on a junk value — it becomes a class name", () => {
-    expect(labelPositionOf({ labelPosition: "above" as never })).toBe("below");
+    expect(labelPositionOf({ labelPosition: "abvoe" as never })).toBe("below");
+    expect(labelPositionOf({ labelPosition: "Auto" as never })).toBe("below");
     expect(labelPositionOf({ labelPosition: "" as never })).toBe("below");
     expect(labelPositionOf({ labelPosition: 3 as never })).toBe("below");
   });
