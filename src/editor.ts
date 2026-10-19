@@ -112,6 +112,7 @@ import {
   openingDeviceClassPatch,
   renderRipple,
   renderFurniture,
+  shownPieces,
   renderTracker,
   renderArea,
   renderAreaBorder,
@@ -5382,7 +5383,12 @@ export class FloorplanCardEditor extends LitElement {
     return svg`
       <g class="furn-hit ${selected ? "selected" : ""}"
          @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "furniture", id: f.id })}>
-        ${renderFurniture(f, undefined, this._symbols())}
+        ${
+          // A center curtain previews as its pair, at full size: no cover
+          // state in the editor, so each half is drawn fully across (#196).
+          shownPieces({ ...f, entity: undefined }, undefined, this._symbols())
+            .map((p) => renderFurniture({ ...p, entity: f.entity }, undefined, this._symbols()))
+        }
         ${
           selected
             ? svg`<rect x=${f.x - f.w / 2 - 4} y=${f.y - f.h / 2 - 4}

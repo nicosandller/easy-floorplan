@@ -1,0 +1,14 @@
+{
+  "id": "curtain",
+  "name": "curtain",
+  "category": "other",
+  "keywords": ["drape", "blind", "sliding curtain", "cover"],
+  "size": { "w": 160, "h": 12 },
+  "extend": { "axis": "w", "min": 0.14, "open": "retracted" },
+  "elevation": { "from": 0.04, "to": 0.88 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "role": "body", "fillOpacity": 0.1, "opacity": 0.5 },
+    { "path": [["M", 0, 50], ["Q", 6.25, 0, 12.5, 50], ["Q", 18.75, 100, 25, 50], ["Q", 31.25, 0, 37.5, 50], ["Q", 43.75, 100, 50, 50], ["Q", 56.25, 0, 62.5, 50], ["Q", 68.75, 100, 75, 50], ["Q", 81.25, 0, 87.5, 50], ["Q", 93.75, 100, 100, 50]], "role": "line" },
+    { "line": [0, 0, 0, 100], "role": "line", "width": 3 }
+  ]
+}

@@ -1123,7 +1123,9 @@ export type FurnitureType =
   | "piano"
   | "hotTub"
   | "quarterTub"
-  | "cornerShowerCurved";
+  | "cornerShowerCurved"
+  | "awning"
+  | "curtain";
 
 /**
  * Which end of an L-shaped sectional the chaise sits on, facing the sofa from
@@ -1142,8 +1144,13 @@ export interface Furniture {
    * plain box, so a missing symbol is a visible placeholder rather than a hole.
    */
   type: FurnitureType | (string & {});
-  /** L-shaped sectional only: which side the chaise extends on. Default `right`. */
-  hand?: SectionalHand;
+  /**
+   * L-shaped sectional: which side the chaise extends on. Curtain (issue
+   * #196): which side it gathers at when open, or `center` for a pair that
+   * meets in the middle and gathers at both ends. `left` mirrors the symbol,
+   * so it works on any glyph with a handedness. Default `right` (unmirrored).
+   */
+  hand?: SectionalHand | "center";
   x: number;
   y: number;
   /** Width / height in virtual units. */

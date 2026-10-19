@@ -72,6 +72,27 @@ export interface SymbolDef {
    */
   footprint: "rect" | "ellipse";
   parts: SymbolPart[];
+  /**
+   * A piece that grows and shrinks with a cover's position (issue #196) — an
+   * awning reaching out from the wall, a curtain drawn across a window. The
+   * piece's `w × h` is its fully extended size; `axis` is the side that moves,
+   * from the start edge (the top for `h`, the left for `w`, the right once
+   * mirrored). `min` is what is left when fully retracted, as a fraction, and
+   * `open` says which way an open cover goes: an awning opens out, a curtain
+   * opens away.
+   */
+  extend?: SymbolExtend;
+  /**
+   * Where the piece sits in 3D, as fractions of the wall height, instead of
+   * standing on the floor (issue #196): an awning is a sheet under the eaves.
+   */
+  elevation?: { from: number; to: number };
+}
+
+export interface SymbolExtend {
+  axis: "w" | "h";
+  min: number;
+  open: "extended" | "retracted";
 }
 
 export type SymbolCatalog = Readonly<Record<string, SymbolDef>>;
@@ -379,7 +400,31 @@ export function normalizeSymbol(
     viewBox: vb && vb[2]! > 0 && vb[3]! > 0 ? (vb as [number, number, number, number]) : DEFAULT_VIEW_BOX,
     footprint: r.footprint === "ellipse" ? "ellipse" : "rect",
     parts,
+    ...(extendOf(r.extend) ? { extend: extendOf(r.extend) } : {}),
+    ...(elevationOf(r.elevation) ? { elevation: elevationOf(r.elevation) } : {}),
   };
+}
+
+/** `extend`, or nothing when it is not a usable one — never half of one. */
+function extendOf(raw: unknown): SymbolExtend | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const e = raw as Record<string, unknown>;
+  if (e.axis !== "w" && e.axis !== "h") return undefined;
+  const min = num(e.min);
+  return {
+    axis: e.axis,
+    min: min !== null && min >= 0 && min < 1 ? min : 0,
+    open: e.open === "retracted" ? "retracted" : "extended",
+  };
+}
+
+function elevationOf(raw: unknown): { from: number; to: number } | undefined {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
+  const e = raw as Record<string, unknown>;
+  const from = num(e.from);
+  const to = num(e.to);
+  if (from === null || to === null || from < 0 || to > 1 || to <= from) return undefined;
+  return { from, to };
 }
 
 /**

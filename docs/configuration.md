@@ -438,8 +438,8 @@ there reads `—`, the same as a device's label.
 `fridge`, `stairs`, …; the full set is [`furniture/`](../furniture), a file each), or one you
 supply yourself. `color` defaults to gray so furniture reads differently from walls; `hand`
 (`left` / `right`) mirrors the symbol, and picks which end an L-shaped `sectional`'s chaise
-sits on. A `type` nothing answers to draws a plain box, so a missing symbol is a visible
-placeholder rather than a hole in the plan.
+sits on. A curtain also takes `hand: center`, below. A `type` nothing answers to draws a
+plain box, so a missing symbol is a visible placeholder rather than a hole in the plan.
 
 The editor's **+ Add** picker draws every symbol at its real size and is searchable — type
 `couch` and you get the sofa and the sectional.
@@ -447,6 +447,22 @@ The editor's **+ Add** picker draws every symbol at its real size and is searcha
 Bind an **entity** and `stateColor` / `activeColor` recolor the whole diagram — a plant
 goes red when its soil sensor says it needs watering, a cabinet highlights while its
 contact sensor is open.
+
+An **`awning`** or **`curtain`** bound to a `cover` entity is drawn at the cover's position
+(issue #196). Its `w × h` is the fully extended size: an awning at 100 % open, a curtain
+fully closed. As the cover moves, the moving side shrinks toward the edge that stays on
+the wall — an awning folds back to its top edge, a curtain gathers at one end. `hand`
+picks which end a curtain gathers at (`right` by default, `left`), and `hand: center`
+makes it a pair that meets in the middle and gathers at both ends, still one piece with
+one entity. If the cover drops out, an awning draws retracted and a curtain draws closed.
+In 3D the awning hangs under the eaves rather than standing on the floor. Unbound, either
+piece is drawn at full size.
+
+```yaml
+- { id: awning, type: awning, 'x': 400, 'y': 40, w: 300, h: 120, entity: cover.patio_awning }
+- { id: curtains, type: curtain, 'x': 200, 'y': 300, w: 160, h: 12, hand: center,
+    entity: cover.living_room_curtains }
+```
 
 **`goToFloor`** makes tapping the piece's icon change floor: `up` / `down` move one
 floor, `top` / `bottom` choose the last / first floor, and `main` uses `defaultFloor`

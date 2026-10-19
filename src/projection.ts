@@ -486,7 +486,8 @@ export function furnitureSolid(
   map: (x: number, y: number) => Pt,
   height: number,
   color: string,
-  top?: SVGTemplateResult
+  top?: SVGTemplateResult,
+  z0 = 0
 ): IsoSolid {
   const rad = ((f.angle ?? 0) * Math.PI) / 180;
   const c = Math.cos(rad);
@@ -501,7 +502,7 @@ export function furnitureSolid(
       [-hw, hh],
     ] as const
   ).map(([ox, oy]) => map(f.x + ox * c - oy * s, f.y + ox * s + oy * c));
-  return { kind: "furniture", id: f.id, base, z0: 0, z1: height, color, top };
+  return { kind: "furniture", id: f.id, base, z0, z1: height, color, top };
 }
 
 function offsetAreaPoints(pts: readonly AreaPoint[], overhang: number): Pt[] {

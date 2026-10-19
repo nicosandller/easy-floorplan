@@ -77,6 +77,7 @@ import {
   entityStateText,
   renderRipple,
   renderFurniture,
+  shownPieces,
   furnitureColor,
   furnitureAccessibleName,
   furnitureActionForGesture,
@@ -196,7 +197,7 @@ import { AmountTween, OPENING_TWEEN_MS, rafTweenFrames } from "./opening-tween";
 import { RotationTween } from "./rotation";
 import { focusOrder, normalizeRoomFocus, stepFocus } from "./room-focus";
 import type { SVGTemplateResult } from "lit";
-import { symbolCatalog } from "./symbols";
+import { findSymbol, symbolCatalog } from "./symbols";
 import { deadSpacesCached } from "./dead-space";
 import type { Opening } from "./types";
 import {
@@ -1097,16 +1098,23 @@ export class FloorplanCard extends LitElement {
 
     const furnitureHeight = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(furnitureHeight, rot);
+    const catalog = symbolCatalog(c.symbols);
     for (const f of active.furniture) {
+      // A piece that hangs rather than stands — an awning under the eaves
+      // (issue #196) — is a sheet between its symbol's two heights.
+      const raised = findSymbol(catalog, f.type)?.elevation;
+      const top = raised ? baseWallHeight * raised.to : furnitureHeight;
+      const up = raised ? elevationShift(top, rot) : lift;
       solids.push(
         furnitureSolid(
           f,
           map,
-          furnitureHeight,
+          top,
           furnitureTone(f),
           svg`<g transform=${rotTransform || nothing}>
-                <g transform="translate(${lift.x} ${lift.y})">${drawFurniture(f)}</g>
-              </g>`
+                <g transform="translate(${up.x} ${up.y})">${drawFurniture(f)}</g>
+              </g>`,
+          raised ? baseWallHeight * raised.from : 0
         )
       );
     }
@@ -1733,6 +1741,17 @@ export class FloorplanCard extends LitElement {
     const dimPad = WALL_THICKNESS + (iso ? frame.wallHeight : 0);
     // One furniture glyph, flat. Drawn on the floor on the flat plan and on
     // top of its block under the isometric view — the same drawing either way.
+    // Awnings and curtains at their cover's position (issue #196); every other
+    // piece passes through untouched.
+    // A center-closing curtain is two halves; it keeps one action, with its
+    // icon on the left half so it never sits over the gap once both gather.
+    const pieces = active.furniture.map((f) =>
+      shownPieces(f, f.entity ? renderHass?.states[f.entity] : undefined, symbolCatalog(c.symbols))
+    );
+    const furniture = pieces.flat();
+    const actionFurniture = pieces.map((p, i) => (p.length === 1
+      ? p[0]!
+      : { ...active.furniture[i]!, x: p[0]!.x, y: p[0]!.y }));
     const drawFurniture = (f: Furniture): SVGTemplateResult => renderFurniture(
       f,
       furnitureColor(f, f.entity ? renderHass?.states[f.entity]?.state : undefined) ?? (lineArt ? LINE_INK : undefined),
@@ -2085,7 +2104,7 @@ export class FloorplanCard extends LitElement {
                  they meet) without screening against the plan beneath, which
                  would wash out on a light theme. -->
             ${renderGlowMask(
-                active.furniture, c.width, c.height,
+                furniture, c.width, c.height,
                 `${this._glowIdBase}-mask`, symbolCatalog(c.symbols)
               )}
             <g class="fp-glows"
@@ -2099,7 +2118,7 @@ export class FloorplanCard extends LitElement {
                   : nothing;
               })}
             </g>
-            ${standing ? nothing : active.furniture.map(drawFurniture)}
+            ${standing ? nothing : furniture.map(drawFurniture)}
             <!-- Sunlight through the openings. Under the walls on purpose:
                  light lands on the floor, and the walls stay crisp lines over
                  it rather than being tinted by the patches they let in. The
@@ -2254,7 +2273,7 @@ export class FloorplanCard extends LitElement {
                  stops responding (the lesson from #108). -->
             </g>
             ${standing
-              ? this._renderIsoLayer(active, standingWallSegments, effectiveOpenings, c, rot, frame, rotTransform, drawFurniture, furnitureTone, renderHass,
+              ? this._renderIsoLayer({ ...active, furniture }, standingWallSegments, effectiveOpenings, c, rot, frame, rotTransform, drawFurniture, furnitureTone, renderHass,
                 // Scrubbing history jumps from state to state on purpose;
                 // easing between them would trail the scrubber.
                 !replayState.enabled)
@@ -2293,7 +2312,7 @@ export class FloorplanCard extends LitElement {
           (o) => this._renderOpeningMark(o, c, rot, scale, renderHass)
         )}
             ${repeat(
-          active.furniture,
+          actionFurniture,
           (f, i) => f.id || i,
           (f) => this._renderFurnitureAction(f, c, rot, floors, active.id)
         )}
