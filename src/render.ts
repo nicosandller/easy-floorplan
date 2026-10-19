@@ -1966,7 +1966,7 @@ export function itemHasLabel(item: {
  */
 export function labelPositionOf(item: { labelPosition?: LabelPosition }): LabelPosition {
   const v = item.labelPosition;
-  return v === "left" || v === "right" ? v : "below";
+  return v === "left" || v === "right" || v === "above" || v === "auto" ? v : "below";
 }
 
 /**

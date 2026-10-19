@@ -634,9 +634,14 @@ export interface ItemReading {
  * `left` / `right` exist because a long reading under a badge grows in both
  * directions and collides with whatever is beside it, while a label hung off
  * one side grows only one way — which is what a row of devices along a wall
- * needs.
+ * needs. `above` is the fourth side, centred over the badge.
+ *
+ * `auto` lets the card choose among those four once the plan is laid out:
+ * whichever side covers the least wall, opening, badge, other label, room
+ * name and plan edge, in the order below → right → left → above when sides
+ * tie (see label-placement.ts). It falls back to `below` under the 3D view.
  */
-export type LabelPosition = "below" | "left" | "right";
+export type LabelPosition = "below" | "left" | "right" | "above" | "auto";
 
 /** An entity icon placed on the plan. */
 export interface FloorItem {

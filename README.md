@@ -26,7 +26,8 @@ control lights, and view the plan in 3D.
 - **Visual editing** — draw walls, snap doors and windows into place, and arrange
   furniture, text and devices with undo/redo, copy/paste and position locking.
 - **Live devices** — control lights and switches, show sensor readings, and follow
-  doors, windows and shutters as they open and close.
+  doors, windows and shutters as they open and close. Device labels can sit on
+  any side, or [pick the clearest one](docs/elements.md#devices) (`labelPosition: auto`).
 - **Lighting** — colored light from your lamps, day/night dimming, sunlight,
   moonlight and ambient daylight.
 - **Rooms and presence** — zoom into rooms, link Home Assistant areas, show
