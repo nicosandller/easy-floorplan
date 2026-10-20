@@ -150,7 +150,12 @@ export const editorWorkspaceStyles = css`
   .edit-head button { min-height: 30px; padding: 5px; justify-content: center; border-color: transparent; }
   .cfg-group { width: 100%; margin: 0; padding: 16px 0 0; border: 0; }
   .cfg-group + .cfg-group { border-top: 1px solid var(--editor-line); margin-top: 12px; }
-  .cfg-group-title { min-height: 0; margin: 0 0 14px; padding: 0; font-size: 14px; font-weight: 600; letter-spacing: 0; color: var(--editor-ink); }
+  .cfg-group-title { min-height: 0; margin: 0; padding: 0; font-size: 14px; font-weight: 600; letter-spacing: 0; color: var(--editor-ink); }
+  .cfg-group-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; min-height: 28px; margin: 0 0 14px; }
+  /* HA's own "Show code editor": a quiet text link at the heading's far end. */
+  .cfg-group-head .cfg-group-mode { min-height: 28px; padding: 4px 6px; margin-right: -6px; color: var(--editor-accent); background: transparent; border: 0; border-radius: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; }
+  .cfg-group-head .cfg-group-mode:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
+  .action-yaml-error { margin: 6px 0 0; color: var(--error-color, #db4437); }
   .settings-category { position: sticky; top: 43px; z-index: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 0 0 16px; padding: 6px 0; background: var(--editor-paper); border-bottom: 1px solid var(--editor-line); }
   .settings-category.two-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-category > button { min-width: 0; min-height: 36px; padding: 7px 4px; color: var(--editor-muted); background: transparent; border: 1px solid transparent; border-radius: 6px; font-size: 13px; font-weight: 500; }

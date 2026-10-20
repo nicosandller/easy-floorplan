@@ -258,4 +258,42 @@ describe("Visual Editor - Callout Panels (issue #234)", () => {
     expect(moved?.x).toBeGreaterThan(300);
     expect(moved?.y).toBeGreaterThan(300);
   });
+
+  it("edits fixed anchor coordinates when targetType is fixed", async () => {
+    const { root, ed, latestConfig } = await mountEditor();
+
+    const panelEl = root.querySelector<HTMLElement>(".edit-panel")!;
+    const r = panelEl.getBoundingClientRect();
+    pointer(panelEl, "pointerdown", r.left + r.width / 2, r.top + r.height / 2);
+    pointer(panelEl, "pointerup", r.left + r.width / 2, r.top + r.height / 2);
+    await ed.updateComplete;
+
+    // Switch target to fixed
+    const targetSelect = Array.from(root.querySelectorAll<HTMLSelectElement>("select")).find((s) =>
+      Array.from(s.options).some((o) => o.value === "fixed")
+    )!;
+    targetSelect.value = "fixed";
+    targetSelect.dispatchEvent(new Event("change"));
+    await ed.updateComplete;
+
+    expect(latestConfig().floors![0].panels![0].targetType).toBe("fixed");
+    expect(latestConfig().floors![0].panels![0].anchor).toEqual({ x: 300, y: 300 });
+
+    // Find anchor X input
+    const anchorXInput = root.querySelector<HTMLInputElement>("input[title='Anchor X coordinate']")!;
+    expect(anchorXInput).not.toBeNull();
+    anchorXInput.value = "450";
+    anchorXInput.dispatchEvent(new Event("change"));
+    await ed.updateComplete;
+
+    const anchorYInput = root.querySelector<HTMLInputElement>("input[title='Anchor Y coordinate']")!;
+    expect(anchorYInput).not.toBeNull();
+    anchorYInput.value = "250";
+    anchorYInput.dispatchEvent(new Event("change"));
+    await ed.updateComplete;
+
+    const p = latestConfig().floors![0].panels![0];
+    expect(p.anchor).toEqual({ x: 450, y: 250 });
+  });
 });
+

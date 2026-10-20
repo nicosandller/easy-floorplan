@@ -34,7 +34,7 @@ import type {
 import {
   resolvePanelAnchor,
   computeLeaderLinePath,
-} from "./floor-summary";
+} from "./floor-panels";
 import {
   normalizeSymbol,
   symbolCatalog,
@@ -4343,81 +4343,7 @@ export class FloorplanCardEditor extends LitElement {
                         })}
                     />
                   </div>
-                  <!-- Floor Summary Settings (issue #234) -->
-                  ${(() => {
-                    const summaryEnabled =
-                      floor?.summary?.enabled !== undefined
-                        ? floor.summary.enabled
-                        : !!(
-                            floor?.summary?.temperatureEntity ||
-                            floor?.summary?.humidityEntity ||
-                            floor?.summary?.presenceEntity ||
-                            this._config.floorSummary?.enabled
-                          );
-                    return html`
-                      <div class="pop-row" style="margin-top: 6px;">
-                        <label>Summary enabled</label>
-                        <input
-                          type="checkbox"
-                          title="Show aggregate summary on switcher button"
-                          .checked=${summaryEnabled}
-                          @change=${(e: Event) =>
-                            this._commitFloor({
-                              summary: {
-                                ...floor?.summary,
-                                enabled: (e.target as HTMLInputElement).checked,
-                              },
-                            })}
-                        />
-                      </div>
-                      ${summaryEnabled
-                        ? html`
-                            <div class="pop-row">
-                              <label>Temp helper</label>
-                              ${this._renderEntityPicker(
-                                floor?.summary?.temperatureEntity ?? "",
-                                (entity) =>
-                                  this._commitFloor({
-                                    summary: {
-                                      ...floor?.summary,
-                                      temperatureEntity: entity || undefined,
-                                    },
-                                  }),
-                                ["sensor", "climate"]
-                              )}
-                            </div>
-                            <div class="pop-row">
-                              <label>Humidity helper</label>
-                              ${this._renderEntityPicker(
-                                floor?.summary?.humidityEntity ?? "",
-                                (entity) =>
-                                  this._commitFloor({
-                                    summary: {
-                                      ...floor?.summary,
-                                      humidityEntity: entity || undefined,
-                                    },
-                                  }),
-                                ["sensor", "climate"]
-                              )}
-                            </div>
-                            <div class="pop-row">
-                              <label>Presence helper</label>
-                              ${this._renderEntityPicker(
-                                floor?.summary?.presenceEntity ?? "",
-                                (entity) =>
-                                  this._commitFloor({
-                                    summary: {
-                                      ...floor?.summary,
-                                      presenceEntity: entity || undefined,
-                                    },
-                                  }),
-                                ["binary_sensor", "input_boolean", "person", "device_tracker"]
-                              )}
-                            </div>
-                          `
-                        : nothing}
-                    `;
-                  })()}
+
                   <button
                     class="danger pop-action"
                     ?disabled=${floors.length <= 1}
@@ -7478,6 +7404,9 @@ export class FloorplanCardEditor extends LitElement {
               updates.showIn2D = false;
               updates.showIn3D = true;
             }
+            if (tt === "fixed" && !p.anchor) {
+              updates.anchor = { x: Math.round(p.x), y: Math.round(p.y) };
+            }
             this._updatePanel(p.id, updates);
           }}
         >
@@ -7488,6 +7417,44 @@ export class FloorplanCardEditor extends LitElement {
           <option value="fixed">Fixed coordinate</option>
         </select>
       </div>
+
+      ${p.targetType === "fixed"
+        ? html`
+            <div class="row">
+              <label>Anchor X, Y</label>
+              <input
+                class="num"
+                type="number"
+                title="Anchor X coordinate"
+                .value=${String(p.anchor?.x ?? Math.round(p.x))}
+                @change=${(e: Event) => {
+                  const input = e.target as HTMLInputElement;
+                  const n = Number(input.value);
+                  if (input.value !== "" && Number.isFinite(n)) {
+                    this._updatePanel(p.id, {
+                      anchor: { x: Math.round(n), y: p.anchor?.y ?? Math.round(p.y) },
+                    });
+                  }
+                }}
+              />
+              <input
+                class="num"
+                type="number"
+                title="Anchor Y coordinate"
+                .value=${String(p.anchor?.y ?? Math.round(p.y))}
+                @change=${(e: Event) => {
+                  const input = e.target as HTMLInputElement;
+                  const n = Number(input.value);
+                  if (input.value !== "" && Number.isFinite(n)) {
+                    this._updatePanel(p.id, {
+                      anchor: { x: p.anchor?.x ?? Math.round(p.x), y: Math.round(n) },
+                    });
+                  }
+                }}
+              />
+            </div>
+          `
+        : nothing}
 
       ${p.targetType === "roof"
         ? html`
