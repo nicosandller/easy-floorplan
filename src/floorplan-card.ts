@@ -926,14 +926,7 @@ export class FloorplanCard extends LitElement {
       const unzoomedRoofs = (roofs: readonly Roof[], allAreas: readonly Area[]) => {
         if (!this._zoomedAreaId) return roofs;
         const zoomedArea = allAreas.find((a) => a.id === this._zoomedAreaId);
-        return roofs.filter((r) => {
-          if (r.id === this._zoomedAreaId) return false;
-          if (zoomedArea && zoomedArea.points && zoomedArea.points.length >= 3) {
-            const c = polygonCentroid(zoomedArea.points);
-            if (c && pointInPolygon(r.points, c.x, c.y)) return false;
-          }
-          return true;
-        });
+        return roofs.filter((r) => this._isRoofVisible(r, zoomedArea));
       };
       const floors = getFloors(c);
       const hassSource = renderHass ?? this.hass;
@@ -1813,6 +1806,27 @@ export class FloorplanCard extends LitElement {
     return true;
   }
 
+  private _isRoofVisible(
+    roof: Roof,
+    zoomedArea: Area | undefined
+  ): boolean {
+    if (!zoomedArea) return true;
+    if (roof.id === zoomedArea.id) return false;
+    if (zoomedArea.points && zoomedArea.points.length >= 3) {
+      const c = polygonCentroid(zoomedArea.points);
+      if (c && pointInPolygon(roof.points, c.x, c.y)) return false;
+      const rc = polygonCentroid(roof.points);
+      if (rc && pointInPolygon(zoomedArea.points, rc.x, rc.y)) return false;
+    }
+    return true;
+  }
+
+  private _isRoofPanel(panel: FloorInfoPanel, floor: Floor): boolean {
+    if (panel.targetType === "roof") return true;
+    if (panel.targetId && (floor.roofs ?? []).some((r) => r.id === panel.targetId)) return true;
+    return false;
+  }
+
   private _visibleFloorPanels(
     active: Floor,
     c: FloorplanCardConfig,
@@ -1829,11 +1843,23 @@ export class FloorplanCard extends LitElement {
       : (c.panels?.length ?? 0) > 0;
     if (!anyPanels) return result;
 
+    const isOutside3D = !!(active.isOutdoor && iso);
+
     // 1. Panels on the active floor
     for (const p of floorPanels(active)) {
+      const isRoof = this._isRoofPanel(p, active);
+      if (isRoof) {
+        // A roof panel should not be visible in 2D or regular 3D rendering.
+        // Show it only when we render outside 3D house rendering and that roof is visible.
+        if (!isOutside3D) continue;
+        const targetRoof = (active.roofs ?? []).find((rf) => rf.id === p.targetId) ??
+          (active.roofs ?? []).find((rf) => pointInPolygon(rf.points, p.x, p.y)) ??
+          active.roofs?.[0];
+        if (!targetRoof || !this._isRoofVisible(targetRoof, zoomedArea)) continue;
+      }
       if (this._isPanelVisible(p, iso, zoomedArea)) {
         let z = 0;
-        if (iso && (p.targetType === "roof" || (active.roofs ?? []).some((r) => r.id === p.targetId))) {
+        if (iso && isRoof) {
           const r = (active.roofs ?? []).find((rf) => rf.id === p.targetId) ?? active.roofs?.[0];
           const baseWallHeight = normalizeWallHeight(c.wallHeight);
           z = baseWallHeight + (r?.height ?? 30) * 0.5;
@@ -1843,7 +1869,7 @@ export class FloorplanCard extends LitElement {
     }
 
     // 2. If active is outdoor and 3D view: include roof panels from stacked indoor floors!
-    if (active.isOutdoor && iso) {
+    if (isOutside3D) {
       const floors = getFloors(c);
       const hassSource = renderHass ?? this.hass;
       const baseLevel = resolveFloorLevel(active, floors, hassSource);
@@ -1856,10 +1882,15 @@ export class FloorplanCard extends LitElement {
         const zOffset = (lvl - baseLevel) * outdoorWallHeight;
 
         for (const p of floorPanels(f)) {
-          const isRoofPanel = p.targetType === "roof" || (f.roofs ?? []).some((r) => r.id === p.targetId);
-          if (isRoofPanel && this._isPanelVisible(p, iso, zoomedArea)) {
-            const r = (f.roofs ?? []).find((rf) => rf.id === p.targetId) ?? f.roofs?.[0];
-            const roofHeight = (r?.height ?? 30) * OUTDOOR_WALL_HEIGHT_MULTIPLIER;
+          const isRoof = this._isRoofPanel(p, f);
+          if (!isRoof) continue;
+          const targetRoof = (f.roofs ?? []).find((rf) => rf.id === p.targetId) ??
+            (f.roofs ?? []).find((rf) => pointInPolygon(rf.points, p.x, p.y)) ??
+            f.roofs?.[0];
+          if (!targetRoof || !this._isRoofVisible(targetRoof, zoomedArea)) continue;
+
+          if (this._isPanelVisible(p, iso, zoomedArea)) {
+            const roofHeight = (targetRoof.height ?? 30) * OUTDOOR_WALL_HEIGHT_MULTIPLIER;
             const z = zOffset + outdoorWallHeight + roofHeight * 0.5;
             result.push({ panel: p, floor: f, z });
           }
@@ -2223,7 +2254,9 @@ export class FloorplanCard extends LitElement {
     // controls, the arrow keys and the dwell all walk the same rooms.
     const roomFocus = normalizeRoomFocus(c.roomFocus);
     const focusRooms = focusOrder(active.areas, roomFocus);
-    const zoomedArea = active.areas?.find((a) => a.id === this._zoomedAreaId);
+    const zoomedArea = (active.isOutdoor ? floors.flatMap((f) => f.areas) : active.areas)?.find(
+      (a) => a.id === this._zoomedAreaId
+    );
     const zoom = zoomedArea
       ? areaZoomTransform(
         zoomedArea.points,

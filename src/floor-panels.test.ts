@@ -465,4 +465,84 @@ describe("Callout Info-Panels & Leader Lines DOM Rendering", () => {
     // Now zoomed in: panel should be visible
     expect(root.querySelector('.fp-info-panel[data-panel-id="panel_detail"]')).not.toBeNull();
   });
+
+  it("never renders a roof panel in 2D or indoor 3D view, only in outside 3D house view when roof is visible", async () => {
+    const roofPanel: FloorInfoPanel = {
+      id: "panel_solar",
+      x: 250,
+      y: 250,
+      title: "Solar Inverter",
+      targetType: "roof",
+      targetId: "roof_main",
+      metrics: [{ entity: "sensor.temp", label: "T" }],
+    };
+
+    const indoorFloor: Floor = {
+      ...makeFloor("First Floor"),
+      id: "floor_1",
+      roofs: [
+        {
+          id: "roof_main",
+          type: "gable",
+          points: [
+            { x: 100, y: 100 },
+            { x: 400, y: 100 },
+            { x: 400, y: 400 },
+            { x: 100, y: 400 },
+          ],
+          height: 30,
+        },
+      ],
+      areas: [
+        {
+          id: "living",
+          name: "Living Room",
+          points: [
+            { x: 100, y: 100 },
+            { x: 400, y: 100 },
+            { x: 400, y: 400 },
+            { x: 100, y: 400 },
+          ],
+        },
+      ],
+      panels: [roofPanel],
+    };
+
+    const outdoorFloor: Floor = {
+      ...makeFloor("Outdoor"),
+      id: "floor_outdoor",
+      isOutdoor: true,
+      areas: [],
+      walls: [],
+      panels: [],
+    };
+
+    // 1. In indoor 2D view: roof panel must NOT be visible
+    const t1 = await mountCard({ floors: [indoorFloor], view: "2d" });
+    expect(t1.root.querySelector('.fp-info-panel[data-panel-id="panel_solar"]')).toBeNull();
+
+    // 2. In indoor 3D view: roof panel must NOT be visible
+    const t2 = await mountCard({ floors: [indoorFloor], view: "3d" });
+    expect(t2.root.querySelector('.fp-info-panel[data-panel-id="panel_solar"]')).toBeNull();
+
+    // 3. In outdoor 2D view: roof panel must NOT be visible
+    const t3 = await mountCard({ floors: [outdoorFloor, indoorFloor], defaultFloor: "floor_outdoor", view: "2d" });
+    expect(t3.root.querySelector('.fp-info-panel[data-panel-id="panel_solar"]')).toBeNull();
+
+    // 4. In outdoor 3D house view: roof panel IS visible when roof is visible!
+    const t4 = await mountCard({ floors: [outdoorFloor, indoorFloor], defaultFloor: "floor_outdoor", view: "3d" });
+    expect(t4.root.querySelector('.fp-info-panel[data-panel-id="panel_solar"]')).not.toBeNull();
+
+    // 5. When zoomed into the room beneath the roof: roof cuts away, so roof panel must hide!
+    const panelEl = t4.root.querySelector<HTMLElement>('.fp-info-panel[data-panel-id="panel_solar"]');
+    panelEl?.click(); // zooms into the room underneath the roof
+    await t4.card.updateComplete;
+    expect(t4.root.querySelector('.fp-info-panel[data-panel-id="panel_solar"]')).toBeNull();
+
+    // 6. When zoomed back out: roof panel reappears!
+    const zoomOut = t4.root.querySelector<HTMLButtonElement>(".zoom-out");
+    zoomOut?.click();
+    await t4.card.updateComplete;
+    expect(t4.root.querySelector('.fp-info-panel[data-panel-id="panel_solar"]')).not.toBeNull();
+  });
 });

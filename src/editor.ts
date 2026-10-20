@@ -7536,33 +7536,41 @@ export class FloorplanCardEditor extends LitElement {
         </label>
       </div>
 
-      <div class="row wide">
-        <label>
-          <input
-            type="checkbox"
-            .checked=${p.showIn2D !== false}
-            @change=${(e: Event) =>
-              this._updatePanel(p.id, {
-                showIn2D: (e.target as HTMLInputElement).checked ? undefined : false,
-              })}
-          />
-          Visible in 2D top-down view
-        </label>
-      </div>
+      ${p.targetType === "roof"
+        ? html`
+            <div class="row wide hint" style="font-size: 11px; opacity: 0.8; margin: 4px 0;">
+              Roof panels appear exclusively in the outside 3D house view when the roof is visible.
+            </div>
+          `
+        : html`
+            <div class="row wide">
+              <label>
+                <input
+                  type="checkbox"
+                  .checked=${p.showIn2D !== false}
+                  @change=${(e: Event) =>
+                    this._updatePanel(p.id, {
+                      showIn2D: (e.target as HTMLInputElement).checked ? undefined : false,
+                    })}
+                />
+                Visible in 2D top-down view
+              </label>
+            </div>
 
-      <div class="row wide">
-        <label>
-          <input
-            type="checkbox"
-            .checked=${p.showIn3D !== false}
-            @change=${(e: Event) =>
-              this._updatePanel(p.id, {
-                showIn3D: (e.target as HTMLInputElement).checked ? undefined : false,
-              })}
-          />
-          Visible in 3D perspective / stacked view
-        </label>
-      </div>
+            <div class="row wide">
+              <label>
+                <input
+                  type="checkbox"
+                  .checked=${p.showIn3D !== false}
+                  @change=${(e: Event) =>
+                    this._updatePanel(p.id, {
+                      showIn3D: (e.target as HTMLInputElement).checked ? undefined : false,
+                    })}
+                />
+                Visible in 3D perspective / stacked view
+              </label>
+            </div>
+          `}
 
       <div class="row wide">
         <label>

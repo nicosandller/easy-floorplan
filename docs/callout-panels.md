@@ -97,8 +97,8 @@ Each panel connects to a spatial anchor point via an SVG leader line:
 
 In 3D view (`view: 3d`) and multi-floor outdoor stacking:
 - Panels anchored to floors or rooms project at their floor's physical elevation.
-- Panels anchored to roofs (`targetType: roof`) project at the 3D roof ridge and eaves elevation, ideal for exterior rooftop telemetry (e.g., solar PV generation, rooftop weather stations).
-- Leader lines render in 3D perspective space connecting the panel directly to the 3D surface point.
+- Roof panels (`targetType: roof` or linked to a roof) appear exclusively in the outside 3D house view (`active.isOutdoor && iso`) and only while that roof is visible. They are never rendered in 2D top-down or single-floor indoor 3D views, and automatically hide when zooming into the room beneath the roof.
+- When visible in outside 3D view, roof panels project at the physical roof ridge and eaves elevation, ideal for exterior rooftop telemetry (e.g., solar PV generation, rooftop weather stations), with leader lines connecting directly to the 3D surface point.
 
 ## Theming & CSS Custom Properties
 
