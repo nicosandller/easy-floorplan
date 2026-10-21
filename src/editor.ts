@@ -161,6 +161,7 @@ import {
 import { deadSpacesCached } from "./dead-space";
 import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
 import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
+import { roomTintPaints, roomTintScheme, roomTintsOf, type RoomTintPaint } from "./room-tints";
 import {
   paletteStyle,
   paletteKey,
@@ -220,6 +221,8 @@ import {
   furnitureForm,
   isLiveField,
   formSlice,
+  actionFieldNames,
+  actionYamlPatch,
   itemEntityForm,
   itemIdentityForm,
   itemShowStateForm,
@@ -236,6 +239,7 @@ import {
   projectPressForm,
   projectReplayForm,
   projectSkinForm,
+  projectRoomTintsForm,
   projectSunForm,
   projectReliefForm,
   textForm,
@@ -523,6 +527,20 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _projectOpen = false;
   @state() private _selectionPage = "properties";
   @state() private _projectPage = "plan";
+  /**
+   * Behavior's actions as YAML rather than dropdowns (issue #314). One switch
+   * for every element, as HA's own is per editor: whoever needs YAML for one
+   * badge's tap usually needs it for the next.
+   */
+  @state() private _actionYaml = false;
+  /** Why the last code edit was not applied; cleared by the next good one. */
+  @state() private _actionYamlError = "";
+  /**
+   * `ha-yaml-editor` reads its value once, so the editor is re-keyed when the
+   * actions change from outside it (another element, undo) — but not when the
+   * change is its own echo, which would throw the cursor away mid-word.
+   */
+  private _actionYamlSeen = { key: "", json: "", gen: 0 };
   @state() private _mobileInspector = false;
   @state() private _previewCollapsed = false;
   @state() private _keyboardOpen = false;
@@ -3176,7 +3194,7 @@ export class FloorplanCardEditor extends LitElement {
     ["Shape", ["type", "hand", "w", "h", "angle"]],
     ["What it reads", ["entity"]],
     // What clicking it does — a staircase that changes floor (issue #121).
-    ["Behavior", ["goToFloor", "tap_action", "hold_action", "double_tap_action"]],
+    ["Behavior", ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"]],
   ] as const;
 
   private static readonly TRACKER_GROUPS = [
@@ -3194,8 +3212,13 @@ export class FloorplanCardEditor extends LitElement {
       Look: "Plan style", Project: "Canvas", Display: "View & scale", Color: "State colors",
       "Floor image": `Background · ${this._floor().name}`,
     } as Record<string, string>)[title] ?? title;
+    const codeSwitch = title === "Behavior" && customElements.get("ha-yaml-editor")
+      ? html`<button type="button" class="cfg-group-mode" aria-pressed=${this._actionYaml}
+          @click=${() => { this._actionYaml = !this._actionYaml; this._actionYamlError = ""; }}
+        >${this._actionYaml ? "Show visual editor" : "Show code editor"}</button>`
+      : nothing;
     return html`<section class="cfg-group" data-group=${title}>
-      <h3 class="cfg-group-title">${label}</h3>${content}
+      <div class="cfg-group-head"><h3 class="cfg-group-title">${label}</h3>${codeSwitch}</div>${content}
     </section>`;
   }
 
@@ -4074,6 +4097,13 @@ export class FloorplanCardEditor extends LitElement {
     const deadSpaceRings = c.showDeadSpaces
       ? deadSpacesCached(blockingWallSegments, floor.openings)
       : [];
+    // Automatic room tints, as the card draws them — the editor previews the
+    // resting look, so a room picks up its tint the moment it is drawn.
+    const roomTints = roomTintPaints(
+      floor.areas ?? [],
+      roomTintsOf(c),
+      roomTintScheme(this.hass, c.skin)
+    );
     // Walls as light meets them (issue #143), same as the card — so dropping a
     // door into a wall spills the pool through it while you are still drawing.
     // Skipped entirely on a floor with no cast light, which is most of them:
@@ -4439,7 +4469,7 @@ export class FloorplanCardEditor extends LitElement {
               ${repeat(
                 floor.areas ?? [],
                 (a, i) => a.id || i,
-                (a) => this._renderAreaSel(a, scopingAreaId)
+                (a, i) => this._renderAreaSel(a, scopingAreaId, roomTints[i])
               )}
               ${repeat(
                 floor.roofs ?? [],
@@ -4645,6 +4675,14 @@ export class FloorplanCardEditor extends LitElement {
     spec: FormSpec,
     apply: (patch: Record<string, unknown>, live: boolean) => void
   ): TemplateResult {
+    const actionNames = this._actionYaml && customElements.get("ha-yaml-editor") ? actionFieldNames(spec) : [];
+    if (actionNames.length) {
+      // `moreInfoEntity` is the dropdown's stand-in for `tap_action.entity`,
+      // which the YAML holds itself; showing both would let them disagree.
+      const rest = spec.fields.filter((f) => !actionNames.includes(f.name) && f.name !== "moreInfoEntity");
+      return html`${rest.length ? this._renderForm({ ...spec, fields: rest }, apply) : nothing}
+        ${this._renderActionYaml(spec, actionNames, apply)}`;
+    }
     if (customElements.get("ha-form")) {
       const draft = this._numberDraft;
       const data = draft?.form.isConnected && spec.fields.some((field) => field.name === draft.name)
@@ -4690,6 +4728,52 @@ export class FloorplanCardEditor extends LitElement {
       ${spec.fields.some((field) => "ui_action" in field.selector)
         ? html`<p class="hint action-editor-note">Edit tap, hold and double-tap actions in the Home Assistant editor.</p>`
         : nothing}`;
+  }
+
+  /** The Behavior group's actions in HA's own YAML editor (issue #314). */
+  private _renderActionYaml(
+    spec: FormSpec,
+    names: string[],
+    apply: (patch: Record<string, unknown>, live: boolean) => void
+  ): TemplateResult {
+    const value: Record<string, unknown> = {};
+    for (const name of names) if (spec.data[name] != null) value[name] = spec.data[name];
+    const primary = this._primary();
+    const key = primary ? `${primary.kind}:${primary.id}` : "";
+    const json = JSON.stringify(value);
+    const seen = this._actionYamlSeen;
+    if (seen.key !== key || seen.json !== json) {
+      this._actionYamlSeen = { key, json, gen: seen.gen + 1 };
+      // A refused edit's message belongs to the YAML it was about; a new
+      // element (or an undo) brings fresh YAML, so drop it.
+      if (this._actionYamlError) this._actionYamlError = "";
+    }
+    return html`<div class="action-yaml">
+      ${keyed(this._actionYamlSeen.gen, html`<ha-yaml-editor
+        .hass=${this.hass}
+        .defaultValue=${value}
+        @value-changed=${(ev: CustomEvent<{ value: unknown; isValid?: boolean }>) => {
+          ev.stopPropagation();
+          if (ev.detail.isValid === false) return;
+          const result = actionYamlPatch(ev.detail.value, names);
+          if ("error" in result) {
+            this._actionYamlError = result.error;
+            return;
+          }
+          this._actionYamlError = "";
+          const next: Record<string, unknown> = {};
+          for (const name of names) if (result.patch[name] !== undefined) next[name] = result.patch[name];
+          const nextJson = JSON.stringify(next);
+          if (nextJson === this._actionYamlSeen.json) return;
+          this._actionYamlSeen = { ...this._actionYamlSeen, json: nextJson };
+          // Live, like typing in a field: one undo step per burst of edits.
+          apply(spec.toPatch(result.patch), true);
+        }}
+      ></ha-yaml-editor>`)}
+      ${this._actionYamlError
+        ? html`<p class="hint action-yaml-error" role="alert">${this._actionYamlError}</p>`
+        : nothing}
+    </div>`;
   }
 
   private _renderEssentialForm(
@@ -5533,7 +5617,7 @@ export class FloorplanCardEditor extends LitElement {
     this._updateArea(a.id, { sideWalls: Object.keys(sideWalls).length ? sideWalls : undefined });
   }
 
-  private _renderAreaSel(a: Area, scopingId?: string): TemplateResult {
+  private _renderAreaSel(a: Area, scopingId?: string, tint?: RoomTintPaint): TemplateResult {
     const selected = this._isSel("area", a.id);
     const scoping = a.id === scopingId;
     const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
@@ -5544,7 +5628,7 @@ export class FloorplanCardEditor extends LitElement {
     return svg`
       <g class="area-hit ${selected ? "selected" : ""} ${scoping ? "scoping" : ""}">
         ${scoping ? svg`<polygon points=${pts} class="area-scoping" />` : nothing}
-        ${renderArea(a)}
+        ${renderArea(a, undefined, tint)}
         <polygon points=${pts} class="area-hit-shape"
                  @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "area", id: a.id })} />
         ${selected ? svg`<polygon points=${pts} class="area-outline" />` : nothing}
@@ -6210,6 +6294,7 @@ export class FloorplanCardEditor extends LitElement {
             onLive: (background) => this._patchConfigLive({ background }),
             onCommit: (background) => this._patchConfig({ background }),
           }),
+          this._renderForm(projectRoomTintsForm(c), patch),
           this._renderForm(projectDeadSpaceForm(c), patch)
         )}
         ${this._renderGroup(

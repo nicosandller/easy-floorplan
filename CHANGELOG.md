@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- Furniture action icons can be hidden per piece (`showIcon: false`, or **Action icon**
+  under Behavior); the drawing itself then takes the tap. The icons also follow
+  `overlayScale: plan` now, shrinking with the drawing like device badges instead of
+  staying 34px on a narrow card (#362). On existing `plan` dashboards the icons will
+  look smaller than before; that is intended. `fixed` keeps them at 34px.
+
 - Animate live 3D quarter-turns around the floorplan, keeping labels, devices
   and room focus aligned. Repeated clicks can continue or reverse a turn; reset
   cancels it, and reduced motion keeps turns immediate (#354).

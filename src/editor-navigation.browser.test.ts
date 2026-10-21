@@ -7,7 +7,7 @@ import {
   type FormSpec, openingForm, furnitureForm, areaForm, areaNameForm, trackerForm,
   itemEntityForm, itemIdentityForm, itemShowStateForm, itemLabelForm, itemBadgeForm,
   itemEffectsForm, itemBehaviourForm, itemGroup7aForm, projectForm, projectDisplayForm,
-  projectSkinForm, projectDeadSpaceForm, projectSunForm, projectReliefForm,
+  projectSkinForm, projectRoomTintsForm, projectDeadSpaceForm, projectSunForm, projectReliefForm,
   projectReplayForm, projectPressForm, floorImageForm,
   wallForm, textForm,
 } from "./editor-forms";
@@ -140,7 +140,7 @@ describe("direct inspector categories", () => {
     editor.shadowRoot!.querySelector<HTMLButtonElement>("#project-tab")!.click();
     await editor.updateComplete;
     await expectEveryFieldOnce(editor, [projectForm(c), projectDisplayForm(c), projectSkinForm(c),
-      projectDeadSpaceForm(c), projectSunForm(c), projectReliefForm(c), projectReplayForm(c),
+      projectRoomTintsForm(c), projectDeadSpaceForm(c), projectSunForm(c), projectReliefForm(c), projectReplayForm(c),
       projectPressForm(c), floorImageForm(c.floors![0] as Floor)], true);
   });
 });

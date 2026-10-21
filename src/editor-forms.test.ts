@@ -20,6 +20,7 @@ import {
   projectDisplayForm,
   projectPressForm,
   projectSkinForm,
+  projectRoomTintsForm,
   projectSunForm,
   projectReliefForm,
   projectDeadSpaceForm,
@@ -1169,6 +1170,28 @@ describe("textForm / furnitureForm / trackerForm", () => {
     expect(out.tap_action).toEqual({ action: "toggle" });
   });
 
+  // Issue #362: the round action icon can be hidden.
+  it("furniture offers the action icon toggle only once there is an action to show", () => {
+    const names = (extra: Record<string, unknown>) =>
+      furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10, ...extra } as never)
+        .fields.map((x) => x.name);
+    expect(names({})).not.toContain("showIcon");
+    expect(names({ goToFloor: "up" })).toContain("showIcon");
+    expect(names({ tap_action: { action: "more-info" } })).toContain("showIcon");
+    expect(names({ hold_action: { action: "toggle" } })).toContain("showIcon");
+    expect(names({ double_tap_action: { action: "toggle" } })).toContain("showIcon");
+  });
+
+  it("furniture writes the action icon down only when it is switched off", () => {
+    const piece = { id: "f", type: "table", x: 0, y: 0, w: 10, h: 10, tap_action: { action: "toggle" } };
+    const form = furnitureForm(piece as never);
+    expect(form.data.showIcon).toBe(true);
+    expect(furnitureForm({ ...piece, showIcon: false } as never).data.showIcon).toBe(false);
+    expect(form.toPatch({ showIcon: false } as never)).toEqual({ showIcon: false });
+    // On is the default, so turning it back on clears the key.
+    expect(form.toPatch({ showIcon: true } as never)).toEqual({ showIcon: undefined });
+  });
+
   it("areaForm exposes zoneKind data and patches it", () => {
     const form = areaForm({ id: "a", points: [], zoneKind: "lawn" } as never);
     expect(form.data.zoneKind).toBe("lawn");
@@ -1449,6 +1472,18 @@ describe("wallForm / projectForm / floorImageForm", () => {
       pressEffect: "sparkle",
     } as never);
     expect(form.data.pressEffect).toBe(DEFAULT_PRESS_EFFECT);
+  });
+
+  it("room tints offers off and automatic, and keeps off out of the YAML", () => {
+    const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+    const form = projectRoomTintsForm(base);
+    expect(form.fields.map((x) => x.name)).toEqual(["roomTints"]);
+    const options = (form.fields[0].selector.select as { options: { value: string }[] }).options;
+    expect(options.map((o) => o.value)).toEqual(["off", "auto"]);
+    expect(form.data.roomTints).toBe("off");
+    expect(projectRoomTintsForm({ ...base, roomTints: "auto" }).data.roomTints).toBe("auto");
+    expect(form.toPatch({ roomTints: "auto" })).toEqual({ roomTints: "auto" });
+    expect(form.toPatch({ roomTints: "off" })).toEqual({ roomTints: undefined });
   });
 
   it("skin reads back a skin we don't ship as the default, matching what it renders as", () => {
@@ -2233,7 +2268,7 @@ describe("every field lands in exactly one panel group", () => {
   const FURNITURE_GROUPS = [
     ["type", "hand", "w", "h", "angle"],
     ["entity"],
-    ["goToFloor", "tap_action", "hold_action", "double_tap_action"],
+    ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"],
   ];
   const TRACKER_GROUPS = [["w", "h", "x", "y", "angle"], ["dotSize"]];
   const AREA_GROUPS = [
@@ -2320,6 +2355,11 @@ describe("every field lands in exactly one panel group", () => {
       furnitureForm({ ...f, type: "sectional", entity: "sensor.a" } as Furniture).fields,
       FURNITURE_GROUPS,
       "furniture sectional"
+    );
+    check(
+      furnitureForm({ ...f, tap_action: { action: "toggle" } } as Furniture).fields,
+      FURNITURE_GROUPS,
+      "furniture with an action"
     );
     const tr = { id: "t", x: 0, y: 0, w: 10, h: 10 } as Tracker;
     check(trackerForm(tr).fields, TRACKER_GROUPS, "tracker");

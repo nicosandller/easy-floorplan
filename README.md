@@ -33,9 +33,12 @@ control lights, and view the plan in 3D.
   presence ripples and track positions from distance sensors.
 - **Multiple floors** — switch between floors or navigate with a staircase.
 - **Spatial telemetry callouts** — floating HUD info-panels with SVG leader lines anchored to rooms, furniture, roofs or coordinates in 2D and 3D.
+- **Furniture actions** — give a piece a tap, hold or double-tap action. A round
+  action icon marks it, or set `showIcon: false` to make the drawing itself the
+  button. See [actions on furniture](docs/behavior.md#actions-on-furniture).
 - **2D and 3D views** — display the same plan flat or with raised walls and furniture.
 - **Outdoor courtyard & 3D stacked house** — exterior view of the entire house stacking all levels at physical elevations, with ground slabs and 3D roofs.
-- **Appearance** — choose skins and named colors, add a background image to trace,
+- **Appearance** — choose skins, named colors and automatic room tints, add a background image to trace,
   and let the plan scale to your screen.
 
 ## Installation
@@ -101,7 +104,7 @@ editor and locking finished elements in place.
 | <a name="configuration-reference"></a><a name="more-readings-per-device"></a>[Configuration](docs/configuration.md) | YAML keys, defaults, coordinates and a complete example. |
 | <a name="follow-the-sun"></a><a name="sunlight"></a>[Lighting](docs/lighting.md) | Device light, sun, moon, skylights, ambient daylight and clouds. |
 | <a name="skins"></a><a name="overlay-scale"></a><a name="compact-header"></a><a name="rotation-that-follows-the-screen"></a><a name="styling-hooks-card-mod"></a>[Appearance](docs/appearance.md) | Skins, colors, line art, SVG export, 3D view, room navigation, scaling and styling. |
-| <a name="dead-spaces"></a><a name="doors-on-locks"></a><a name="actions-on-rooms"></a><a name="stairs-that-change-floor"></a><a name="offline-devices"></a><a name="advanced-hiding-logic"></a>[Behaviour](docs/behavior.md) | Actions, visibility, floor navigation and unavailable entities. |
+| <a name="dead-spaces"></a><a name="doors-on-locks"></a><a name="actions-on-rooms"></a><a name="stairs-that-change-floor"></a><a name="offline-devices"></a><a name="advanced-hiding-logic"></a>[Behaviour](docs/behavior.md) | Actions, visibility, floor navigation and unavailable entities. **Behavior → Show code editor** sets YAML-only actions, such as popup-card's `fire-dom-event`, on one element without the whole-card YAML. |
 | [Roofs](docs/roofs.md) | Roof styles (gable, hip, shed, flat), configuration, overhang, and editing |
 | [Outdoor 3D Stacking](docs/outdoor-3d-stacking.md) | Multi-floor exterior elevation, ground slabs, and roof rendering. |
 | [Callout info-panels](docs/callout-panels.md) | Spatial telemetry HUD cards with leader lines anchored to elements in 2D/3D. |

@@ -31,6 +31,7 @@ import "./replay-history/history-timeline";
 import "./replay-history/replay-panel";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, contrastText } from "./css-safe";
 import { paletteStyle, paletteKey, resolvePaletteColor } from "./palette";
+import { roomTintPaints, roomTintScheme, roomTintsOf } from "./room-tints";
 import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
@@ -1915,11 +1916,11 @@ export class FloorplanCard extends LitElement {
     return svg`
       <g class="fp-panel-leader-lines">
         ${list.map(({ panel: p, floor }) => {
-          const anchor = resolvePanelAnchor(p, floor);
-          if (!anchor) return nothing;
-          const color = cssColor(p.color) ?? "var(--fp-panel-accent, var(--fp-skin-accent, var(--primary-color, #03a9f4)))";
-          const d = computeLeaderLinePath(anchor, { x: p.x, y: p.y });
-          return svg`
+      const anchor = resolvePanelAnchor(p, floor);
+      if (!anchor) return nothing;
+      const color = cssColor(p.color) ?? "var(--fp-panel-accent, var(--fp-skin-accent, var(--primary-color, #03a9f4)))";
+      const d = computeLeaderLinePath(anchor, { x: p.x, y: p.y });
+      return svg`
             <g class="fp-panel-leader" data-panel-id=${p.id}>
               <circle cx=${anchor.x} cy=${anchor.y} r="3.5" class="fp-panel-anchor-ring" fill=${color} stroke=${color} stroke-width="1.2" fill-opacity="0.25" />
               <circle cx=${anchor.x} cy=${anchor.y} r="1" class="fp-panel-anchor-dot" fill="#ffffff" />
@@ -1927,7 +1928,7 @@ export class FloorplanCard extends LitElement {
               <circle cx=${p.x} cy=${p.y} r="2.5" class="fp-panel-target-dot" fill=${color} />
             </g>
           `;
-        })}
+    })}
       </g>
     `;
   }
@@ -1950,15 +1951,15 @@ export class FloorplanCard extends LitElement {
     return svg`
       <g class="fp-panel-leader-lines fp-iso-leader-lines">
         ${list.map(({ panel: p, floor, z }) => {
-          const anchor = resolvePanelAnchor(p, floor);
-          if (!anchor) return nothing;
-          const rAnchor = map(anchor.x, anchor.y);
-          const rPanel = map(p.x, p.y);
-          const pAnchor = projectPlanPoint(rAnchor.x, rAnchor.y, frame, z);
-          const pPanel = projectPlanPoint(rPanel.x, rPanel.y, frame, z);
-          const color = cssColor(p.color) ?? "var(--fp-panel-accent, var(--fp-skin-accent, var(--primary-color, #03a9f4)))";
-          const d = computeLeaderLinePath(pAnchor, pPanel);
-          return svg`
+      const anchor = resolvePanelAnchor(p, floor);
+      if (!anchor) return nothing;
+      const rAnchor = map(anchor.x, anchor.y);
+      const rPanel = map(p.x, p.y);
+      const pAnchor = projectPlanPoint(rAnchor.x, rAnchor.y, frame, z);
+      const pPanel = projectPlanPoint(rPanel.x, rPanel.y, frame, z);
+      const color = cssColor(p.color) ?? "var(--fp-panel-accent, var(--fp-skin-accent, var(--primary-color, #03a9f4)))";
+      const d = computeLeaderLinePath(pAnchor, pPanel);
+      return svg`
             <g class="fp-panel-leader" data-panel-id=${p.id}>
               <circle cx=${pAnchor.x} cy=${pAnchor.y} r="3.5" class="fp-panel-anchor-ring" fill=${color} stroke=${color} stroke-width="1.2" fill-opacity="0.25" />
               <circle cx=${pAnchor.x} cy=${pAnchor.y} r="1" class="fp-panel-anchor-dot" fill="#ffffff" />
@@ -1966,7 +1967,7 @@ export class FloorplanCard extends LitElement {
               <circle cx=${pPanel.x} cy=${pPanel.y} r="2.5" class="fp-panel-target-dot" fill=${color} />
             </g>
           `;
-        })}
+    })}
       </g>
     `;
   }
@@ -2015,9 +2016,8 @@ export class FloorplanCard extends LitElement {
       <div
         class="fp-info-panel ${style} ${tappable ? "clickable" : ""}"
         data-panel-id=${panel.id}
-        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${
-          accent ? `--fp-panel-accent:${accent};` : ""
-        }"
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${accent ? `--fp-panel-accent:${accent};` : ""
+      }"
         @click=${tappable ? () => this._onPanelClick(targetArea!) : nothing}
       >
         <div class="fp-panel-header">
@@ -2026,8 +2026,8 @@ export class FloorplanCard extends LitElement {
         </div>
         <div class="fp-panel-metrics">
           ${metrics.length
-            ? metrics.map(
-                (m) => html`
+        ? metrics.map(
+          (m) => html`
                   <div class="fp-panel-metric-row">
                     <span class="fp-panel-metric-left">
                       <ha-icon icon=${m.icon || this._defaultPanelMetricIcon(m.entity)}></ha-icon>
@@ -2038,8 +2038,8 @@ export class FloorplanCard extends LitElement {
                     </span>
                   </div>
                 `
-              )
-            : html`<span style="font-size:10px;opacity:0.6;">No metrics</span>`}
+        )
+        : html`<span style="font-size:10px;opacity:0.6;">No metrics</span>`}
         </div>
       </div>
     `;
@@ -2142,6 +2142,14 @@ export class FloorplanCard extends LitElement {
     const deadSpaceRings = c.showDeadSpaces
       ? deadSpacesCached(blockingWallSegments, effectiveOpenings)
       : [];
+    // Automatic room tints: the resting fill of every uncoloured room, aligned
+    // with active.areas. All undefined unless `roomTints: auto`, and never in
+    // line art, which paints every room white.
+    const roomTints = roomTintPaints(
+      active.areas,
+      lineArt ? "off" : roomTintsOf(c),
+      roomTintScheme(this.hass, c.skin)
+    );
     // Walls as light meets them (issue #143): open doors and windows are holes,
     // exactly as the plan draws them. Computed once here rather than inside
     // each pool — every lamp sweeps the same walls, and the sun-dimming
@@ -2379,7 +2387,7 @@ export class FloorplanCard extends LitElement {
                           preserveAspectRatio=${imageFitRatio(active.imageFit)}
                           opacity=${active.imageOpacity ?? 1} />`
               : nothing}
-            ${active.areas?.map((a) => {
+            ${active.areas?.map((a, areaIndex) => {
                 // Rooms answer gestures now (issue #181). The hit target is
                 // unconditional, as it always was — every room zooms — so only
                 // the role and the tab stop are earned by having an action.
@@ -2400,7 +2408,8 @@ export class FloorplanCard extends LitElement {
                       ...a, color: "#fff", opacity: 1,
                       activeOpacity: a.activeOpacity ?? a.opacity ?? 0.25
                     } : a,
-                      areaColor(a, a.entity ? renderHass?.states[a.entity]?.state : undefined))}
+                      areaColor(a, a.entity ? renderHass?.states[a.entity]?.state : undefined),
+                      roomTints[areaIndex])}
                 </g>`;
               })}
             <!-- Diffuse sky light (PR #204). Reads its opening travel, shutter
@@ -2668,10 +2677,10 @@ export class FloorplanCard extends LitElement {
           (it) => this._renderItem(it, c, rot, scale, renderHass)
         )}
             ${repeat(
-              this._visibleFloorPanels(active, c, iso, zoomedArea, renderHass),
-              (item, i) => item.panel.id || i,
-              (item) => this._renderInfoPanel(item.panel, item.floor, c, rot, scale, renderHass, item.z)
-            )}
+          this._visibleFloorPanels(active, c, iso, zoomedArea, renderHass),
+          (item, i) => item.panel.id || i,
+          (item) => this._renderInfoPanel(item.panel, item.floor, c, rot, scale, renderHass, item.z)
+        )}
           </div>
           </div>
           ${zoom.scale > 1

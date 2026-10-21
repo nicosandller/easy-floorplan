@@ -91,6 +91,7 @@ import {
 } from "./projection";
 import { defaultItemAction } from "./actions";
 import { DEFAULT_SKIN, SKINS, findSkin, MAX_SKIN_WALL_WIDTH } from "./skins";
+import { roomTintsOf } from "./room-tints";
 
 /** One ha-form schema item, extended with our label/helper (read by computeLabel). */
 export interface FormField {
@@ -211,6 +212,50 @@ export function formSlice(spec: FormSpec, names: readonly string[]): FormSpec {
     .map((n) => spec.fields.find((f) => f.name === n))
     .filter((f): f is FormField => !!f);
   return { fields, data: spec.data, toPatch: spec.toPatch };
+}
+
+/**
+ * The tap/hold/double-tap fields of a form, which the Behavior group can show
+ * as YAML instead (issue #314): some actions — a popup card's, say — exist only
+ * in YAML, and the whole card's code editor is a long way to go for one press.
+ */
+export function actionFieldNames(spec: FormSpec): string[] {
+  return spec.fields.filter((f) => "ui_action" in f.selector).map((f) => f.name);
+}
+
+/**
+ * Turn what the Behavior code editor parsed into a patch for `names`. A key
+ * that is missing clears that action, as deleting its lines should. Anything
+ * that is not one of `names`, or not an action, is refused as a whole rather
+ * than half-applied, and the message says which line to look at.
+ */
+export function actionYamlPatch(
+  value: unknown,
+  names: readonly string[]
+): { patch: Record<string, unknown> } | { error: string } {
+  if (value == null) value = {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return { error: `Expected ${names.join(", ")} as keys.` };
+  }
+  const doc = value as Record<string, unknown>;
+  const unknownKeys = Object.keys(doc).filter((k) => !names.includes(k));
+  if (unknownKeys.length) {
+    return { error: `Only ${names.join(", ")} belong here, not ${unknownKeys.join(", ")}.` };
+  }
+  const patch: Record<string, unknown> = {};
+  for (const name of names) {
+    const action = doc[name];
+    if (action == null) {
+      patch[name] = undefined;
+      continue;
+    }
+    if (typeof action !== "object" || Array.isArray(action) ||
+        typeof (action as Record<string, unknown>).action !== "string") {
+      return { error: `${name} needs an "action:" line.` };
+    }
+    patch[name] = action;
+  }
+  return { patch };
 }
 
 const angleField = (): FormField => ({
@@ -1980,6 +2025,19 @@ export function furnitureForm(
         label: "Double-tap action",
         selector: { ui_action: { default_action: "none" } },
       },
+      // Whether those gestures get a visible icon (issue #362). Only asked
+      // once there is something for an icon to stand for: on decorative
+      // furniture the toggle would switch nothing.
+      ...(f.goToFloor || f.tap_action || f.hold_action || f.double_tap_action
+        ? [
+            {
+              name: "showIcon",
+              label: "Action icon",
+              helper: "Off: tap the furniture itself instead of the round icon",
+              selector: { boolean: {} },
+            },
+          ]
+        : []),
     ],
     data: {
       type: f.type,
@@ -1994,8 +2052,11 @@ export function furnitureForm(
       tap_action: f.tap_action,
       hold_action: f.hold_action,
       double_tap_action: f.double_tap_action,
+      showIcon: f.showIcon ?? true,
     },
-    toPatch: (p) => {
+    toPatch: (raw) => {
+      // On is the default, so only "off" is worth writing down.
+      const p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
       if (!("goToFloor" in p)) return p;
       const value = p.goToFloor;
       return {
@@ -2492,6 +2553,27 @@ export function projectSkinForm(c: FloorplanCardConfig): FormSpec {
     toPatch: (p) =>
       // Default is the absence of a skin, so it stays out of the YAML.
       "skin" in p && p.skin === DEFAULT_SKIN ? { ...p, skin: undefined } : p,
+  };
+}
+
+/**
+ * Automatic room tints. A dropdown rather than a toggle because the stored
+ * value is `auto` — room for a second strategy later without a migration.
+ * Off is the absence of the key, so it stays out of the YAML.
+ */
+export function projectRoomTintsForm(c: FloorplanCardConfig): FormSpec {
+  return {
+    fields: [
+      {
+        name: "roomTints",
+        label: "Room tints",
+        helper: "Automatic gives each room without its own color a soft tint, different from its neighbors",
+        selector: dropdown(opt("off", "Off"), opt("auto", "Automatic")),
+      },
+    ],
+    data: { roomTints: roomTintsOf(c) },
+    toPatch: (p) =>
+      "roomTints" in p && p.roomTints !== "auto" ? { ...p, roomTints: undefined } : p,
   };
 }
 

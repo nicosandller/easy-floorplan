@@ -71,6 +71,7 @@ quotes when saving while retaining the required quotes around `'y'`.
 | `roomFocus`  | boolean \| object | — | Walk the zoom from room to room. `true` adds previous/next controls and lets the arrow keys move between rooms — the only way to zoom a room without a pointer, since a room that merely zooms is not a tab stop. As an object: `controls` (default `true`), `interval` seconds to dwell on each room before moving on (2–600, omitted means it only moves when asked), and `rooms` naming the visiting order. Any tap or key press restarts the dwell. See [Moving between rooms](appearance.md#moving-between-rooms). |
 | `background` | string   | skin / card bg     | Canvas background color (CSS / hex). Overrides the skin's paper. |
 | `palette`    | Palette[]| —                  | Named colours for this plan, referenced from any colour field as `var(--fp-color-<name>)`. See [Named colors](appearance.md#named-colors). |
+| `roomTints`  | string   | `off`              | `auto` gives every room without its own `color` a soft tint, different from the rooms it shares a wall with and stable across reloads. See [Room tints](appearance.md#room-tints). |
 | `floors`     | Floor[]  | —                  | Per-floor element groups (see [Floor](#floor)).   |
 | `defaultFloor`| string  | first floor        | Id of the floor shown first.                 |
 | `floorSwitcher` | object | classic, automatic layout, top-right corner | Optional `style: default` or `buttons` (larger dashboard buttons); `layout: auto`, `horizontal` or `vertical`. Optional `x` and `y` place the centre in canvas units and follow `rotation`. Style and layout work without coordinates. See [Floor button appearance](appearance.md#floor-button-appearance) and [position](appearance.md#where-the-floor-switcher-sits). |
@@ -432,7 +433,7 @@ there reads `—`, the same as a device's label.
 
 ## Furniture
 
-`{ id, type, x, y, w, h, angle?, hand?, color?, entity?, activeColor?, stateColor?, goToFloor?, tap_action?, hold_action?, double_tap_action?, locked? }`
+`{ id, type, x, y, w, h, angle?, hand?, color?, entity?, activeColor?, stateColor?, goToFloor?, tap_action?, hold_action?, double_tap_action?, showIcon?, locked? }`
 
 `type` names a **symbol** — one of the built-in symbols (`table`, `sofa`, `bed`,
 `fridge`, `stairs`, …; the full set is [`furniture/`](../furniture), a file each), or one you
@@ -459,6 +460,10 @@ has (same shape as a device's). `goToFloor` is to furniture what the zoom is to 
 a tap does when nothing else is set, so setting `tap_action` replaces it while hold and
 double-tap stay free. An action with no `entity` of its own uses the piece's. See
 [Actions on furniture](behavior.md#actions-on-furniture).
+
+**`showIcon: false`** hides the round action icon on a piece with an action or a floor
+destination. Tapping the drawing itself then runs it, instead of passing through to the
+room. Default `true`.
 
 ```yaml
 { id: plant1, type: plant, 'x': 300, 'y': 220, w: 40, h: 40,
@@ -528,7 +533,8 @@ animated inside a rectangular tracked area:
   ones beside them. Left unset on a `fixed` card the size stays in the stylesheet, so a
   card-mod rule on `.area-label` still wins; set it, or switch to `plan`, and it moves
   inline and takes over.
-- `color` / `opacity` — the room's fill; theme primary and `0.25` by default.
+- `color` / `opacity` — the room's fill; theme primary and `0.25` by default, or a soft
+  tint under [`roomTints: auto`](appearance.md#room-tints).
 - `haArea` — id of a linked Home Assistant area, set by the editor when `name` matches one.
 - `sideWalls` — rectangle-room edge overrides: keys `top`, `right`, `bottom`, `left` and
   values `wall`, `divider` or `none`. Double-click a room edge in the editor to cycle it;
