@@ -1770,14 +1770,14 @@ export interface Floor {
   trackers: Tracker[];
   areas: Area[];
   roofs?: Roof[];
-  /** Info / telemetry callout panels on this floor (issue #234). */
+  /** Summary metrics configuration for this floor (issue #234). */
+  summary?: FloorSummaryConfig;
+  /** Info / telemetry callout panels on this floor. */
   panels?: FloorInfoPanel[];
-  /** Alias for panels */
-  infoPanels?: FloorInfoPanel[];
 }
 
 /**
- * Metric row inside an info panel (issue #234).
+ * Metric row inside an info panel.
  */
 export interface FloorInfoPanelMetric {
   entity: string;
@@ -1788,15 +1788,13 @@ export interface FloorInfoPanelMetric {
 }
 
 /**
- * Callout Info-Panel / HUD card placed on the floor (issue #234).
+ * Callout Info-Panel / HUD card placed on the floor.
  */
 export interface FloorInfoPanel {
   id: string;
   x: number;
   y: number;
-  /** Optional backward-compatible position object */
-  position?: { x: number; y: number };
-  /** Target link type: floor aggregate, specific area, furniture piece, roof, or free coordinate */
+  /** Target link type: unanchored floor card, specific area, furniture piece, roof, or free coordinate */
   targetType?: "floor" | "area" | "furniture" | "roof" | "fixed";
   /** ID of the linked Area, Furniture, or Roof item */
   targetId?: string;
@@ -1826,8 +1824,49 @@ export interface FloorInfoPanel {
 /** Return the callout panels defined on a floor. */
 export function floorPanels(f: Floor | undefined): FloorInfoPanel[] {
   if (!f) return [];
-  return f.panels ?? f.infoPanels ?? [];
+  return f.panels ?? [];
 }
+
+/** Card-level floor summary configuration (issue #234). */
+export interface FloorSummaryCardConfig {
+  /** Master toggle to show summaries (default: false). */
+  enabled?: boolean;
+  /** Metrics to display in the floor buttons (default: all five). */
+  metrics?: Array<"temperature" | "humidity" | "presence" | "lights" | "windows">;
+  /** Number of decimal places for temperature (default: 1). */
+  decimals?: number;
+}
+
+/** Per-floor summary configuration (issue #234). */
+export interface FloorSummaryConfig {
+  /** Enable/disable summary for this specific floor (inherits card default if unset). */
+  enabled?: boolean;
+  /** Explicit entity override for temperature (bypasses auto-calculation). */
+  temperatureEntity?: string;
+  /** Explicit entity override for humidity (bypasses auto-calculation). */
+  humidityEntity?: string;
+  /** Explicit entity override for presence/occupancy. */
+  presenceEntity?: string;
+  /**
+   * Entity IDs on this floor to exclude from auto-aggregation
+   * (e.g. garage temperature, outdoor patio sensor).
+   */
+  excludeEntities?: string[];
+  /** Optional custom badge/subtitle string template (e.g. "21.5° | Eco"). */
+  customText?: string;
+}
+
+/** Default floor summary decimal precision */
+export const DEFAULT_FLOOR_SUMMARY_DECIMALS = 1;
+
+/** Default metrics displayed in floor switcher summary */
+export const DEFAULT_FLOOR_SUMMARY_METRICS: Array<"temperature" | "humidity" | "presence" | "lights" | "windows"> = [
+  "temperature",
+  "humidity",
+  "presence",
+  "lights",
+  "windows",
+];
 
 /** Sizing mode for the HTML overlay layer. See {@link FloorplanCardConfig.overlayScale}. */
 export type OverlayScale = "fixed" | "plan";
@@ -2309,7 +2348,9 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   trackers?: Tracker[];
   areas?: Area[];
   roofs?: Roof[];
-  /** Info / telemetry callout panels (issue #234). */
+  /** Floor summary configuration (issue #234). */
+  floorSummary?: FloorSummaryCardConfig;
+  /** Info / telemetry callout panels. */
   panels?: FloorInfoPanel[];
   /**
    * Symbols this plan defines for itself (issue #90), keyed by id and merged
@@ -2562,7 +2603,6 @@ export function makeFloor(name: string, walls: Wall[] = []): Floor {
     trackers: [],
     areas: [],
     roofs: [],
-    panels: [],
   };
 }
 
@@ -2583,7 +2623,6 @@ function normalizeFloor(f: Floor): Floor {
     trackers: f.trackers ?? [],
     areas: f.areas ?? [],
     roofs: f.roofs ?? [],
-    panels: f.panels ?? f.infoPanels ?? [],
   };
 }
 
@@ -2674,7 +2713,6 @@ export function getFloors(c: FloorplanCardConfig): Floor[] {
       trackers: c.trackers ?? [],
       areas: c.areas ?? [],
       roofs: c.roofs ?? [],
-      panels: c.panels ?? [],
     },
   ];
 }

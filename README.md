@@ -32,6 +32,7 @@ control lights, and view the plan in 3D.
 - **Rooms and presence** — zoom into rooms, link Home Assistant areas, show
   presence ripples and track positions from distance sensors.
 - **Multiple floors** — switch between floors or navigate with a staircase.
+- **Floor summaries** — aggregated floor badges (temp, humidity, presence, lights, windows) directly in the switcher.
 - **Spatial telemetry callouts** — floating HUD info-panels with SVG leader lines anchored to rooms, furniture, roofs or coordinates in 2D and 3D.
 - **Furniture actions** — give a piece a tap, hold or double-tap action. A round
   action icon marks it, or set `showIcon: false` to make the drawing itself the
@@ -107,6 +108,7 @@ editor and locking finished elements in place.
 | <a name="dead-spaces"></a><a name="doors-on-locks"></a><a name="actions-on-rooms"></a><a name="stairs-that-change-floor"></a><a name="offline-devices"></a><a name="advanced-hiding-logic"></a>[Behaviour](docs/behavior.md) | Actions, visibility, floor navigation and unavailable entities. **Behavior → Show code editor** sets YAML-only actions, such as popup-card's `fire-dom-event`, on one element without the whole-card YAML. |
 | [Roofs](docs/roofs.md) | Roof styles (gable, hip, shed, flat), configuration, overhang, and editing |
 | [Outdoor 3D Stacking](docs/outdoor-3d-stacking.md) | Multi-floor exterior elevation, ground slabs, and roof rendering. |
+| [Floor summaries](docs/floor-summaries.md) | Aggregated switcher badges (climate, presence, lights, openings) with sensor discovery. |
 | [Callout info-panels](docs/callout-panels.md) | Spatial telemetry HUD cards with leader lines anchored to elements in 2D/3D. |
 | [Furniture symbols](furniture/README.md) | Creating and contributing your own symbols. |
 | [Video walkthrough](https://youtu.be/M-b7xK-4Bpw) | A community setup guide in Italian. |
