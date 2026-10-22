@@ -36,6 +36,11 @@ export interface HomeAssistant extends BaseHomeAssistant {
    * `attributes`.
    */
   entities?: Record<string, { icon?: string } | undefined>;
+  /**
+   * HA has carried `darkMode` on `themes` since 2021; `custom-card-helpers`
+   * predates it. Read by `roomTints` to pick each tint's dark side.
+   */
+  themes: BaseHomeAssistant["themes"] & { darkMode?: boolean };
 }
 
 /**
@@ -51,6 +56,8 @@ export interface RenderHass {
   states: Record<string, HassEntity | undefined>;
   formatEntityState(stateObj: HassEntity): string;
   formatEntityAttributeValue?(stateObj: HassEntity, attribute: string): string;
+  /** Read only for dark mode, which picks the side of every room tint. */
+  themes?: { darkMode?: boolean };
 }
 
 /** A straight wall segment in virtual coordinate space. */
@@ -1203,6 +1210,19 @@ export interface Furniture {
   hold_action?: ActionConfig;
   double_tap_action?: ActionConfig;
   /**
+   * Draw the round action icon at the piece's centre (default true).
+   *
+   * The icon is what makes a piece's gestures discoverable, and since #323 it
+   * is the only thing that takes them: the drawing passes taps through to the
+   * room underneath. On a plan where many pieces carry an action — a sensor
+   * on every plant, more-info on every cabinet — that is a circle on every
+   * one of them (issue #362). `false` drops the circle and gives the gestures
+   * back to the drawing itself, the way furniture answered before the icon:
+   * tapping the piece runs its action, and only the space around it reaches
+   * the room.
+   */
+  showIcon?: boolean;
+  /**
    * Optional entity that makes the drawing live (issue #82) — a soil sensor on
    * a plant, a water temperature sensor on a fish tank, a contact sensor on a
    * cabinet. Drives {@link stateColor} and {@link activeColor}, and stands in
@@ -1667,6 +1687,15 @@ export const DEFAULT_ITEM_SIZE = 34;
  * would otherwise shrink its touch targets with it.
  */
 export const MIN_TOUCH_TARGET = 34;
+/**
+ * The round action icon on a piece of furniture (issues #323, #362): its
+ * diameter and its glyph. Overlay measures like a device badge's `size` —
+ * screen pixels under `overlayScale: fixed`, canvas units under `plan` — so
+ * on a plan that shrinks its badges with the card these shrink with them.
+ * Same diameter as a default badge, which is a finger at `fixed`.
+ */
+export const FURNITURE_ICON_SIZE = DEFAULT_ITEM_SIZE;
+export const FURNITURE_ICON_GLYPH = 20;
 export const DEFAULT_TEXT_SIZE = 16;
 export const DEFAULT_RIPPLE_SIZE = 80;
 export const DEFAULT_RIPPLE_DIRECTION = 0;
@@ -1738,6 +1767,18 @@ export interface Floor {
   imageFit?: "stretch" | "contain" | "cover";
   /** Background image opacity, 0–1. Default 1. */
   imageOpacity?: number;
+  /**
+   * The background image to show instead while Home Assistant is in dark mode
+   * (issue #366) — a plan someone has inverted or recoloured themselves. Takes
+   * precedence over {@link imageInvertDark}.
+   */
+  imageDark?: string;
+  /**
+   * Invert the background image while Home Assistant is in dark mode (issue
+   * #366), so a black-on-white scan becomes white-on-black. Hues are turned
+   * back round, so coloured marks keep roughly their colour.
+   */
+  imageInvertDark?: boolean;
   walls: Wall[];
   openings: Opening[];
   items: FloorItem[];
@@ -1900,6 +1941,15 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * an entry moves every element that names it. See `src/palette.ts`.
    */
   palette?: PaletteColor[];
+  /**
+   * `auto` gives every room without a `color` of its own a soft tint from a
+   * small built-in palette, picked so rooms that share a wall never share a
+   * tint and the same room keeps its tint from load to load. Off when unset,
+   * which renders every uncoloured room in the accent as it always has. Never
+   * touches a room's own colour or its live `stateColor`/`activeColor`. See
+   * `src/room-tints.ts`.
+   */
+  roomTints?: "auto" | "off";
   /**
    * How the HTML overlay (badges, labels, room names, text) is sized.
    *
