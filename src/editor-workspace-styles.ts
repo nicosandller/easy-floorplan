@@ -56,7 +56,7 @@ export const editorWorkspaceStyles = css`
   .toolbar > .pop-wrap { position: static; }
   .toolbar .add-pop { left: auto; right: 8px; top: calc(100% + 4px); width: min(360px, calc(100% - 16px)); min-width: 0; box-sizing: border-box; display: flex; flex-direction: column; max-height: max(120px, calc(100dvh - 170px)); overflow: auto; }
   .editor.fullscreen .toolbar .add-pop { max-height: max(120px, calc(100dvh - 126px)); }
-  .add-shortcuts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; flex: none; }
+  .add-shortcuts { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; flex: none; }
   .add-pop .furn-search { flex: none; }
   .toolbar .add-entry { justify-content: flex-start; }
   .toolbar .furn-cell { padding: 7px 3px; font-size: 12px; min-height: 70px; justify-content: flex-start; }

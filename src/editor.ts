@@ -7575,7 +7575,7 @@ export class FloorplanCardEditor extends LitElement {
             this._updatePanel(p.id, updates);
           }}
         >
-          <option value="floor">Floor (Plan Aggregate)</option>
+          <option value="floor">Floor (Unanchored)</option>
           <option value="area">Area / Room</option>
           <option value="furniture">Furniture</option>
           <option value="roof">Roof</option>
@@ -7703,7 +7703,7 @@ export class FloorplanCardEditor extends LitElement {
 
       ${p.targetType === "roof"
         ? html`
-            <div class="row wide hint" style="font-size: 11px; opacity: 0.8; margin: 4px 0;">
+            <div class="row wide hint">
               Roof panels appear exclusively in the outside 3D house view when the roof is visible.
             </div>
           `
@@ -7751,8 +7751,8 @@ export class FloorplanCardEditor extends LitElement {
         </label>
       </div>
 
-      <div class="row wide" style="margin-top: 10px; display: flex; justify-content: space-between; align-items: center;">
-        <label style="font-weight: bold;">Metrics</label>
+      <div class="row wide panel-metric-head">
+        <label>Metrics</label>
         <button
           @click=${() =>
             commitMetrics([
@@ -7766,7 +7766,7 @@ export class FloorplanCardEditor extends LitElement {
 
       ${metrics.map(
         (m, i) => html`
-          <div class="row wide item-reading" style="display: flex; gap: 4px; align-items: center;">
+          <div class="row wide item-reading">
             ${this._renderEntityPicker(
               m.entity ?? "",
               (entity) => patchMetric(i, { entity: entity || undefined })
@@ -7786,30 +7786,30 @@ export class FloorplanCardEditor extends LitElement {
               <ha-icon icon="mdi:close"></ha-icon>
             </button>
           </div>
-          <div class="row wide" style="display: flex; gap: 4px; margin-bottom: 6px;">
+          <div class="row wide panel-metric-fields">
             <input
+              class="panel-metric-field"
               type="text"
               placeholder="Label"
               title="Metric label"
-              style="flex: 1;"
               .value=${m.label ?? ""}
               @change=${(e: Event) =>
                 patchMetric(i, { label: (e.target as HTMLInputElement).value || undefined })}
             />
             <input
+              class="panel-metric-unit"
               type="text"
               placeholder="Unit"
               title="Unit (e.g. °C, %, W)"
-              style="width: 50px;"
               .value=${m.unit ?? ""}
               @change=${(e: Event) =>
                 patchMetric(i, { unit: (e.target as HTMLInputElement).value || undefined })}
             />
             <input
+              class="panel-metric-field"
               type="text"
               placeholder="mdi:icon"
               title="Icon override (e.g. mdi:thermometer)"
-              style="flex: 1;"
               .value=${m.icon ?? ""}
               @change=${(e: Event) =>
                 patchMetric(i, { icon: (e.target as HTMLInputElement).value || undefined })}
@@ -9076,6 +9076,28 @@ export class FloorplanCardEditor extends LitElement {
       align-items: center;
       gap: 6px;
       cursor: pointer;
+    }
+    .panel-metric-head {
+      margin-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-metric-head label {
+      font-weight: 600;
+    }
+    .panel-metric-fields {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+    .panel-metric-field {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .panel-metric-unit {
+      flex: 0 0 54px;
+      min-width: 0;
     }
     /* The panel ("Project" config) and the new element-edit area share the
        same boxed look so the two sections below the canvas read as siblings. */

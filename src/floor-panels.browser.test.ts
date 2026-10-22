@@ -79,6 +79,16 @@ describe("floor callout panels in real chromium", () => {
 
     const rows = root.querySelectorAll(".fp-panel-metric-row");
     expect(rows.length).toBe(2);
+
+    const tempVal = rows[0]?.querySelector(".fp-panel-metric-value")?.textContent;
+    expect(tempVal).toContain("21.8");
+    expect(tempVal).not.toContain("°C °C");
+    expect(rows[0]?.querySelector(".fp-panel-metric-unit")?.textContent).toBe("°C");
+
+    const powerVal = rows[1]?.querySelector(".fp-panel-metric-value")?.textContent;
+    expect(powerVal).toContain("145");
+    expect(powerVal).not.toContain("W W");
+    expect(rows[1]?.querySelector(".fp-panel-metric-unit")?.textContent).toBe("W");
   });
 
   it("keeps light text on every dark panel style under a light HA theme", async () => {
@@ -133,5 +143,42 @@ describe("floor callout panels in real chromium", () => {
 
     const titleEl = root.querySelector<HTMLElement>(".fp-panel-title");
     expect(getComputedStyle(titleEl!).color).toBe("rgb(40, 52, 62)");
+  });
+
+  it("provides button role, tabindex and Enter/Space keyboard interaction when clickable", async () => {
+    const area = {
+      id: "living_room",
+      name: "Living Room",
+      points: [
+        { x: 100, y: 100 },
+        { x: 400, y: 100 },
+        { x: 400, y: 400 },
+        { x: 100, y: 400 },
+      ],
+    };
+    const panel: FloorInfoPanel = {
+      id: "panel_tap",
+      x: 250,
+      y: 250,
+      targetType: "area",
+      targetId: "living_room",
+      metrics: [{ entity: "sensor.temp", label: "Temp" }],
+    };
+
+    const { card, root } = await mount({ areas: [area], panels: [panel] });
+    const panelEl = root.querySelector<HTMLElement>(".fp-info-panel.clickable")!;
+    expect(panelEl).not.toBeNull();
+    expect(panelEl.getAttribute("role")).toBe("button");
+    expect(panelEl.getAttribute("tabindex")).toBe("0");
+
+    // Press Enter to zoom into room
+    panelEl.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await card.updateComplete;
+    expect((card as any)._zoomedAreaId).toBe("living_room");
+
+    // Press Space to zoom back out
+    panelEl.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
+    await card.updateComplete;
+    expect((card as any)._zoomedAreaId).toBeUndefined();
   });
 });

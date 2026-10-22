@@ -48,21 +48,51 @@ export function resolvePanelMetrics(
     const label =
       m.label ?? (attrs.friendly_name as string | undefined) ?? m.entity;
 
-    const unit =
-      m.unit ?? (attrs.unit_of_measurement as string | undefined) ?? "";
+    const rawAttrUnit = (attrs.unit_of_measurement as string | undefined)?.trim();
+    let unit = m.unit !== undefined ? m.unit.trim() : rawAttrUnit ?? "";
 
     const icon = m.icon ?? (attrs.icon as string | undefined);
 
     let valStr = "";
     if (unavailable) {
       valStr = st?.state ?? "unavailable";
+      unit = "";
     } else if (m.attribute) {
-      const attrVal = attrs[m.attribute];
-      valStr = attrVal !== undefined && attrVal !== null ? String(attrVal) : "";
+      if (typeof hass?.formatEntityAttributeValue === "function" && st) {
+        valStr = hass.formatEntityAttributeValue(st, m.attribute);
+      } else {
+        const attrVal = attrs[m.attribute];
+        valStr = attrVal !== undefined && attrVal !== null ? String(attrVal) : "";
+      }
     } else if (hass?.formatEntityState && st) {
       valStr = hass.formatEntityState(st);
     } else {
       valStr = st?.state ?? "";
+    }
+
+    const isNumericOrMeasured =
+      Boolean(attrs.unit_of_measurement) ||
+      m.unit !== undefined ||
+      (typeof st?.state === "string" && st.state.trim() !== "" && !isNaN(Number(st.state)));
+
+    if (!unavailable && isNumericOrMeasured && valStr) {
+      // Check if valStr contains both a numeric prefix and a trailing unit
+      const match = valStr.match(
+        /^([+\-\u2212]?[0-9\s.,'’\u00A0\u202F]+?)\s*([^\d\s.,'’\u00A0\u202F].*)$/u
+      );
+      if (match && match[1]) {
+        valStr = match[1].trim();
+        // If the user didn't explicitly override unit, use the unit parsed from the formatted string
+        if (m.unit === undefined && match[2]) {
+          unit = match[2].trim();
+        }
+      } else if (unit) {
+        // Fallback: if valStr ends with unit, strip it to prevent duplicate units
+        const trimmedUnit = unit.trim();
+        if (trimmedUnit && valStr.endsWith(trimmedUnit)) {
+          valStr = valStr.slice(0, valStr.length - trimmedUnit.length).trim();
+        }
+      }
     }
 
     return {

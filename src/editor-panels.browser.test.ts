@@ -295,5 +295,55 @@ describe("Visual Editor - Callout Panels (issue #234)", () => {
     const p = latestConfig().floors![0].panels![0];
     expect(p.anchor).toEqual({ x: 450, y: 250 });
   });
+
+  it("deletes a selected panel via Delete key or delete button", async () => {
+    const { root, ed, latestConfig } = await mountEditor();
+
+    const panelEl = root.querySelector<HTMLElement>(".edit-panel")!;
+    const r = panelEl.getBoundingClientRect();
+    pointer(panelEl, "pointerdown", r.left + r.width / 2, r.top + r.height / 2);
+    pointer(panelEl, "pointerup", r.left + r.width / 2, r.top + r.height / 2);
+    await ed.updateComplete;
+
+    expect(floorPanels(latestConfig().floors![0]).length).toBe(1);
+
+    // Delete key
+    ed.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true, composed: true }));
+    await ed.updateComplete;
+
+    expect(floorPanels(latestConfig().floors![0]).length).toBe(0);
+    expect(root.querySelector(".edit-panel")).toBeNull();
+  });
+
+  it("copies and pastes a panel with offset and fresh ID", async () => {
+    const { root, ed, latestConfig } = await mountEditor();
+
+    const panelEl = root.querySelector<HTMLElement>(".edit-panel")!;
+    const r = panelEl.getBoundingClientRect();
+    pointer(panelEl, "pointerdown", r.left + r.width / 2, r.top + r.height / 2);
+    pointer(panelEl, "pointerup", r.left + r.width / 2, r.top + r.height / 2);
+    await ed.updateComplete;
+
+    // Copy via Ctrl+C / Cmd+C
+    ed.dispatchEvent(new KeyboardEvent("keydown", { key: "c", ctrlKey: true, bubbles: true, composed: true }));
+    await ed.updateComplete;
+
+    // Paste via Ctrl+V / Cmd+V
+    ed.dispatchEvent(new KeyboardEvent("keydown", { key: "v", ctrlKey: true, bubbles: true, composed: true }));
+    await ed.updateComplete;
+
+    const panels = floorPanels(latestConfig().floors![0]);
+    expect(panels.length).toBe(2);
+
+    const original = panels.find((p) => p.id === "panel-init")!;
+    const pasted = panels.find((p) => p.id !== "panel-init")!;
+
+    expect(pasted).toBeDefined();
+    expect(pasted.title).toBe(original.title);
+    expect(pasted.style).toBe(original.style);
+    expect(pasted.targetType).toBe(original.targetType);
+    expect(pasted.x).toBeGreaterThan(original.x);
+    expect(pasted.y).toBeGreaterThan(original.y);
+  });
 });
 

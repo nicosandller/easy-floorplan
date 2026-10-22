@@ -91,7 +91,7 @@ Each panel connects to a spatial anchor point via an SVG leader line:
 | `furniture` | Center point of the referenced furniture piece. Automatically tracks furniture movement. | Zooms into enclosing room if present. |
 | `roof` | Centroid of referenced roof polygon. In 3D, projects onto the physical roof surface. | Zooms into room beneath roof if present. |
 | `fixed` | Fixed canvas coordinates specified via `anchor: { x, y }`. | No zoom action. |
-| `floor` | Floor-level aggregate (no leader line unless explicit `anchor` is supplied). | No zoom action. |
+| `floor` | Unanchored free-floating panel (no leader line unless explicit `anchor` is supplied). | No zoom action. |
 
 ## 3D Perspective & Roof Stacking
 
@@ -99,6 +99,8 @@ In 3D view (`view: 3d`) and multi-floor outdoor stacking:
 - Panels anchored to floors or rooms project at their floor's physical elevation.
 - Roof panels (`targetType: roof` or linked to a roof) appear exclusively in the outside 3D house view (`active.isOutdoor && iso`) and only while that roof is visible. They are never rendered in 2D top-down or single-floor indoor 3D views, and automatically hide when zooming into the room beneath the roof.
 - When visible in outside 3D view, roof panels project at the physical roof ridge and eaves elevation, ideal for exterior rooftop telemetry (e.g., solar PV generation, rooftop weather stations), with leader lines connecting directly to the 3D surface point.
+
+![Spatial Telemetry Callout Panels in 3D Perspective View](img/3d-panels.png)
 
 ## Theming & CSS Custom Properties
 

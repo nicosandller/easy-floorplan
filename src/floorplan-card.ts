@@ -1829,17 +1829,23 @@ export class FloorplanCard extends LitElement {
     `;
   }
 
-  private _defaultPanelMetricIcon(entityId?: string): string {
+  private _defaultPanelMetricIcon(entityId?: string, renderHass?: RenderHass): string {
     if (!entityId) return "mdi:gauge";
+    const st = renderHass?.states[entityId];
+    const dc = st?.attributes?.device_class;
+    if (dc === "temperature") return "mdi:thermometer";
+    if (dc === "humidity") return "mdi:water-percent";
+    if (dc === "power" || dc === "energy") return "mdi:flash";
+    if (dc === "motion" || dc === "occupancy" || dc === "presence") return "mdi:motion-sensor";
+    if (dc === "door" || dc === "window" || dc === "garage_door") return "mdi:window-closed";
+    if (dc === "battery") return "mdi:battery";
+
     const domain = entityId.split(".")[0];
-    const lower = entityId.toLowerCase();
-    if (lower.includes("temp") || domain === "climate") return "mdi:thermometer";
-    if (lower.includes("humid")) return "mdi:water-percent";
-    if (lower.includes("power") || lower.includes("watt") || lower.includes("energy")) return "mdi:flash";
+    if (domain === "climate") return "mdi:thermometer";
     if (domain === "light") return "mdi:lightbulb";
-    if (domain === "binary_sensor" && (lower.includes("motion") || lower.includes("occupan") || lower.includes("presence")))
-      return "mdi:motion-sensor";
-    if (domain === "cover" || lower.includes("door") || lower.includes("window")) return "mdi:window-closed";
+    if (domain === "switch") return "mdi:power";
+    if (domain === "cover") return "mdi:window-closed";
+    if (domain === "person") return "mdi:account";
     return "mdi:gauge";
   }
 
@@ -1868,8 +1874,6 @@ export class FloorplanCard extends LitElement {
     if (zoomedArea.points && zoomedArea.points.length >= 3) {
       const c = polygonCentroid(zoomedArea.points);
       if (c && pointInPolygon(roof.points, c.x, c.y)) return false;
-      const rc = polygonCentroid(roof.points);
-      if (rc && pointInPolygon(zoomedArea.points, rc.x, rc.y)) return false;
     }
     return true;
   }
@@ -1955,19 +1959,14 @@ export class FloorplanCard extends LitElement {
   }
 
   private _renderPanelLeaderLines(
-    active: Floor,
-    c: FloorplanCardConfig,
-    zoomedArea: Area | undefined,
-    renderHass?: RenderHass
+    list: Array<{ panel: FloorInfoPanel; floor: Floor; z: number }>
   ): TemplateResult {
-    const list = this._visibleFloorPanels(active, c, false, zoomedArea, renderHass).filter(
-      (item) => item.panel.showLeaderLine !== false
-    );
-    if (!list.length) return svg`${nothing}`;
+    const withLines = list.filter((item) => item.panel.showLeaderLine !== false);
+    if (!withLines.length) return svg`${nothing}`;
 
     return svg`
       <g class="fp-panel-leader-lines">
-        ${list.map(({ panel: p, floor }) => {
+        ${withLines.map(({ panel: p, floor }) => {
       const anchor = resolvePanelAnchor(p, floor);
       if (!anchor) return nothing;
       const color = cssColor(p.color) ?? "var(--fp-panel-accent, var(--fp-skin-accent, var(--primary-color, #03a9f4)))";
@@ -1986,23 +1985,19 @@ export class FloorplanCard extends LitElement {
   }
 
   private _renderIsoPanelLeaderLines(
-    active: Floor,
+    list: Array<{ panel: FloorInfoPanel; floor: Floor; z: number }>,
     c: FloorplanCardConfig,
-    rot: number,
-    zoomedArea: Area | undefined,
-    renderHass?: RenderHass
+    rot: number
   ): TemplateResult {
-    const list = this._visibleFloorPanels(active, c, true, zoomedArea, renderHass).filter(
-      (item) => item.panel.showLeaderLine !== false
-    );
-    if (!list.length) return svg`${nothing}`;
+    const withLines = list.filter((item) => item.panel.showLeaderLine !== false);
+    if (!withLines.length) return svg`${nothing}`;
 
     const frame = this._frame(c, rot);
     const map = (x: number, y: number) => rotatePlanPoint(x, y, c.width, c.height, rot);
 
     return svg`
       <g class="fp-panel-leader-lines fp-iso-leader-lines">
-        ${list.map(({ panel: p, floor, z }) => {
+        ${withLines.map(({ panel: p, floor, z }) => {
       const anchor = resolvePanelAnchor(p, floor);
       if (!anchor) return nothing;
       const rAnchor = map(anchor.x, anchor.y);
@@ -2050,6 +2045,12 @@ export class FloorplanCard extends LitElement {
           }
         }
       }
+      if (!targetArea && panel.targetType === "furniture") {
+        const furn = (panelFloor.furniture ?? []).find((f) => f.id === panel.targetId);
+        if (furn) {
+          targetArea = (panelFloor.areas ?? []).find((a) => pointInPolygon(a.points, furn.x, furn.y));
+        }
+      }
     }
     if (!targetArea && panel.targetType === "area") {
       targetArea = nearestPanelArea(panel, panelFloor);
@@ -2057,20 +2058,34 @@ export class FloorplanCard extends LitElement {
 
     const title =
       panel.title ||
+      (panel.targetType === "furniture" && panel.targetId
+        ? panelFloor.furniture.find((f) => f.id === panel.targetId)?.type
+        : undefined) ||
       targetArea?.name ||
       (panel.targetType === "roof" ? "Roof Telemetry" : undefined) ||
-      (panel.targetId ? panelFloor.furniture.find((f) => f.id === panel.targetId)?.type : undefined) ||
       "Telemetry";
 
     const tappable = !!targetArea;
+    const onAction = tappable ? () => this._onAreaClick(targetArea!) : undefined;
+    const onKeyDown = tappable
+      ? (e: KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            this._onAreaClick(targetArea!);
+          }
+        }
+      : undefined;
 
     return html`
       <div
         class="fp-info-panel ${style} ${tappable ? "clickable" : ""}"
         data-panel-id=${panel.id}
+        role=${tappable ? "button" : nothing}
+        tabindex=${tappable ? "0" : nothing}
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${accent ? `--fp-panel-accent:${accent};` : ""
       }"
-        @click=${tappable ? () => this._onPanelClick(targetArea!) : nothing}
+        @click=${onAction ?? nothing}
+        @keydown=${onKeyDown ?? nothing}
       >
         <div class="fp-panel-header">
           <span class="fp-panel-title" title=${title}>${title}</span>
@@ -2082,7 +2097,7 @@ export class FloorplanCard extends LitElement {
           (m) => html`
                   <div class="fp-panel-metric-row">
                     <span class="fp-panel-metric-left">
-                      <ha-icon icon=${m.icon || this._defaultPanelMetricIcon(m.entity)}></ha-icon>
+                      <ha-icon icon=${m.icon || this._defaultPanelMetricIcon(m.entity, renderHass)}></ha-icon>
                       <span class="fp-panel-metric-label" title=${m.label}>${m.label}</span>
                     </span>
                     <span class="fp-panel-metric-value">
@@ -2095,10 +2110,6 @@ export class FloorplanCard extends LitElement {
         </div>
       </div>
     `;
-  }
-
-  private _onPanelClick(area: Area): void {
-    this._zoomedAreaId = this._zoomedAreaId === area.id ? undefined : area.id;
   }
 
   protected render(): TemplateResult {
@@ -2318,6 +2329,7 @@ export class FloorplanCard extends LitElement {
     const zoomedArea = (active.isOutdoor ? floors.flatMap((f) => f.areas) : active.areas)?.find(
       (a) => a.id === this._zoomedAreaId
     );
+    const visiblePanels = this._visibleFloorPanels(active, c, iso, zoomedArea, renderHass);
     const zoom = zoomedArea
       ? areaZoomTransform(
         zoomedArea.points,
@@ -2683,10 +2695,10 @@ export class FloorplanCard extends LitElement {
                             opacity=${1 - sunLevel} />`
               : nothing
             }
-            ${!iso ? this._renderPanelLeaderLines(active, c, zoomedArea, renderHass) : nothing}
+            ${!iso ? this._renderPanelLeaderLines(visiblePanels) : nothing}
             </g>
             </g>
-            ${iso ? this._renderIsoPanelLeaderLines(active, c, rot, zoomedArea, renderHass) : nothing}
+            ${iso ? this._renderIsoPanelLeaderLines(visiblePanels, c, rot) : nothing}
           </svg>`
         )}
           <div
@@ -2708,10 +2720,10 @@ export class FloorplanCard extends LitElement {
           (o) => this._renderOpeningMark(o, c, rot, scale, renderHass)
         )}
             ${repeat(
-          active.furniture,
-          (f, i) => f.id || i,
-          (f) => this._renderFurnitureAction(f, c, rot, scale, floors, active.id)
-        )}
+              active.furniture,
+              (f, i) => f.id || i,
+              (f) => this._renderFurnitureAction(f, c, rot, scale, floors, active.id)
+            )}
             ${repeat(
           // No entity filter: devices that exist physically but have no HA
           // entity still deserve their badge (issue #39). Keyed by id so a
@@ -2731,7 +2743,7 @@ export class FloorplanCard extends LitElement {
           (it) => this._renderItem(it, c, rot, scale, renderHass)
         )}
             ${repeat(
-          this._visibleFloorPanels(active, c, iso, zoomedArea, renderHass),
+          visiblePanels,
           (item, i) => item.panel.id || i,
           (item) => this._renderInfoPanel(item.panel, item.floor, c, rot, scale, renderHass, item.z)
         )}

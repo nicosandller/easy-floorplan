@@ -9,14 +9,19 @@ import {
   resolvePanelAnchor,
   resolvePanelMetrics,
 } from "./floor-panels";
+import { collectWatchedEntities } from "./render";
 
 afterEach(() => {
   document.body.innerHTML = "";
 });
 
 function createMockHass(states: Record<string, any> = {}): HomeAssistant {
+  const normStates: Record<string, any> = {};
+  for (const [id, s] of Object.entries(states)) {
+    normStates[id] = { entity_id: id, ...s };
+  }
   return {
-    states,
+    states: normStates,
     entities: {},
     devices: {},
     areas: {},
@@ -78,7 +83,7 @@ describe("resolvePanelMetrics", () => {
       entity: "sensor.workstation_power",
       label: "Power Draw",
       state: "285",
-      value: "285 W",
+      value: "285",
       unit: "W",
       icon: "mdi:flash",
       unavailable: false,
@@ -88,7 +93,7 @@ describe("resolvePanelMetrics", () => {
       entity: "sensor.workstation_temp",
       label: "Workstation Ambient",
       state: "23.2",
-      value: "23.2 °C",
+      value: "23.2",
       unit: "°C",
       icon: "mdi:thermometer",
       unavailable: false,
@@ -96,6 +101,7 @@ describe("resolvePanelMetrics", () => {
 
     expect(metrics[2]!.unavailable).toBe(true);
     expect(metrics[2]!.value).toBe("unavailable");
+    expect(metrics[2]!.unit).toBe("");
   });
 
   it("leaves out a metric row that has no entity yet", () => {
@@ -130,6 +136,120 @@ describe("resolvePanelMetrics", () => {
     const metrics = resolvePanelMetrics(panel, hass);
     expect(metrics[0]!.value).toBe("22.5");
     expect(metrics[0]!.unit).toBe("°C");
+  });
+
+  it("strips trailing units from formatted values so measurement units are not duplicated", () => {
+    const panel: FloorInfoPanel = {
+      id: "panel_weather",
+      x: 50,
+      y: 50,
+      metrics: [
+        { entity: "sensor.outside_temperature", label: "Outside Temp" },
+        { entity: "sensor.outside_humidity", label: "Outside Humidity" },
+        { entity: "sensor.freezer_temperature", label: "Freezer Temp" },
+      ],
+    };
+
+    const hass = {
+      ...createMockHass({
+        "sensor.outside_temperature": {
+          state: "15.6",
+          attributes: { unit_of_measurement: "°C", friendly_name: "Outside Temperature" },
+        },
+        "sensor.outside_humidity": {
+          state: "72",
+          attributes: { unit_of_measurement: "%", friendly_name: "Outside Humidity" },
+        },
+        "sensor.freezer_temperature": {
+          state: "-18.5",
+          attributes: { unit_of_measurement: "°C", friendly_name: "Freezer Temperature" },
+        },
+      }),
+      formatEntityState: (stateObj: any) => {
+        if (stateObj.entity_id === "sensor.outside_temperature") return "15.6 °C";
+        if (stateObj.entity_id === "sensor.outside_humidity") return "72 %";
+        if (stateObj.entity_id === "sensor.freezer_temperature") return "−18.5 °C";
+        return stateObj.state;
+      },
+    } as unknown as HomeAssistant;
+
+    const metrics = resolvePanelMetrics(panel, hass);
+    expect(metrics[0]!).toMatchObject({
+      value: "15.6",
+      unit: "°C",
+    });
+    expect(metrics[1]!).toMatchObject({
+      value: "72",
+      unit: "%",
+    });
+    expect(metrics[2]!).toMatchObject({
+      value: "−18.5",
+      unit: "°C",
+    });
+  });
+
+  it("handles Home Assistant unit conversions and custom unit overrides", () => {
+    const panel: FloorInfoPanel = {
+      id: "panel_energy",
+      x: 50,
+      y: 50,
+      metrics: [
+        { entity: "sensor.grid_power", label: "Grid Power" }, // HA converted W -> kW
+        { entity: "sensor.solar_temp", label: "Solar Temp", unit: "deg" }, // custom unit override
+        { entity: "sensor.raw_count", label: "Raw Count", unit: "" }, // custom unit suppression
+        { entity: "binary_sensor.front_door", label: "Front Door" }, // non-numeric state
+      ],
+    };
+
+    const hass = {
+      ...createMockHass({
+        "sensor.grid_power": {
+          state: "1200",
+          attributes: { unit_of_measurement: "W", friendly_name: "Grid Power" },
+        },
+        "sensor.solar_temp": {
+          state: "45.0",
+          attributes: { unit_of_measurement: "°C", friendly_name: "Solar Temp" },
+        },
+        "sensor.raw_count": {
+          state: "15",
+          attributes: { unit_of_measurement: "items", friendly_name: "Count" },
+        },
+        "binary_sensor.front_door": {
+          state: "on",
+          attributes: { friendly_name: "Front Door" },
+        },
+      }),
+      formatEntityState: (stateObj: any) => {
+        if (stateObj.entity_id === "sensor.grid_power") return "1.2 kW";
+        if (stateObj.entity_id === "sensor.solar_temp") return "45.0 °C";
+        if (stateObj.entity_id === "sensor.raw_count") return "15 items";
+        if (stateObj.entity_id === "binary_sensor.front_door") return "Open";
+        return stateObj.state;
+      },
+    } as unknown as HomeAssistant;
+
+    const metrics = resolvePanelMetrics(panel, hass);
+    // Grid power unit is dynamically updated from the formatted kW output
+    expect(metrics[0]!).toMatchObject({
+      value: "1.2",
+      unit: "kW",
+    });
+    // Custom unit "deg" overrides "°C" while stripping "°C" from the value
+    expect(metrics[1]!).toMatchObject({
+      value: "45.0",
+      unit: "deg",
+    });
+    // Empty unit "" explicitly suppresses the unit
+    expect(metrics[2]!).toMatchObject({
+      value: "15",
+      unit: "",
+    });
+    // Non-numeric state keeps formatted wording with no unit
+    expect(metrics[3]!).toMatchObject({
+      value: "Open",
+      unit: "",
+    });
   });
 });
 
@@ -338,10 +458,18 @@ describe("Callout Info-Panels & Leader Lines DOM Rendering", () => {
     expect(metricRows?.length).toBe(2);
 
     expect(metricRows?.[0]?.querySelector(".fp-panel-metric-label")?.textContent).toBe("Temperature");
-    expect(metricRows?.[0]?.querySelector(".fp-panel-metric-value")?.textContent).toContain("22.4");
+    const metric0Value = metricRows?.[0]?.querySelector(".fp-panel-metric-value")?.textContent;
+    expect(metric0Value).toContain("22.4");
+    expect(metric0Value).not.toContain("°C °C");
+    expect(metric0Value).not.toContain("°C°C");
+    expect(metricRows?.[0]?.querySelector(".fp-panel-metric-unit")?.textContent).toBe("°C");
 
     expect(metricRows?.[1]?.querySelector(".fp-panel-metric-label")?.textContent).toBe("Humidity");
-    expect(metricRows?.[1]?.querySelector(".fp-panel-metric-value")?.textContent).toContain("48");
+    const metric1Value = metricRows?.[1]?.querySelector(".fp-panel-metric-value")?.textContent;
+    expect(metric1Value).toContain("48");
+    expect(metric1Value).not.toContain("% %");
+    expect(metric1Value).not.toContain("%%");
+    expect(metricRows?.[1]?.querySelector(".fp-panel-metric-unit")?.textContent).toBe("%");
   });
 
   it("renders minimal and pill styled panels properly", async () => {
@@ -544,5 +672,90 @@ describe("Callout Info-Panels & Leader Lines DOM Rendering", () => {
     zoomOut?.click();
     await t4.card.updateComplete;
     expect(t4.root.querySelector('.fp-info-panel[data-panel-id="panel_solar"]')).not.toBeNull();
+  });
+
+  it("zooms into enclosing room when a furniture panel is clicked", async () => {
+    const floor: Floor = {
+      ...makeFloor("Main"),
+      areas: [
+        {
+          id: "living_room",
+          name: "Living Room",
+          points: [
+            { x: 100, y: 100 },
+            { x: 300, y: 100 },
+            { x: 300, y: 300 },
+            { x: 100, y: 300 },
+          ],
+        },
+      ],
+      furniture: [
+        { id: "tv_1", type: "tv", x: 200, y: 200, w: 40, h: 20 },
+      ],
+      panels: [
+        {
+          id: "panel_tv",
+          x: 220,
+          y: 220,
+          targetType: "furniture",
+          targetId: "tv_1",
+          metrics: [{ entity: "media_player.living_room_tv", label: "TV" }],
+        },
+      ],
+    };
+
+    const { card, root } = await mountCard({ floors: [floor] });
+    const panelEl = root.querySelector<HTMLElement>('.fp-info-panel[data-panel-id="panel_tv"]')!;
+    expect(panelEl).not.toBeNull();
+    expect(panelEl.classList.contains("clickable")).toBe(true);
+
+    panelEl.click();
+    await card.updateComplete;
+
+    expect((card as any)._zoomedAreaId).toBe("living_room");
+  });
+});
+
+describe("collectWatchedEntities with panels", () => {
+  it("includes all panel metric entities across floors", () => {
+    const config: FloorplanCardConfig = {
+      type: "custom:easy-floorplan-card",
+      width: 600,
+      height: 400,
+      floors: [
+        {
+          ...makeFloor("Ground"),
+          id: "g",
+          panels: [
+            {
+              id: "p1",
+              x: 100,
+              y: 100,
+              metrics: [
+                { entity: "sensor.living_room_temp" },
+                { entity: "sensor.living_room_humidity" },
+              ],
+            },
+          ],
+        },
+        {
+          ...makeFloor("Upper"),
+          id: "u",
+          panels: [
+            {
+              id: "p2",
+              x: 200,
+              y: 200,
+              metrics: [{ entity: "sensor.solar_power" }],
+            },
+          ],
+        },
+      ],
+    };
+
+    const watched = collectWatchedEntities(config);
+    expect(watched.has("sensor.living_room_temp")).toBe(true);
+    expect(watched.has("sensor.living_room_humidity")).toBe(true);
+    expect(watched.has("sensor.solar_power")).toBe(true);
   });
 });
