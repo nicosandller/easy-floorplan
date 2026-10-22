@@ -54,6 +54,7 @@ import {
   DEFAULT_SUN_MAX,
   DEFAULT_GLOW_RADIUS,
   MIN_STRIP_LENGTH,
+  MIN_SPOT_WIDTH,
   DEFAULT_GLOW_COLOR,
   DEFAULT_ITEM_SIZE,
   GLOW_MIN_OPACITY,
@@ -1119,6 +1120,9 @@ export function renderGlow(
   // Walls block light (issue #108): clip the pool to what the lamp can see.
   const reach = walls?.length ? glowReach(item.x, item.y, r, walls) : undefined;
   const clipId = `${gradientId}-clip`;
+  // A spot (issue #388) lights a cone of the same pool.
+  const cone = spotCone(item);
+  const coneId = `${gradientId}-cone`;
   return svg`
     ${
       reach
@@ -1127,6 +1131,7 @@ export function renderGlow(
               </clipPath>`
         : nothing
     }
+    ${cone ? renderConeMask(coneId, item.x, item.y, r, cone) : nothing}
     <radialGradient id=${gradientId} gradientUnits="userSpaceOnUse"
                     cx=${item.x} cy=${item.y} r=${r}>
       <stop offset="0" stop-color=${paint.color} stop-opacity=${paint.opacity} />
@@ -1134,7 +1139,98 @@ export function renderGlow(
     </radialGradient>
     <circle class="fp-glow" cx=${item.x} cy=${item.y} r=${r}
             fill=${`url(#${gradientId})`}
-            clip-path=${reach ? `url(#${clipId})` : nothing} />`;
+            clip-path=${reach ? `url(#${clipId})` : nothing}
+            mask=${cone ? `url(#${coneId})` : nothing} />`;
+}
+
+/**
+ * A spot's cone (issue #388): which way it points, as a bearing on the plan
+ * (0° up, clockwise, like a ripple's), and how wide it opens. Undefined for
+ * the ordinary pool all round — no width, 360° or more — and for a strip,
+ * whose run already says which way it lights.
+ */
+export interface SpotCone {
+  bearing: number;
+  width: number;
+}
+
+export function spotCone(
+  item: Pick<FloorItem, "glowWidth" | "glowDirection" | "stripLength">,
+): SpotCone | undefined {
+  if (cssNumber(item.stripLength, 0) >= MIN_STRIP_LENGTH) return undefined;
+  const width = cssNumber(item.glowWidth, 360);
+  if (!(width < 360)) return undefined;
+  const bearing = cssNumber(item.glowDirection, 0);
+  return { bearing: ((bearing % 360) + 360) % 360, width: Math.max(MIN_SPOT_WIDTH, width) };
+}
+
+/**
+ * The points of a wedge from (cx, cy) out to radius `r`, centred on `bearing`
+ * and `half` degrees either side of it: the apex, then the arc. A half of 180
+ * or more is the whole disc.
+ */
+export function conePoints(
+  cx: number,
+  cy: number,
+  r: number,
+  bearing: number,
+  half: number,
+): Array<{ x: number; y: number }> {
+  const at = (deg: number) => {
+    const a = (deg * Math.PI) / 180;
+    return { x: round2(cx + Math.sin(a) * r), y: round2(cy - Math.cos(a) * r) };
+  };
+  if (half >= 180) {
+    return Array.from({ length: 36 }, (_, i) => at(i * 10));
+  }
+  // An arc point every 10° or so keeps the curve round at any width.
+  const steps = Math.max(2, Math.ceil((half * 2) / 10));
+  const arc = Array.from({ length: steps + 1 }, (_, i) => at(bearing - half + (2 * half * i) / steps));
+  return [{ x: round2(cx), y: round2(cy) }, ...arc];
+}
+
+/** Layers in a cone's soft edge: enough that the steps do not show. */
+const CONE_EDGE_LAYERS = 20;
+
+/**
+ * The `<mask>` that shapes a pool into a spot's cone (issue #388), with a soft
+ * edge rather than a hard cut. SVG has no conic gradient, so the edge is a
+ * stack of nested wedges, each a little narrower than the last. Opacities
+ * compound, so the widest gets 1/n, the next 1/(n-1), and so on to the
+ * narrowest at 1: a point inside the widest m of them is then exactly m/n
+ * opaque, an even fade across the edge and the whole light inside it.
+ * The light fades along the cone on its own, from the pool's radial falloff.
+ */
+export function renderConeMask(
+  id: string,
+  cx: number,
+  cy: number,
+  r: number,
+  cone: SpotCone,
+): SVGTemplateResult {
+  const half = cone.width / 2;
+  // The edge's spread scales with the cone, so a narrow beam stays narrow.
+  const feather = Math.max(2, Math.min(12, cone.width * 0.15));
+  // The fade is centred on the nominal edge, so the beam reads as the width
+  // it was given.
+  const inner = Math.max(0.5, half - feather);
+  const outer = half + feather;
+  const R = r * 1.02;
+  const n = CONE_EDGE_LAYERS;
+  const wedges = Array.from({ length: n }, (_, i) => {
+    // Widest first; i counts in from the outside.
+    const h = outer - ((outer - inner) * i) / (n - 1);
+    return {
+      points: conePoints(cx, cy, R, cone.bearing, h)
+        .map((p) => `${p.x},${p.y}`)
+        .join(" "),
+      opacity: round2(1 / (n - i)),
+    };
+  });
+  return svg`<mask id=${id} maskUnits="userSpaceOnUse"
+                   x=${round2(cx - R)} y=${round2(cy - R)} width=${round2(R * 2)} height=${round2(R * 2)}>
+    ${wedges.map((w) => svg`<polygon points=${w.points} fill="#fff" fill-opacity=${w.opacity} />`)}
+  </mask>`;
 }
 
 /**
@@ -1518,6 +1614,9 @@ export function renderSunDimMask(
           // stays stable when another lamp toggles (issue #119).
           const reach = walls?.length ? glowReach(it.x, it.y, r, walls) : undefined;
           const clipId = `${gid}-clip`;
+          // A spot clears the night only inside its cone (issue #388).
+          const cone = spotCone(it);
+          const coneId = `${gid}-cone`;
           return svg`
             ${
               reach
@@ -1526,13 +1625,15 @@ export function renderSunDimMask(
                       </clipPath>`
                 : nothing
             }
+            ${cone ? renderConeMask(coneId, it.x, it.y, r, cone) : nothing}
             <radialGradient id=${gid} gradientUnits="userSpaceOnUse"
                             cx=${it.x} cy=${it.y} r=${r}>
               <stop offset="0" stop-color="#000" stop-opacity=${strength} />
               <stop offset="1" stop-color="#000" stop-opacity="0" />
             </radialGradient>
             <circle cx=${it.x} cy=${it.y} r=${r} fill=${`url(#${gid})`}
-                    clip-path=${reach ? `url(#${clipId})` : nothing} />`;
+                    clip-path=${reach ? `url(#${clipId})` : nothing}
+                    mask=${cone ? `url(#${coneId})` : nothing} />`;
         })}
         ${extra}
       </mask>
