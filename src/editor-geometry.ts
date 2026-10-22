@@ -17,13 +17,14 @@ import {
   Floor, 
   RenderHass, 
   StripSide,
-  openingIsSkylight 
+  openingIsSkylight,
+  floorPanels,
 } from "./types";
 
 export const RECT_AREA_EPSILON = 0.001;
 
 /** Element kinds addressable by the editor's selection model. */
-export type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker" | "area" | "roof";
+export type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker" | "area" | "roof" | "panel";
 
 export interface Sel {
   kind: SelKind;
@@ -664,6 +665,10 @@ export function applyDelta(f: Floor, dx: number, dy: number, orig: Map<string, O
         ? { ...el, points: o.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) }
         : el;
     }),
+    panels: floorPanels(f).map((el) => {
+      const o = orig.get(`panel:${el.id}`);
+      return o && o.kind === "pt" ? { ...el, x: o.x + dx, y: o.y + dy } : el;
+    }),
   };
 }
 
@@ -678,6 +683,7 @@ export function applyDelta(f: Floor, dx: number, dy: number, orig: Map<string, O
 const PICK_ORDER: SelKind[] = [
   "item",
   "text",
+  "panel",
   "opening",
   "furniture",
   "wall",
@@ -787,6 +793,10 @@ export function elementsAtPoint(
   (f.areas ?? []).forEach((a, i) => {
     if (pointInPolygon(a.points, x, y)) push("area", a.id, i, a.locked);
   });
+  floorPanels(f).forEach((p, i) => {
+    const r = 24 + HIT.pad;
+    if (Math.abs(x - p.x) <= r && Math.abs(y - p.y) <= r) push("panel", p.id, i, false);
+  });
 
   // Locked elements yield (issue #191): anything unlocked under the pointer is
   // picked first, whatever kind it is, so an unlocked window on a locked wall
@@ -826,6 +836,8 @@ export function findElement(f: Floor, sel: Sel): { id: string; locked?: boolean 
       return (f.areas ?? []).find((x) => x.id === sel.id);
     case "roof":
       return (f.roofs ?? []).find((x) => x.id === sel.id);
+    case "panel":
+      return floorPanels(f).find((x) => x.id === sel.id);
   }
 }
 

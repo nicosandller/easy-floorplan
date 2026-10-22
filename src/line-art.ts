@@ -99,4 +99,57 @@ export const lineArtStyles = css`
     color: var(--fp-line-ink);
     text-shadow: 0 1px 2px #fff, 0 -1px 2px #fff, 1px 0 2px #fff, -1px 0 2px #fff;
   }
+  /* Telemetry info-panels in line art: crisp light blueprint cards with ink typography */
+  .line-art .fp-info-panel {
+    background: #ffffff;
+    color: var(--fp-line-ink);
+    box-shadow: 0 2px 8px rgba(40, 52, 62, 0.12);
+  }
+  .line-art .fp-info-panel.tech {
+    background: #ffffff;
+    border: 1px solid var(--fp-panel-accent, var(--fp-line-ink));
+    box-shadow: 0 2px 8px rgba(40, 52, 62, 0.12);
+  }
+  .line-art .fp-info-panel.minimal {
+    background: #ffffff;
+    border: 1px solid #c3cdd2;
+    box-shadow: 0 2px 8px rgba(40, 52, 62, 0.1);
+  }
+  .line-art .fp-info-panel.pill {
+    background: #ffffff;
+    border: 1px solid #c3cdd2;
+    box-shadow: 0 1px 4px rgba(40, 52, 62, 0.1);
+  }
+  .line-art .fp-panel-header {
+    border-bottom: 1px solid #e0e5e8;
+  }
+  .line-art .fp-info-panel.tech .fp-panel-header {
+    border-bottom: 1px solid var(--fp-panel-accent, var(--fp-line-ink));
+  }
+  .line-art .fp-panel-title {
+    color: var(--fp-line-ink);
+  }
+  .line-art .fp-panel-metric-label {
+    color: var(--secondary-text-color, #51626d);
+  }
+  .line-art .fp-panel-metric-value {
+    color: var(--fp-line-ink);
+  }
+  .line-art .fp-panel-metric-unit {
+    color: var(--secondary-text-color, #51626d);
+  }
+  .line-art .fp-panel-status-dot {
+    background: var(--fp-panel-accent, var(--fp-line-ink));
+    box-shadow: none;
+  }
+  .line-art .fp-panel-leader-line {
+    filter: none;
+  }
+  .line-art .fp-panel-anchor-ring {
+    stroke: var(--fp-panel-accent, var(--fp-line-ink));
+    fill: #ffffff;
+  }
+  .line-art .fp-panel-target-dot {
+    fill: var(--fp-panel-accent, var(--fp-line-ink));
+  }
 `;
