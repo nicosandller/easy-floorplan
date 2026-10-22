@@ -38,8 +38,8 @@ control lights, and view the plan in 3D.
   button. See [actions on furniture](docs/behavior.md#actions-on-furniture).
 - **2D and 3D views** — display the same plan flat or with raised walls and furniture.
 - **Outdoor courtyard & 3D stacked house** — exterior view of the entire house stacking all levels at physical elevations, with ground slabs and 3D roofs.
-- **Appearance** — choose skins, named colors and automatic room tints, add a background image to trace,
-  and let the plan scale to your screen.
+- **Appearance** — choose skins and named colors, add a background image to trace
+  (inverted, or swapped for a dark version, in dark mode), and let the plan scale to your screen.
 
 ## Installation
 

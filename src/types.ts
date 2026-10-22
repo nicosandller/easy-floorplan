@@ -1750,6 +1750,18 @@ export interface Floor {
   imageFit?: "stretch" | "contain" | "cover";
   /** Background image opacity, 0–1. Default 1. */
   imageOpacity?: number;
+  /**
+   * The background image to show instead while Home Assistant is in dark mode
+   * (issue #366) — a plan someone has inverted or recoloured themselves. Takes
+   * precedence over {@link imageInvertDark}.
+   */
+  imageDark?: string;
+  /**
+   * Invert the background image while Home Assistant is in dark mode (issue
+   * #366), so a black-on-white scan becomes white-on-black. Hues are turned
+   * back round, so coloured marks keep roughly their colour.
+   */
+  imageInvertDark?: boolean;
   walls: Wall[];
   openings: Opening[];
   items: FloorItem[];

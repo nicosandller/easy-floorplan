@@ -1,11 +1,13 @@
 import { nothing, svg, type SVGTemplateResult } from "lit";
 import type { Area, AreaPoint } from "./types";
-import type { AmbientDaylightPatch } from "./ambient-daylight";
+import { ambientLateralFalloff, type AmbientDaylightPatch } from "./ambient-daylight";
 
 /** Neutral/cool sky light, intentionally distinct from warm direct sunlight. */
 export const DEFAULT_AMBIENT_DAYLIGHT_COLOR = "#f4f8ff";
 /** Canvas-space edge feather for the light pool. */
 export const DEFAULT_AMBIENT_DAYLIGHT_BLUR = 10;
+/** Nested fans per patch that step the sideways fade; the blur smooths the steps. */
+export const AMBIENT_DAYLIGHT_SIDE_BANDS = 32;
 
 export interface AmbientDaylightRenderOptions {
   /** Stable namespace when more than one floorplan SVG can exist on a page. */
@@ -25,6 +27,15 @@ export interface AmbientDaylightRenderPatch {
   opacity: number;
   clipId?: string;
   clipPoints?: string;
+  /** Sideways fade: nested fans, widest first, stacked inside an SVG mask. */
+  maskId: string;
+  sideBands: AmbientDaylightSideBand[];
+}
+
+/** One nested fan of the sideways mask and the fill-opacity it stacks with. */
+export interface AmbientDaylightSideBand {
+  points: string;
+  opacity: number;
 }
 
 export interface AmbientDaylightRenderModel {
@@ -69,6 +80,71 @@ export function ambientDaylightSvgId(raw: string): string {
   return `${visible}-${(hash >>> 0).toString(36)}`;
 }
 
+const lerp = (a: AreaPoint, b: AreaPoint, t: number): AreaPoint =>
+  ({ x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t });
+
+/**
+ * Nested fans that fade a patch towards its sides the way the point model does.
+ *
+ * The patch is a trapezoid whose two side edges are where `ambientLateralFalloff`
+ * reaches zero. Fan `i` of `n` keeps the same axis and covers the inner `i/n`
+ * of the width at every depth, so the line at a given fraction of the
+ * half-width is straight, exactly as the point model measures it. Stacked with
+ * ordinary alpha compositing, the band between fan `i-1` and fan `i` is covered
+ * by fans `i..n`, so each fan's opacity is chosen to make that stack equal the
+ * falloff averaged over its band. Nested shapes overlap instead of abutting, so
+ * no anti-aliased seam can show between two bands.
+ *
+ * Each fan also runs `back` units straight out behind the opening. The mask is
+ * blurred like the light it masks, and without that run-out the blur would
+ * halve the light right at the window, the brightest place in the room.
+ */
+export function ambientDaylightSideBands(
+  points: readonly AreaPoint[],
+  back: number,
+  bands = AMBIENT_DAYLIGHT_SIDE_BANDS,
+): AmbientDaylightSideBand[] {
+  if (points.length !== 4 || points.some((p) => !finitePoint(p))) return [];
+  const [nearA, nearB, farB, farA] = points as [AreaPoint, AreaPoint, AreaPoint, AreaPoint];
+  const near = lerp(nearA, nearB, 0.5);
+  const far = lerp(farA, farB, 0.5);
+  const axisLength = Math.hypot(far.x - near.x, far.y - near.y);
+  if (!(axisLength > 0)) return [];
+  const out = { x: ((near.x - far.x) / axisLength) * back, y: ((near.y - far.y) / axisLength) * back };
+  const n = Math.max(1, Math.floor(bands));
+
+  // Falloff averaged over each band, innermost first; 16 midpoint samples.
+  const target = Array.from({ length: n }, (_, i) => {
+    let sum = 0;
+    for (let k = 0; k < 16; k++) sum += ambientLateralFalloff((i + (k + 0.5) / 16) / n);
+    return sum / 16;
+  });
+
+  // Widest first; alpha stacking does not care about order, readers might.
+  const result: AmbientDaylightSideBand[] = [];
+  for (let i = n; i >= 1; i--) {
+    const u = i / n;
+    const a = lerp(near, nearA, u);
+    const b = lerp(near, nearB, u);
+    // The wider fans i+1..n already cover this band to the next band's
+    // target; fan i lifts it to its own.
+    const own = target[i - 1]!;
+    const wider = i === n ? 0 : target[i]!;
+    const opacity = wider >= 1 ? 0 : clamp((own - wider) / (1 - wider), 0, 1);
+    // Inside the full-light shoulder a fan adds nothing the one around it
+    // has not already covered.
+    if (!(opacity > 0)) continue;
+    result.push({
+      points: ambientDaylightPolygonPoints([
+        { x: a.x + out.x, y: a.y + out.y }, a, lerp(far, farA, u),
+        lerp(far, farB, u), b, { x: b.x + out.x, y: b.y + out.y },
+      ]),
+      opacity,
+    });
+  }
+  return result;
+}
+
 /**
  * Pure render preparation shared by tests and the SVG template.
  *
@@ -108,6 +184,8 @@ export function buildAmbientDaylightRenderModel(
       opacity: clamp(patch.opacity, 0, 1),
       clipId: wallClip ? ambientDaylightSvgId(`${prefix}-wall-${area.id}-${patch.openingId}-${i}`) : undefined,
       clipPoints: wallClip || undefined,
+      maskId: ambientDaylightSvgId(`${prefix}-sides-${area.id}-${patch.openingId}-${i}`),
+      sideBands: ambientDaylightSideBands(patch.points, Math.max(1, blur * 3)),
     });
   }
 
@@ -161,6 +239,16 @@ export function renderAmbientDaylight(
               <stop offset="72%" stop-color=${model.color} stop-opacity="0.25"></stop>
               <stop offset="100%" stop-color=${model.color} stop-opacity="0"></stop>
             </linearGradient>
+            <!-- Sideways fade, blurred like the light so its steps melt. Same
+                 region margin as the filter: the mask follows the blurred
+                 patch, and a tighter box would cut its soft edge square. -->
+            ${patch.sideBands.length ? svg`<mask id=${patch.maskId}
+                  x="-25%" y="-25%" width="150%" height="150%">
+              <g filter=${model.blur > 0 ? `url(#${model.filterId})` : nothing}>
+                ${patch.sideBands.map((band) => svg`<polygon points=${band.points}
+                  fill="#fff" fill-opacity=${band.opacity}></polygon>`)}
+              </g>
+            </mask>` : nothing}
           `,
         )}
       </defs>
@@ -173,7 +261,8 @@ export function renderAmbientDaylight(
                      points=${patch.points}
                      fill=${`url(#${patch.gradientId})`}
                      opacity=${patch.opacity}
-                     filter=${model.blur > 0 ? `url(#${model.filterId})` : "none"}>
+                     filter=${model.blur > 0 ? `url(#${model.filterId})` : "none"}
+                     mask=${patch.sideBands.length ? `url(#${patch.maskId})` : nothing}>
             </polygon>
             </g>
           `,
