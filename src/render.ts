@@ -4732,6 +4732,35 @@ export function resolvePlanRotation(
 }
 
 /**
+ * The angle a device badge or text is drawn at on a plan displayed at `rot`
+ * (issue #387).
+ *
+ * Unturned, a badge stays upright under rotation, so a rotated plan is still
+ * readable. A badge given an angle of its own was turned to line up with
+ * something in the drawing — an LED strip along a diagonal wall — and that
+ * line turns with the plan, so the badge has to turn with it. Any angle but 0
+ * counts, including 360: that is the way to have a badge drawn straight along
+ * a horizontal wall follow the plan too, since 0 cannot tell "upright" from
+ * "aligned with the x axis".
+ */
+export function overlayAngle(angle: number, rot: number): number {
+  return angle === 0 ? 0 : angle + rot;
+}
+
+/**
+ * {@link overlayAngle} for text, which also has to stay readable: turned with
+ * the plan, a label drawn along a wall can end up upside down, so it is
+ * flipped half a turn to read along the same line the right way up. Only on a
+ * rotated display — on the plan as drawn the angle is exactly what was set.
+ */
+export function textOverlayAngle(angle: number, rot: number): number {
+  const a = overlayAngle(angle, rot);
+  if (a === 0 || rot % 360 === 0) return a;
+  const r = (((a + 180) % 360) + 360) % 360 - 180; // -180 ≤ r < 180
+  return r > 90 ? r - 180 : r < -90 ? r + 180 : r;
+}
+
+/**
  * The two ways a `MediaQueryList` can be listened to. Duck-typed rather than
  * taking the DOM interface, so this is reachable from a node test — which is
  * the whole reason it is a function instead of four lines inside the card's

@@ -131,6 +131,8 @@ import {
   itemIconSize,
   normalizePlanRotation,
   resolvePlanRotation,
+  overlayAngle,
+  textOverlayAngle,
   subscribeOrientation,
   rotatedCanvasSize,
   floorSwitcherAnchor,
@@ -4027,6 +4029,35 @@ describe("polygonCentroid", () => {
 
   it("returns the origin for an empty polygon", () => {
     expect(polygonCentroid([])).toEqual({ x: 0, y: 0 });
+  });
+});
+
+describe("badge and text angles under a rotated plan (issue #387)", () => {
+  it("keeps an unturned badge upright at every rotation", () => {
+    for (const rot of [0, 90, 180, 270]) expect(overlayAngle(0, rot)).toBe(0);
+  });
+
+  it("turns a badge with an angle of its own along with the plan", () => {
+    expect(overlayAngle(45, 0)).toBe(45);
+    expect(overlayAngle(45, 270)).toBe(315);
+    expect(overlayAngle(-30, 90)).toBe(60);
+  });
+
+  it("lets 360 mean 'along the x axis of the drawing'", () => {
+    expect(overlayAngle(360, 0)).toBe(360);
+    expect(overlayAngle(360, 90)).toBe(450);
+  });
+
+  it("turns angled text with the plan but never leaves it upside down", () => {
+    expect(textOverlayAngle(-45, 270)).toBe(45); // 225° read the other way
+    expect(textOverlayAngle(30, 90)).toBe(-60); // 120° read the other way
+    expect(textOverlayAngle(30, 270)).toBe(-60);
+    expect(textOverlayAngle(0, 270)).toBe(0);
+  });
+
+  it("leaves text on the plan as drawn exactly as set", () => {
+    expect(textOverlayAngle(180, 0)).toBe(180);
+    expect(textOverlayAngle(-45, 0)).toBe(-45);
   });
 });
 
