@@ -14,7 +14,7 @@ afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); });
 
 async function mount(extra: Partial<FloorplanCardConfig> = {}) {
   const config = { ...emptyConfig("custom:easy-floorplan-card"), width: 600, height: 400,
-    view: "3d", showViewControls: true, wallOpacity: .4, ...extra } as FloorplanCardConfig;
+    view: "3d", wallHeight: 100, showViewControls: true, wallOpacity: .4, ...extra } as FloorplanCardConfig;
   const floor = getFloors(config)[0];
   floor.walls = [{id:"north",x1:70,y1:70,x2:530,y2:70}];
   floor.openings = [{id:"entry",type:"door",x:240,y:70,angle:0,length:70,entity:"binary_sensor.entry"}];
@@ -38,6 +38,17 @@ async function mount(extra: Partial<FloorplanCardConfig> = {}) {
     .find((b) => (b.getAttribute("aria-label") || b.textContent?.trim()) === name)!;
   const click = async (name: string) => { await userEvent.click(button(name)); await card.updateComplete; };
   return { card, root, config, floor, button, click, states };
+}
+
+/** Sample the real tabletop in 3D, or the flat glyph in plan view. */
+function furniturePoint(root: ShadowRoot, dx = 0, dy = 0): DOMPoint {
+  const glyph = root.querySelector<SVGGraphicsElement>(".fp-furniture");
+  if (glyph) return new DOMPoint(dx, dy).matrixTransform(glyph.getScreenCTM()!);
+  const tops = Array.from(root.querySelectorAll<SVGPolygonElement>('.fp-iso-furniture[data-id="table"] .fp-iso-top'));
+  const top = tops.sort((a, b) => b.getBBox().width * b.getBBox().height - a.getBBox().width * a.getBBox().height)[0]!;
+  const points = Array.from(top.points);
+  return new DOMPoint(points.reduce((n, p) => n + p.x, 0) / points.length + dx,
+    points.reduce((n, p) => n + p.y, 0) / points.length + dy).matrixTransform(top.getScreenCTM()!);
 }
 
 describe("live view controls", () => {
@@ -74,8 +85,7 @@ describe("live view controls", () => {
     await userEvent.click(t.root.querySelector<HTMLElement>('.fp-item[data-id="lamp"]')!);
     expect(actions).toHaveBeenCalledTimes(1);
     // Linework must pass hit testing through to its room.
-    const glyph = t.root.querySelector<SVGGraphicsElement>(".fp-furniture")!;
-    const p = new DOMPoint(30, 10).matrixTransform(glyph.getScreenCTM()!);
+    const p = furniturePoint(t.root, 30, 10);
     const target = t.root.elementFromPoint(p.x,p.y)!;
     expect(target.closest(".area-tap-target")).not.toBeNull();
     await userEvent.click(target);
@@ -93,8 +103,7 @@ describe("live view controls", () => {
     for (const view of ["2D plan", "3D isometric"]) {
       await t.click(view);
       for (let i=0;i<4;i++) {
-        const glyph = t.root.querySelector<SVGGraphicsElement>(".fp-furniture")!;
-        const point = new DOMPoint(0,0).matrixTransform(glyph.getScreenCTM()!);
+        const point = furniturePoint(t.root);
         const badge = t.root.querySelector(".fp-furniture-link")!.getBoundingClientRect();
         expect(badge.x+badge.width/2).toBeCloseTo(point.x,1);
         expect(badge.y+badge.height/2).toBeCloseTo(point.y,1);

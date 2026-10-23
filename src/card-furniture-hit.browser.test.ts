@@ -18,10 +18,10 @@ async function mount(
   card.style.width = "400px";
   card.setConfig({
     type: "custom:easy-floorplan-card", width: 500, height: 400, view, rotation,
-    wallHeight: 60, ...extra, walls: [], openings: [], items: [], texts: [], trackers: [],
+    wallHeight: 100, ...extra, walls: [], openings: [], items: [], texts: [], trackers: [],
     furniture: [{ id: "table", type: "table", x: 220, y: 170, w: 130, h: 90, ...piece }],
-    areas: [{ id: "room", points: [{ x: 120, y: 80 }, { x: 340, y: 80 },
-      { x: 340, y: 280 }, { x: 120, y: 280 }] }],
+    areas: [{ id: "room", points: [{ x: 120, y: 80 }, { x: 380, y: 80 },
+      { x: 380, y: 320 }, { x: 120, y: 320 }] }],
   } as FloorplanCardConfig);
   card.hass = { states: {}, entities: {} } as FloorplanCard["hass"];
   document.body.append(card);
@@ -35,12 +35,24 @@ async function mount(
 }
 
 function surfacePoint(card: FloorplanCard, x = 0) {
-  const glyph = card.shadowRoot!.querySelector<SVGGElement>(".fp-furniture")!;
-  return new DOMPoint(x, 0).matrixTransform(glyph.getScreenCTM()!);
+  const glyph = card.shadowRoot!.querySelector<SVGGElement>(".fp-furniture");
+  if (glyph) return new DOMPoint(x, 0).matrixTransform(glyph.getScreenCTM()!);
+  // The model has no flat glyph. Find the actual tabletop (largest top face),
+  // then sample its centre/edge in the browser's transformed SVG geometry.
+  const tops = Array.from(card.shadowRoot!.querySelectorAll<SVGPolygonElement>(
+    '.fp-iso-furniture[data-id="table"] .fp-iso-top'));
+  const area = (p: SVGPolygonElement) => { const b = p.getBBox(); return b.width * b.height; };
+  const top = tops.sort((a, b) => area(b) - area(a))[0]!;
+  const ps = Array.from({ length: top.points.numberOfItems }, (_, i) => top.points.getItem(i));
+  const cx = ps.reduce((n, p) => n + p.x, 0) / ps.length;
+  const cy = ps.reduce((n, p) => n + p.y, 0) / ps.length;
+  const dx = ps[1]!.x - ps[0]!.x, dy = ps[1]!.y - ps[0]!.y;
+  const length = Math.hypot(dx, dy);
+  return new DOMPoint(cx + x * dx / length, cy + x * dy / length).matrixTransform(top.getScreenCTM()!);
 }
 
-async function clickSurface(card: FloorplanCard, x = 0) {
-  const p = surfacePoint(card, x);
+async function clickSurface(card: FloorplanCard, x = 0, point?: DOMPoint) {
+  const p = point ?? surfacePoint(card, x);
   // Chromium chooses the target; dispatching directly to the Area would hide
   // a furniture surface or an oversized invisible badge swallowing the tap.
   const target = card.shadowRoot!.elementFromPoint(p.x, p.y)!;
@@ -70,7 +82,7 @@ describe("furniture hit testing (#323)", () => {
         const card = await mount(view, {}, rotation);
         expect(icon(card)).toBeNull();
         const target = await clickSurface(card);
-        expect(target.closest(".area-tap-target")).not.toBeNull();
+        expect(target.closest(".area-tap-target"), target.outerHTML).not.toBeNull();
         expect(card.shadowRoot!.querySelector(".zoom-out")).not.toBeNull();
       });
 
@@ -84,7 +96,7 @@ describe("furniture hit testing (#323)", () => {
           expect(box.y + box.height / 2).toBeCloseTo(centre.y, 1);
           expect(box.width).toBeCloseTo(MIN_TOUCH_TARGET, 1);
           const target = await clickSurface(card, 55);
-          expect(target.closest(".area-tap-target")).not.toBeNull();
+          expect(target.closest(".area-tap-target"), target.outerHTML).not.toBeNull();
           expect(card.shadowRoot!.querySelector(".zoom-out")).not.toBeNull();
           expect(actions).toHaveLength(0);
           card.remove();
@@ -175,7 +187,7 @@ describe("hiding the furniture action icon (#362)", () => {
         const actions = recordActions(card);
         expect(icon(card)).toBeNull();
         const target = await clickSurface(card);
-        expect(target.closest(".fp-furniture-hit")).toBe(glyph(card));
+        expect(target.closest(".fp-furniture-hit")?.getAttribute("data-id")).toBe("table");
         expect(actions).toHaveLength(1);
         expect(card.shadowRoot!.querySelector(".zoom-out")).toBeNull();
       });
@@ -184,9 +196,11 @@ describe("hiding the furniture action icon (#362)", () => {
     it(`${view}: the space around the drawing still reaches the Area`, async () => {
       const card = await mount(view, { tap_action: fire, showIcon: false });
       const actions = recordActions(card);
-      // Past the table's 130-unit width, still inside the room.
-      const target = await clickSurface(card, 90);
-      expect(target.closest(".area-tap-target")).not.toBeNull();
+      // An exposed floor point beyond the whole 3D silhouette, inside the room.
+      const area = card.shadowRoot!.querySelector<SVGGraphicsElement>(".area-tap-target")!;
+      const point = new DOMPoint(350, 280).matrixTransform(area.getScreenCTM()!);
+      const target = await clickSurface(card, 0, point);
+      expect(target.closest(".area-tap-target"), target.outerHTML).not.toBeNull();
       expect(actions).toHaveLength(0);
       expect(card.shadowRoot!.querySelector(".zoom-out")).not.toBeNull();
     });
@@ -195,12 +209,12 @@ describe("hiding the furniture action icon (#362)", () => {
       const card = await mount(view, { showIcon: false });
       expect(glyph(card)).toBeNull();
       const target = await clickSurface(card);
-      expect(target.closest(".area-tap-target")).not.toBeNull();
+      expect(target.closest(".area-tap-target"), target.outerHTML).not.toBeNull();
     });
   }
 
-  it("the hidden piece keeps its name, gestures and keyboard tap", async () => {
-    const card = await mount("2d", {
+  it.each(["2d", "3d"] as const)("%s: the hidden piece keeps its name, gestures and keyboard tap", async view => {
+    const card = await mount(view, {
       tap_action: fire,
       hold_action: { action: "more-info", entity: "light.held" },
       showIcon: false,
@@ -209,6 +223,7 @@ describe("hiding the furniture action icon (#362)", () => {
     const g = glyph(card)!;
     expect(g.getAttribute("role")).toBe("button");
     expect(g.getAttribute("tabindex")).toBe("0");
+    expect(card.shadowRoot!.querySelectorAll('.fp-furniture-hit[tabindex="0"]')).toHaveLength(1);
     expect(g.getAttribute("aria-label")).toBeTruthy();
     expect(g.querySelector("title")?.textContent).toContain("Tap, Hold");
     g.focus();
@@ -216,8 +231,8 @@ describe("hiding the furniture action icon (#362)", () => {
     expect(actions).toHaveLength(1);
   });
 
-  it("keyboard focus draws a ring around the hidden piece", async () => {
-    const card = await mount("2d", { tap_action: fire, showIcon: false, angle: 30 });
+  it.each(["2d", "3d"] as const)("%s: keyboard focus draws a ring around the hidden piece", async view => {
+    const card = await mount(view, { tap_action: fire, showIcon: false, angle: 30 });
     const g = glyph(card)!;
     const ring = g.querySelector<SVGRectElement>(".fp-furniture-focus")!;
     expect(getComputedStyle(ring).display).toBe("none");
@@ -227,7 +242,9 @@ describe("hiding the furniture action icon (#362)", () => {
     expect(getComputedStyle(ring).stroke).not.toBe("none");
     // Around the drawing, not under it: the ring encloses the piece.
     const box = ring.getBoundingClientRect();
-    const drawn = g.querySelector(".fp-furniture")!.getBoundingClientRect();
+    const shapes = Array.from(card.shadowRoot!.querySelectorAll(view === "2d" ? ".fp-furniture" : ".fp-iso-furniture .fp-iso-top"));
+    const boxes = shapes.map(shape => shape.getBoundingClientRect());
+    const drawn = { left: Math.min(...boxes.map(b => b.left)), right: Math.max(...boxes.map(b => b.right)) };
     expect(box.left).toBeLessThanOrEqual(drawn.left);
     expect(box.right).toBeGreaterThanOrEqual(drawn.right);
     expect(getComputedStyle(ring).pointerEvents).toBe("none");
@@ -279,7 +296,7 @@ describe("hiding the furniture action icon (#362)", () => {
     const actions = recordActions(card);
     expect(icon(card)).toBeNull();
     const target = await clickSurface(card);
-    expect(target.closest(".fp-furniture-hit")).toBe(glyph(card));
+    expect(target.closest(".fp-furniture-hit")?.getAttribute("data-id")).toBe("table");
     expect(actions).toHaveLength(1);
   });
 

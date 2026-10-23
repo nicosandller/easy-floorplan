@@ -48,8 +48,23 @@ for (const rotation of [0, 90, 180, 270] as PlanRotation[]) it.each(["fixed", "s
 });
 
 it("keeps the reporter's bathtub behind the partition's front face", async () => {
+  // Isolate the bathtub: the full-height stove on the near side now genuinely
+  // covers this pixel, unlike the old 40-unit furniture blocks.
+  const config = structuredClone(reporter) as unknown as FloorplanCardConfig;
+  for (const floor of config.floors!) floor.furniture = floor.furniture.filter(f => f.type === "bathtub");
+  const unobstructed = structuredClone(config);
+  for (const floor of unobstructed.floors!) { floor.walls = []; floor.openings = []; }
+  const visible = await mount(unobstructed);
+  // Tub rim at x=476, y=740, z=55; the ray meets the wall in front
+  // at x=484, y=748, z=63. Verify the pixel actually covers the tub first.
+  expect(frontAt(visible, 476 - 55, 740 - 55)).toBe("furn_k62xdag");
+  const card = await mount(config);
+  expect(frontAt(card, 476 - 55, 740 - 55)).toBe("wall_jcoiyu3");
+});
+
+it("paints the full-height stove in front of the partition in the complete plan", async () => {
   const card = await mount(reporter as unknown as FloorplanCardConfig);
-  // Front of the x=480 partition: x=484, y=690, z=55. The same projected
-  // point is on the bathtub's top at x=469, y=675, z=40.
-  expect(frontAt(card, 484 - 55, 690 - 55)).toBe("wall_jcoiyu3");
+  // The same viewing ray reaches the stove at x=519, y=725, z=90,
+  // in front of the wall at x=484, y=690, z=55.
+  expect(frontAt(card, 484 - 55, 690 - 55)).toBe("furn_gihjrnl");
 });

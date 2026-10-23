@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Furniture symbols can supply an optional `model3d` section for the isometric
+  view. Built-in furniture now uses simple volumes with shelves, legs and open
+  interiors. The 2D view is unchanged; symbols without a valid model retain the
+  previous block rendering. See [the symbol guide](furniture/README.md#optional-3d-models-version-1).
+
 - Furniture action icons can be hidden per piece (`showIcon: false`, or **Action icon**
   under Behavior); the drawing itself then takes the tap. The icons also follow
   `overlayScale: plan` now, shrinking with the drawing like device badges instead of

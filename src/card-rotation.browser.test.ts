@@ -9,7 +9,7 @@ afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); });
 
 async function mount(extra: Partial<FloorplanCardConfig> = {}) {
   const config: FloorplanCardConfig = { ...emptyConfig("custom:easy-floorplan-card"),
-    width: 600, height: 400, view: "3d", showViewControls: true, wallOpacity: .5, ...extra };
+    width: 600, height: 400, wallHeight: 100, view: "3d", showViewControls: true, wallOpacity: .5, ...extra };
   const floor = getFloors(config)[0];
   floor.walls = [
     { id: "north", x1: 0, y1: 0, x2: 600, y2: 0 },
@@ -50,9 +50,16 @@ async function mount(extra: Partial<FloorplanCardConfig> = {}) {
   return { card, config, root, click, button, tick, frames };
 }
 
+function furnitureTop(root: ShadowRoot): DOMPoint {
+  const tops = Array.from(root.querySelectorAll<SVGPolygonElement>('.fp-iso-furniture[data-id="table"] .fp-iso-top'));
+  const top = tops.sort((a, b) => b.getBBox().width * b.getBBox().height - a.getBBox().width * a.getBBox().height)[0]!;
+  const ps = Array.from(top.points);
+  return new DOMPoint(ps.reduce((n, p) => n + p.x, 0) / ps.length,
+    ps.reduce((n, p) => n + p.y, 0) / ps.length).matrixTransform(top.getScreenCTM()!);
+}
+
 function assertAligned(root: ShadowRoot) {
-  const glyph = root.querySelector<SVGGraphicsElement>(".fp-furniture")!;
-  const top = new DOMPoint(0, 0).matrixTransform(glyph.getScreenCTM()!);
+  const top = furnitureTop(root);
   const badge = root.querySelector(".fp-furniture-link")!.getBoundingClientRect();
   expect(badge.x + badge.width / 2).toBeCloseTo(top.x, 1);
   expect(badge.y + badge.height / 2).toBeCloseTo(top.y, 1);
@@ -73,7 +80,7 @@ describe("animated live 3D rotation", () => {
       t.card.style.width = `${width}px`;
       const initial = t.root.querySelector(".plan")!.getBoundingClientRect();
       for (let turn = 0; turn < 4; turn++) {
-        const before = t.root.querySelector<SVGGraphicsElement>(".fp-furniture")!.getScreenCTM()!.e;
+        const before = furnitureTop(t.root).x;
         await t.click("Rotate right");
         expect(t.root.querySelector(".rotating")).not.toBeNull();
         for (let frame = 0; frame < 4; frame++) {
@@ -92,7 +99,7 @@ describe("animated live 3D rotation", () => {
             }
           }
         }
-        expect(t.root.querySelector<SVGGraphicsElement>(".fp-furniture")!.getScreenCTM()!.e).not.toBe(before);
+        expect(furnitureTop(t.root).x).not.toBe(before);
         await t.tick(500);
         expect(t.root.querySelector(".rotating")).toBeNull();
         assertAligned(t.root);
@@ -108,7 +115,7 @@ describe("animated live 3D rotation", () => {
     await userEvent.click(t.root.querySelector<HTMLButtonElement>('button[title="Upper"]')!);
     await t.card.updateComplete;
     const area = t.root.querySelector<SVGGraphicsElement>(".area-tap-target")!;
-    const point = new DOMPoint(95, 95).matrixTransform(area.getScreenCTM()!);
+    const point = new DOMPoint(80, 220).matrixTransform(area.getScreenCTM()!);
     const bounds = area.getBoundingClientRect();
     await userEvent.click(area, { position: { x: point.x - bounds.x, y: point.y - bounds.y } });
     await t.card.updateComplete;

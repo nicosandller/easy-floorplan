@@ -118,3 +118,67 @@ If you create your own furniture, be careful which primitives you use for what. 
 Symbols that a lot of people would place. A fitted wardrobe, a kitchen island, a treadmill —
 things a floorplan needs. Keep it to one drawing per file, readable at 40 pixels wide, in the
 same flat line-art style as the rest, and give it keywords someone would actually search for.
+
+## Optional 3D models (version 1)
+
+`model3d` is an optional, declarative model used only in the standing isometric view.
+The existing `parts`, `viewBox`, and `size.w/h` still define the 2D symbol, picker,
+footprint and glow mask. Missing, invalid or unsupported 3D models use the previous
+isometric block with the 2D glyph on top. Older readers ignore `model3d`.
+
+```json
+"model3d": {
+  "version": 1,
+  "units": "cm",
+  "size": { "width": 60, "depth": 60, "height": 180 },
+  "parts": [
+    { "box": [2, 30, 180], "position": [58, 0, 0] },
+    {
+      "repeat": 5,
+      "step": [0, 0, 42],
+      "part": {
+        "extrude": {
+          "polygon": [[0, 0], [60, 0], [60, 30], [30, 60], [0, 60]],
+          "height": 2
+        },
+        "position": [0, 0, 8]
+      }
+    }
+  ]
+}
+```
+
+Coordinates start at the footprint's top-left corner on the floor. X is width,
+Y is depth and Z points up. `position` defaults to `[0,0,0]` and locates the minimum
+corner of a box or cylinder; extrusion vertices are relative to that position.
+An optional `axes: {"up":"z"}` can make the convention explicit.
+
+Supported primitives:
+
+- `box: [width, depth, height]`.
+- `cylinder: {"radius": 10, "height": 30}`; twelve flat segments, centred at
+  `[radius, radius]` relative to its position.
+- `extrude: {"polygon": [[x,y], ...], "height": 2}`; a strictly convex footprint
+  with 3–24 vertices, without repeating the first vertex at the end.
+- `repeat`, `step` and `part` repeat one primitive. Nested repeats are rejected.
+
+Every part must fit inside the model size. All lengths are positive, coordinates
+are finite numbers, and a model expands to at most 64 solids. Concave, intersecting
+or degenerate polygons are rejected. Split concave furniture into convex parts.
+Materials inherit the furniture's resolved colour and skin. Optional
+`material: "glass"` gives a translucent approximation; other material names have
+no effect. No external textures, URLs, scripts or raw SVG are loaded.
+
+Horizontal dimensions follow the placed furniture's width and depth. Z uses the
+same scale as floor coordinates: heights are not compressed when resizing furniture.
+The displayed wall height currently acts as a section plane. Parts above it are
+omitted, and crossing parts are clipped with a flat top at that height. For example,
+a 200 cm shelf unit viewed at 60 cm retains only its lower shelves and the cut sides.
+Beds have a 50 cm sleeping surface (the headboard may be taller); tables are 80 cm.
+At wall height zero the existing flat symbols remain visible. A separate section-height
+setting can be introduced later; there is no additional configuration parameter yet.
+
+All parts join the existing wall/opening depth ordering. This is an SVG solid
+renderer, not a mesh engine: complex interpenetrating solids and layered transparency
+are approximate. The supplied models are stylised silhouettes; heights not specified
+by a manufacturer are illustrative defaults, not measured product specifications.

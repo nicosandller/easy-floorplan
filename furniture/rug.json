@@ -7,5 +7,13 @@
   "parts": [
     { "rect": [0, 0, 100, 100], "rx": 12, "role": "body", "fillOpacity": 0.08, "dash": [8, 5] },
     { "rect": [10, 10, 80, 80], "rx": 8, "role": "detail", "opacity": 0.6 }
-  ]
+  ],
+  "model3d": {
+    "version": 1,
+    "units": "cm",
+    "size": {"width": 180, "depth": 120, "height": 1},
+    "parts": [
+      {"box": [180.0, 120.0, 1], "position": [0.0, 0.0, 0]}
+    ]
+  }
 }

@@ -1,0 +1,29 @@
+{
+  "id": "cornerShelf",
+  "name": "corner shelf",
+  "category": "living",
+  "keywords": ["shelving", "5 shelves", "five shelves", "corner bookcase", "wood", "reol", "hjørnereol", "5 hylder", "60x60", "30 cm sides"],
+  "size": { "w": 60, "h": 60 },
+  "parts": [
+    { "polygon": [[0, 0], [100, 0], [100, 50], [50, 100], [0, 100]], "role": "body" },
+    { "polygon": [[0, 0], [6, 0], [6, 6], [0, 6]], "role": "thin" },
+    { "rect": [94, 0, 6, 50], "role": "body" },
+    { "rect": [0, 94, 50, 6], "role": "body" },
+    { "polygon": [[6, 29], [29, 6], [33, 6], [6, 33]], "role": "thin" },
+    { "polygon": [[6, 55], [55, 6], [59, 6], [6, 59]], "role": "thin" },
+    { "polygon": [[6, 81], [81, 6], [85, 6], [6, 85]], "role": "thin" },
+    { "polygon": [[19, 94], [94, 19], [94, 23], [23, 94]], "role": "thin" },
+    { "polygon": [[45, 94], [94, 45], [94, 49], [49, 94]], "role": "thin" }
+  ],
+  "model3d": {
+    "version": 1,
+    "units": "cm",
+    "size": {"width": 60, "depth": 60, "height": 200},
+    "parts": [
+      {"box": [2.4, 30.0, 200], "position": [57.6, 0.0, 0]},
+      {"box": [30.0, 2.4, 200], "position": [0.0, 57.6, 0]},
+      {"box": [3.0, 3.0, 200], "position": [0.0, 0.0, 0]},
+      {"repeat": 5, "step": [0, 0, 47], "part": {"extrude": {"polygon": [[0.0, 0.0], [60.0, 0.0], [60.0, 30.0], [30.0, 60.0], [0.0, 60.0]], "height": 3}, "position": [0, 0, 8]}}
+    ]
+  }
+}

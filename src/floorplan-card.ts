@@ -189,6 +189,7 @@ import {
   openingWallHeight,
   wallHeadroom,
   furnitureSolid,
+  furnitureModelSolids,
   renderIsoSolids,
   FURNITURE_HEIGHT_FRACTION,
   OUTDOOR_WALL_HEIGHT_MULTIPLIER,
@@ -1155,7 +1156,13 @@ export class FloorplanCard extends LitElement {
 
     const furnitureHeight = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(furnitureHeight, rot);
+    const catalog = symbolCatalog(c.symbols);
     for (const f of active.furniture) {
+      const model = catalog[f.type]?.model3d;
+      if (model) {
+        solids.push(...furnitureModelSolids(f, model, map, baseWallHeight, furnitureTone(f)));
+        continue;
+      }
       solids.push(
         furnitureSolid(
           f,
@@ -1183,9 +1190,24 @@ export class FloorplanCard extends LitElement {
         roofFloorById.set(r.id, fl);
       }
     }
+    const modelHitIds = new Set<string>();
     const solidEdges = c.appearance === "line-art" ? solidEdgeRenderer(solids, LINE_INK) : undefined;
     return renderIsoSolids(solids, (solid, drawing) => {
       if (solidEdges) drawing = svg`${drawing}${solidEdges(solid)}`;
+      if (solid.kind === "furniture" && solid.id && catalog[active.furniture.find(f => f.id === solid.id)?.type ?? ""]?.model3d) {
+        const f = active.furniture.find(f => f.id === solid.id)!;
+        const keyboard = !modelHitIds.has(solid.id);
+        modelHitIds.add(solid.id);
+        const model = catalog[f.type]!.model3d!;
+        const height = Math.min(model.size.height, baseWallHeight);
+        const footprint = furnitureSolid(f, map, height, furnitureTone(f)).base;
+        const xs = footprint.map(p => p.x - height), ys = footprint.map(p => p.y - height);
+        const focus = svg`<rect class="fp-furniture-focus" aria-hidden="true"
+          x=${Math.min(...xs) - FURNITURE_FOCUS_PAD} y=${Math.min(...ys) - FURNITURE_FOCUS_PAD}
+          width=${Math.max(...xs) - Math.min(...xs) + 2 * FURNITURE_FOCUS_PAD}
+          height=${Math.max(...ys) - Math.min(...ys) + 2 * FURNITURE_FOCUS_PAD} />`;
+        return this._furnitureHit(f, drawing, c, getFloors(c), active.id, { keyboard, focus });
+      }
       if (solid.kind === "roof" && solid.id && !solid.isSlab) {
         let a = areaById.get(solid.id);
         if (!a) {
@@ -1464,6 +1486,7 @@ export class FloorplanCard extends LitElement {
     c: FloorplanCardConfig,
     floors: readonly Floor[],
     activeId: string,
+    modelHit?: { keyboard: boolean; focus: SVGTemplateResult },
   ): SVGTemplateResult {
     if (f.showIcon !== false) return drawn;
     const ctl = this._furnitureControl(f, c, floors, activeId);
@@ -1472,7 +1495,7 @@ export class FloorplanCard extends LitElement {
     return svg`<g class="fp-furniture-hit"
         data-id=${cssIdent(f.id) ?? nothing}
         role=${ctl.tappable ? "button" : "group"}
-        tabindex=${ctl.tappable ? "0" : nothing}
+        tabindex=${ctl.tappable && (modelHit?.keyboard ?? true) ? "0" : nothing}
         aria-label=${ctl.name}
         aria-description=${`${ctl.gestures} actions`}
         @action=${ctl.onAction}
@@ -1480,11 +1503,11 @@ export class FloorplanCard extends LitElement {
         .actionHandler=${actionHandler({ hasHold: ctl.hasHold, hasDoubleClick: ctl.hasDoubleClick })}>
       <title>${`${ctl.name} · ${ctl.gestures}`}</title>
       ${drawn}
-      <rect class="fp-furniture-focus" aria-hidden="true"
+      ${modelHit ? modelHit.focus : svg`<rect class="fp-furniture-focus" aria-hidden="true"
           x=${-f.w / 2 - FURNITURE_FOCUS_PAD} y=${-f.h / 2 - FURNITURE_FOCUS_PAD}
           width=${f.w + FURNITURE_FOCUS_PAD * 2} height=${f.h + FURNITURE_FOCUS_PAD * 2}
           rx=${FURNITURE_FOCUS_PAD}
-          transform="translate(${f.x} ${f.y}) rotate(${f.angle ?? 0})" />
+          transform="translate(${f.x} ${f.y}) rotate(${f.angle ?? 0})" />`}
     </g>`;
   }
 
@@ -1505,7 +1528,10 @@ export class FloorplanCard extends LitElement {
     // Floor-level coordinates would leave the control below the table in 3D.
     const frame = this._frame(c, rot);
     const at = rotatePlanPoint(f.x, f.y, c.width, c.height, rot);
-    const p = projectPlanPoint(at.x, at.y, frame, normalizeWallHeight(c.wallHeight) * FURNITURE_HEIGHT_FRACTION);
+    const model = symbolCatalog(c.symbols)[f.type]?.model3d;
+    const height = model ? Math.min(model.size.height, normalizeWallHeight(c.wallHeight))
+      : normalizeWallHeight(c.wallHeight) * FURNITURE_HEIGHT_FRACTION;
+    const p = projectPlanPoint(at.x, at.y, frame, height);
     const d = projectedCanvasSize(frame);
     // Sized like every other badge (issue #362): screen pixels under
     // `overlayScale: fixed`, canvas units under `plan` — otherwise a plan that
@@ -2926,7 +2952,7 @@ export class FloorplanCard extends LitElement {
     }
     /* A piece whose icon is hidden (issue #362): the drawing is the target. */
     .fp-furniture-hit { cursor: pointer; outline: none; }
-    .fp-furniture-hit .fp-furniture { pointer-events: auto; }
+    .fp-furniture-hit .fp-furniture, .fp-furniture-hit .fp-iso-face { pointer-events: auto; }
     /* CSS outline on an SVG <g> is not painted reliably, so keyboard focus
        draws a stroked box around the piece instead: 2 screen pixels at any
        canvas scale. */

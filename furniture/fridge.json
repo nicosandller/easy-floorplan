@@ -9,5 +9,14 @@
     { "line": [0, 40, 100, 40], "role": "line" },
     { "line": [84, 12, 84, 30], "role": "line" },
     { "line": [84, 50, 84, 84], "role": "line" }
-  ]
+  ],
+  "model3d": {
+    "version": 1,
+    "units": "cm",
+    "size": {"width": 60, "depth": 64, "height": 180},
+    "parts": [
+      {"box": [60.0, 64.0, 180], "position": [0.0, 0.0, 0]},
+      {"box": [55.2, 1.28, 168], "position": [2.4, 62.72, 8]}
+    ]
+  }
 }

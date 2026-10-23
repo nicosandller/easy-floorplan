@@ -8,5 +8,14 @@
     { "rect": [0, 0, 100, 100], "rx": 6.666667 },
     { "rect": [10, 24, 80, 62], "rx": 5, "role": "detail", "opacity": 0.8 },
     { "line": [6, 88, 94, 88], "role": "line" }
-  ]
+  ],
+  "model3d": {
+    "version": 1,
+    "units": "cm",
+    "size": {"width": 60, "depth": 60, "height": 85},
+    "parts": [
+      {"box": [60.0, 60.0, 85], "position": [0.0, 0.0, 0]},
+      {"box": [55.2, 1.2, 73], "position": [2.4, 58.8, 8]}
+    ]
+  }
 }
