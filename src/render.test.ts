@@ -6711,6 +6711,47 @@ describe("hide by condition, through the card's own entry points", () => {
     } as unknown as FloorplanCardConfig);
     for (const id of [RADIATOR, OUTSIDE, "sensor.a", "sensor.b"]) expect(ids.has(id)).toBe(true);
   });
+
+  it("watches every entity a furniture visibility condition names (issue #310)", () => {
+    const ids = collectWatchedEntities({
+      floors: [
+        {
+          id: "f1",
+          name: "Main",
+          walls: [],
+          openings: [],
+          items: [],
+          texts: [],
+          trackers: [],
+          furniture: [
+            {
+              id: "car",
+              type: "car",
+              x: 0,
+              y: 0,
+              w: 90,
+              h: 180,
+              entity: "sensor.car_battery",
+              visibility: [
+                { condition: "state", entity: "device_tracker.car", state: "home" },
+                {
+                  condition: "and",
+                  conditions: [
+                    { condition: "numeric_state", entity: "sensor.fuel", above: 10 },
+                    { condition: "state", entity: "binary_sensor.garage", state: "closed" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as FloorplanCardConfig);
+    expect(ids.has("sensor.car_battery")).toBe(true);
+    expect(ids.has("device_tracker.car")).toBe(true);
+    expect(ids.has("sensor.fuel")).toBe(true);
+    expect(ids.has("binary_sensor.garage")).toBe(true);
+  });
 });
 
 describe("item label color (itemLabelColor)", () => {

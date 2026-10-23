@@ -1139,6 +1139,91 @@ export type FurnitureType =
  */
 export type SectionalHand = "left" | "right";
 
+/** Base shape for Home Assistant condition rules (Issue #310). */
+export type VisibilityCondition =
+  | StateVisibilityCondition
+  | NumericStateVisibilityCondition
+  | ScreenVisibilityCondition
+  | UserVisibilityCondition
+  | AndVisibilityCondition
+  | OrVisibilityCondition
+  | NotVisibilityCondition
+  | EntityTargetVisibilityCondition;
+
+export interface StateVisibilityCondition {
+  condition: "state";
+  entity?: string;
+  entity_id?: string | string[];
+  target?: {
+    entity_id?: string | string[];
+    [key: string]: unknown;
+  };
+  state?: string | string[];
+  state_not?: string | string[];
+  attribute?: string;
+  match?: "any" | "all";
+}
+
+export interface NumericStateVisibilityCondition {
+  condition: "numeric_state";
+  entity?: string;
+  entity_id?: string | string[];
+  target?: {
+    entity_id?: string | string[];
+    [key: string]: unknown;
+  };
+  above?: number;
+  below?: number;
+  attribute?: string;
+}
+
+export interface EntityTargetVisibilityCondition {
+  condition: string;
+  target?: {
+    entity_id?: string | string[];
+    [key: string]: unknown;
+  };
+  entity?: string;
+  entity_id?: string | string[];
+  options?: {
+    behavior?: "any" | "all";
+    for?: unknown;
+    [key: string]: unknown;
+  };
+  type?: string;
+  state?: string | string[];
+  state_not?: string | string[];
+  attribute?: string;
+  above?: number;
+  below?: number;
+  [key: string]: unknown;
+}
+
+export interface ScreenVisibilityCondition {
+  condition: "screen";
+  media_query: string;
+}
+
+export interface UserVisibilityCondition {
+  condition: "user";
+  users: string[];
+}
+
+export interface AndVisibilityCondition {
+  condition: "and";
+  conditions: VisibilityCondition[];
+}
+
+export interface OrVisibilityCondition {
+  condition: "or";
+  conditions: VisibilityCondition[];
+}
+
+export interface NotVisibilityCondition {
+  condition: "not";
+  conditions: VisibilityCondition[];
+}
+
 /** A gray furniture/fixture diagram placed on the plan. */
 export interface Furniture {
   id: string;
@@ -1230,6 +1315,13 @@ export interface Furniture {
    * See {@link Wall.locked} for why it stays selectable.
    */
   locked?: boolean;
+  /**
+   * Visibility conditions for dynamic display (Issue #310).
+   * Follows native Home Assistant dashboard card visibility schema.
+   * If any condition evaluates to false, the furniture is hidden.
+   * When omitted or empty, the piece is always visible.
+   */
+  visibility?: VisibilityCondition[];
 }
 
 /**

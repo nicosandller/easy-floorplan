@@ -29,7 +29,9 @@ import type {
   OverlayScale,
   PaletteColor,
   Roof,
+  VisibilityCondition,
 } from "./types";
+import { isFurnitureVisible } from "./furniture-visibility";
 import {
   normalizeSymbol,
   symbolCatalog,
@@ -868,6 +870,7 @@ export class FloorplanCardEditor extends LitElement {
     // defined later (by us or by another editor the user opened).
     for (const tag of [
       "ha-form",
+      "ha-selector",
       "ha-entity-picker",
       "ha-entity-attribute-picker",
       "ha-icon-picker",
@@ -1014,7 +1017,7 @@ export class FloorplanCardEditor extends LitElement {
    * lazy-loads its own picker after that.
    */
   private async _ensureHaComponents(): Promise<void> {
-    if (customElements.get("ha-form") && customElements.get("ha-entity-picker")) return;
+    if (customElements.get("ha-form") && customElements.get("ha-entity-picker") && customElements.get("ha-selector")) return;
     const helpers = await (window as unknown as { loadCardHelpers?: () => Promise<any> })
       .loadCardHelpers?.();
     if (!helpers) return;
@@ -2767,7 +2770,14 @@ export class FloorplanCardEditor extends LitElement {
 
   private _updateFurniture(id: string, partial: Partial<Furniture>): void {
     this._commitFloor({
-      furniture: this._floor().furniture.map((f) => (f.id === id ? { ...f, ...partial } : f)),
+      furniture: this._floor().furniture.map((f) => {
+        if (f.id !== id) return f;
+        const next = { ...f, ...partial };
+        if (partial.visibility === undefined && "visibility" in partial) {
+          delete next.visibility;
+        }
+        return next;
+      }),
     });
   }
 
@@ -3439,6 +3449,58 @@ export class FloorplanCardEditor extends LitElement {
         >
           <ha-icon icon="mdi:plus"></ha-icon>Add rule
         </button>
+      </div>
+    `;
+  }
+
+  /**
+   * Dedicated visibility inspector group using Home Assistant's native condition builder
+   * (<ha-selector .selector=${{ condition: {} }}>) and real-time status indication (Issue #310).
+   */
+  private _renderFurnitureVisibility(f: Furniture): TemplateResult {
+    const hasConditions = Array.isArray(f.visibility) && f.visibility.length > 0;
+    const isVisible = isFurnitureVisible(f, this.hass);
+
+    let statusText: string;
+    let statusClass: string;
+    let statusIcon: string;
+
+    if (!hasConditions) {
+      statusText = "Always visible";
+      statusClass = "status-neutral";
+      statusIcon = "mdi:eye-outline";
+    } else if (isVisible) {
+      statusText = "Visible on floorplan (Conditions met)";
+      statusClass = "status-met";
+      statusIcon = "mdi:check-circle-outline";
+    } else {
+      statusText = "Hidden on floorplan (Condition not met)";
+      statusClass = "status-unmet";
+      statusIcon = "mdi:eye-off-outline";
+    }
+
+    return html`
+      <div class="visibility-group">
+        <div class="visibility-status-row">
+          <span class="visibility-status-badge ${statusClass}">
+            <ha-icon .icon=${statusIcon}></ha-icon>
+            <span>${statusText}</span>
+          </span>
+        </div>
+        <p class="hint">
+          Control when this piece appears on the floorplan. In the editor, hidden furniture is dimmed so it can still be moved or edited.
+        </p>
+        <ha-selector
+          .hass=${this.hass}
+          .selector=${{ condition: {} }}
+          .value=${f.visibility ?? []}
+          @value-changed=${(e: CustomEvent<{ value: VisibilityCondition[] }>) => {
+            e.stopPropagation();
+            const val = e.detail?.value;
+            const visibility = Array.isArray(val) && val.length > 0 ? val : undefined;
+            this._updateFurniture(f.id, { visibility });
+          }}
+        ></ha-selector>
       </div>
     `;
   }
@@ -5543,8 +5605,9 @@ export class FloorplanCardEditor extends LitElement {
 
   private _renderFurnitureSel(f: Furniture): TemplateResult {
     const selected = this._isSel("furniture", f.id);
+    const hidden = !isFurnitureVisible(f, this.hass);
     return svg`
-      <g class="furn-hit ${selected ? "selected" : ""}"
+      <g class="furn-hit ${selected ? "selected" : ""} ${hidden ? "card-hidden" : ""}"
          @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "furniture", id: f.id })}>
         ${renderFurniture(f, undefined, this._symbols())}
         ${
@@ -7072,6 +7135,7 @@ export class FloorplanCardEditor extends LitElement {
             )}
           `
         ) : nothing}
+        ${this._renderGroup("Visibility", this._renderFurnitureVisibility(f))}
       `;
     }
 
@@ -7752,6 +7816,12 @@ export class FloorplanCardEditor extends LitElement {
     }
     .furn-hit {
       cursor: move;
+    }
+    .furn-hit.card-hidden {
+      opacity: 0.35;
+    }
+    .furn-hit.card-hidden.selected {
+      opacity: 0.65;
     }
     .furn-outline {
       fill: none;
@@ -9084,6 +9154,43 @@ export class FloorplanCardEditor extends LitElement {
     }
     .chip-btn ha-icon {
       --mdc-icon-size: 16px;
+    }
+    .visibility-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .visibility-status-row {
+      display: flex;
+      align-items: center;
+    }
+    .visibility-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1;
+    }
+    .visibility-status-badge ha-icon {
+      --mdc-icon-size: 16px;
+    }
+    .visibility-status-badge.status-neutral {
+      background: var(--secondary-background-color, #eceff1);
+      color: var(--secondary-text-color, #757575);
+      border: 1px solid var(--divider-color, #e0e0e0);
+    }
+    .visibility-status-badge.status-met {
+      background: rgba(76, 175, 80, 0.15);
+      color: var(--success-color, #4caf50);
+      border: 1px solid rgba(76, 175, 80, 0.3);
+    }
+    .visibility-status-badge.status-unmet {
+      background: rgba(255, 152, 0, 0.15);
+      color: var(--warning-color, #ff9800);
+      border: 1px solid rgba(255, 152, 0, 0.3);
     }
   `,
     floorSwitcherStyles,

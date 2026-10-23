@@ -2053,10 +2053,15 @@ export function furnitureForm(
       hold_action: f.hold_action,
       double_tap_action: f.double_tap_action,
       showIcon: f.showIcon ?? true,
+      visibility: f.visibility,
     },
     toPatch: (raw) => {
       // On is the default, so only "off" is worth writing down.
-      const p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
+      let p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
+      if ("visibility" in p) {
+        const v = Array.isArray(p.visibility) && p.visibility.length > 0 ? p.visibility : undefined;
+        p = { ...p, visibility: v };
+      }
       if (!("goToFloor" in p)) return p;
       const value = p.goToFloor;
       return {
