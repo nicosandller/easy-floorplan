@@ -4,6 +4,8 @@ import {
   collectConditionEntities,
   evaluateCondition,
   evaluateConditions,
+  evaluateSunCondition,
+  evaluateTimeCondition,
   isFurnitureVisible,
 } from "./furniture-visibility";
 import type { Furniture, RenderHass, VisibilityCondition } from "./types";
@@ -242,6 +244,37 @@ describe("furniture-visibility", () => {
       ).toBe(false);
     });
 
+    it("evaluates string numeric thresholds", () => {
+      const cond: VisibilityCondition = {
+        condition: "numeric_state",
+        entity: "sensor.temperature",
+        above: "18.5",
+        below: "24",
+      };
+      expect(evaluateCondition(cond, mockHass({ "sensor.temperature": { state: "20" } }))).toBe(true);
+      expect(evaluateCondition(cond, mockHass({ "sensor.temperature": { state: "18" } }))).toBe(false);
+      expect(evaluateCondition(cond, mockHass({ "sensor.temperature": { state: "25" } }))).toBe(false);
+    });
+
+    it("evaluates threshold referencing another entity", () => {
+      const cond: VisibilityCondition = {
+        condition: "numeric_state",
+        entity: "sensor.living_area_temperature",
+        above: "input_number.target_min_temp",
+      };
+      const hass = mockHass({
+        "sensor.living_area_temperature": { state: "21.5" },
+        "input_number.target_min_temp": { state: "20.0" },
+      });
+      expect(evaluateCondition(cond, hass)).toBe(true);
+
+      const coldHass = mockHass({
+        "sensor.living_area_temperature": { state: "19.5" },
+        "input_number.target_min_temp": { state: "20.0" },
+      });
+      expect(evaluateCondition(cond, coldHass)).toBe(false);
+    });
+
     it("fails open on missing entity, unavailable, or non-numeric values", () => {
       const cond: VisibilityCondition = { condition: "numeric_state", entity: "sensor.battery", above: 50 };
       expect(evaluateCondition(cond, mockHass({}))).toBe(true);
@@ -411,11 +444,20 @@ describe("furniture-visibility", () => {
           entity_id: ["light.living_room", "light.kitchen"],
           state: "on",
         },
+        {
+          condition: "numeric_state",
+          entity_id: "sensor.living_area_temperature",
+          above: "input_number.target_min_temp",
+          below: "sensor.max_threshold",
+        },
       ];
       expect(collectConditionEntities(conds)).toEqual([
         "cover.garage_door",
         "light.living_room",
         "light.kitchen",
+        "sensor.living_area_temperature",
+        "input_number.target_min_temp",
+        "sensor.max_threshold",
       ]);
     });
   });
@@ -503,6 +545,607 @@ describe("furniture-visibility", () => {
       expect(evaluateCondition(deviceOpen, closedHass)).toBe(false);
       expect(evaluateCondition(deviceClosed, closedHass)).toBe(true);
       expect(evaluateCondition(deviceClosed, openHass)).toBe(false);
+    });
+
+    describe("temperature.is_value and threshold options", () => {
+      it("evaluates temperature.is_value with threshold type: below", () => {
+        const warmHass = mockHass({
+          "sensor.living_area_temperature": { state: "22", attributes: { unit_of_measurement: "°C" } },
+        });
+        const coldHass = mockHass({
+          "sensor.living_area_temperature": { state: "18", attributes: { unit_of_measurement: "°C" } },
+        });
+
+        const belowCond: VisibilityCondition = {
+          condition: "temperature.is_value",
+          target: { entity_id: "sensor.living_area_temperature" },
+          options: {
+            behavior: "any",
+            for: { hours: 0, minutes: 0, seconds: 1 },
+            threshold: {
+              type: "below",
+              value: {
+                active_choice: "number",
+                number: 20,
+                unit_of_measurement: "°C",
+              },
+            },
+          },
+        };
+
+        // When 18°C < 20°C: true (visible)
+        expect(evaluateCondition(belowCond, coldHass)).toBe(true);
+        // When 22°C >= 20°C: false (hidden)
+        expect(evaluateCondition(belowCond, warmHass)).toBe(false);
+      });
+
+      it("evaluates temperature.is_value with threshold type: above", () => {
+        const warmHass = mockHass({
+          "sensor.living_area_temperature": { state: "22", attributes: { unit_of_measurement: "°C" } },
+        });
+        const coldHass = mockHass({
+          "sensor.living_area_temperature": { state: "18", attributes: { unit_of_measurement: "°C" } },
+        });
+
+        const aboveCond: VisibilityCondition = {
+          condition: "temperature.is_value",
+          target: { entity_id: "sensor.living_area_temperature" },
+          options: {
+            behavior: "any",
+            threshold: {
+              type: "above",
+              value: {
+                active_choice: "number",
+                number: 20,
+                unit_of_measurement: "°C",
+              },
+            },
+          },
+        };
+
+        // When 22°C > 20°C: true (visible)
+        expect(evaluateCondition(aboveCond, warmHass)).toBe(true);
+        // When 18°C <= 20°C: false (hidden)
+        expect(evaluateCondition(aboveCond, coldHass)).toBe(false);
+      });
+
+      it("handles temperature unit conversion between °C and °F", () => {
+        // Sensor reports in Fahrenheit: 77°F = 25°C, 59°F = 15°C
+        const warmFahrenheit = mockHass({
+          "sensor.living_area_temperature": { state: "77", attributes: { unit_of_measurement: "°F" } },
+        });
+        const coldFahrenheit = mockHass({
+          "sensor.living_area_temperature": { state: "59", attributes: { unit_of_measurement: "°F" } },
+        });
+
+        // Threshold configured in Celsius (20°C = 68°F)
+        const aboveCond: VisibilityCondition = {
+          condition: "temperature.is_value",
+          target: { entity_id: "sensor.living_area_temperature" },
+          options: {
+            threshold: {
+              type: "above",
+              value: {
+                active_choice: "number",
+                number: 20,
+                unit_of_measurement: "°C",
+              },
+            },
+          },
+        };
+
+        // 77°F (25°C) > 20°C (68°F) -> true
+        expect(evaluateCondition(aboveCond, warmFahrenheit)).toBe(true);
+        // 59°F (15°C) <= 20°C (68°F) -> false
+        expect(evaluateCondition(aboveCond, coldFahrenheit)).toBe(false);
+      });
+
+      it("supports active_choice: entity referencing a helper threshold entity", () => {
+        const hass = mockHass({
+          "sensor.living_area_temperature": { state: "21", attributes: { unit_of_measurement: "°C" } },
+          "input_number.target_limit": { state: "22", attributes: { unit_of_measurement: "°C" } },
+        });
+
+        const cond: VisibilityCondition = {
+          condition: "temperature.is_value",
+          target: { entity_id: "sensor.living_area_temperature" },
+          options: {
+            threshold: {
+              type: "below",
+              value: {
+                active_choice: "entity",
+                entity: "input_number.target_limit",
+              },
+            },
+          },
+        };
+
+        // 21 < 22 -> true
+        expect(evaluateCondition(cond, hass)).toBe(true);
+
+        // Update target limit to 20 -> 21 is not < 20 -> false
+        const updatedHass = mockHass({
+          "sensor.living_area_temperature": { state: "21", attributes: { unit_of_measurement: "°C" } },
+          "input_number.target_limit": { state: "20", attributes: { unit_of_measurement: "°C" } },
+        });
+        expect(evaluateCondition(cond, updatedHass)).toBe(false);
+
+        // Ensure both entities are collected for live subscription
+        const entities = collectConditionEntities([cond]);
+        expect(entities).toContain("sensor.living_area_temperature");
+        expect(entities).toContain("input_number.target_limit");
+      });
+
+      it("supports in_range and outside_range threshold types", () => {
+        const condInRange: VisibilityCondition = {
+          condition: "temperature.is_value",
+          target: { entity_id: "sensor.temp" },
+          options: {
+            threshold: {
+              type: "in_range",
+              value_min: 18,
+              value_max: 24,
+            },
+          },
+        };
+
+        expect(evaluateCondition(condInRange, mockHass({ "sensor.temp": { state: "21" } }))).toBe(true);
+        expect(evaluateCondition(condInRange, mockHass({ "sensor.temp": { state: "17" } }))).toBe(false);
+        expect(evaluateCondition(condInRange, mockHass({ "sensor.temp": { state: "25" } }))).toBe(false);
+
+        const condOutside: VisibilityCondition = {
+          condition: "temperature.is_value",
+          target: { entity_id: "sensor.temp" },
+          options: {
+            threshold: {
+              type: "outside_range",
+              value_min: 18,
+              value_max: 24,
+            },
+          },
+        };
+
+        expect(evaluateCondition(condOutside, mockHass({ "sensor.temp": { state: "15" } }))).toBe(true);
+        expect(evaluateCondition(condOutside, mockHass({ "sensor.temp": { state: "26" } }))).toBe(true);
+        expect(evaluateCondition(condOutside, mockHass({ "sensor.temp": { state: "21" } }))).toBe(false);
+      });
+    });
+
+    describe("time condition", () => {
+      it("evaluates after and before within same day", () => {
+        const cond: VisibilityCondition = {
+          condition: "time",
+          after: "08:00:00",
+          before: "17:00:00",
+        };
+        const hass = mockHass({});
+        // 12:00:00 -> in range
+        const midDay = new Date("2026-10-23T12:00:00");
+        expect(evaluateTimeCondition(cond as Record<string, unknown>, hass, midDay)).toBe(true);
+
+        // 07:30:00 -> too early
+        const early = new Date("2026-10-23T07:30:00");
+        expect(evaluateTimeCondition(cond as Record<string, unknown>, hass, early)).toBe(false);
+
+        // 18:00:00 -> too late
+        const late = new Date("2026-10-23T18:00:00");
+        expect(evaluateTimeCondition(cond as Record<string, unknown>, hass, late)).toBe(false);
+      });
+
+      it("evaluates midnight-crossing time interval (e.g. 22:00 to 06:00)", () => {
+        const cond: VisibilityCondition = {
+          condition: "time",
+          after: "22:00",
+          before: "06:00",
+        };
+        const hass = mockHass({});
+        // 23:30 -> night, matches
+        const lateNight = new Date("2026-10-23T23:30:00");
+        expect(evaluateTimeCondition(cond as Record<string, unknown>, hass, lateNight)).toBe(true);
+
+        // 04:00 -> early morning, matches
+        const earlyMorning = new Date("2026-10-23T04:00:00");
+        expect(evaluateTimeCondition(cond as Record<string, unknown>, hass, earlyMorning)).toBe(true);
+
+        // 14:00 -> day, does not match
+        const day = new Date("2026-10-23T14:00:00");
+        expect(evaluateTimeCondition(cond as Record<string, unknown>, hass, day)).toBe(false);
+      });
+
+      it("evaluates weekdays restriction", () => {
+        const cond: VisibilityCondition = {
+          condition: "time",
+          weekdays: ["mon", "tue", "wed", "thu", "fri"],
+        };
+        const hass = mockHass({});
+        // 2026-10-23 is a Friday
+        const friday = new Date("2026-10-23T12:00:00");
+        expect(evaluateTimeCondition(cond as Record<string, unknown>, hass, friday)).toBe(true);
+
+        // 2026-10-24 is a Saturday
+        const saturday = new Date("2026-10-24T12:00:00");
+        expect(evaluateTimeCondition(cond as Record<string, unknown>, hass, saturday)).toBe(false);
+      });
+
+      it("resolves time from an entity ID reference", () => {
+        const cond: VisibilityCondition = {
+          condition: "time",
+          after: "input_datetime.work_starts",
+        };
+        const hass = mockHass({
+          "input_datetime.work_starts": { state: "09:00:00" },
+        });
+        const atTen = new Date("2026-10-23T10:00:00");
+        expect(evaluateTimeCondition(cond as Record<string, unknown>, hass, atTen)).toBe(true);
+
+        const atEight = new Date("2026-10-23T08:00:00");
+        expect(evaluateTimeCondition(cond as Record<string, unknown>, hass, atEight)).toBe(false);
+      });
+    });
+
+    describe("sun condition", () => {
+      it("evaluates shorthand sun.is_above_horizon and sun.is_below_horizon", () => {
+        const aboveCond: VisibilityCondition = {
+          condition: "sun.is_above_horizon",
+        };
+        const belowCond: VisibilityCondition = {
+          condition: "sun.is_below_horizon",
+        };
+
+        const dayHass = mockHass({ "sun.sun": { state: "above_horizon" } });
+        const nightHass = mockHass({ "sun.sun": { state: "below_horizon" } });
+
+        expect(evaluateCondition(aboveCond, dayHass)).toBe(true);
+        expect(evaluateCondition(aboveCond, nightHass)).toBe(false);
+
+        expect(evaluateCondition(belowCond, dayHass)).toBe(false);
+        expect(evaluateCondition(belowCond, nightHass)).toBe(true);
+      });
+
+      it("evaluates standard sun condition with after: sunrise, before: sunset", () => {
+        const dayCond: VisibilityCondition = {
+          condition: "sun",
+          after: "sunrise",
+          before: "sunset",
+        };
+        const nightCond: VisibilityCondition = {
+          condition: "sun",
+          after: "sunset",
+          before: "sunrise",
+        };
+
+        const dayHass = mockHass({ "sun.sun": { state: "above_horizon" } });
+        const nightHass = mockHass({ "sun.sun": { state: "below_horizon" } });
+
+        expect(evaluateCondition(dayCond, dayHass)).toBe(true);
+        expect(evaluateCondition(dayCond, nightHass)).toBe(false);
+
+        expect(evaluateCondition(nightCond, dayHass)).toBe(false);
+        expect(evaluateCondition(nightCond, nightHass)).toBe(true);
+      });
+
+      it("evaluates sun condition with offset and timestamps", () => {
+        const offsetCond = {
+          condition: "sun",
+          after: "sunrise",
+          after_offset: "+01:00:00",
+        };
+        const hass = mockHass({
+          "sun.sun": {
+            state: "above_horizon",
+            attributes: {
+              next_rising: "2026-10-24T06:00:00Z",
+              next_setting: "2026-10-23T18:00:00Z",
+            },
+          },
+        });
+        // Sunrise today was approx 06:00:00. Plus 1 hour offset -> 07:00:00.
+        // At 08:00:00 -> after 07:00:00 -> matches
+        const atEight = new Date("2026-10-23T08:00:00Z");
+        expect(evaluateSunCondition(offsetCond, hass, atEight)).toBe(true);
+
+        // At 06:30:00 -> before 07:00:00 -> does not match
+        const atSixThirty = new Date("2026-10-23T06:30:00Z");
+        expect(evaluateSunCondition(offsetCond, hass, atSixThirty)).toBe(false);
+      });
+    });
+
+    describe("zone condition", () => {
+      it("evaluates person in zone.home or zone.work", () => {
+        const homeCond: VisibilityCondition = {
+          condition: "zone",
+          entity: "person.andrei",
+          zone: "zone.home",
+        };
+        const workCond: VisibilityCondition = {
+          condition: "zone",
+          entity: "person.andrei",
+          zone: "zone.work",
+        };
+
+        const atHomeHass = mockHass({
+          "person.andrei": { state: "home", attributes: { in_zones: ["zone.home"] } },
+          "zone.home": { state: "z", attributes: { friendly_name: "Home" } },
+          "zone.work": { state: "z", attributes: { friendly_name: "Work" } },
+        });
+
+        const atWorkHass = mockHass({
+          "person.andrei": { state: "work", attributes: { in_zones: ["zone.work"] } },
+          "zone.home": { state: "z", attributes: { friendly_name: "Home" } },
+          "zone.work": { state: "z", attributes: { friendly_name: "Work" } },
+        });
+
+        expect(evaluateCondition(homeCond, atHomeHass)).toBe(true);
+        expect(evaluateCondition(workCond, atHomeHass)).toBe(false);
+
+        expect(evaluateCondition(homeCond, atWorkHass)).toBe(false);
+        expect(evaluateCondition(workCond, atWorkHass)).toBe(true);
+      });
+
+      it("evaluates not_in_zone state", () => {
+        const cond: VisibilityCondition = {
+          condition: "zone",
+          entity: "person.andrei",
+          zone: "zone.home",
+          state: "not_in_zone",
+        };
+
+        const atHome = mockHass({ "person.andrei": { state: "home" } });
+        const away = mockHass({ "person.andrei": { state: "not_home" } });
+
+        expect(evaluateCondition(cond, atHome)).toBe(false);
+        expect(evaluateCondition(cond, away)).toBe(true);
+      });
+    });
+
+    describe("location condition", () => {
+      it("evaluates away: true matching user's person", () => {
+        const awayCond: VisibilityCondition = {
+          condition: "location",
+          away: true,
+        };
+        const hassAway = {
+          ...mockHass({
+            "person.alice": { state: "not_home", attributes: { user_id: "u123" } },
+          }),
+          user: { id: "u123" },
+        };
+        const hassHome = {
+          ...mockHass({
+            "person.alice": { state: "home", attributes: { user_id: "u123" } },
+          }),
+          user: { id: "u123" },
+        };
+
+        expect(evaluateCondition(awayCond, hassAway)).toBe(true);
+        expect(evaluateCondition(awayCond, hassHome)).toBe(false);
+      });
+
+      it("evaluates locations list matching user's person", () => {
+        const locCond: VisibilityCondition = {
+          condition: "location",
+          locations: ["home", "work"],
+        };
+        const hassHome = {
+          ...mockHass({
+            "person.alice": { state: "home", attributes: { user_id: "u123" } },
+          }),
+          user: { id: "u123" },
+        };
+        const hassGym = {
+          ...mockHass({
+            "person.alice": { state: "gym", attributes: { user_id: "u123" } },
+          }),
+          user: { id: "u123" },
+        };
+
+        expect(evaluateCondition(locCond, hassHome)).toBe(true);
+        expect(evaluateCondition(locCond, hassGym)).toBe(false);
+      });
+    });
+
+    describe("view_columns and template conditions", () => {
+      it("view_columns condition fails open in floorplan card view", () => {
+        const cond: VisibilityCondition = {
+          condition: "view_columns",
+          min: 2,
+          max: 4,
+        };
+        expect(evaluateCondition(cond, mockHass({}))).toBe(true);
+      });
+
+      it("template condition fails open client-side", () => {
+        const cond: VisibilityCondition = {
+          condition: "template",
+          value_template: "{{ is_state('sun.sun', 'above_horizon') }}",
+        } as unknown as VisibilityCondition;
+        expect(evaluateCondition(cond, mockHass({}))).toBe(true);
+      });
+    });
+
+    describe("state condition with entity reference resolution", () => {
+      it("resolves another entity's state when condition.state is an entity ID", () => {
+        const cond: VisibilityCondition = {
+          condition: "state",
+          entity: "sensor.living_room_mode",
+          state: "input_select.house_mode",
+        };
+
+        const matchingHass = mockHass({
+          "sensor.living_room_mode": { state: "evening" },
+          "input_select.house_mode": { state: "evening" },
+        });
+
+        const mismatchHass = mockHass({
+          "sensor.living_room_mode": { state: "day" },
+          "input_select.house_mode": { state: "evening" },
+        });
+
+        expect(evaluateCondition(cond, matchingHass)).toBe(true);
+        expect(evaluateCondition(cond, mismatchHass)).toBe(false);
+      });
+    });
+
+    describe("expanded domain shorthand actions", () => {
+      it("evaluates motion.is_detected and motion.is_clear", () => {
+        const detectedCond: VisibilityCondition = {
+          condition: "motion.is_detected",
+          target: { entity_id: "binary_sensor.living_room_motion" },
+        };
+        const clearCond: VisibilityCondition = {
+          condition: "motion.is_clear",
+          target: { entity_id: "binary_sensor.living_room_motion" },
+        };
+
+        const motionOn = mockHass({ "binary_sensor.living_room_motion": { state: "on" } });
+        const motionOff = mockHass({ "binary_sensor.living_room_motion": { state: "off" } });
+
+        expect(evaluateCondition(detectedCond, motionOn)).toBe(true);
+        expect(evaluateCondition(detectedCond, motionOff)).toBe(false);
+
+        expect(evaluateCondition(clearCond, motionOn)).toBe(false);
+        expect(evaluateCondition(clearCond, motionOff)).toBe(true);
+      });
+
+      it("evaluates occupancy.is_occupied and occupancy.is_not_occupied", () => {
+        const occCond: VisibilityCondition = {
+          condition: "occupancy.is_occupied",
+          entity: "binary_sensor.office_occupancy",
+        };
+        const notOccCond: VisibilityCondition = {
+          condition: "occupancy.is_not_occupied",
+          entity: "binary_sensor.office_occupancy",
+        };
+
+        const onHass = mockHass({ "binary_sensor.office_occupancy": { state: "on" } });
+        const offHass = mockHass({ "binary_sensor.office_occupancy": { state: "off" } });
+
+        expect(evaluateCondition(occCond, onHass)).toBe(true);
+        expect(evaluateCondition(occCond, offHass)).toBe(false);
+
+        expect(evaluateCondition(notOccCond, onHass)).toBe(false);
+        expect(evaluateCondition(notOccCond, offHass)).toBe(true);
+      });
+
+      it("evaluates plug.is_plugged_in and plug.is_unplugged", () => {
+        const pluggedCond: VisibilityCondition = {
+          condition: "plug.is_plugged_in",
+          entity: "binary_sensor.ev_plug",
+        };
+        const unpluggedCond: VisibilityCondition = {
+          condition: "plug.is_unplugged",
+          entity: "binary_sensor.ev_plug",
+        };
+
+        const onHass = mockHass({ "binary_sensor.ev_plug": { state: "on" } });
+        const offHass = mockHass({ "binary_sensor.ev_plug": { state: "off" } });
+
+        expect(evaluateCondition(pluggedCond, onHass)).toBe(true);
+        expect(evaluateCondition(pluggedCond, offHass)).toBe(false);
+
+        expect(evaluateCondition(unpluggedCond, onHass)).toBe(false);
+        expect(evaluateCondition(unpluggedCond, offHass)).toBe(true);
+      });
+
+      it("evaluates media_player states (is_playing, is_paused, is_idle)", () => {
+        const playingCond: VisibilityCondition = {
+          condition: "media_player.is_playing",
+          entity: "media_player.tv",
+        };
+        const pausedCond: VisibilityCondition = {
+          condition: "media_player.is_paused",
+          entity: "media_player.tv",
+        };
+
+        const playingHass = mockHass({ "media_player.tv": { state: "playing" } });
+        const pausedHass = mockHass({ "media_player.tv": { state: "paused" } });
+
+        expect(evaluateCondition(playingCond, playingHass)).toBe(true);
+        expect(evaluateCondition(playingCond, pausedHass)).toBe(false);
+
+        expect(evaluateCondition(pausedCond, playingHass)).toBe(false);
+        expect(evaluateCondition(pausedCond, pausedHass)).toBe(true);
+      });
+
+      it("evaluates vacuum states (is_cleaning, is_docked)", () => {
+        const cleanCond: VisibilityCondition = {
+          condition: "vacuum.is_cleaning",
+          entity: "vacuum.roborock",
+        };
+        const dockedCond: VisibilityCondition = {
+          condition: "vacuum.is_docked",
+          entity: "vacuum.roborock",
+        };
+
+        const cleanHass = mockHass({ "vacuum.roborock": { state: "cleaning" } });
+        const dockHass = mockHass({ "vacuum.roborock": { state: "docked" } });
+
+        expect(evaluateCondition(cleanCond, cleanHass)).toBe(true);
+        expect(evaluateCondition(cleanCond, dockHass)).toBe(false);
+
+        expect(evaluateCondition(dockedCond, cleanHass)).toBe(false);
+        expect(evaluateCondition(dockedCond, dockHass)).toBe(true);
+      });
+
+      it("evaluates alarm_control_panel states (is_armed_home, is_disarmed)", () => {
+        const armedCond: VisibilityCondition = {
+          condition: "alarm_control_panel.is_armed_home",
+          entity: "alarm_control_panel.home_alarm",
+        };
+        const disarmedCond: VisibilityCondition = {
+          condition: "alarm_control_panel.is_disarmed",
+          entity: "alarm_control_panel.home_alarm",
+        };
+
+        const armedHass = mockHass({ "alarm_control_panel.home_alarm": { state: "armed_home" } });
+        const disarmedHass = mockHass({ "alarm_control_panel.home_alarm": { state: "disarmed" } });
+
+        expect(evaluateCondition(armedCond, armedHass)).toBe(true);
+        expect(evaluateCondition(armedCond, disarmedHass)).toBe(false);
+
+        expect(evaluateCondition(disarmedCond, armedHass)).toBe(false);
+        expect(evaluateCondition(disarmedCond, disarmedHass)).toBe(true);
+      });
+    });
+
+    describe("collectConditionEntities comprehensive registration", () => {
+      it("collects sun.sun for sun conditions", () => {
+        const cond: VisibilityCondition = { condition: "sun" };
+        expect(collectConditionEntities([cond])).toContain("sun.sun");
+      });
+
+      it("collects entities from time conditions", () => {
+        const cond: VisibilityCondition = {
+          condition: "time",
+          after: "input_datetime.work_starts",
+          before: "input_datetime.work_ends",
+        };
+        const ents = collectConditionEntities([cond]);
+        expect(ents).toContain("input_datetime.work_starts");
+        expect(ents).toContain("input_datetime.work_ends");
+      });
+
+      it("collects zone entity from zone condition", () => {
+        const cond: VisibilityCondition = {
+          condition: "zone",
+          entity: "person.andrei",
+          zone: "zone.work",
+        };
+        const ents = collectConditionEntities([cond]);
+        expect(ents).toContain("person.andrei");
+        expect(ents).toContain("zone.work");
+      });
+
+      it("collects state target entity references", () => {
+        const cond: VisibilityCondition = {
+          condition: "state",
+          entity: "sensor.living_room_mode",
+          state: "input_select.house_mode",
+        };
+        const ents = collectConditionEntities([cond]);
+        expect(ents).toContain("sensor.living_room_mode");
+        expect(ents).toContain("input_select.house_mode");
+      });
     });
   });
 });

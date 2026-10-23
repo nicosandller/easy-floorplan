@@ -32,6 +32,42 @@ import type {
   VisibilityCondition,
 } from "./types";
 import { isFurnitureVisible } from "./furniture-visibility";
+
+const CONDITION_SELECTOR = { condition: {} };
+const EMPTY_VISIBILITY: VisibilityCondition[] = [];
+
+/**
+ * Fallback localization strings for condition and automation editor components.
+ *
+ * In Home Assistant, the Condition Selector (<ha-selector .selector=${{ condition: {} }}>)
+ * renders subcomponents (such as ha-automation-condition-numeric_state) whose schemas
+ * and options fetch strings from the "config" translation fragment (ui.panel.config.automation.editor.*).
+ * Because Lovelace dashboard cards operate outside the configuration panel, the "config" fragment
+ * is not loaded by default, leaving radio button options (like "Fixed number" and "Value of an entity")
+ * and threshold labels ("Above", "Below") with empty strings.
+ *
+ * We both lazily trigger hass.loadFragmentTranslation("config") and defensively provide these
+ * standard fallbacks so the condition builder remains fully labeled at all times.
+ */
+export const FALLBACK_CONFIG_TRANSLATIONS: Record<string, string> = {
+  "ui.panel.config.automation.editor.conditions.type.numeric_state.type_value": "Fixed number",
+  "ui.panel.config.automation.editor.conditions.type.numeric_state.type_input": "Value of an entity",
+  "ui.panel.config.automation.editor.triggers.type.numeric_state.type_value": "Fixed number",
+  "ui.panel.config.automation.editor.triggers.type.numeric_state.type_input": "Value of an entity",
+  "ui.panel.config.automation.editor.triggers.type.numeric_state.lower_limit": "Above",
+  "ui.panel.config.automation.editor.triggers.type.numeric_state.upper_limit": "Below",
+  "ui.panel.config.automation.editor.triggers.type.numeric_state.above": "Above",
+  "ui.panel.config.automation.editor.triggers.type.numeric_state.below": "Below",
+  "ui.panel.config.automation.editor.triggers.type.numeric_state.value_template": "Value template",
+  "ui.panel.config.automation.editor.conditions.type.time.type_value": "Fixed time",
+  "ui.panel.config.automation.editor.conditions.type.time.type_input": "Value of an entity",
+  "ui.panel.config.automation.editor.triggers.type.time.type_value": "Fixed time",
+  "ui.panel.config.automation.editor.triggers.type.time.type_input": "Value of an entity",
+  "ui.panel.config.automation.editor.triggers.type.time.after": "After",
+  "ui.panel.config.automation.editor.triggers.type.time.before": "Before",
+  "ui.panel.config.automation.editor.conditions.type.state.label": "State",
+  "ui.panel.config.automation.editor.conditions.type.numeric_state.label": "Numeric state",
+};
 import {
   normalizeSymbol,
   symbolCatalog,
@@ -634,11 +670,7 @@ export class FloorplanCardEditor extends LitElement {
     ev.stopPropagation();
     this._canvasWrap?.focus({ preventScroll: true });
   };
-  private _onFocusIn = (ev: FocusEvent) => {
-    // While the fullscreen popover is up, anything that pulls focus outside the
-    // editor (Tab past the last control, a dialog opening above) lands on UI
-    // hidden behind the top layer. Collapse instead of leaving the user blind.
-    if (this._fullscreen && !ev.composedPath().includes(this)) this._fullscreen = false;
+  private _onFocusIn = (_ev: FocusEvent) => {
     this._syncVisualViewport();
   };
 
@@ -742,6 +774,28 @@ export class FloorplanCardEditor extends LitElement {
 
   public setConfig(config: FloorplanCardConfig): void {
     validateYCoordinates(config);
+
+    // An echo of our own emission is caught here. HA hands our emitted config
+    // straight back, or plugins like card-mod hand back a deep copy of it.
+    // In that case, `this._config` already holds the active, live object graph
+    // (with intact object identities). Re-cloning floors on an echo would destroy
+    // object identities across every element, causing child web components that
+    // key elements by object identity (such as HA's <ha-automation-condition> row keys)
+    // to tear down and recreate expanded accordion rows on every keystroke.
+    const isEcho = Boolean(
+      this._lastEmitted &&
+      (config === this._lastEmitted || configsEqual(config, this._lastEmitted))
+    );
+
+    if (isEcho) {
+      const ext = config as { card_mod?: unknown };
+      const cur = this._config as { card_mod?: unknown };
+      if (ext.card_mod !== cur.card_mod) {
+        this._config = { ...this._config, card_mod: ext.card_mod };
+      }
+      return;
+    }
+
     const base = { ...emptyConfig(config.type || "custom:easy-floorplan-card"), ...config };
     // Normalize to the floors model (migrating legacy single-floor configs) and
     // clear the legacy flat arrays so `floors` is the single source of truth.
@@ -771,7 +825,7 @@ export class FloorplanCardEditor extends LitElement {
     // two can replace it with a copy. card-mod deep-clones every config on its
     // way in, so with it installed this comparison is always the deep one --
     // which is why `_lastEmitted` has to be a snapshot nobody else holds.
-    if (this._lastEmitted && config !== this._lastEmitted && !configsEqual(config, this._lastEmitted)) {
+    if (this._lastEmitted) {
       this._history = [];
       this._future = [];
       this._liveEditKey = null;
@@ -794,6 +848,7 @@ export class FloorplanCardEditor extends LitElement {
     if (floorsOf(prev) !== floorsOf(this.hass)) return true;
     // The canvas image follows light/dark mode (issue #366).
     if (hassDarkMode(prev) !== hassDarkMode(this.hass)) return true;
+    if (prev.localize !== this.hass.localize) return true;
     return hassRenderInputsChanged(prev, this.hass, this._watchedEntities);
   }
 
@@ -853,6 +908,7 @@ export class FloorplanCardEditor extends LitElement {
 
   protected firstUpdated(): void {
     void this._ensureHaComponents();
+    this._ensureConfigTranslations();
     if (this._canvasWrap && typeof ResizeObserver !== "undefined") {
       this._canvasResize = new ResizeObserver(() => {
         // The phone inspector is a close-up of the object being edited.
@@ -3453,6 +3509,55 @@ export class FloorplanCardEditor extends LitElement {
     `;
   }
 
+  private _loadedConfigTranslations = false;
+  private _lastConditionHassBase?: HomeAssistant;
+  private _cachedConditionHass?: HomeAssistant;
+
+  /**
+   * Proactively lazy-loads Home Assistant's "config" translation fragment
+   * so subcomponents of the automation condition editor (like numeric_state, time, state)
+   * can display localized radio button and limit labels.
+   */
+  private _ensureConfigTranslations(): void {
+    if (this._loadedConfigTranslations || !this.hass) return;
+    const loadFn = (this.hass as unknown as { loadFragmentTranslation?: (fragment: string) => Promise<unknown> })
+      .loadFragmentTranslation;
+    if (typeof loadFn !== "function") return;
+    this._loadedConfigTranslations = true;
+    void loadFn.call(this.hass, "config").then(() => {
+      this.requestUpdate();
+    }).catch(() => {
+      this._loadedConfigTranslations = false;
+    });
+  }
+
+  /**
+   * Returns a hass object for condition selectors with defensive translation
+   * fallbacks for missing config keys, ensuring radio options like "Fixed number"
+   * and "Value of an entity" never display with empty labels.
+   */
+  private _getConditionHass(): HomeAssistant | undefined {
+    if (!this.hass) return undefined;
+    this._ensureConfigTranslations();
+    if (this.hass === this._lastConditionHassBase && this._cachedConditionHass) {
+      return this._cachedConditionHass;
+    }
+    this._lastConditionHassBase = this.hass;
+    const origLocalize = this.hass.localize ? this.hass.localize.bind(this.hass) : undefined;
+    const wrappedLocalize = (key: string, ...args: unknown[]): string => {
+      const res = origLocalize ? origLocalize(key, ...args) : "";
+      if (res) return res;
+      return FALLBACK_CONFIG_TRANSLATIONS[key] ?? "";
+    };
+    this._cachedConditionHass = new Proxy(this.hass, {
+      get: (target, prop, receiver) => {
+        if (prop === "localize") return wrappedLocalize;
+        return Reflect.get(target, prop, receiver);
+      },
+    });
+    return this._cachedConditionHass;
+  }
+
   /**
    * Dedicated visibility inspector group using Home Assistant's native condition builder
    * (<ha-selector .selector=${{ condition: {} }}>) and real-time status indication (Issue #310).
@@ -3491,14 +3596,15 @@ export class FloorplanCardEditor extends LitElement {
           Control when this piece appears on the floorplan. In the editor, hidden furniture is dimmed so it can still be moved or edited.
         </p>
         <ha-selector
-          .hass=${this.hass}
-          .selector=${{ condition: {} }}
-          .value=${f.visibility ?? []}
+          .hass=${this._getConditionHass()}
+          .selector=${CONDITION_SELECTOR}
+          .value=${f.visibility ?? EMPTY_VISIBILITY}
           @value-changed=${(e: CustomEvent<{ value: VisibilityCondition[] }>) => {
             e.stopPropagation();
             const val = e.detail?.value;
             const visibility = Array.isArray(val) && val.length > 0 ? val : undefined;
-            this._updateFurniture(f.id, { visibility });
+            if (configsEqual(visibility, f.visibility)) return;
+            this._updateFurnitureLive(f.id, { visibility });
           }}
         ></ha-selector>
       </div>
@@ -3649,7 +3755,14 @@ export class FloorplanCardEditor extends LitElement {
   private _updateFurnitureLive(id: string, partial: Partial<Furniture>): void {
     this._beginLive("furniture", id, partial);
     this._emitFloor({
-      furniture: this._floor().furniture.map((f) => (f.id === id ? { ...f, ...partial } : f)),
+      furniture: this._floor().furniture.map((f) => {
+        if (f.id !== id) return f;
+        const next = { ...f, ...partial };
+        if (partial.visibility === undefined && "visibility" in partial) {
+          delete next.visibility;
+        }
+        return next;
+      }),
     });
   }
 

@@ -41,6 +41,10 @@ export interface HomeAssistant extends BaseHomeAssistant {
    * predates it. Read by `roomTints` to pick each tint's dark side.
    */
   themes: BaseHomeAssistant["themes"] & { darkMode?: boolean };
+  /**
+   * Lazily loads on-demand frontend translation fragments (e.g. "config").
+   */
+  loadFragmentTranslation?(fragment: string): Promise<unknown>;
 }
 
 /**
@@ -1143,6 +1147,11 @@ export type SectionalHand = "left" | "right";
 export type VisibilityCondition =
   | StateVisibilityCondition
   | NumericStateVisibilityCondition
+  | TimeVisibilityCondition
+  | SunVisibilityCondition
+  | ZoneVisibilityCondition
+  | LocationVisibilityCondition
+  | ViewColumnsVisibilityCondition
   | ScreenVisibilityCondition
   | UserVisibilityCondition
   | AndVisibilityCondition
@@ -1172,9 +1181,34 @@ export interface NumericStateVisibilityCondition {
     entity_id?: string | string[];
     [key: string]: unknown;
   };
-  above?: number;
-  below?: number;
+  above?: number | string;
+  below?: number | string;
   attribute?: string;
+}
+
+export interface ThresholdValueConfig {
+  active_choice?: "number" | "entity" | string;
+  number?: number | string;
+  entity?: string;
+  entity_id?: string;
+  unit_of_measurement?: string;
+  [key: string]: unknown;
+}
+
+export interface ThresholdConfig {
+  type?: "above" | "below" | "in_range" | "outside_range" | string;
+  value?: number | string | ThresholdValueConfig;
+  value_min?: number | string | ThresholdValueConfig;
+  value_max?: number | string | ThresholdValueConfig;
+  value_lower?: number | string | ThresholdValueConfig;
+  value_upper?: number | string | ThresholdValueConfig;
+  min?: number | string | ThresholdValueConfig;
+  max?: number | string | ThresholdValueConfig;
+  lower?: number | string | ThresholdValueConfig;
+  upper?: number | string | ThresholdValueConfig;
+  above?: number | string | ThresholdValueConfig;
+  below?: number | string | ThresholdValueConfig;
+  [key: string]: unknown;
 }
 
 export interface EntityTargetVisibilityCondition {
@@ -1188,15 +1222,61 @@ export interface EntityTargetVisibilityCondition {
   options?: {
     behavior?: "any" | "all";
     for?: unknown;
+    threshold?: ThresholdConfig;
     [key: string]: unknown;
   };
+  threshold?: ThresholdConfig;
   type?: string;
   state?: string | string[];
   state_not?: string | string[];
   attribute?: string;
-  above?: number;
-  below?: number;
+  above?: number | string;
+  below?: number | string;
   [key: string]: unknown;
+}
+
+export interface TimeVisibilityCondition {
+  condition: "time";
+  after?: string;
+  before?: string;
+  weekdays?: string[];
+}
+
+export interface SunVisibilityCondition {
+  condition: "sun" | "sun.is_above_horizon" | "sun.is_below_horizon" | string;
+  after?: "sunrise" | "sunset" | string;
+  after_offset?: string | number;
+  before?: "sunrise" | "sunset" | string;
+  before_offset?: string | number;
+}
+
+export interface ZoneVisibilityCondition {
+  condition: "zone";
+  entity?: string;
+  entity_id?: string | string[];
+  target?: {
+    entity_id?: string | string[];
+    [key: string]: unknown;
+  };
+  zone: string;
+  state?: "in_zone" | "not_in_zone" | string;
+}
+
+export interface LocationVisibilityCondition {
+  condition: "location";
+  locations?: string[];
+  away?: boolean;
+  target?: {
+    entity_id?: string | string[];
+    [key: string]: unknown;
+  };
+  match_mode?: "any_zone" | "active_zone" | string;
+}
+
+export interface ViewColumnsVisibilityCondition {
+  condition: "view_columns";
+  min?: number;
+  max?: number;
 }
 
 export interface ScreenVisibilityCondition {

@@ -311,5 +311,195 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     expect(badge.classList.contains("status-met")).toBe(true);
     expect(badge.textContent).toContain("Visible on floorplan");
   });
+
+  it("provides fallback translations for numeric_state condition radio selects and loads config fragment", async () => {
+    const sofa: Furniture = {
+      id: "fu1",
+      type: "sofa",
+      x: 200,
+      y: 380,
+      w: 120,
+      h: 60,
+      visibility: [
+        {
+          condition: "numeric_state",
+          entity_id: "sensor.living_area_temperature",
+        },
+      ],
+    };
+
+    let loadedFragment: string | undefined;
+    const { editor } = await mount(sofa, "home");
+    editor.hass = {
+      states: {
+        "sensor.living_area_temperature": { state: "21.5", attributes: {} },
+      },
+      entities: {},
+      localize: () => "", // Empty like in Lovelace without config fragment
+      loadFragmentTranslation: async (frag: string) => {
+        loadedFragment = frag;
+      },
+    } as unknown as FloorplanCardEditor["hass"];
+
+    (editor as unknown as Internals)._selection = [{ kind: "furniture", id: "fu1" }];
+    await editor.updateComplete;
+
+    root(editor).querySelector<HTMLButtonElement>("#object-category-visibility")!.click();
+    await editor.updateComplete;
+
+    const haSelector = root(editor).querySelector("ha-selector") as HTMLElement & {
+      hass?: { localize?: (key: string) => string };
+    };
+    expect(haSelector).not.toBeNull();
+    expect(haSelector.hass).toBeDefined();
+
+    // Verify defensive translations return non-empty strings
+    const localize = haSelector.hass!.localize!;
+    expect(
+      localize("ui.panel.config.automation.editor.conditions.type.numeric_state.type_value")
+    ).toBe("Fixed number");
+    expect(
+      localize("ui.panel.config.automation.editor.conditions.type.numeric_state.type_input")
+    ).toBe("Value of an entity");
+    expect(
+      localize("ui.panel.config.automation.editor.triggers.type.numeric_state.lower_limit")
+    ).toBe("Above");
+    expect(
+      localize("ui.panel.config.automation.editor.triggers.type.numeric_state.upper_limit")
+    ).toBe("Below");
+
+    // Verify loadFragmentTranslation was triggered
+    expect(loadedFragment).toBe("config");
+  });
+
+  it("keeps expanded (fullscreen) mode open when editing visibility and when focus changes", async () => {
+    const piece: Furniture = {
+      id: "fu1",
+      type: "sofa",
+      x: 200,
+      y: 380,
+      w: 120,
+      h: 60,
+      visibility: [
+        {
+          condition: "numeric_state",
+          entity: "sensor.living_area_temperature",
+          below: 20,
+        },
+      ],
+    };
+
+    const { editor } = await mount(piece);
+    (editor as unknown as Internals)._selection = [{ kind: "furniture", id: "fu1" }];
+    await editor.updateComplete;
+
+    // Expand the editor to fullscreen
+    root(editor).querySelector<HTMLButtonElement>(".expand-toggle")!.click();
+    await editor.updateComplete;
+    expect((editor as any)._fullscreen).toBe(true);
+
+    // Switch to visibility category
+    root(editor).querySelector<HTMLButtonElement>("#object-category-visibility")!.click();
+    await editor.updateComplete;
+
+    // Simulate ha-selector emitting value-changed
+    const haSelector = root(editor).querySelector("ha-selector") as HTMLElement & {
+      emitChange?: (val: unknown) => void;
+    };
+    expect(haSelector).not.toBeNull();
+
+    const updatedConditions: VisibilityCondition[] = [
+      {
+        condition: "numeric_state",
+        entity: "sensor.living_area_temperature",
+        below: 18,
+      },
+    ];
+
+    if (typeof haSelector.emitChange === "function") {
+      haSelector.emitChange(updatedConditions);
+    } else {
+      haSelector.dispatchEvent(
+        new CustomEvent("value-changed", {
+          detail: { value: updatedConditions },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
+    await editor.updateComplete;
+
+    expect((editor as any)._fullscreen).toBe(true);
+
+    // Now simulate an outside dropdown/overlay/body receiving focus:
+    window.dispatchEvent(new FocusEvent("focusin", { bubbles: true, composed: true }));
+    await editor.updateComplete;
+
+    expect((editor as any)._fullscreen).toBe(true);
+  });
+
+  it("evaluates temperature.is_value condition with status badges and canvas dimming", async () => {
+    const sofa: Furniture = {
+      id: "fu1",
+      type: "sofa",
+      x: 200,
+      y: 380,
+      w: 120,
+      h: 60,
+      visibility: [
+        {
+          condition: "temperature.is_value",
+          target: { entity_id: "sensor.living_area_temperature" },
+          options: {
+            behavior: "any",
+            threshold: {
+              type: "below",
+              value: {
+                active_choice: "number",
+                number: 20,
+                unit_of_measurement: "°C",
+              },
+            },
+          },
+        },
+      ],
+    };
+
+    // 1. Initial state: 22°C (not below 20°C -> hidden / condition not met)
+    const { editor } = await mount(sofa);
+    editor.hass = {
+      states: {
+        "sensor.living_area_temperature": { state: "22", attributes: { unit_of_measurement: "°C" } },
+      },
+      entities: {},
+    } as unknown as FloorplanCardEditor["hass"];
+    (editor as unknown as Internals)._selection = [{ kind: "furniture", id: "fu1" }];
+    await editor.updateComplete;
+
+    const furnHit = root(editor).querySelector(".furn-hit") as SVGGElement;
+    expect(furnHit).not.toBeNull();
+    expect(furnHit.classList.contains("card-hidden")).toBe(true);
+
+    root(editor).querySelector<HTMLButtonElement>("#object-category-visibility")!.click();
+    await editor.updateComplete;
+
+    const badge = root(editor).querySelector(".visibility-status-badge") as HTMLElement;
+    expect(badge).not.toBeNull();
+    expect(badge.classList.contains("status-unmet")).toBe(true);
+    expect(badge.textContent).toContain("Hidden on floorplan");
+
+    // 2. Change temperature to 18°C (below 20°C -> visible / condition met)
+    editor.hass = {
+      states: {
+        "sensor.living_area_temperature": { state: "18", attributes: { unit_of_measurement: "°C" } },
+      },
+      entities: {},
+    } as unknown as FloorplanCardEditor["hass"];
+    await editor.updateComplete;
+
+    expect(furnHit.classList.contains("card-hidden")).toBe(false);
+    expect(badge.classList.contains("status-met")).toBe(true);
+    expect(badge.textContent).toContain("Visible on floorplan");
+  });
 });
 
