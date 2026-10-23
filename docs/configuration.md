@@ -536,9 +536,19 @@ animated inside a rectangular tracked area:
 - `color` / `opacity` — the room's fill; theme primary and `0.25` by default, or a soft
   tint under [`roomTints: auto`](appearance.md#room-tints).
 - `haArea` — id of a linked Home Assistant area, set by the editor when `name` matches one.
-- `sideWalls` — rectangle-room edge overrides: keys `top`, `right`, `bottom`, `left` and
-  values `wall`, `divider` or `none`. Double-click a room edge in the editor to cycle it;
-  a `divider` draws a dashed line instead of a full wall.
+- `sideWalls` — rectangle-room edge overrides: keys `top`, `right`, `bottom`, `left`.
+  Each value is either a plain state — `wall`, `divider` or `none` — for the whole
+  edge, or an array of segments `{ start, end, state }` (`start`/`end` fractions
+  `0`–`1` along the edge) so one edge can mix a wall section, a divider section and
+  an open gap. In the editor: double-click an edge (or a segment) to cycle it
+  through **wall → divider → none**; Ctrl/Cmd-click splits the clicked point into
+  its own segment and selects it; Shift-click an open section of the actual shared
+  edge joins two adjoining rectangle rooms. If either room is linked to a Home
+  Assistant area, both must be linked to the same area; two unlinked rooms may
+  also join. Shift-click an existing wall/divider splits it into a segment. A
+  selected segment's midpoint handle drags the whole segment along the edge, its
+  endpoint handles stretch just that end, and **Delete** removes it. A `divider`
+  draws a dashed line instead of a full wall.
 - `filterEntities` — with `haArea` set, scopes the entity picker for devices inside this
   polygon to that HA area's entities. Default `true`.
 - `entity` — makes the room live, driving `stateColor` and `activeColor` the same way
