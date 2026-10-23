@@ -224,7 +224,7 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
     for (const fu of f.furniture) {
       if (fu.entity) ids.add(fu.entity);
       if (fu.visibility) {
-        for (const ent of collectConditionEntities(fu.visibility)) ids.add(ent);
+        for (const ent of collectConditionEntities(fu.visibility, fu.entity)) ids.add(ent);
       }
     }
     // Entity-bound areas (issue #6) — same reasoning as furniture above: miss

@@ -1251,14 +1251,21 @@ export interface SunVisibilityCondition {
 }
 
 export interface ZoneVisibilityCondition {
-  condition: "zone";
+  condition: "zone" | "zone.in_zone" | "zone.not_in_zone" | string;
   entity?: string;
   entity_id?: string | string[];
   target?: {
     entity_id?: string | string[];
+    zone?: string | string[];
     [key: string]: unknown;
   };
-  zone: string;
+  zone?: string | string[];
+  options?: {
+    behavior?: "any" | "all";
+    zone?: string | string[];
+    for?: unknown;
+    [key: string]: unknown;
+  };
   state?: "in_zone" | "not_in_zone" | string;
 }
 

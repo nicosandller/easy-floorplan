@@ -75,6 +75,51 @@ export function extractSubjectEntityIds(c: unknown): string[] {
 }
 
 /**
+ * Extracts zone entity IDs from condition (cond.zone, cond.options.zone, cond.target.zone, target.entity_id).
+ */
+export function extractZoneIds(c: unknown): string[] {
+  if (!c || typeof c !== "object") return [];
+  const cond = c as Record<string, unknown>;
+  const zones: string[] = [];
+
+  const add = (val: unknown) => {
+    if (typeof val === "string") {
+      const s = val.trim();
+      if (!s) return;
+      const normalized = s.startsWith("zone.") ? s : `zone.${s}`;
+      if (isEntityId(normalized) && !zones.includes(normalized)) {
+        zones.push(normalized);
+      }
+    } else if (Array.isArray(val)) {
+      for (const item of val) add(item);
+    } else if (val && typeof val === "object") {
+      const obj = val as Record<string, unknown>;
+      add(obj.entity_id);
+      add(obj.entity);
+      add(obj.zone);
+    }
+  };
+
+  add(cond.zone);
+  if (cond.options && typeof cond.options === "object") {
+    add((cond.options as Record<string, unknown>).zone);
+  }
+  if (cond.target && typeof cond.target === "object") {
+    const target = cond.target as Record<string, unknown>;
+    add(target.zone);
+    if (typeof target.entity_id === "string" && target.entity_id.startsWith("zone.")) {
+      add(target.entity_id);
+    } else if (Array.isArray(target.entity_id)) {
+      for (const item of target.entity_id) {
+        if (typeof item === "string" && item.startsWith("zone.")) add(item);
+      }
+    }
+  }
+
+  return zones;
+}
+
+/**
  * Extracts all entity IDs referenced in a condition (both subjects and comparison references),
  * for dependency tracking and card reactive re-renders:
  * - subject entities
@@ -149,8 +194,14 @@ export function extractConditionEntityIds(c: unknown): string[] {
   }
 
   // Zone condition entities
-  if (condType === "zone") {
-    checkRef(cond.zone);
+  if (
+    condType === "zone" ||
+    condType.startsWith("zone.") ||
+    (condType === "device" && (cond.type === "is_in_zone" || cond.type === "is_not_in_zone"))
+  ) {
+    for (const z of extractZoneIds(cond)) {
+      ids.push(z);
+    }
   }
 
   // State condition entity references in state or state_not
@@ -301,6 +352,15 @@ function evaluateEntityCondition(
     : condType === "device"
     ? actionType
     : condType;
+
+  if (
+    check === "in_zone" ||
+    check === "is_in_zone" ||
+    check === "not_in_zone" ||
+    check === "is_not_in_zone"
+  ) {
+    return evaluateZoneCondition(cond, hass, entityId);
+  }
 
   if (check === "is_open") {
     return strVal === "open" || strVal === "opening" || strVal === "on" || strVal === "unlocked";
@@ -759,12 +819,18 @@ export function evaluateSunCondition(
 
 /**
  * Evaluates a Zone condition (entity in zone, or person in zone).
+ * Supports standard core zone condition, shorthand zone.in_zone / zone.not_in_zone,
+ * and device conditions (is_in_zone / is_not_in_zone).
  */
 export function evaluateZoneCondition(
   cond: Record<string, unknown>,
-  hass: RenderHass
+  hass: RenderHass,
+  defaultEntityId?: string
 ): boolean {
-  const entityIds = extractConditionEntityIds(cond);
+  const entityIds = extractSubjectEntityIds(cond);
+  if (entityIds.length === 0 && defaultEntityId) {
+    entityIds.push(defaultEntityId);
+  }
   if (entityIds.length === 0) {
     // If no entity specified, try finding user's person
     const userId = (hass as unknown as { user?: { id?: string } }).user?.id;
@@ -778,61 +844,77 @@ export function evaluateZoneCondition(
 
   if (entityIds.length === 0) return true; // Fail-open
 
-  const zone = String(cond.zone ?? "").trim();
-  if (!zone) return true;
+  const targetZones = extractZoneIds(cond);
+  if (targetZones.length === 0) return true; // Fail-open if no zones specified
 
-  const targetState = String(cond.state ?? "in_zone").toLowerCase();
-  const expectInZone = targetState !== "not_in_zone";
+  const condType = String(cond.condition ?? "").toLowerCase();
+  const actionType = String(cond.type ?? "").toLowerCase();
+  const stateProp = String(cond.state ?? "").toLowerCase();
+
+  const isNegated =
+    condType === "zone.not_in_zone" ||
+    condType.endsWith(".not_in_zone") ||
+    actionType === "is_not_in_zone" ||
+    actionType === "not_in_zone" ||
+    stateProp === "not_in_zone";
+
+  const expectInZone = !isNegated;
 
   const options = (cond.options as Record<string, unknown> | undefined) ?? {};
   const behavior = options.behavior === "all" ? "all" : "any";
 
-  const isEntityInZone = (entId: string): boolean => {
+  const isEntityInSpecificZone = (entId: string, zoneId: string): boolean => {
     const s = hass.states[entId];
-    if (!s) return true; // Fail open on missing entity
+    if (!s) return false;
 
-    const rawState = s.state.toLowerCase();
+    const rawState = String(s.state ?? "").toLowerCase();
     const inZones = Array.isArray(s.attributes?.in_zones)
-      ? (s.attributes.in_zones as string[])
+      ? (s.attributes.in_zones as string[]).map((z) => String(z).toLowerCase())
       : [];
 
-    const zoneLower = zone.toLowerCase();
-    const zoneShort = zoneLower.replace(/^zone\./, "");
+    const normZone = zoneId.toLowerCase().startsWith("zone.")
+      ? zoneId.toLowerCase()
+      : `zone.${zoneId.toLowerCase()}`;
+    const zoneShort = normZone.replace(/^zone\./, "");
+    const zoneEntity = hass.states[normZone] || hass.states[zoneId.toLowerCase()];
+    const zoneFriendlyName = zoneEntity?.attributes?.friendly_name
+      ? String(zoneEntity.attributes.friendly_name).toLowerCase()
+      : undefined;
 
-    // 1. in_zones attribute match
-    if (
-      inZones.some(
-        (z) => z.toLowerCase() === zoneLower || z.toLowerCase() === `zone.${zoneShort}`
-      )
-    ) {
+    // 1. in_zones attribute match (e.g. ["zone.home"])
+    if (inZones.includes(normZone) || inZones.includes(zoneShort)) {
       return true;
     }
 
-    // 2. State matches zone name (e.g. "home", "work", or zone friendly name)
-    if (zoneShort === "home" && rawState === "home") return true;
-    if (rawState === zoneShort || rawState === zoneLower) return true;
-
-    // 3. Zone entity friendly name match
-    const zoneEntity = hass.states[zone] || hass.states[`zone.${zoneShort}`];
-    if (
-      zoneEntity?.attributes?.friendly_name &&
-      String(zoneEntity.attributes.friendly_name).toLowerCase() === rawState
-    ) {
-      return true;
+    // 2. Active zone state match (home, not_home, zone name)
+    if (zoneShort === "home") {
+      if (rawState === "home") return true;
+      if (rawState === "not_home" || rawState === "away") return false;
     }
+    if (rawState === zoneShort || rawState === normZone) return true;
+    if (zoneFriendlyName && rawState === zoneFriendlyName) return true;
 
     return false;
   };
 
-  const checkMatch = (entId: string) => {
-    const inZone = isEntityInZone(entId);
+  const isEntityMatching = (entId: string): boolean => {
+    const s = hass.states[entId];
+    if (!s) return true; // Fail-open on missing entity
+    const rawState = String(s.state ?? "").toLowerCase();
+    if (rawState === "unavailable" || rawState === "unknown") {
+      const testsForOutage =
+        isExplicitOutageCheck(cond.state) || isExplicitOutageCheck(cond.state_not);
+      if (!testsForOutage) return true;
+    }
+
+    const inZone = targetZones.some((z) => isEntityInSpecificZone(entId, z));
     return expectInZone ? inZone : !inZone;
   };
 
   if (behavior === "all") {
-    return entityIds.every(checkMatch);
+    return entityIds.every(isEntityMatching);
   }
-  return entityIds.some(checkMatch);
+  return entityIds.some(isEntityMatching);
 }
 
 /**
@@ -891,7 +973,11 @@ export function evaluateLocationCondition(
 /**
  * Evaluates whether a single visibility condition is met.
  */
-export function evaluateCondition(cond: VisibilityCondition, hass: RenderHass): boolean {
+export function evaluateCondition(
+  cond: VisibilityCondition,
+  hass: RenderHass,
+  defaultEntityId?: string
+): boolean {
   if (typeof cond === "string") {
     // Bare template string fails open
     return true;
@@ -903,26 +989,32 @@ export function evaluateCondition(cond: VisibilityCondition, hass: RenderHass): 
   // Logical groups
   if (conditionType === "and") {
     const list = Array.isArray(c.conditions) ? (c.conditions as VisibilityCondition[]) : [];
-    return list.every((nested) => evaluateCondition(nested, hass));
+    return list.every((nested) => evaluateCondition(nested, hass, defaultEntityId));
   }
   if (conditionType === "or") {
     const list = Array.isArray(c.conditions) ? (c.conditions as VisibilityCondition[]) : [];
-    return list.some((nested) => evaluateCondition(nested, hass));
+    return list.some((nested) => evaluateCondition(nested, hass, defaultEntityId));
   }
   if (conditionType === "not") {
     const list = Array.isArray(c.conditions) ? (c.conditions as VisibilityCondition[]) : [];
-    return !list.some((nested) => evaluateCondition(nested, hass));
+    return !list.some((nested) => evaluateCondition(nested, hass, defaultEntityId));
   }
 
   // Shorthand key logical groups e.g. { and: [...] }, { or: [...] }, { not: [...] }
   if (Array.isArray(c.and)) {
-    return (c.and as VisibilityCondition[]).every((nested) => evaluateCondition(nested, hass));
+    return (c.and as VisibilityCondition[]).every((nested) =>
+      evaluateCondition(nested, hass, defaultEntityId)
+    );
   }
   if (Array.isArray(c.or)) {
-    return (c.or as VisibilityCondition[]).some((nested) => evaluateCondition(nested, hass));
+    return (c.or as VisibilityCondition[]).some((nested) =>
+      evaluateCondition(nested, hass, defaultEntityId)
+    );
   }
   if (Array.isArray(c.not)) {
-    return !(c.not as VisibilityCondition[]).some((nested) => evaluateCondition(nested, hass));
+    return !(c.not as VisibilityCondition[]).some((nested) =>
+      evaluateCondition(nested, hass, defaultEntityId)
+    );
   }
 
   // Template condition fails open
@@ -945,9 +1037,13 @@ export function evaluateCondition(cond: VisibilityCondition, hass: RenderHass): 
     return evaluateSunCondition(c, hass);
   }
 
-  // Zone condition
-  if (conditionType === "zone") {
-    return evaluateZoneCondition(c, hass);
+  // Zone condition (core zone, shorthand zone.in_zone / zone.not_in_zone, device is_in_zone)
+  if (
+    conditionType === "zone" ||
+    conditionType.startsWith("zone.") ||
+    (conditionType === "device" && (c.type === "is_in_zone" || c.type === "is_not_in_zone"))
+  ) {
+    return evaluateZoneCondition(c, hass, defaultEntityId);
   }
 
   // Location condition
@@ -975,6 +1071,9 @@ export function evaluateCondition(cond: VisibilityCondition, hass: RenderHass): 
 
   // Entity-based conditions (state, numeric_state, garage_door.is_open, target: { entity_id }, etc.)
   const entityIds = extractSubjectEntityIds(c);
+  if (entityIds.length === 0 && defaultEntityId) {
+    entityIds.push(defaultEntityId);
+  }
   if (entityIds.length === 0) {
     return true; // Fail open if no entity can be identified
   }
@@ -991,8 +1090,12 @@ export function evaluateCondition(cond: VisibilityCondition, hass: RenderHass): 
 /**
  * Evaluates whether an array of visibility conditions are all met (AND conjunction).
  */
-export function evaluateConditions(conditions: readonly VisibilityCondition[], hass: RenderHass): boolean {
-  return conditions.every((cond) => evaluateCondition(cond, hass));
+export function evaluateConditions(
+  conditions: readonly VisibilityCondition[],
+  hass: RenderHass,
+  defaultEntityId?: string
+): boolean {
+  return conditions.every((cond) => evaluateCondition(cond, hass, defaultEntityId));
 }
 
 /**
@@ -1050,7 +1153,9 @@ export function isFurnitureVisible(f: Furniture, hass?: RenderHass): boolean {
     const haCheck = (window as unknown as { checkConditionsMet?: unknown }).checkConditionsMet;
     if (typeof haCheck === "function") {
       try {
-        return Boolean(haCheck(f.visibility, hass));
+        return f.entity
+          ? Boolean(haCheck(f.visibility, hass, { entity_id: f.entity }))
+          : Boolean(haCheck(f.visibility, hass));
       } catch {
         // Fall back to pure evaluator on signature mismatch
       }
@@ -1058,21 +1163,30 @@ export function isFurnitureVisible(f: Furniture, hass?: RenderHass): boolean {
   }
 
   // 2. Synchronous pure fallback mirroring Home Assistant validate-condition.ts
-  return evaluateConditions(f.visibility, hass);
+  return evaluateConditions(f.visibility, hass, f.entity);
 }
 
 /**
  * Recursively extracts all referenced entity IDs from visibility conditions
  * so they can be registered with the card's reactive `watchedEntities` set.
  */
-export function collectConditionEntities(conditions?: readonly VisibilityCondition[]): string[] {
-  if (!conditions || conditions.length === 0) return [];
+export function collectConditionEntities(
+  conditions?: readonly VisibilityCondition[],
+  defaultEntityId?: string
+): string[] {
   const entities: string[] = [];
+  if (defaultEntityId && isEntityId(defaultEntityId)) {
+    entities.push(defaultEntityId);
+  }
+  if (!conditions || conditions.length === 0) return entities;
+
   const walk = (c: unknown) => {
     if (!c || typeof c !== "object") return;
     const cond = c as Record<string, unknown>;
     for (const id of extractConditionEntityIds(cond)) {
-      entities.push(id);
+      if (!entities.includes(id)) {
+        entities.push(id);
+      }
     }
     if (Array.isArray(cond.conditions)) {
       for (const nested of cond.conditions) walk(nested);

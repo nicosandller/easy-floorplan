@@ -896,6 +896,122 @@ describe("furniture-visibility", () => {
         expect(evaluateCondition(cond, atHome)).toBe(false);
         expect(evaluateCondition(cond, away)).toBe(true);
       });
+
+      it("evaluates shorthand zone.in_zone with target.entity_id and options.zone (user car case)", () => {
+        const cond: VisibilityCondition = {
+          condition: "zone.in_zone",
+          target: {
+            entity_id: "device_tracker.byd_seal_u_dm_i_location",
+          },
+          options: {
+            behavior: "any",
+            zone: "zone.home",
+          },
+        };
+
+        const carAway = mockHass({
+          "device_tracker.byd_seal_u_dm_i_location": { state: "not_home" },
+          "zone.home": { state: "z", attributes: { friendly_name: "Home" } },
+        });
+
+        const carHome = mockHass({
+          "device_tracker.byd_seal_u_dm_i_location": { state: "home" },
+          "zone.home": { state: "z", attributes: { friendly_name: "Home" } },
+        });
+
+        expect(evaluateCondition(cond, carAway)).toBe(false);
+        expect(evaluateCondition(cond, carHome)).toBe(true);
+      });
+
+      it("evaluates shorthand zone.not_in_zone", () => {
+        const cond: VisibilityCondition = {
+          condition: "zone.not_in_zone",
+          target: {
+            entity_id: "device_tracker.byd_seal_u_dm_i_location",
+          },
+          options: {
+            zone: "zone.home",
+          },
+        };
+
+        const carAway = mockHass({
+          "device_tracker.byd_seal_u_dm_i_location": { state: "not_home" },
+        });
+
+        const carHome = mockHass({
+          "device_tracker.byd_seal_u_dm_i_location": { state: "home" },
+        });
+
+        expect(evaluateCondition(cond, carAway)).toBe(true);
+        expect(evaluateCondition(cond, carHome)).toBe(false);
+      });
+
+      it("falls back to furniture entity when condition target/entity_id is omitted", () => {
+        const f = {
+          id: "car_1",
+          type: "car_ev",
+          x: 0,
+          y: 0,
+          w: 100,
+          h: 200,
+          entity: "device_tracker.byd_seal_u_dm_i_location",
+          visibility: [
+            {
+              condition: "zone.in_zone",
+              options: {
+                zone: "zone.home",
+              },
+            },
+          ],
+        };
+
+        const carAway = mockHass({
+          "device_tracker.byd_seal_u_dm_i_location": { state: "not_home" },
+        });
+        const carHome = mockHass({
+          "device_tracker.byd_seal_u_dm_i_location": { state: "home" },
+        });
+
+        expect(isFurnitureVisible(f, carAway)).toBe(false);
+        expect(isFurnitureVisible(f, carHome)).toBe(true);
+      });
+
+      it("evaluates in_zones attribute and state (exact car location payload)", () => {
+        const cond: VisibilityCondition = {
+          condition: "zone.in_zone",
+          target: {
+            entity_id: "device_tracker.byd_seal_u_dm_i_location",
+          },
+          options: {
+            zone: "zone.home",
+          },
+        };
+
+        const homeHass = mockHass({
+          "device_tracker.byd_seal_u_dm_i_location": {
+            state: "home",
+            attributes: {
+              in_zones: ["zone.home"],
+              tracking_type: "position",
+              source_type: "gps",
+            },
+          },
+        });
+
+        const awayHass = mockHass({
+          "device_tracker.byd_seal_u_dm_i_location": {
+            state: "not_home",
+            attributes: {
+              in_zones: [],
+              tracking_type: "position",
+              source_type: "gps",
+            },
+          },
+        });
+
+        expect(evaluateCondition(cond, homeHass)).toBe(true);
+        expect(evaluateCondition(cond, awayHass)).toBe(false);
+      });
     });
 
     describe("location condition", () => {
