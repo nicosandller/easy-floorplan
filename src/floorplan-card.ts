@@ -234,6 +234,7 @@ import {
 } from "./editor-geometry";
 import { ReplayControllerImpl } from "./replay-history/replay-controller";
 import { createReplayPanelProps, renderReplayPanel } from "./replay-history/replay-panel";
+import { isFurnitureVisible } from "./furniture-visibility";
 
 /**
  * Which floor each plan was last viewed on, keyed by its floor-id set (issue
@@ -1156,6 +1157,7 @@ export class FloorplanCard extends LitElement {
     const furnitureHeight = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(furnitureHeight, rot);
     for (const f of active.furniture) {
+      if (!isFurnitureVisible(f, renderHass)) continue;
       solids.push(
         furnitureSolid(
           f,
@@ -1858,6 +1860,7 @@ export class FloorplanCard extends LitElement {
     if (!standing) this._openingTween.stop();
     const projTransform = planProjectionTransform(frame);
     const dimPad = WALL_THICKNESS + (iso ? frame.wallHeight : 0);
+    const visibleFurniture = active.furniture.filter((f) => isFurnitureVisible(f, renderHass));
     // One furniture glyph, flat. Drawn on the floor on the flat plan and on
     // top of its block under the isometric view — the same drawing either way.
     const drawFurniture = (f: Furniture): SVGTemplateResult => this._furnitureHit(f, renderFurniture(
@@ -2222,11 +2225,11 @@ export class FloorplanCard extends LitElement {
                  they meet) without screening against the plan beneath, which
                  would wash out on a light theme. -->
             ${renderGlowMask(
-                active.furniture, c.width, c.height,
+                visibleFurniture, c.width, c.height,
                 `${this._glowIdBase}-mask`, symbolCatalog(c.symbols)
               )}
             <g class="fp-glows"
-               mask=${active.furniture.length ? `url(#${this._glowIdBase}-mask)` : nothing}>
+               mask=${visibleFurniture.length ? `url(#${this._glowIdBase}-mask)` : nothing}>
               ${active.items.map((it, i) => {
                 if (!it.glow) return nothing;
                 const paint = glowPaint(it, renderHass?.states[it.entity]);
@@ -2236,7 +2239,7 @@ export class FloorplanCard extends LitElement {
                   : nothing;
               })}
             </g>
-            ${standing ? nothing : active.furniture.map(drawFurniture)}
+            ${standing ? nothing : visibleFurniture.map(drawFurniture)}
             <!-- Sunlight through the openings. Under the walls on purpose:
                  light lands on the floor, and the walls stay crisp lines over
                  it rather than being tinted by the patches they let in. The
@@ -2430,7 +2433,7 @@ export class FloorplanCard extends LitElement {
           (o) => this._renderOpeningMark(o, c, rot, scale, renderHass)
         )}
             ${repeat(
-              active.furniture,
+              visibleFurniture,
               (f, i) => f.id || i,
               (f) => this._renderFurnitureAction(f, c, rot, scale, floors, active.id)
             )}
