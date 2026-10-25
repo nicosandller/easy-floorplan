@@ -46,20 +46,57 @@ function nearestWall(point: AreaPoint, walls: readonly Wall[]) {
   return best;
 }
 
-/** An explicit opening can close a run only when both jambs meet solid walls. */
+/**
+ * A wall end that stops short of another wall, but within that wall's
+ * thickness, looks joined on the plan. Join it here too: otherwise the room
+ * behind leaks to the outside through a slot nobody can see, and its interior
+ * openings read as sky sources (issue #360: a terrace wall 4 units short of the
+ * side wall). A real doorway is far wider than this tolerance.
+ */
+function joinWallEnds(walls: readonly Wall[]): Wall[] {
+  const joins: Wall[] = [];
+  walls.forEach((w, index) => {
+    const others = walls.filter(o => o !== w);
+    [{ x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 }].forEach((p, end) => {
+      const match = nearestWall(p, others);
+      if (!match || match.distance <= WELD_EPS || match.distance > OPENING_ON_WALL_EPS) return;
+      joins.push({ id: `ambient-join-${index}-${end}`, x1: p.x, y1: p.y, x2: match.point.x, y2: match.point.y });
+    });
+  });
+  return [...walls, ...joins];
+}
+
+/**
+ * An explicit opening can close a run only when both jambs meet solid walls,
+ * or another opening that does: a glazed bay is often two windows side by
+ * side. A jamb gets the same nudge tolerance as an opening's centre. A gap
+ * left open here joins the room behind it to the outside, and every interior
+ * opening of that room then reads as a sky source (issue #360).
+ */
 function bridgeOpenings(walls: readonly Wall[], openings: readonly Opening[]): Wall[] {
-  const result = [...walls];
+  let spans: Wall[] = [];
   openings.forEach((o, index) => {
     if (openingIsSkylight(o) || !(o.length > 0)) return;
     if ((nearestWall(o, walls)?.distance ?? Infinity) <= WELD_EPS) return;
     const angle = o.angle * Math.PI / 180;
     const dx = Math.cos(angle) * o.length / 2, dy = Math.sin(angle) * o.length / 2;
-    const a = nearestWall({ x: o.x - dx, y: o.y - dy }, walls);
-    const b = nearestWall({ x: o.x + dx, y: o.y + dy }, walls);
-    if (!a || !b || a.distance > WELD_EPS || b.distance > WELD_EPS) return;
-    result.push({ id: `ambient-opening-${index}`, x1: a.point.x, y1: a.point.y, x2: b.point.x, y2: b.point.y });
+    spans.push({ id: `ambient-opening-${index}`, x1: o.x - dx, y1: o.y - dy, x2: o.x + dx, y2: o.y + dy });
   });
-  return result;
+  const jamb = (p: AreaPoint, span: Wall, others: readonly Wall[]) => {
+    const match = nearestWall(p, [...walls, ...others.filter(s => s !== span)]);
+    return match && match.distance <= OPENING_ON_WALL_EPS ? match.point : undefined;
+  };
+  const ends = (s: Wall): [AreaPoint, AreaPoint] => [{ x: s.x1, y: s.y1 }, { x: s.x2, y: s.y2 }];
+  // Drop dangling spans until every remaining jamb meets something that stays.
+  for (let n = -1; n !== spans.length;) {
+    n = spans.length;
+    const kept = spans;
+    spans = kept.filter(s => ends(s).every(p => jamb(p, s, kept)));
+  }
+  return [...walls, ...spans.map(s => {
+    const [a, b] = ends(s).map(p => jamb(p, s, spans));
+    return { id: s.id, x1: a!.x, y1: a!.y, x2: b!.x, y2: b!.y };
+  })];
 }
 
 /** Collinear pieces of the nearest supporting wall own the opening, not a
@@ -72,7 +109,7 @@ function sameRun(a: Wall, b: Wall): boolean {
 }
 
 function buildGeometry(walls: readonly Wall[], openings: readonly Opening[]) {
-  const closedWalls = bridgeOpenings(walls, openings);
+  const closedWalls = bridgeOpenings(joinWallEnds(walls), openings);
   const regions = traceRegions(closedWalls);
   const attached = openings.map(o => {
     if (openingIsSkylight(o)) return undefined;

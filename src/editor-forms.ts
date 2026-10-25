@@ -86,7 +86,10 @@ import {
   normalizeProjection,
   normalizeWallHeight,
   normalizeWallOpacity,
+  openingSill,
+  MAX_SILL,
   MAX_WALL_HEIGHT,
+  SILL_FRACTION,
   defaultRoofHeight,
 } from "./projection";
 import { defaultItemAction } from "./actions";
@@ -377,6 +380,18 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       label: "Ceiling height",
       helper: "1 is an ordinary storey; higher throws the patch of sun further across the room",
       selector: { number: { min: 0.2, max: 4, step: 0.1, mode: "slider" } },
+    });
+  }
+  // How high the glass starts. Windows only: a door, a passage and a skylight
+  // have no sill. A slider rather than a box for the same reason as the
+  // skylight's ceiling height — the plan has no vertical unit, so this is a
+  // share of the wall height, and only the 3D view draws it.
+  if (o.type === "window") {
+    fields.push({
+      name: "sill",
+      label: "Sill height",
+      helper: "Share of the wall height under the glass, in the 3D view — 0 is floor-to-ceiling",
+      selector: { number: { min: 0, max: MAX_SILL, step: 0.05, mode: "slider" } },
     });
   }
   // Leaf count, for anything hinged. Offered on doors too: a double door is
@@ -738,6 +753,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       // canvas would be a box claiming the drawing has no width.
       width: skylightWidth(o),
       ceilingHeight: skylightCeilingHeight(o),
+      sill: openingSill(o),
       hinge: o.flipH ? "right" : "left",
       opens: o.flipV ? "other" : "this",
       slide: o.flipH ? "right" : "left",
@@ -851,6 +867,11 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
             sliderStyle: v === "slide" ? o.sliderStyle : undefined,
           } as Opening))
             out.secondaryEntity = undefined;
+        } else if (k === "sill") {
+          // The sill every window stood on before this field is the default,
+          // so it stays out of the YAML.
+          out.sill =
+            o.type === "window" && typeof v === "number" && v !== SILL_FRACTION ? v : undefined;
         } else if (k === "sashSpan") {
           // A full-width sash is what every opening drew before this field,
           // so it is the default and stays out of the YAML (issue #218).
@@ -892,6 +913,9 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         else if (k === "invert") out.invert = v || undefined;
         else if (k === "type") {
           out.type = v;
+          // Only a window stands on a sill; anything else would carry it as
+          // noise until it became a window again.
+          if (v !== "window" || o.type !== "window") out.sill = undefined;
           if (v === "skylight") {
             out.motion = undefined;
             out.sliderStyle = undefined;
@@ -1221,8 +1245,14 @@ export function itemLabelForm(it: FloorItem): FormSpec {
     {
       name: "labelPosition",
       label: "Label position",
-      helper: "Beside the badge instead of under it — a long reading then grows one way only",
-      selector: dropdown(opt("below", "Below"), opt("left", "Left"), opt("right", "Right")),
+      helper: "Beside the badge, a long reading grows one way only. Auto picks the side that stays clear of walls and other labels",
+      selector: dropdown(
+        opt("below", "Below"),
+        opt("above", "Above"),
+        opt("left", "Left"),
+        opt("right", "Right"),
+        opt("auto", "Auto")
+      ),
     },
     {
       name: "labelSize",
@@ -1977,6 +2007,18 @@ export function furnitureForm(
             },
           ]
         : []),
+      // A curtain gathers at one end when open (issue #196). The symbol is
+      // drawn from its left edge, so mirroring it gathers it at the right.
+      ...(findSymbol(catalog, f.type)?.extend?.axis === "w"
+        ? [
+            {
+              name: "hand",
+              label: "Gathers at",
+              helper: "Which end it bunches up at when open. Both ends: a pair that meets in the middle",
+              selector: dropdown(opt("right", "left"), opt("left", "right"), opt("center", "both ends")),
+            },
+          ]
+        : []),
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
       angleField(),
@@ -1986,7 +2028,14 @@ export function furnitureForm(
       {
         name: "entity",
         label: "Entity",
-        helper: areaScopeHelper(areaScope, "Optional — lets the drawing change color with a sensor"),
+        helper: areaScopeHelper(
+          areaScope,
+          // An awning or curtain is what the entity is for (issue #196).
+          findSymbol(catalog, f.type)?.extend
+            ? `The cover that moves it: drawn at its position, full size when fully ${
+                findSymbol(catalog, f.type)!.extend!.open === "extended" ? "open" : "closed"}`
+            : "Optional — lets the drawing change color with a sensor"
+        ),
         selector: areaScopedEntity(areaScope, f.entity),
       },
       // Clicking it changes floor (issue #121). Offered on any piece rather
@@ -2041,7 +2090,9 @@ export function furnitureForm(
     ],
     data: {
       type: f.type,
-      ...(f.type === "sectional" ? { hand: f.hand ?? "right" } : {}),
+      ...(f.type === "sectional" || findSymbol(catalog, f.type)?.extend?.axis === "w"
+        ? { hand: f.hand ?? "right" }
+        : {}),
       w: f.w,
       h: f.h,
       angle: f.angle ?? 0,
