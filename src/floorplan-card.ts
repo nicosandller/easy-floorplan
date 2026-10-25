@@ -95,6 +95,7 @@ import {
   entityStateText,
   renderRipple,
   renderFurniture,
+  shownPieces,
   furnitureColor,
   furnitureAccessibleName,
   furnitureActionForGesture,
@@ -214,7 +215,7 @@ import { AmountTween, OPENING_TWEEN_MS, rafTweenFrames } from "./opening-tween";
 import { RotationTween } from "./rotation";
 import { focusOrder, normalizeRoomFocus, stepFocus } from "./room-focus";
 import type { SVGTemplateResult } from "lit";
-import { symbolCatalog } from "./symbols";
+import { findSymbol, symbolCatalog } from "./symbols";
 import { deadSpacesCached } from "./dead-space";
 import type { Opening } from "./types";
 import {
@@ -240,6 +241,13 @@ import {
   isSameWallSegment,
   isAreaCoveredByUpper,
 } from "./editor-geometry";
+import {
+  autoLabelKey,
+  intersectBoxes,
+  measureLabelScene,
+  rectToBox,
+  type LabelSide,
+} from "./label-placement";
 import { ReplayControllerImpl } from "./replay-history/replay-controller";
 import { createReplayPanelProps, renderReplayPanel } from "./replay-history/replay-panel";
 
@@ -298,6 +306,24 @@ export class FloorplanCard extends LitElement {
    * from `_watchedEntities` on purpose — see `collectNamedEntities`.
    */
   private _nameEntities: Set<string> = new Set();
+  /**
+   * The side each `labelPosition: auto` label was given (keyed by
+   * {@link autoLabelKey}), and what that choice was made from. Plain fields,
+   * not `@state`: a new choice asks for one render itself, and nothing else
+   * should invalidate one.
+   */
+  private _autoSides = new Map<string, LabelSide>();
+  /** Bumped by every setConfig — the cheap "the plan changed" half of the layout key. */
+  private _configSerial = 0;
+  /** This render's layout inputs, and the ones the current sides were measured from. */
+  private _autoLayoutBase = "";
+  private _autoLabelSig: string[] = [];
+  private _autoLayoutKey?: string;
+  /** Whether this render can place auto labels at all (not under the 3D view, not mid-turn). */
+  private _autoLabelsMeasurable = false;
+  private _autoResize?: ResizeObserver;
+  /** The `.plan` element `_autoResize` is watching. */
+  private _autoResizeTarget?: HTMLElement;
   /**
    * Entities the floor summaries find through linked HA areas and floors
    * (issue #234), per floor id. Read from the HA registries, so recomputed
@@ -414,6 +440,7 @@ export class FloorplanCard extends LitElement {
     };
     this._watchedEntities = collectWatchedEntities(this._config);
     this._nameEntities = collectNamedEntities(this._config);
+    this._configSerial++;
     this._summaryDiscoveryInputs = undefined;
     this._syncSummaryDiscovery();
     this._syncMoonClock();
@@ -540,6 +567,7 @@ export class FloorplanCard extends LitElement {
 
   protected updated(changed: PropertyValues): void {
     super.updated(changed);
+    this._syncAutoLabels();
     if (changed.has("hass") || changed.has("_activeFloorId")) {
       this._syncHistoryServiceContext();
     }
@@ -581,6 +609,104 @@ export class FloorplanCard extends LitElement {
   public getGridOptions() {
     return { columns: 12, rows: 8, min_columns: 6, min_rows: 4 };
   }
+
+  /**
+   * Place the `labelPosition: auto` labels (see label-placement.ts), when —
+   * and only when — something they depend on has changed: the config, the
+   * floor, rotation, room zoom, the label texts' lengths, or the card's size
+   * (the ResizeObserver clears the key). A hass tick that leaves every auto
+   * label the same length reads no layout at all. Measured here, after Lit
+   * has written the DOM and before the browser paints, so a label that moves
+   * is never seen on its old side; a change asks for exactly one more render.
+   *
+   * Under the 3D view an auto label stays `below`: the walls stand up there,
+   * and the overlay's floor-plane anchors say nothing about where their faces
+   * are drawn.
+   */
+  private _syncAutoLabels(): void {
+    if (!this._autoLabelsMeasurable) {
+      this._autoLayoutKey = undefined;
+      return;
+    }
+    // No auto labels on screen: nothing to place, so no layout to read.
+    if (this._autoLabelSig.length === 0) {
+      this._autoLayoutKey = undefined;
+      this._autoSides.clear();
+      return;
+    }
+    const key = `${this._autoLayoutBase}|${this._autoLabelSig.join(",")}`;
+    if (key === this._autoLayoutKey) return;
+    const plan = this.renderRoot.querySelector<HTMLElement>(".plan");
+    const overlay = plan?.querySelector<HTMLElement>(".items");
+    if (!plan || !overlay || !this._config) return;
+    if (!this._autoResize && typeof ResizeObserver !== "undefined") {
+      this._autoResize = new ResizeObserver(() => {
+        this._autoLayoutKey = undefined;
+        this._syncAutoLabels();
+      });
+    }
+    // Observed once per .plan element: observe() always delivers a first
+    // notification, so re-observing the same element on every pass would
+    // never settle. A re-render that replaces .plan is observed afresh.
+    if (this._autoResize && plan !== this._autoResizeTarget) {
+      this._autoResize.disconnect();
+      this._autoResize.observe(plan);
+      this._autoResizeTarget = plan;
+    }
+    const r = overlay.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) return;
+    this._autoLayoutKey = key;
+    const c = this._displayConfig();
+    const rot = resolvePlanRotation(c, this._portrait) + this._rotation.value;
+    const active = this._activeFloor(c);
+    // Walls in client pixels, through the same mapping every overlay anchor
+    // uses — so rotation and the zoom transform (already in `r`) apply to them
+    // exactly as they do to the badges.
+    const toClient = (x: number, y: number) => {
+      const { p, d } = this._display(x, y, c, rot);
+      return { x: r.left + (p.x / d.w) * r.width, y: r.top + (p.y / d.h) * r.height, px: r.width / d.w };
+    };
+    const generated = active.areas.flatMap((a) => rectAreaSideWalls(a.id, a.points, a.sideWalls ?? {}));
+    const walls = [...active.walls, ...generated].map((w) => {
+      const a = toClient(w.x1, w.y1);
+      const b = toClient(w.x2, w.y2);
+      return { x1: a.x, y1: a.y, x2: b.x, y2: b.y, half: (wallThickness(w.thickness) * a.px) / 2 };
+    });
+    const card = this.renderRoot.querySelector("ha-card");
+    const bounds = card
+      ? intersectBoxes(rectToBox(plan.getBoundingClientRect()), rectToBox(card.getBoundingClientRect()))
+      : rectToBox(plan.getBoundingClientRect());
+    const sides = measureLabelScene({
+      items: [...overlay.querySelectorAll<HTMLElement>(":scope > .item")],
+      autoKey: (el) => el.dataset.labelAuto,
+      solid: (el) => el.querySelector(":scope > span > .badge, :scope > .stack .badge, :scope > .badge-space"),
+      label: (el) => el.querySelector<HTMLElement>(":scope > .label"),
+      centredBelow: (el) => !!el.querySelector(":scope > .badge-space"),
+      current: this._autoSides,
+      marks: [...overlay.querySelectorAll(":scope > .shutter-mark")],
+      names: [...overlay.querySelectorAll(":scope > .area-label, :scope > .text")],
+      openings: [...plan.querySelectorAll("svg .fp-opening:not(.fp-opening-skylight)")],
+      walls,
+      bounds,
+      scalePlan: plan.classList.contains("scale-plan"),
+    });
+    let changed = false;
+    for (const [k, side] of sides) {
+      if (this._autoSides.get(k) !== side) changed = true;
+    }
+    // Forget the sides of labels no longer on the plan.
+    for (const k of [...this._autoSides.keys()]) if (!sides.has(k)) this._autoSides.delete(k);
+    if (!changed) return;
+    for (const [k, side] of sides) this._autoSides.set(k, side);
+    this.requestUpdate();
+  }
+
+  /** A zoom-to-room transition has landed: measure again at its final scale. */
+  private readonly _onZoomSettled = (e: TransitionEvent): void => {
+    if (e.target !== e.currentTarget) return;
+    this._autoLayoutKey = undefined;
+    this._syncAutoLabels();
+  };
 
   private _isOn(item: FloorItem, renderHass: RenderHass | undefined): boolean {
     // Domain-aware: locks say "unlocked", vacuums "cleaning" — never "on".
@@ -720,6 +846,9 @@ export class FloorplanCard extends LitElement {
     // replace this one — taking the replay loop's cleanup with it.
     this._unsubscribeOrientation?.();
     this._unsubscribeOrientation = undefined;
+    this._autoResize?.disconnect();
+    this._autoResize = undefined;
+    this._autoResizeTarget = undefined;
     // Not connected any more, so this stops it.
     this._syncMoonClock();
     super.disconnectedCallback();
@@ -1071,7 +1200,7 @@ export class FloorplanCard extends LitElement {
         });
         const mappedOpenings = lvlOpenings.map((o) => {
           const p = map(o.x, o.y);
-          return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
+          return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type, sill: o.sill };
         });
 
         const wSolids = wallSolids(mappedWalls, mappedOpenings, outdoorWallHeight, false, true);
@@ -1103,7 +1232,7 @@ export class FloorplanCard extends LitElement {
       const ownOpenings = active.openings;
       const mappedOwnOpenings = ownOpenings.map((o) => {
         const p = map(o.x, o.y);
-        return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
+        return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type, sill: o.sill };
       });
       solids.push(...wallSolids(mappedOwnWalls, mappedOwnOpenings, outdoorWallHeight, false, true));
       for (const o of ownOpenings) {
@@ -1146,7 +1275,7 @@ export class FloorplanCard extends LitElement {
       });
       const openings = effectiveOpenings.map((o) => {
         const p = map(o.x, o.y);
-        return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
+        return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type, sill: o.sill };
       });
       solids.push(...wallSolids(walls, openings, baseWallHeight, false));
       for (const o of effectiveOpenings) {
@@ -1157,16 +1286,23 @@ export class FloorplanCard extends LitElement {
 
     const furnitureHeight = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(furnitureHeight, rot);
+    const catalog = symbolCatalog(c.symbols);
     for (const f of active.furniture) {
+      // A piece that hangs rather than stands — an awning under the eaves
+      // (issue #196) — is a sheet between its symbol's two heights.
+      const raised = findSymbol(catalog, f.type)?.elevation;
+      const top = raised ? baseWallHeight * raised.to : furnitureHeight;
+      const up = raised ? elevationShift(top, rot) : lift;
       solids.push(
         furnitureSolid(
           f,
           map,
-          furnitureHeight,
+          top,
           furnitureTone(f),
           svg`<g transform=${rotTransform || nothing}>
-                <g transform="translate(${lift.x} ${lift.y})">${drawFurniture(f)}</g>
-              </g>`
+                <g transform="translate(${up.x} ${up.y})">${drawFurniture(f)}</g>
+              </g>`,
+          raised ? baseWallHeight * raised.from : 0
         )
       );
     }
@@ -1608,6 +1744,15 @@ export class FloorplanCard extends LitElement {
     // Name/state composition lives in itemBadgeLabel, including #39's
     // no-entity guard (an unbound device gets no state line).
     const labelText = itemBadgeLabel(renderHass, item);
+    const position = labelPositionOf(item);
+    const autoKey = position === "auto" ? autoLabelKey(item) : undefined;
+    // An auto label renders `below` until it has been measured, and stays
+    // there wherever it cannot be (the 3D view).
+    const side: LabelSide =
+      autoKey === undefined
+        ? (position as LabelSide)
+        : (this._autoLabelsMeasurable && this._autoSides.get(autoKey)) || "below";
+    if (autoKey !== undefined && labelText) this._autoLabelSig.push(`${autoKey}:${labelText.length}`);
     // Threshold color (issue #68), judged on the displayed value (attribute
     // when set, else the state). cssColor gates the config string (#64).
     const st = item.entity ? renderHass?.states[item.entity] : undefined;
@@ -1694,6 +1839,8 @@ export class FloorplanCard extends LitElement {
     const hiddenStyle = isBadgeHidden ? "visibility: hidden; pointer-events: none;" : "";
 
     let visual: TemplateResult | typeof nothing = nothing;
+    // A label-only device beside an empty badge footprint (issue #308).
+    let spaceOnly = false;
     if (display === "ripple") {
       visual = html`<span style="${hiddenStyle}">
         ${renderRipple(on, rippleColor, rippleSize, rippleDirection, rippleWidth, 3, scale)}
@@ -1707,13 +1854,19 @@ export class FloorplanCard extends LitElement {
       visual = html`<span style="${hiddenStyle}">
         ${this._renderBadge(item, scale, renderHass)}
       </span>`;
-    } else if (labelText && labelPositionOf(item) !== "below") {
+    } else if (labelText && (side !== "below" || position === "auto")) {
       // A label-only device with its label to one side keeps the badge's
       // footprint, empty (issue #308): "I would expect the label to keep its
       // position (and direction of growth), no matter if the badge is shown or
       // not". The side rules then hang it exactly where they would beside a
       // badge, which is also where the editor's ghost badge shows it. Below
       // stays in flow, centred on (x, y), as label-only devices always were.
+      //
+      // An auto one keeps the footprint on every side, `below` included, so
+      // the card measures the same badge box whichever side it settles on;
+      // its `below` label is then centred on that box (`.centred`), which is
+      // exactly where an in-flow label-only label has always sat.
+      spaceOnly = true;
       const box = overlayLength(cssNumber(item.size, DEFAULT_ITEM_SIZE), scale);
       visual = html`<span
         class="badge-space"
@@ -1744,6 +1897,7 @@ export class FloorplanCard extends LitElement {
         data-id=${cssIdent(item.id) ?? nothing}
         data-entity=${cssEntityId(item.entity) ?? nothing}
         data-kind=${cssIdent(item.kind) ?? nothing}
+        data-label-auto=${autoKey ?? nothing}
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${stateColor
         ? `--fp-state:${stateColor};`
         : ""}${activeColor
@@ -1773,7 +1927,7 @@ export class FloorplanCard extends LitElement {
         : nothing}
         ${labelText
         ? html`<span
-              class="label ${visual === nothing ? "inflow" : ""} label-${labelPositionOf(item)}"
+              class="label ${visual === nothing ? "inflow" : ""} label-${side} ${spaceOnly && side === "below" ? "centred" : ""}"
               style="font-size:${overlayLength(itemLabelSize(item.labelSize), scale)};${labelColor
             ? `color:${labelColor};`
             : ""}"
@@ -2135,6 +2289,8 @@ export class FloorplanCard extends LitElement {
     // instead of being drawn flat. The sun dimming has to reach the tops of
     // the walls too, which lie `wallHeight` outside the plan rectangle.
     const iso = frame.projection === "iso";
+    this._autoLabelsMeasurable = !iso && !this._rotation.running;
+    this._autoLabelSig = [];
     // Whether anything actually stands. At zero height the isometric floor
     // keeps the flat plan's own walls, furniture and opening symbols, and the
     // standing layer is skipped outright rather than drawn with no height.
@@ -2145,6 +2301,18 @@ export class FloorplanCard extends LitElement {
     const dimPad = WALL_THICKNESS + (iso ? frame.wallHeight : 0);
     // One furniture glyph, flat. Drawn on the floor on the flat plan and on
     // top of its block under the isometric view — the same drawing either way.
+    // Awnings and curtains at their cover's position (issue #196); every other
+    // piece passes through untouched.
+    // A center-closing curtain is two halves; it keeps one action, with its
+    // icon on the left half so it never sits over the gap once both gather.
+    const pieces = active.furniture.map((f) =>
+      shownPieces(f, f.entity ? renderHass?.states[f.entity] : undefined, symbolCatalog(c.symbols))
+    );
+    const furniture = pieces.flat();
+    const actionFurniture = pieces.map((p, i) => (p.length === 1
+      ? p[0]!
+      : { ...active.furniture[i]!, x: p[0]!.x, y: p[0]!.y }));
+    // With its icon hidden (#362), each half of a centre curtain takes the tap.
     const drawFurniture = (f: Furniture): SVGTemplateResult => this._furnitureHit(f, renderFurniture(
       f,
       furnitureColor(f, f.entity ? renderHass?.states[f.entity]?.state : undefined) ?? (lineArt ? LINE_INK : undefined),
@@ -2329,6 +2497,7 @@ export class FloorplanCard extends LitElement {
     const zoomedArea = (active.isOutdoor ? floors.flatMap((f) => f.areas) : active.areas)?.find(
       (a) => a.id === this._zoomedAreaId
     );
+    this._autoLayoutBase = `${this._configSerial}|${active.id}|${rot}|${scale}|${this._zoomedAreaId ?? ""}`;
     const visiblePanels = this._visibleFloorPanels(active, c, iso, zoomedArea, renderHass);
     const zoom = zoomedArea
       ? areaZoomTransform(
@@ -2427,6 +2596,7 @@ export class FloorplanCard extends LitElement {
                (which rebuilds that subtree) never disturbs this transform. -->
           <div
             class="plan-zoom"
+            @transitionend=${this._onZoomSettled}
             style="transform: translate(${zoom.txPercent}%, ${zoom.tyPercent}%) scale(${zoom.scale});"
           >
           <!-- Keyed on the skin (issue #122). A skin changes custom properties on
@@ -2510,7 +2680,7 @@ export class FloorplanCard extends LitElement {
                  they meet) without screening against the plan beneath, which
                  would wash out on a light theme. -->
             ${renderGlowMask(
-                active.furniture, c.width, c.height,
+                furniture, c.width, c.height,
                 `${this._glowIdBase}-mask`, symbolCatalog(c.symbols)
               )}
             <g class="fp-glows"
@@ -2524,7 +2694,7 @@ export class FloorplanCard extends LitElement {
                   : nothing;
               })}
             </g>
-            ${standing ? nothing : active.furniture.map(drawFurniture)}
+            ${standing ? nothing : furniture.map(drawFurniture)}
             <!-- Sunlight through the openings. Under the walls on purpose:
                  light lands on the floor, and the walls stay crisp lines over
                  it rather than being tinted by the patches they let in. The
@@ -2679,7 +2849,7 @@ export class FloorplanCard extends LitElement {
                  stops responding (the lesson from #108). -->
             </g>
             ${standing
-              ? this._renderIsoLayer(active, standingWallSegments, effectiveOpenings, c, rot, frame, rotTransform, drawFurniture, furnitureTone, renderHass,
+              ? this._renderIsoLayer({ ...active, furniture }, standingWallSegments, effectiveOpenings, c, rot, frame, rotTransform, drawFurniture, furnitureTone, renderHass,
                 // Scrubbing history jumps from state to state on purpose;
                 // easing between them would trail the scrubber.
                 !replayState.enabled)
@@ -2720,7 +2890,7 @@ export class FloorplanCard extends LitElement {
           (o) => this._renderOpeningMark(o, c, rot, scale, renderHass)
         )}
             ${repeat(
-              active.furniture,
+              actionFurniture,
               (f, i) => f.id || i,
               (f) => this._renderFurnitureAction(f, c, rot, scale, floors, active.id)
             )}
@@ -3036,6 +3206,13 @@ export class FloorplanCard extends LitElement {
     }
     .plan.scale-plan .item > .label.label-right {
       left: calc(100% + 0.33em);
+    }
+    .plan.scale-plan .item > .label.label-above {
+      top: auto;
+      bottom: calc(100% + 0.17em);
+    }
+    .plan.scale-plan .item > .label.label-below.centred {
+      top: 50%;
     }
     .floor-switcher {
       position: absolute;
@@ -3712,6 +3889,18 @@ export class FloorplanCard extends LitElement {
     }
     .item > .label.label-right {
       left: calc(100% + 4px);
+    }
+    /* Over the badge (the fourth side), mirroring below. */
+    .item > .label.label-above {
+      top: auto;
+      bottom: calc(100% + 2px);
+    }
+    /* An auto label-only device's "below": centred on the empty badge
+       footprint, which is the device's point — where an in-flow label-only
+       label sits — so measuring it costs no change in what it looks like. */
+    .item > .label.label-below.centred {
+      top: 50%;
+      transform: translate(-50%, -50%);
     }
     /* The badge's footprint with nothing in it: same box, border included, so
        a side label lands where it would beside a drawn badge. Not a tap

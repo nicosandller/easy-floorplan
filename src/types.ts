@@ -318,6 +318,18 @@ export interface Opening {
    */
   ceilingHeight?: number;
   /**
+   * A **window**'s sill height, as a fraction of the wall height (default
+   * `0.35`, what every window stood on before this existed). `0` is a
+   * floor-to-ceiling window — a French window, a glazed wall — whose glass
+   * starts at the floor; `0.6` a high bathroom or kitchen window.
+   *
+   * Only the 3D view reads it: a plan draws a window the same at any height,
+   * as a plan does, and the light it lets in is worked out on the plan too.
+   * Clamped to 0..{@link MAX_SILL} so there is always glass above it. Doors,
+   * passages and skylights have no sill and ignore it.
+   */
+  sill?: number;
+  /**
    * Optional entity (e.g. a contact `binary_sensor` or a `cover`) whose state
    * drives whether the opening is drawn open or closed. When unset, doors are
    * drawn open (swing symbol) and windows closed, matching a static floor plan.
@@ -641,9 +653,14 @@ export interface ItemReading {
  * `left` / `right` exist because a long reading under a badge grows in both
  * directions and collides with whatever is beside it, while a label hung off
  * one side grows only one way — which is what a row of devices along a wall
- * needs.
+ * needs. `above` is the fourth side, centred over the badge.
+ *
+ * `auto` lets the card choose among those four once the plan is laid out:
+ * whichever side covers the least wall, opening, badge, other label, room
+ * name and plan edge, in the order below → right → left → above when sides
+ * tie (see label-placement.ts). It falls back to `below` under the 3D view.
  */
-export type LabelPosition = "below" | "left" | "right";
+export type LabelPosition = "below" | "left" | "right" | "above" | "auto";
 
 /** An entity icon placed on the plan. */
 export interface FloorItem {
@@ -1130,7 +1147,9 @@ export type FurnitureType =
   | "piano"
   | "hotTub"
   | "quarterTub"
-  | "cornerShowerCurved";
+  | "cornerShowerCurved"
+  | "awning"
+  | "curtain";
 
 /**
  * Which end of an L-shaped sectional the chaise sits on, facing the sofa from
@@ -1149,8 +1168,13 @@ export interface Furniture {
    * plain box, so a missing symbol is a visible placeholder rather than a hole.
    */
   type: FurnitureType | (string & {});
-  /** L-shaped sectional only: which side the chaise extends on. Default `right`. */
-  hand?: SectionalHand;
+  /**
+   * L-shaped sectional: which side the chaise extends on. Curtain (issue
+   * #196): which side it gathers at when open, or `center` for a pair that
+   * meets in the middle and gathers at both ends. `left` mirrors the symbol,
+   * so it works on any glyph with a handedness. Default `right` (unmirrored).
+   */
+  hand?: SectionalHand | "center";
   x: number;
   y: number;
   /** Width / height in virtual units. */

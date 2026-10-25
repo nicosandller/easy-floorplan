@@ -803,6 +803,8 @@ selecting a view in the editor removes the old alias.
   Zero height lays the flat plan on an isometric floor: walls, furniture and opening
   symbols drawn exactly as the 2D view draws them.
 
+Windows support a configurable [sill height](configuration.md#opening-door--window--skylight--passage): `sill: 0` starts at the floor, while `sill: 0.6` makes a high window.
+
 Screenshots from the standalone preview with simulated entities and placeholder
 icons (`wallHeight: 60`, `wallOpacity: 0.65`):
 
