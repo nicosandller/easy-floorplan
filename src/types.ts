@@ -1619,8 +1619,6 @@ export const DEFAULT_GLOW_RADIUS = 140;
 export const MIN_STRIP_LENGTH = 4;
 /** Narrowest cone a spot casts (issue #388), in degrees. */
 export const MIN_SPOT_WIDTH = 10;
-/** What a light's cone opens to when it is first made a spot. */
-export const DEFAULT_SPOT_WIDTH = 60;
 /** What turning a light into a strip starts it at, in canvas units. */
 export const DEFAULT_STRIP_LENGTH = 160;
 /**

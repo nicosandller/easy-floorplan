@@ -5304,11 +5304,6 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
-   * An LED strip's run (issue #298), and — while its device is selected — a
-   * handle on each end, dragged like a wall's. The device's own icon still
-   * selects and moves it; the run follows because it is centred on the icon.
-   */
-  /**
    * The aiming handle of a selected spot (issue #388): a handle at the tip of
    * its cone, on the guide, that turns the cone to follow the pointer.
    */
@@ -5334,6 +5329,11 @@ export class FloorplanCardEditor extends LitElement {
                          this._startDrag(e, { kind: "item", id: it.id }, undefined, undefined, undefined, undefined, true)} />`;
   }
 
+  /**
+   * An LED strip's run (issue #298), and — while its device is selected — a
+   * handle on each end, dragged like a wall's. The device's own icon still
+   * selects and moves it; the run follows because it is centred on the icon.
+   */
   private _renderStripSel(it: FloorItem): TemplateResult | typeof nothing {
     const run = it.glow ? stripRun(it) : undefined;
     if (!run) return nothing;

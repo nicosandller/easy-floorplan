@@ -27,7 +27,7 @@ control lights, and view the plan in 3D.
   furniture, text and devices with undo/redo, copy/paste and position locking.
 - **Live devices** — control lights and switches, show sensor readings, and follow
   doors, windows and shutters as they open and close.
-- **Lighting** — colored light from your lamps, day/night dimming, sunlight,
+- **Lighting** — colored light from your lamps and spots, day/night dimming, sunlight,
   moonlight and ambient daylight.
 - **Rooms and presence** — zoom into rooms, link Home Assistant areas, show
   presence ripples and track positions from distance sensors.
