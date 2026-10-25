@@ -2,12 +2,19 @@
 
 ## Unreleased
 
+- Awnings and curtains (#196): an `awning` or `curtain` bound to a `cover` is drawn at
+  the cover's position, with `w × h` as its fully extended size. A curtain gathers at
+  the end `hand` picks, or at both ends with `hand: center`. Symbols can opt in with
+  the new `extend` and `elevation` keys. See [Furniture](docs/configuration.md#furniture).
 - Furniture action icons can be hidden per piece (`showIcon: false`, or **Action icon**
   under Behavior); the drawing itself then takes the tap. The icons also follow
   `overlayScale: plan` now, shrinking with the drawing like device badges instead of
   staying 34px on a narrow card (#362). On existing `plan` dashboards the icons will
   look smaller than before; that is intended. `fixed` keeps them at 34px.
-
+- Device labels gain `labelPosition: above`, and `auto` picks the clearest side
+  once the plan is laid out, keeping clear of walls, openings, badges and other
+  labels (#379). It measures only when the plan, floor, rotation, zoom, card size
+  or a label's length changes; the 3D view keeps auto labels below.
 - Animate live 3D quarter-turns around the floorplan, keeping labels, devices
   and room focus aligned. Repeated clicks can continue or reverse a turn; reset
   cancels it, and reduced motion keeps turns immediate (#354).

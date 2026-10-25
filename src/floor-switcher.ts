@@ -21,6 +21,18 @@ export const floorSwitcherStyles = css`
     gap: var(--fp-floor-switcher-gap, var(--_fp-floor-gap, 4px));
     max-width: calc(100% - 16px);
   }
+  /* Summary buttons are taller, so a stack of them may need to scroll. Only
+     these switchers scroll: overflow-y: auto also clips overflow-x, and the
+     padding (taken back by the margin) keeps the buttons' shadow and focus
+     ring inside the clip. */
+  .floor-switcher.has-summaries {
+    max-height: calc(100% - 24px);
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+    padding: 4px;
+    margin: -4px;
+  }
   .floor-switcher.row {
     flex-direction: row;
     flex-wrap: wrap;
@@ -67,5 +79,30 @@ export const floorSwitcherStyles = css`
     background: var(--fp-floor-switcher-active-background, var(--fp-floor-accent, var(--_fp-floor-accent, var(--fp-skin-accent, var(--primary-color, #03a9f4)))));
     color: var(--fp-floor-switcher-active-color, var(--_fp-floor-accent-ink, var(--fp-skin-accent-ink, var(--text-primary-color, #fff))));
     border-color: var(--fp-floor-switcher-active-border-color, var(--fp-floor-switcher-active-background, var(--fp-floor-accent, var(--_fp-floor-accent, var(--fp-skin-accent, var(--primary-color, #03a9f4))))));
+  }
+  :where(.floor-switcher) .floor-button.has-summary {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    max-width: var(--fp-floor-switcher-max-width, 220px);
+    line-height: 1.2;
+    padding: var(--fp-floor-switcher-padding, var(--_fp-floor-padding, 6px 10px));
+  }
+  :where(.floor-switcher) .floor-button-title {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    max-width: 100%;
+  }
+  :where(.floor-switcher) .floor-button-summary {
+    font-size: var(--fp-floor-switcher-summary-size, 11px);
+    opacity: var(--fp-floor-switcher-summary-opacity, 0.85);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    font-weight: normal;
   }
 `;

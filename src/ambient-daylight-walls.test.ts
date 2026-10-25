@@ -74,6 +74,57 @@ describe("ambient daylight follows physical walls (#319)", () => {
     expect(visible(closed.clipPoints, 200, 150)).toBe(false);
   });
 
+  // Issue #360: a glazed gap that failed to close joined its room to the
+  // outside, so an always-open passage out of that room lit the next one.
+  describe("an interior passage is not a sky source (#360)", () => {
+    const passage: Opening = { ...door, id: "passage", type: "passage" };
+    const bay = (top: number, bottom: number) => [...outer.slice(0, 3),
+      { id: "left-top", x1: 0, y1: 0, x2: 0, y2: top },
+      { id: "left-bottom", x1: 0, y1: bottom, x2: 0, y2: 300 }, partition];
+
+    it("in a closed plan", () => {
+      const result = lights([...outer, partition], [window, passage], 1)!;
+      expect(result[0]?.patch.openingId).toBe(window.id);
+      expect(result[1]).toBeUndefined();
+    });
+
+    it("when the window falls a few units short of its jambs", () => {
+      const result = lights(bay(110, 190), [window, passage], 1)!;
+      expect(result.map(light => light?.patch.openingId)).toEqual([window.id, undefined]);
+    });
+
+    it("when two windows side by side fill the gap", () => {
+      const pair = [{ ...window, y: 100, length: 100 }, { ...window, id: "second", y: 200, length: 100 }];
+      const result = lights(bay(50, 250), [...pair, passage], 1)!;
+      expect(result.map(light => light?.patch.openingId)).toEqual([window.id, "second", undefined]);
+    });
+
+    // The reporter's plan: a railed terrace, glazed doors into the living
+    // room, a passage on to the hall. The terrace wall stops 4 units short of
+    // the side wall, inside its thickness, so the plan looks closed.
+    it("when a wall stops 4 units short of the next one", () => {
+      const terrace: Opening = { id: "terrace", type: "door", glazed: true, x: 200, y: 100, length: 80, angle: 0 };
+      const hall: Opening = { id: "hall", type: "passage", x: 200, y: 200, length: 60, angle: 0 };
+      const plan = (short: number) => [...outer.slice(1), { ...outer[0]!, kind: "railing" as const },
+        { id: "terrace-wall", x1: 0, y1: 100, x2: 400 - short, y2: 100 },
+        { id: "hall-wall", x1: 0, y1: 200, x2: 400, y2: 200 }];
+      const joined = lights(plan(0), [terrace, hall], 1)!;
+      const result = lights(plan(4), [terrace, hall], 1)!;
+      expect(result.map(light => light?.patch.openingId)).toEqual([terrace.id, undefined]);
+      expect(result[0]!.patch.gradientEnd).toEqual(joined[0]!.patch.gradientEnd);
+    });
+
+    it.each([3, 5])("when the window is nudged %s units off a solid wall", (offset) => {
+      const expected = lights([...outer, partition], [window, passage], 1)![0]!.patch;
+      for (const x of [-offset, offset]) {
+        const result = lights([...outer, partition], [{ ...window, x }, passage], 1)!;
+        expect(result[0]?.patch.gradientEnd).toEqual(expected.gradientEnd);
+        expect(result[0]?.patch.clipPoints).toEqual(expected.clipPoints);
+        expect(result[1]).toBeUndefined();
+      }
+    });
+  });
+
   it("keeps the Area fallback for gaps without a supported wall opening", () => {
     const walls = outer.slice(0, 3);
     expect(lights(walls, [window])).toBeUndefined(); // Jambs do not reach either end.

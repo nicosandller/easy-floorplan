@@ -237,6 +237,9 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
         if (s?.presence?.entity) ids.add(s.presence.entity);
       }
     }
+    if (f.summary?.temperatureEntity) ids.add(f.summary.temperatureEntity);
+    if (f.summary?.humidityEntity) ids.add(f.summary.humidityEntity);
+    if (f.summary?.presenceEntity) ids.add(f.summary.presenceEntity);
   }
   return ids;
 }
@@ -2070,7 +2073,7 @@ export function itemHasLabel(item: {
  */
 export function labelPositionOf(item: { labelPosition?: LabelPosition }): LabelPosition {
   const v = item.labelPosition;
-  return v === "left" || v === "right" ? v : "below";
+  return v === "left" || v === "right" || v === "above" || v === "auto" ? v : "below";
 }
 
 /**
@@ -7045,6 +7048,72 @@ export function renderFurniture(
                 data-id=${cssIdent(f.id) ?? nothing}
                 data-entity=${cssEntityId(f.entity) ?? nothing}
                 transform="translate(${f.x} ${f.y}) rotate(${f.angle ?? 0})${mirror}">${parts}</g>`;
+}
+
+/**
+ * The piece as it stands right now (issue #196). A symbol with an `extend`
+ * — the awning, the curtain — is drawn at its config size only when fully
+ * extended; otherwise the moving side shrinks toward its start edge, down to
+ * the symbol's `min`, and the centre moves with it so that edge stays put on
+ * the wall. Every other piece, and one with no entity, comes back unchanged:
+ * an unbound awning draws extended, which is also how the editor shows it.
+ *
+ * The cover's position is read the way a shutter's is ({@link shutterAmount}),
+ * so a dropout reads as a closed cover rather than a guess: an awning draws
+ * retracted, and a curtain (`open: "retracted"`) draws fully across.
+ */
+export function shownFurniture(
+  f: Furniture,
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+  catalog: SymbolCatalog = BUILTIN_SYMBOLS,
+): Furniture {
+  const ext = findSymbol(catalog, f.type)?.extend;
+  if (!ext || !f.entity) return f;
+  const open = shutterAmount(state);
+  const out = ext.open === "extended" ? open : 1 - open;
+  const k = ext.min + (1 - ext.min) * out;
+  if (k >= 1) return f;
+  const full = ext.axis === "w" ? f.w : f.h;
+  const shift = (full * (1 - k)) / 2;
+  // In the piece's own frame: toward the far edge along the moving axis. A
+  // mirrored piece starts from the right, so a curtain can gather either way.
+  const lx = ext.axis === "w" ? (f.hand === "left" ? -shift : shift) : 0;
+  const ly = ext.axis === "h" ? shift : 0;
+  const rad = ((f.angle ?? 0) * Math.PI) / 180;
+  return {
+    ...f,
+    x: f.x - (lx * Math.cos(rad) - ly * Math.sin(rad)),
+    y: f.y - (lx * Math.sin(rad) + ly * Math.cos(rad)),
+    ...(ext.axis === "w" ? { w: full * k } : { h: full * k }),
+  };
+}
+
+/**
+ * The piece as it is drawn right now, as one or more parts. A curtain with
+ * `hand: center` is a pair that meets in the middle and gathers at both ends
+ * (issue #196): each half is the same curtain, half as wide, gathering at its
+ * own end. Everything else is the single piece {@link shownFurniture} gives.
+ * Both halves keep the piece's id, so they stay one thing to tap and to style.
+ */
+export function shownPieces(
+  f: Furniture,
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+  catalog: SymbolCatalog = BUILTIN_SYMBOLS,
+): Furniture[] {
+  if (f.hand !== "center" || findSymbol(catalog, f.type)?.extend?.axis !== "w") {
+    return [shownFurniture(f, state, catalog)];
+  }
+  const q = f.w / 4;
+  const rad = ((f.angle ?? 0) * Math.PI) / 180;
+  const half = (side: -1 | 1): Furniture => ({
+    ...f,
+    x: f.x + side * q * Math.cos(rad),
+    y: f.y + side * q * Math.sin(rad),
+    w: f.w / 2,
+    // The left half gathers at the left end, the right half mirrored at the right.
+    hand: side < 0 ? "right" : "left",
+  });
+  return [shownFurniture(half(-1), state, catalog), shownFurniture(half(1), state, catalog)];
 }
 
 /**
