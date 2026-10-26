@@ -120,6 +120,8 @@ import {
   stripFromEnds,
   stripOutline,
   stripRun,
+  spotCone,
+  conePoints,
   resolveOpeningAmount,
   openingIsActive,
   openingIsPassage,
@@ -342,6 +344,10 @@ const switcherHandleHome = (w: number, h: number) => ({ x: w * 0.93, y: h * 0.08
  * drag for the switcher.
  */
 const DRAG_SLOP = 4;
+/** Degrees within which a spot being aimed settles on the nearest 45° (issue #388). */
+const SPOT_AIM_SNAP = 4;
+/** How far inside the plan's edge a spot's aiming handle stays. */
+const SPOT_AIM_INSET = 12;
 const AREA_DRAG_HOLD_MS = 200;
 
 /** Icon shown in the Element header per selected element kind. */
@@ -371,6 +377,8 @@ interface Drag {
   areaEdge?: number;
   /** Set when dragging one end of an LED strip device (issue #298). */
   stripEnd?: 1 | 2;
+  /** Set when dragging a spot's aiming handle (issue #388). */
+  spotAim?: boolean;
   /**
    * Whether this strip drag may choose the lit side — only while the device
    * has none of its own, so a side someone picked is never overridden.
@@ -1971,7 +1979,8 @@ export class FloorplanCardEditor extends LitElement {
     endpoint?: 1 | 2,
     areaVertex?: number,
     areaEdge?: number,
-    stripEnd?: 1 | 2
+    stripEnd?: 1 | 2,
+    spotAim?: boolean
   ): void {
     if (this._tool !== "select") return;
     ev.stopPropagation();
@@ -1980,7 +1989,7 @@ export class FloorplanCardEditor extends LitElement {
     // Endpoint/vertex/edge handles always operate on that single element; every
     // other click goes through the overlap-aware picker (issue #52).
     const explicitHandle =
-      endpoint != null || areaVertex != null || areaEdge != null || stripEnd != null;
+      endpoint != null || areaVertex != null || areaEdge != null || stripEnd != null || !!spotAim;
     const pick = explicitHandle ? sel : this._resolvePick(ev, sel);
     if (explicitHandle) this._selectOne(pick);
     else this._selectForPointer(ev, pick);
@@ -2001,6 +2010,7 @@ export class FloorplanCardEditor extends LitElement {
       areaVertex,
       areaEdge,
       stripEnd,
+      spotAim,
     };
     if (pick.kind === "wall") this._drag.attached = this._attachedCorners(pick.id, endpoint);
     if (stripEnd && pick.kind === "item")
@@ -2202,6 +2212,20 @@ export class FloorplanCardEditor extends LitElement {
             : undefined;
       }
       this._emitFloor({ items: f.items.map((i) => (i.id === it.id ? { ...i, ...next } : i)) });
+      return;
+    }
+
+    // A spot's aiming handle (issue #388): the cone turns to point at the
+    // pointer, in whole degrees, and settles on the nearest 45° when close to
+    // it so a beam aims squarely along or across a room.
+    if (drag.primary.kind === "item" && drag.spotAim) {
+      const it = f.items.find((i) => i.id === drag.primary.id);
+      if (!it || Math.hypot(p.x - it.x, p.y - it.y) < 1) return;
+      const deg = (Math.atan2(p.x - it.x, -(p.y - it.y)) * 180) / Math.PI;
+      let bearing = Math.round(((deg % 360) + 360) % 360);
+      const square = Math.round(bearing / 45) * 45;
+      if (!p.altKey && Math.abs(bearing - square) <= SPOT_AIM_SNAP) bearing = square % 360;
+      this._emitFloor({ items: f.items.map((i) => (i.id === it.id ? { ...i, glowDirection: bearing } : i)) });
       return;
     }
 
@@ -4787,8 +4811,13 @@ export class FloorplanCardEditor extends LitElement {
                   const r = cssNumber(it.glowRadius, DEFAULT_GLOW_RADIUS);
                   // A strip's guide is its pool's own outline (issue #298).
                   const run = stripRun(it);
-                  return run
-                    ? svg`<path class="glow-guide" d=${stripOutline(run, r)} />`
+                  if (run) return svg`<path class="glow-guide" d=${stripOutline(run, r)} />`;
+                  // A spot's guide is its cone (issue #388).
+                  const cone = spotCone(it);
+                  return cone
+                    ? svg`<polygon class="glow-guide"
+                                   points=${conePoints(it.x, it.y, r, cone.bearing, cone.width / 2)
+                                     .map((p) => `${p.x},${p.y}`).join(" ")} />`
                     : svg`<circle class="glow-guide" cx=${it.x} cy=${it.y} r=${r} />`;
                 })
               }
@@ -4812,6 +4841,7 @@ export class FloorplanCardEditor extends LitElement {
                 )}
               </g>
               ${floor.items.map((it) => this._renderStripSel(it))}
+              ${floor.items.map((it) => this._renderSpotAim(it))}
               ${repeat(
                 // Keyed by id: switching floors must create fresh DOM. Reused
                 // nodes would CSS-transition from the previous floor's opening
@@ -5598,6 +5628,32 @@ export class FloorplanCardEditor extends LitElement {
                 class="rows ${this._selectionPage === "properties" ? "essential-properties" : "category-properties"}">${this._renderSelectionEditor()}</div>`}
       </section>
     `;
+  }
+
+  /**
+   * The aiming handle of a selected spot (issue #388): a handle at the tip of
+   * its cone, on the guide, that turns the cone to follow the pointer.
+   */
+  private _renderSpotAim(it: FloorItem): TemplateResult | typeof nothing {
+    if (!it.glow || !this._isSel("item", it.id) || it.locked) return nothing;
+    const cone = spotCone(it);
+    if (!cone) return nothing;
+    const a = (cone.bearing * Math.PI) / 180;
+    const dx = Math.sin(a);
+    const dy = -Math.cos(a);
+    // At the tip of the guide, unless that is off the plan — a long throw from
+    // near a wall — when it is pulled in along the beam to stay in reach.
+    const c = this._config;
+    const toEdge = (p: number, d: number, max: number) =>
+      d > 1e-9 ? (max - SPOT_AIM_INSET - p) / d : d < -1e-9 ? (SPOT_AIM_INSET - p) / d : Infinity;
+    const t = Math.max(
+      SPOT_AIM_INSET,
+      Math.min(cssNumber(it.glowRadius, DEFAULT_GLOW_RADIUS), toEdge(it.x, dx, c.width), toEdge(it.y, dy, c.height)),
+    );
+    return svg`<circle class="handle spot-aim" r="7"
+                       cx=${it.x + dx * t} cy=${it.y + dy * t}
+                       @pointerdown=${(e: PointerEvent) =>
+                         this._startDrag(e, { kind: "item", id: it.id }, undefined, undefined, undefined, undefined, true)} />`;
   }
 
   /**

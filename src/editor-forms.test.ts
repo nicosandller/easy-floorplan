@@ -572,6 +572,7 @@ describe("itemForm", () => {
       "glowRadius",
       "glowColor",
       "strip",
+      "glowWidth",
     ]);
     expect(itemEffectsForm({ ...item, kind: "sensor", entity: "sensor.t" } as FloorItem)).toBeUndefined();
     // …and the Label group is skipped entirely while nothing labels the device.
@@ -621,6 +622,26 @@ describe("itemForm", () => {
     ).toBeUndefined();
     // A pool already turned on stays editable after the entity drops out.
     expect(names(litSwitch)).toContain("glow");
+  });
+
+  it("narrows a cast light into a spot's cone and back (#388)", () => {
+    const lamp = { ...item, glow: true } as FloorItem;
+    const fields = (it: FloorItem) => itemEffectsForm(it)!.fields.map((f) => f.name);
+    // A pool all round offers the width; the direction waits until it narrows.
+    expect(fields(lamp)).toContain("glowWidth");
+    expect(fields(lamp)).not.toContain("glowDirection");
+    expect(itemEffectsForm(lamp)!.data).toMatchObject({ glowWidth: 360, glowDirection: 0 });
+    expect(itemEffectsForm(lamp)!.toPatch({ glowWidth: 60 })).toEqual({ glowWidth: 60 });
+
+    const spot = { ...lamp, glowWidth: 60, glowDirection: 135 } as FloorItem;
+    expect(fields(spot)).toEqual(expect.arrayContaining(["glowWidth", "glowDirection"]));
+    // Opened back to 360°, it is the ordinary pool again, with no keys left.
+    expect(itemEffectsForm(spot)!.toPatch({ glowWidth: 360 })).toEqual({
+      glowWidth: undefined,
+      glowDirection: undefined,
+    });
+    // A strip has a direction of its own, so it offers no cone.
+    expect(fields({ ...spot, stripLength: 200 } as FloorItem)).not.toContain("glowWidth");
   });
 
   it("turns a cast light into an LED strip and back (#298)", () => {

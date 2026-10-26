@@ -42,6 +42,7 @@ noticeable at night than at noon. Instead, **light withholds the dim**: any devi
 **Cast light** on clears the darkness around itself, full at the centre and diffusing to
 nothing at its `glowRadius` — the same shape and falloff as the pool it casts. Strength
 follows brightness; a light that's off, unavailable, or has no Cast light clears nothing.
+A [spot](configuration.md#spots) clears only its cone.
 
 **Walls stop the clearing**, using the same visibility polygon that stops the pools, so a
 lit room brightens itself and not the one next door. Walls are treated as solid along

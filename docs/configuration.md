@@ -285,6 +285,8 @@ See [Skylights](lighting.md#skylights) for what the sun does with one and
 | `stripLength` | number                                 | —            | Cast the light along a run this long, centred on the device, instead of from a point — an LED strip. Under `4` (or unset) is an ordinary point lamp. Only read with `glow`. See [LED strips](#led-strips). |
 | `stripAngle`  | number                                 | `0`          | Direction of the strip in degrees, measured on the plan: `0` runs to the right, `90` straight down. |
 | `stripSide`   | `both` \| `left` \| `right`            | `both`       | Which side of the strip it lights, as seen walking from its first end to its second. `left`/`right` for a strip on a wall, so it lights one room and not both. |
+| `glowWidth`   | number                                 | `360`        | Opening of the cast light in degrees. Under `360` it lights a cone — a spot, wall washer or picture light — instead of a pool all round. Not read on a strip. See [Spots](#spots). |
+| `glowDirection` | number                               | `0`          | Which way a spot's cone points, in degrees measured on the plan like `rippleDirection`: `0` straight up, `90` to the right. |
 | `badgeContent` | `icon` \| `value` \| `none`           | `icon`       | What the badge holds. `value` draws the reading inside it, falling back to the icon when there is no number; `none` leaves the label alone. |
 | `badgeEntity` | `primary` \| number                    | automatic    | Which reading a `value` badge shows: the device's own entity, or an index into `readings`. Unset picks the first with a number; set, only that one is read (an index past the end shows the icon). `secondary` is accepted as the legacy spelling of `0`. |
 | `showIcon`    | boolean                                | `true`       | **Deprecated** — use `badgeContent`. Honoured only when it is unset (`false` = `none`). |
@@ -407,6 +409,36 @@ Choosing **Both sides** keeps it lit on both, wherever it is dragged. An L-shape
 
 In the 3D view the strip lies on the floor with its pool, so a standing wall that hides
 that bit of floor hides the strip too.
+
+### Spots
+
+Not every light shines all round. Give a cast-light device a `glowWidth` under 360 and its
+pool narrows to a cone — a downlight aimed at a wall, a track spot, a picture or reading
+light.
+
+```yaml
+items:
+  - id: spot_hall
+    entity: light.spot_hall
+    kind: light
+    'x': 300
+    'y': 100
+    glow: true
+    glowRadius: 200      # how far the beam reaches
+    glowWidth: 60        # the cone's opening, in degrees
+    glowDirection: 135   # down and to the right
+```
+
+The cone fades along its length the way a pool does, and softly at its edges rather than
+in a hard cut. Everything else is the pool's: colour, brightness and the reach that comes
+with it, walls and open doors in the way, and the night it clears when
+[sun dimming](lighting.md#lit-rooms-hold-back-the-night) is on. Like a ripple's bearing,
+the direction is measured on the plan, so a rotated display turns the beam with the drawing.
+
+In the editor, **Beam width** under the device's Cast light settings narrows it, and
+**Beam direction** aims it. A selected spot also has a handle at the tip of its cone: drag
+it to aim the beam at the pointer. It settles on the nearest 45° when close to one, and
+holding Alt aims it freely. A strip has a direction of its own and offers no cone.
 
 ## Text
 
