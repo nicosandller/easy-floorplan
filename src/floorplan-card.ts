@@ -160,6 +160,8 @@ import {
   resolveIconAnimation,
   itemIconSize,
   resolvePlanRotation,
+  overlayAngle,
+  textOverlayAngle,
   normalizePlanRotation,
   subscribeOrientation,
   rotatedCanvasSize,
@@ -1668,7 +1670,7 @@ export class FloorplanCard extends LitElement {
     </div>`;
   }
 
-  private _renderBadge(item: FloorItem, scale: OverlayScale, renderHass: RenderHass | undefined): TemplateResult {
+  private _renderBadge(item: FloorItem, rot: number, scale: OverlayScale, renderHass: RenderHass | undefined): TemplateResult {
     const size = cssNumber(item.size, DEFAULT_ITEM_SIZE);
     const box = overlayLength(size, scale);
     // Animation goes on the inner ha-icon, not the badge: the badge carries
@@ -1688,7 +1690,7 @@ export class FloorplanCard extends LitElement {
     return html`
       <div
         class="badge"
-        style="width:${box};height:${box};transform:rotate(${cssNumber(item.angle, 0)}deg);"
+        style="width:${box};height:${box};transform:rotate(${overlayAngle(cssNumber(item.angle, 0), rot)}deg);"
       >
         ${value
         ? html`<span
@@ -1846,11 +1848,11 @@ export class FloorplanCard extends LitElement {
     } else if (display === "iconRipple") {
       visual = html`<div class="stack" style="${hiddenStyle}">
         ${renderRipple(on, rippleColor, rippleSize, rippleDirection, rippleWidth, 3, scale)}
-        ${showIcon ? html`<div class="stack-icon">${this._renderBadge(item, scale, renderHass)}</div>` : nothing}
+        ${showIcon ? html`<div class="stack-icon">${this._renderBadge(item, rot, scale, renderHass)}</div>` : nothing}
       </div>`;
     } else if (showIcon) {
       visual = html`<span style="${hiddenStyle}">
-        ${this._renderBadge(item, scale, renderHass)}
+        ${this._renderBadge(item, rot, scale, renderHass)}
       </span>`;
     } else if (labelText && (side !== "below" || position === "auto")) {
       // A label-only device with its label to one side keeps the badge's
@@ -1974,7 +1976,7 @@ export class FloorplanCard extends LitElement {
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
                font-size:${overlayLength(cssNumber(t.size, DEFAULT_TEXT_SIZE), scale)};
                color:${cssColorOr(t.color, SKIN_TEXT)};
-               transform:translate(-50%,-50%) scale(var(--fp-inv-zoom,1)) rotate(${cssNumber(t.angle, 0)}deg);"
+               transform:translate(-50%,-50%) scale(var(--fp-inv-zoom,1)) rotate(${textOverlayAngle(cssNumber(t.angle, 0), rot)}deg);"
       >
         ${textLabel(this.hass, t)}
       </div>

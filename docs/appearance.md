@@ -658,6 +658,10 @@ rotationLandscape: 0   # desktop, wall tablet
 In the editor: **Project → Display**, under *Rotate display*.
 
 Icons and labels stay upright at every angle, so a rotated plan is still readable.
+A device or text given an **angle** of its own turns with the plan instead, since that
+angle lines it up with something in the drawing — an LED strip along a wall. Use `360`
+(the Angle slider's far end) rather than `0` for one that lies along a horizontal wall and should follow it too. Text
+that would end up upside down is flipped to read along the same line the right way up.
 
 A **bearing** is the exception, and has to be: a ripple's `rippleDirection` says which way
 a sensor looks *in the room*, so it turns with the drawing rather than staying put on
