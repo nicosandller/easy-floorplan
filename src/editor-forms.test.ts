@@ -108,6 +108,21 @@ describe("normalizeFormPatch", () => {
     expect(normalizeFormPatch({ angle: -30 }, fields).angle).toBe(330);
   });
 
+  it("keeps a full turn as 360 on badge and text angles (issue #387)", () => {
+    // 360 turns the badge or text with a rotated display; 0 keeps it upright,
+    // so the slider's end stop must not save as 0.
+    const item = { id: "i", entity: "light.a", kind: "light", x: 0, y: 0 } as FloorItem;
+    const text = { id: "t", x: 0, y: 0, text: "hi" } as FloorText;
+    for (const spec of [itemBadgeForm(item), textForm(text)]) {
+      expect(normalizeFormPatch({ angle: 360 }, spec.fields).angle).toBe(360);
+      expect(normalizeFormPatch({ angle: 0 }, spec.fields).angle).toBe(0);
+      expect(normalizeFormPatch({ angle: 370 }, spec.fields).angle).toBe(10);
+    }
+    // Elsewhere 360 and 0 look the same, so a full turn still wraps.
+    const door = { id: "o", type: "door", x: 0, y: 0, length: 90, angle: 0 } as Opening;
+    expect(normalizeFormPatch({ angle: 360 }, openingForm(door).fields).angle).toBe(0);
+  });
+
   it("parses numeric strings from plain-input fallbacks", () => {
     expect(normalizeFormPatch({ length: "42" }, fields).length).toBe(42);
   });
