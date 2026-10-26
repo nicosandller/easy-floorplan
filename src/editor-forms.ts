@@ -102,6 +102,11 @@ export interface FormField {
   label: string;
   helper?: string;
   required?: boolean;
+  /**
+   * Angle only: a full turn stays 360 instead of wrapping to 0. On badges and
+   * text, 360 turns with a rotated display while 0 stays upright (issue #387).
+   */
+  keepFullTurn?: boolean;
   selector: Record<string, unknown>;
 }
 
@@ -126,7 +131,8 @@ export function diffFormValue(
 /**
  * Per-field cleanup between the form and the config: empty optional strings
  * become undefined; invalid required numbers are dropped (keep the old
- * value); numbers clamp to the selector range; angle wraps to 0..360.
+ * value); numbers clamp to the selector range; angle wraps to 0..360, with
+ * a full turn kept as 360 on keepFullTurn fields.
  */
 export function normalizeFormPatch(
   patch: Record<string, unknown>,
@@ -150,7 +156,11 @@ export function normalizeFormPatch(
         v = undefined;
       } else {
         const sel = field.selector.number as { min?: number; max?: number };
-        let num = field.name === "angle" ? ((n % 360) + 360) % 360 : n;
+        let num = n;
+        if (field.name === "angle") {
+          num = ((n % 360) + 360) % 360;
+          if (num === 0 && n !== 0 && field.keepFullTurn) num = 360;
+        }
         if (sel.min !== undefined && num < sel.min) num = sel.min;
         if (sel.max !== undefined && num > sel.max) num = sel.max;
         v = num;
@@ -261,9 +271,10 @@ export function actionYamlPatch(
   return { patch };
 }
 
-const angleField = (): FormField => ({
+const angleField = (keepFullTurn = false): FormField => ({
   name: "angle",
   label: "Angle",
+  ...(keepFullTurn ? { keepFullTurn } : {}),
   selector: { number: { min: 0, max: 360, step: 1, mode: "slider", unit_of_measurement: "°" } },
 });
 
@@ -1367,7 +1378,7 @@ export function itemBadgeForm(it: FloorItem, badgeSource?: BadgeSourceInfo): For
       label: "Size",
       selector: { number: { min: 16, max: 160, step: 2, mode: "slider", unit_of_measurement: "px" } },
     },
-    angleField()
+    angleField(true)
   );
   return {
     fields,
@@ -1940,7 +1951,7 @@ export function textForm(t: FloorText, areaScope?: AreaEntityScope): FormSpec {
       label: "Size",
       selector: { number: { min: 8, max: 200, mode: "slider", unit_of_measurement: "px" } },
     },
-    angleField()
+    angleField(true)
   );
   return {
     fields,
