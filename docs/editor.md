@@ -15,6 +15,26 @@ a change on the real card in a second tab or by collapsing the editor, then keep
 It needs Home Assistant 2025.3 or newer; on older versions the button explains this and
 **Save** still works. Use **Save** when you are ready to close the card editor.
 
+## Plan check
+
+The editor checks the active floor's walls as you work and flags two mistakes that
+the plan itself hides, usually left by YAML written by hand or by a tool:
+
+- **A wall end that stops just short of another wall.** If the gap is within the two
+  walls' drawn thickness (at least 8 units), the strokes overlap and the walls look
+  joined, but nothing connects them, so dead spaces and room light see a slot.
+  **Join** moves the end onto the other wall.
+- **A wall drawn on top of another.** **Remove duplicate** deletes a wall that lies
+  wholly on another one; **Trim overlap** shortens a wall that overlaps another part
+  of the way, so the two just meet.
+
+Each finding gets an orange ring on the canvas and a notice above the context bar;
+with several, the arrows step through them. A fix is one edit, so **Undo** reverts
+it. Corners, T-junctions and gaps wider than the tolerance, such as doorways, are
+never flagged, and a plan with nothing to flag shows no notice. The check only reads
+`walls:` (not walls generated from rooms), changes nothing by itself, and does not
+affect the card.
+
 ## Locking elements in place
 
 Select anything and press the padlock in the **Selection** inspector's header. It applies to every kind

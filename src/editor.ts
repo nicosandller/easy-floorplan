@@ -160,6 +160,7 @@ import {
 } from "./render";
 import { autoLabelKey, measureLabelScene, rectToBox, type LabelSide } from "./label-placement";
 import { deadSpacesCached } from "./dead-space";
+import { applyWallFix, wallFindingsCached, type WallFinding } from "./wall-check";
 import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
 import { skinStyle, skinTokens, SKIN_ACCENT, SKIN_PAPER, SKIN_TEXT, SKIN_WALL } from "./skins";
 import { roomTintPaints, roomTintScheme, roomTintsOf, type RoomTintPaint } from "./room-tints";
@@ -618,6 +619,11 @@ export class FloorplanCardEditor extends LitElement {
    * shows. A dense plan is much easier to aim at without them.
    */
   @state() private _hideLabels = false;
+  /**
+   * Which plan-check finding the notice under the canvas is showing (issue
+   * #403). Editor view state only, clamped to however many there are now.
+   */
+  @state() private _wallCheckIndex = 0;
   /**
    * `labelPosition: auto` on the canvas: the side each auto label was given
    * here. The editor runs the card's own chooser over its own canvas
@@ -3913,6 +3919,73 @@ export class FloorplanCardEditor extends LitElement {
    * current selection. This keeps contextual controls (which come and go) out
    * of the always-present top row.
    */
+  /**
+   * The plan check's markers (issue #403): one ring per finding, the one the
+   * notice is showing drawn stronger, with a dashed line to where its fix
+   * moves the wall end. Inert, so drawing and picking work through them.
+   */
+  private _renderWallCheckMarks(findings: readonly WallFinding[], current: number): TemplateResult {
+    return svg`<g class="wall-check" aria-hidden="true">
+      ${findings.map((f, i) => svg`<g class="wall-check-mark ${i === current ? "current" : ""}">
+        ${f.kind === "duplicate" ? nothing
+          : svg`<line class="wall-check-fix" x1=${f.point.x} y1=${f.point.y} x2=${f.to.x} y2=${f.to.y} />`}
+        <circle cx=${f.point.x} cy=${f.point.y} r="11" />
+      </g>`)}
+    </g>`;
+  }
+
+  /**
+   * The plan check's notice (issue #403), between the canvas and the context
+   * bar. Rendered only when the active floor has something to flag, so a plan
+   * without findings looks exactly as it did before the check existed.
+   */
+  private _renderWallCheck(findings: readonly WallFinding[], current: number): TemplateResult | typeof nothing {
+    const f = findings[current];
+    if (!f) return nothing;
+    const n = findings.length;
+    const units = (v: number) => {
+      const r = Math.round(v * 10) / 10;
+      return `${r} unit${r === 1 ? "" : "s"}`;
+    };
+    const message = f.kind === "near-miss"
+      ? `A wall end stops ${units(f.gap)} short of the next wall.`
+      : f.kind === "duplicate"
+        ? "A wall is drawn on top of another wall."
+        : `Two walls overlap by ${units(f.length)}.`;
+    const action = f.kind === "near-miss" ? "Join" : f.kind === "duplicate" ? "Remove duplicate" : "Trim overlap";
+    const detail = f.kind === "near-miss"
+      ? "Moves the end onto the other wall."
+      : f.kind === "duplicate" ? "Deletes the copy and keeps the other wall." : "Shortens one wall so the two just meet.";
+    const wall = this._floor().walls[f.wallIndex];
+    const locked = !!wall?.locked;
+    const step = (by: number) => () => { this._wallCheckIndex = (current + by + n) % n; };
+    return html`<div class="wall-check-bar" role="status">
+      <ha-icon icon="mdi:wall" aria-hidden="true"></ha-icon>
+      <span class="wall-check-text">${message}</span>
+      ${n > 1
+        ? html`<span class="wall-check-nav">
+            <button class="wall-check-step" aria-label="Previous plan check" title="Previous" @click=${step(-1)}>
+              <ha-icon icon="mdi:chevron-left"></ha-icon></button>
+            <span class="wall-check-count">${current + 1} of ${n}</span>
+            <button class="wall-check-step" aria-label="Next plan check" title="Next" @click=${step(1)}>
+              <ha-icon icon="mdi:chevron-right"></ha-icon></button>
+          </span>`
+        : nothing}
+      <button class="wall-check-apply" ?disabled=${locked}
+        title=${locked ? "The wall is locked. Unlock it to fix this." : detail}
+        @click=${() => this._applyWallFinding(f)}>${action}</button>
+    </div>`;
+  }
+
+  /** One plan-check fix, as one undoable edit. */
+  private _applyWallFinding(finding: WallFinding): void {
+    const walls = applyWallFix(this._floor().walls, finding);
+    this._commitFloor({ walls });
+    if (finding.kind === "duplicate" && !walls.some((w) => w.id === finding.wallId)) {
+      this._selection = this._selection.filter((s) => !(s.kind === "wall" && s.id === finding.wallId));
+    }
+  }
+
   private _renderContextBar(): TemplateResult {
     const t = this._tool;
     let label: string;
@@ -4172,6 +4245,10 @@ export class FloorplanCardEditor extends LitElement {
           );
         })
       : blockingWallSegments;
+    // The plan check (issue #403). Held back while a wall is being drawn or
+    // dragged: an end passing close to another wall on its way is no finding.
+    const wallFindings = this._drag || this._draft ? [] : wallFindingsCached(floor.walls);
+    const wallCheckCurrent = Math.min(this._wallCheckIndex, Math.max(0, wallFindings.length - 1));
     const floorEmpty =
       !floor.walls.length &&
       !floor.openings.length &&
@@ -4699,6 +4776,7 @@ export class FloorplanCardEditor extends LitElement {
                   : nothing
               }
               ${this._renderAreaDraft()}
+              ${wallFindings.length ? this._renderWallCheckMarks(wallFindings, wallCheckCurrent) : nothing}
               ${
                 this._marquee
                   ? svg`<rect x=${Math.min(this._marquee.x0, this._marquee.x1)}
@@ -4750,6 +4828,7 @@ export class FloorplanCardEditor extends LitElement {
         </div>
         </div>
 
+          ${this._renderWallCheck(wallFindings, wallCheckCurrent)}
           ${this._renderContextBar()}
         </div>
         <aside class="side" aria-label="Inspector">
