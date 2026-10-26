@@ -972,6 +972,19 @@ export interface FloorItem {
    * a cabinet, along a shelf.
    */
   stripSide?: StripSide;
+  /**
+   * Opening of the cast light in degrees (issue #388): a spot, a wall washer
+   * or a picture light lights a cone, not a disc. Default 360 — the ordinary
+   * pool all round. Below {@link MIN_SPOT_WIDTH} counts as that minimum.
+   * Ignored on a strip, which already has a direction of its own.
+   */
+  glowWidth?: number;
+  /**
+   * Which way the cone points, in degrees, measured on the **plan** like
+   * {@link rippleDirection}: 0° straight up, 90° to the right. Default 0.
+   * Only read while {@link glowWidth} is under 360.
+   */
+  glowDirection?: number;
   /** Lovelace actions. Defaults: tap = toggle (controllable domains) or more-info; hold/double = none. */
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
@@ -1628,6 +1641,8 @@ export const DEFAULT_GLOW_RADIUS = 140;
  * in all but name, and a zero-length run has no direction to light across.
  */
 export const MIN_STRIP_LENGTH = 4;
+/** Narrowest cone a spot casts (issue #388), in degrees. */
+export const MIN_SPOT_WIDTH = 10;
 /** What turning a light into a strip starts it at, in canvas units. */
 export const DEFAULT_STRIP_LENGTH = 160;
 /**

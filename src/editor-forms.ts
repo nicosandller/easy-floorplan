@@ -39,6 +39,7 @@ import {
   DEFAULT_GLOW_RADIUS,
   DEFAULT_STRIP_LENGTH,
   MIN_STRIP_LENGTH,
+  MIN_SPOT_WIDTH,
   DEFAULT_TEXT_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
   DEFAULT_SUN_MIN,
@@ -55,6 +56,7 @@ import {
   domainIconAnimation,
   entitySupportsGlow,
   stripRun,
+  spotCone,
   isRippleEntity,
   normalizeOverlayScale,
   normalizeOverlayMinWidth,
@@ -93,6 +95,7 @@ import {
   defaultRoofHeight,
 } from "./projection";
 import { defaultItemAction } from "./actions";
+import { cssNumber } from "./css-safe";
 import { DEFAULT_SKIN, SKINS, findSkin, MAX_SKIN_WALL_WIDTH } from "./skins";
 import { roomTintsOf } from "./room-tints";
 
@@ -1438,6 +1441,7 @@ export function itemEffectsForm(
   const casts = entitySupportsGlow(entity) || !!it.glow;
   if (!canRipple && !casts) return undefined;
   const strip = stripRun(it) !== undefined;
+  const spot = spotCone(it) !== undefined;
   const fields: FormField[] = [];
   if (canRipple) {
     fields.push({
@@ -1501,6 +1505,26 @@ export function itemEffectsForm(
           selector: { boolean: {} },
         }
       );
+      // A spot (issue #388): a cone of the same pool. A strip already has a
+      // direction of its own, so the two are offered one at a time.
+      if (!strip) {
+        fields.push({
+          name: "glowWidth",
+          label: "Beam width",
+          helper: "Under 360° lights a cone, for spots and wall washers; drag its tip on the plan to aim it",
+          selector: {
+            number: { min: MIN_SPOT_WIDTH, max: 360, step: 5, mode: "slider", unit_of_measurement: "°" },
+          },
+        });
+        if (spot)
+          fields.push({
+            name: "glowDirection",
+            label: "Beam direction",
+            selector: {
+              number: { min: 0, max: 360, step: 1, mode: "slider", unit_of_measurement: "°" },
+            },
+          });
+      }
       if (strip) {
         fields.push(
           {
@@ -1556,6 +1580,8 @@ export function itemEffectsForm(
       stripLength: it.stripLength ?? DEFAULT_STRIP_LENGTH,
       stripAngle: it.stripAngle ?? 0,
       stripSide: it.stripSide ?? "auto",
+      glowWidth: it.glowWidth ?? 360,
+      glowDirection: it.glowDirection ?? 0,
     },
     toPatch: (p) => {
       let out = p;
@@ -1570,6 +1596,9 @@ export function itemEffectsForm(
       }
       // "Auto" is no key at all: the side a drag may still choose.
       if (out.stripSide === "auto") out = { ...out, stripSide: undefined };
+      // Opened all the way round, a spot is the ordinary pool again: no keys.
+      if ("glowWidth" in out && !(cssNumber(out.glowWidth, 360) < 360))
+        out = { ...out, glowWidth: undefined, glowDirection: undefined };
       // "Ripple" is the other half of #127's three-key spelling — same
       // expansion as the badge group's, with the badge mode read off the item.
       if (!("ripple" in out)) return out;
