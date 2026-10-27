@@ -265,7 +265,7 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     expect(updated.visibility).toEqual(newConditions);
   });
 
-  it("displays correct status for garage_door.is_open / garage_door.is_closed", async () => {
+  it("displays correct status for state condition with entity_id", async () => {
     const ladder: Furniture = {
       id: "furn_vqvojun",
       type: "ladderShelf",
@@ -275,9 +275,9 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
       h: 40,
       visibility: [
         {
-          condition: "garage_door.is_open",
-          target: { entity_id: "cover.garage_door" },
-          options: { behavior: "any", for: "00:00:00" },
+          condition: "state",
+          entity_id: "cover.garage_door",
+          state: "open",
         },
       ],
     };
@@ -372,8 +372,8 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     expect(loadedFragment).toBe("config");
   });
 
-  it("keeps expanded (fullscreen) mode open when editing visibility and when focus changes", async () => {
-    const piece: Furniture = {
+  it("evaluates numeric_state condition with status badges and canvas dimming", async () => {
+    const sofa: Furniture = {
       id: "fu1",
       type: "sofa",
       x: 200,
@@ -389,87 +389,11 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
       ],
     };
 
-    const { editor } = await mount(piece);
-    (editor as unknown as Internals)._selection = [{ kind: "furniture", id: "fu1" }];
-    await editor.updateComplete;
-
-    // Expand the editor to fullscreen
-    root(editor).querySelector<HTMLButtonElement>(".expand-toggle")!.click();
-    await editor.updateComplete;
-    expect((editor as any)._fullscreen).toBe(true);
-
-    // Switch to visibility category
-    root(editor).querySelector<HTMLButtonElement>("#object-category-visibility")!.click();
-    await editor.updateComplete;
-
-    // Simulate ha-selector emitting value-changed
-    const haSelector = root(editor).querySelector("ha-selector") as HTMLElement & {
-      emitChange?: (val: unknown) => void;
-    };
-    expect(haSelector).not.toBeNull();
-
-    const updatedConditions: VisibilityCondition[] = [
-      {
-        condition: "numeric_state",
-        entity: "sensor.living_area_temperature",
-        below: 18,
-      },
-    ];
-
-    if (typeof haSelector.emitChange === "function") {
-      haSelector.emitChange(updatedConditions);
-    } else {
-      haSelector.dispatchEvent(
-        new CustomEvent("value-changed", {
-          detail: { value: updatedConditions },
-          bubbles: true,
-          composed: true,
-        })
-      );
-    }
-    await editor.updateComplete;
-
-    expect((editor as any)._fullscreen).toBe(true);
-
-    // Now simulate an outside dropdown/overlay/body receiving focus:
-    window.dispatchEvent(new FocusEvent("focusin", { bubbles: true, composed: true }));
-    await editor.updateComplete;
-
-    expect((editor as any)._fullscreen).toBe(true);
-  });
-
-  it("evaluates temperature.is_value condition with status badges and canvas dimming", async () => {
-    const sofa: Furniture = {
-      id: "fu1",
-      type: "sofa",
-      x: 200,
-      y: 380,
-      w: 120,
-      h: 60,
-      visibility: [
-        {
-          condition: "temperature.is_value",
-          target: { entity_id: "sensor.living_area_temperature" },
-          options: {
-            behavior: "any",
-            threshold: {
-              type: "below",
-              value: {
-                active_choice: "number",
-                number: 20,
-                unit_of_measurement: "°C",
-              },
-            },
-          },
-        },
-      ],
-    };
-
-    // 1. Initial state: 22°C (not below 20°C -> hidden / condition not met)
+    // 1. Initial state: 22 (not below 20 -> hidden / condition not met)
     const { editor } = await mount(sofa);
     editor.hass = {
       states: {
-        "sensor.living_area_temperature": { state: "22", attributes: { unit_of_measurement: "°C" } },
+        "sensor.living_area_temperature": { state: "22", attributes: {} },
       },
       entities: {},
     } as unknown as FloorplanCardEditor["hass"];
@@ -488,10 +412,10 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     expect(badge.classList.contains("status-unmet")).toBe(true);
     expect(badge.textContent).toContain("Hidden on floorplan");
 
-    // 2. Change temperature to 18°C (below 20°C -> visible / condition met)
+    // 2. Change temperature to 18 (below 20 -> visible / condition met)
     editor.hass = {
       states: {
-        "sensor.living_area_temperature": { state: "18", attributes: { unit_of_measurement: "°C" } },
+        "sensor.living_area_temperature": { state: "18", attributes: {} },
       },
       entities: {},
     } as unknown as FloorplanCardEditor["hass"];
@@ -501,5 +425,34 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     expect(badge.classList.contains("status-met")).toBe(true);
     expect(badge.textContent).toContain("Visible on floorplan");
   });
+
+  it("does not exit fullscreen when focus moves to an overlay, menu, or dropdown", async () => {
+    const { editor } = await mount({
+      id: "fu1",
+      type: "sofa",
+      x: 100,
+      y: 100,
+      w: 80,
+      h: 50,
+    });
+
+    // Simulate expanding editor into fullscreen mode
+    (editor as unknown as { _fullscreen: boolean })._fullscreen = true;
+    await editor.updateComplete;
+
+    // Create a mock menu item on document.body (simulating HA condition picker / mwc-menu)
+    const menuItem = document.createElement("mwc-list-item");
+    menuItem.setAttribute("role", "menuitem");
+    document.body.append(menuItem);
+
+    // Focus lands on the menu item outside the editor
+    menuItem.dispatchEvent(new FocusEvent("focusin", { bubbles: true, composed: true }));
+
+    // Editor should still be in fullscreen mode
+    expect((editor as unknown as { _fullscreen: boolean })._fullscreen).toBe(true);
+
+    menuItem.remove();
+  });
 });
+
 

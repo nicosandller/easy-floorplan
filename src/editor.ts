@@ -695,7 +695,36 @@ export class FloorplanCardEditor extends LitElement {
     ev.stopPropagation();
     this._canvasWrap?.focus({ preventScroll: true });
   };
-  private _onFocusIn = (_ev: FocusEvent) => {
+  private _onFocusIn = (ev: FocusEvent) => {
+    // While the fullscreen popover is up, anything that pulls focus outside the
+    // editor (Tab past the last control, a dialog opening above) lands on UI
+    // hidden behind the top layer. Collapse instead of leaving the user blind.
+    // Menus, listboxes, dialogs, and popovers (such as HA's condition picker, entity
+    // autocomplete, or dropdown overlays) are attached outside the host or at document root;
+    // do not collapse when focus moves into one of these overlays.
+    const path = ev.composedPath();
+    if (this._fullscreen && !path.includes(this)) {
+      const isOverlay = path.some((el) => {
+        if (!(el instanceof Element)) return false;
+        const tag = el.tagName.toLowerCase();
+        const role = el.getAttribute("role");
+        return (
+          tag.includes("menu") ||
+          tag.includes("dialog") ||
+          tag.includes("overlay") ||
+          tag.includes("popover") ||
+          tag.includes("select") ||
+          tag.includes("picker") ||
+          tag.includes("dropdown") ||
+          role === "menu" ||
+          role === "menuitem" ||
+          role === "listbox" ||
+          role === "option" ||
+          role === "dialog"
+        );
+      });
+      if (!isOverlay) this._fullscreen = false;
+    }
     this._syncVisualViewport();
   };
 
@@ -799,28 +828,6 @@ export class FloorplanCardEditor extends LitElement {
 
   public setConfig(config: FloorplanCardConfig): void {
     validateYCoordinates(config);
-
-    // An echo of our own emission is caught here. HA hands our emitted config
-    // straight back, or plugins like card-mod hand back a deep copy of it.
-    // In that case, `this._config` already holds the active, live object graph
-    // (with intact object identities). Re-cloning floors on an echo would destroy
-    // object identities across every element, causing child web components that
-    // key elements by object identity (such as HA's <ha-automation-condition> row keys)
-    // to tear down and recreate expanded accordion rows on every keystroke.
-    const isEcho = Boolean(
-      this._lastEmitted &&
-      (config === this._lastEmitted || configsEqual(config, this._lastEmitted))
-    );
-
-    if (isEcho) {
-      const ext = config as { card_mod?: unknown };
-      const cur = this._config as { card_mod?: unknown };
-      if (ext.card_mod !== cur.card_mod) {
-        this._config = { ...this._config, card_mod: ext.card_mod };
-      }
-      return;
-    }
-
     const base = { ...emptyConfig(config.type || "custom:easy-floorplan-card"), ...config };
     // Normalize to the floors model (migrating legacy single-floor configs) and
     // clear the legacy flat arrays so `floors` is the single source of truth.
@@ -850,7 +857,7 @@ export class FloorplanCardEditor extends LitElement {
     // two can replace it with a copy. card-mod deep-clones every config on its
     // way in, so with it installed this comparison is always the deep one --
     // which is why `_lastEmitted` has to be a snapshot nobody else holds.
-    if (this._lastEmitted) {
+    if (this._lastEmitted && config !== this._lastEmitted && !configsEqual(config, this._lastEmitted)) {
       this._history = [];
       this._future = [];
       this._liveEditKey = null;
@@ -873,7 +880,6 @@ export class FloorplanCardEditor extends LitElement {
     if (floorsOf(prev) !== floorsOf(this.hass)) return true;
     // The canvas image follows light/dark mode (issue #366).
     if (hassDarkMode(prev) !== hassDarkMode(this.hass)) return true;
-    if (prev.localize !== this.hass.localize) return true;
     return hassRenderInputsChanged(prev, this.hass, this._watchedEntities);
   }
 

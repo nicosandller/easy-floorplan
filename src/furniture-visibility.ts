@@ -1,36 +1,31 @@
 /**
  * Pure condition evaluator and entity collector for Furniture Visibility (Issue #310).
- * Follows Home Assistant's native dashboard card visibility schema and entity conditions:
+ * Implements Home Assistant's dashboard card visibility and condition schema:
  * - condition: "state"
  * - condition: "numeric_state"
- * - condition: "time"
- * - condition: "sun"
- * - condition: "zone"
- * - condition: "location"
- * - condition: "view_columns"
- * - condition: "screen"
- * - condition: "user"
+ * - condition: "sun" (including sun ascending / descending, above/below horizon, sunrise/sunset)
+ * - condition: "device" / domain verbs (e.g. "garage_door.is_open", "cover.is_closed", etc.)
+ * - condition: "zone" / "location" / "area" (person in area or zone, person not in area or zone)
+ * - condition: "time" (server timezone aware)
+ * - condition: "screen" (responsive media queries)
+ * - condition: "user" (user ID matching)
  * - condition: "and" | "or" | "not"
- * - condition: "<domain>.<action>" (e.g. "garage_door.is_open", "light.is_on", "motion.is_detected", "temperature.is_value", etc.)
- * - condition: "device" (with type: "is_open", "is_closed", etc.)
- * - target-based conditions with target: { entity_id: ... } or entity_id: ...
+ *
+ * Designed to evaluate against Home Assistant state and provide fail-open
+ * outage protection during integration reconnects/restarts.
  */
 
-import type { Furniture, RenderHass, VisibilityCondition } from "./types";
+import {
+  entityIdsInHaArea,
+  type FloorplanCardConfig,
+  type Furniture,
+  type HomeAssistant,
+  type RenderHass,
+  type VisibilityCondition,
+} from "./types";
 
 /**
- * Checks whether a condition explicitly tests for an outage state ("unavailable" or "unknown").
- */
-function isExplicitOutageCheck(stateOrStates: unknown): boolean {
-  if (stateOrStates === undefined || stateOrStates === null) return false;
-  if (Array.isArray(stateOrStates)) {
-    return stateOrStates.some((s) => s === "unavailable" || s === "unknown");
-  }
-  return stateOrStates === "unavailable" || stateOrStates === "unknown";
-}
-
-/**
- * Checks whether a value is a valid Home Assistant entity ID (e.g. "sensor.temp", "domain.object_id").
+ * Checks whether a value is a valid Home Assistant entity ID (e.g. "sensor.temperature", "domain.object_id").
  */
 export function isEntityId(val: unknown): val is string {
   if (typeof val !== "string") return false;
@@ -41,11 +36,19 @@ export function isEntityId(val: unknown): val is string {
 }
 
 /**
- * Extracts the primary subject entity IDs directly evaluated by a condition:
- * - cond.entity
- * - cond.entity_id (string or array)
- * - cond.target.entity_id (string or array)
- * - cond.target.entity (string or array)
+ * Checks whether a state or list of states explicitly tests for an outage ("unavailable" or "unknown").
+ */
+function isExplicitOutageCheck(stateOrStates: unknown): boolean {
+  if (stateOrStates === undefined || stateOrStates === null) return false;
+  if (Array.isArray(stateOrStates)) {
+    return stateOrStates.some((s) => s === "unavailable" || s === "unknown");
+  }
+  return stateOrStates === "unavailable" || stateOrStates === "unknown";
+}
+
+/**
+ * Extracts primary subject entity IDs from a condition object:
+ * cond.entity, cond.entity_id, cond.target.entity_id, cond.target.entity
  */
 export function extractSubjectEntityIds(c: unknown): string[] {
   if (!c || typeof c !== "object") return [];
@@ -54,10 +57,14 @@ export function extractSubjectEntityIds(c: unknown): string[] {
 
   const add = (val: unknown) => {
     if (typeof val === "string" && isEntityId(val)) {
-      ids.push(val.trim());
+      const trimmed = val.trim();
+      if (!ids.includes(trimmed)) ids.push(trimmed);
     } else if (Array.isArray(val)) {
       for (const item of val) {
-        if (typeof item === "string" && isEntityId(item)) ids.push(item.trim());
+        if (typeof item === "string" && isEntityId(item)) {
+          const trimmed = item.trim();
+          if (!ids.includes(trimmed)) ids.push(trimmed);
+        }
       }
     }
   };
@@ -75,7 +82,7 @@ export function extractSubjectEntityIds(c: unknown): string[] {
 }
 
 /**
- * Extracts zone entity IDs from condition (cond.zone, cond.options.zone, cond.target.zone, target.entity_id).
+ * Extracts zone entity IDs from a condition object.
  */
 export function extractZoneIds(c: unknown): string[] {
   if (!c || typeof c !== "object") return [];
@@ -119,610 +126,9 @@ export function extractZoneIds(c: unknown): string[] {
   return zones;
 }
 
-/**
- * Extracts all entity IDs referenced in a condition (both subjects and comparison references),
- * for dependency tracking and card reactive re-renders:
- * - subject entities
- * - cond.above / cond.below (when entity references)
- * - cond.state / cond.state_not (when entity references)
- * - cond.threshold (any nested entity references)
- * - time condition (after/before entity references)
- * - sun condition ("sun.sun")
- * - zone condition
- */
-export function extractConditionEntityIds(c: unknown): string[] {
-  if (!c || typeof c !== "object") return [];
-  const cond = c as Record<string, unknown>;
-  const ids: string[] = extractSubjectEntityIds(cond);
-
-  const checkRef = (val: unknown) => {
-    if (!val) return;
-    if (typeof val === "string" && isEntityId(val)) {
-      ids.push(val.trim());
-    } else if (Array.isArray(val)) {
-      for (const item of val) {
-        if (typeof item === "string" && isEntityId(item)) ids.push(item.trim());
-      }
-    } else if (typeof val === "object") {
-      const obj = val as Record<string, unknown>;
-      if (typeof obj.entity === "string" && isEntityId(obj.entity)) {
-        ids.push(obj.entity.trim());
-      }
-      if (typeof obj.entity_id === "string" && isEntityId(obj.entity_id)) {
-        ids.push(obj.entity_id.trim());
-      }
-    }
-  };
-
-  checkRef(cond.above);
-  checkRef(cond.below);
-
-  const checkThresholdObj = (th: unknown) => {
-    if (!th || typeof th !== "object") return;
-    const t = th as Record<string, unknown>;
-    checkRef(t.value);
-    checkRef(t.value_min);
-    checkRef(t.value_max);
-    checkRef(t.value_lower);
-    checkRef(t.value_upper);
-    checkRef(t.min);
-    checkRef(t.max);
-    checkRef(t.lower);
-    checkRef(t.upper);
-    checkRef(t.above);
-    checkRef(t.below);
-    checkRef(t.entity);
-    checkRef(t.entity_id);
-  };
-
-  if (cond.options && typeof cond.options === "object") {
-    checkThresholdObj((cond.options as Record<string, unknown>).threshold);
-  }
-  checkThresholdObj(cond.threshold);
-
-  const condType = String(cond.condition ?? "");
-
-  // Time condition entities (e.g. input_datetime.xyz, sensor.time)
-  if (condType === "time") {
-    checkRef(cond.after);
-    checkRef(cond.before);
-  }
-
-  // Sun condition entities
-  if (condType === "sun" || condType.startsWith("sun.")) {
-    ids.push("sun.sun");
-  }
-
-  // Zone condition entities
-  if (
-    condType === "zone" ||
-    condType.startsWith("zone.") ||
-    (condType === "device" && (cond.type === "is_in_zone" || cond.type === "is_not_in_zone"))
-  ) {
-    for (const z of extractZoneIds(cond)) {
-      ids.push(z);
-    }
-  }
-
-  // State condition entity references in state or state_not
-  if (condType === "state" || !condType) {
-    checkRef(cond.state);
-    checkRef(cond.state_not);
-  }
-
-  return ids;
-}
-
-interface ResolvedThreshold {
-  value: number;
-  unit?: string;
-}
-
-/**
- * Resolves a threshold entry (number, string, entity id, or active_choice object)
- * into a concrete numeric value and optional unit.
- */
-function resolveThresholdValue(
-  val: unknown,
-  hass: RenderHass
-): ResolvedThreshold | undefined {
-  if (val === undefined || val === null || val === "") return undefined;
-
-  // Direct number
-  if (typeof val === "number") {
-    return Number.isFinite(val) ? { value: val } : undefined;
-  }
-
-  // String: might be a numeric string or an entity ID (e.g. sensor.xyz, input_number.xyz)
-  if (typeof val === "string") {
-    const trimmed = val.trim();
-    if (!trimmed) return undefined;
-
-    if (isEntityId(trimmed) && hass.states[trimmed]) {
-      const stateObj = hass.states[trimmed];
-      if (stateObj?.state !== undefined) {
-        const num = parseFloat(stateObj.state);
-        if (!Number.isNaN(num)) {
-          return {
-            value: num,
-            unit: stateObj.attributes?.unit_of_measurement as string | undefined,
-          };
-        }
-      }
-    }
-
-    const asNum = parseFloat(trimmed);
-    return !Number.isNaN(asNum) ? { value: asNum } : undefined;
-  }
-
-  // Object: e.g. { active_choice: "number", number: 20, unit_of_measurement: "°C" }
-  // or { active_choice: "entity", entity: "sensor.outdoor_temp" }
-  if (typeof val === "object") {
-    const obj = val as Record<string, unknown>;
-    const activeChoice = String(obj.active_choice ?? "");
-    const unit = typeof obj.unit_of_measurement === "string" ? obj.unit_of_measurement.trim() : undefined;
-
-    if (activeChoice === "entity" || (!("number" in obj) && (obj.entity || obj.entity_id))) {
-      const entId = String(obj.entity ?? obj.entity_id ?? "").trim();
-      if (entId) {
-        const stateObj = hass.states[entId];
-        if (stateObj?.state !== undefined) {
-          const num = parseFloat(stateObj.state);
-          if (!Number.isNaN(num)) {
-            return {
-              value: num,
-              unit: (stateObj.attributes?.unit_of_measurement as string | undefined) ?? unit,
-            };
-          }
-        }
-      }
-    }
-
-    const numCandidate = obj.number !== undefined ? obj.number : obj.value;
-    if (numCandidate !== undefined && numCandidate !== null && numCandidate !== "") {
-      if (typeof numCandidate === "number") {
-        return Number.isFinite(numCandidate) ? { value: numCandidate, unit } : undefined;
-      }
-      const num = parseFloat(String(numCandidate));
-      if (!Number.isNaN(num)) {
-        return { value: num, unit };
-      }
-    }
-  }
-
-  return undefined;
-}
-
-/**
- * Normalizes temperature values across units (°C, °F, K) when comparing an entity reading against a threshold.
- */
-function normalizeUnitValue(val: number, fromUnit?: string, toUnit?: string): number {
-  if (!fromUnit || !toUnit) return val;
-  const f = fromUnit.trim();
-  const t = toUnit.trim();
-  if (f === t) return val;
-
-  const isC = (u: string) => u === "°C" || u === "C" || u === "degC";
-  const isF = (u: string) => u === "°F" || u === "F" || u === "degF";
-  const isK = (u: string) => u === "K" || u === "°K";
-
-  // Temperature unit conversions
-  if ((isC(f) || isF(f) || isK(f)) && (isC(t) || isF(t) || isK(t))) {
-    let inC: number;
-    if (isC(f)) inC = val;
-    else if (isF(f)) inC = (val - 32) * (5 / 9);
-    else inC = val - 273.15;
-
-    if (isC(t)) return inC;
-    if (isF(t)) return inC * (9 / 5) + 32;
-    if (isK(t)) return inC + 273.15;
-  }
-
-  return val;
-}
-
-/**
- * Evaluates a single entity against a state, numeric_state, or shorthand/device condition.
- */
-function evaluateEntityCondition(
-  entityId: string,
-  cond: Record<string, unknown>,
-  hass: RenderHass
-): boolean {
-  const stateObj = hass.states[entityId];
-  if (!stateObj) return true; // Fail-open on missing entity
-
-  const raw = cond.attribute ? stateObj.attributes?.[cond.attribute as string] : stateObj.state;
-  const strVal = String(raw ?? "");
-
-  // Fail-open outage protection: if the entity is unavailable/unknown and the condition
-  // did not explicitly ask for unavailable/unknown, do not hide the furniture.
-  if (strVal === "unavailable" || strVal === "unknown") {
-    const testsForOutage =
-      isExplicitOutageCheck(cond.state) || isExplicitOutageCheck(cond.state_not);
-    if (!testsForOutage) return true;
-  }
-
-  const condType = String(cond.condition ?? "");
-  const actionType = String(cond.type ?? "");
-
-  // 1. Shorthand entity / device conditions (e.g. garage_door.is_open, cover.is_closed, type: "is_open")
-  const check = condType.includes(".")
-    ? condType.split(".").pop()!
-    : condType === "device"
-    ? actionType
-    : condType;
-
-  if (
-    check === "in_zone" ||
-    check === "is_in_zone" ||
-    check === "not_in_zone" ||
-    check === "is_not_in_zone"
-  ) {
-    return evaluateZoneCondition(cond, hass, entityId);
-  }
-
-  if (check === "is_open") {
-    return strVal === "open" || strVal === "opening" || strVal === "on" || strVal === "unlocked";
-  }
-  if (check === "is_closed") {
-    return strVal === "closed" || strVal === "closing" || strVal === "off" || strVal === "locked";
-  }
-  if (check === "is_on") {
-    return strVal === "on";
-  }
-  if (check === "is_off") {
-    return strVal === "off";
-  }
-  if (check === "is_locked") {
-    return strVal === "locked" || strVal === "locking";
-  }
-  if (check === "is_unlocked") {
-    return strVal === "unlocked" || strVal === "unlocking";
-  }
-  if (check === "is_home") {
-    return strVal === "home" || strVal === "on";
-  }
-  if (check === "is_not_home") {
-    return strVal !== "home" && strVal !== "on";
-  }
-  if (check === "is_detected" || check === "is_motion") {
-    return (
-      strVal === "on" ||
-      strVal === "detected" ||
-      strVal === "unsafe" ||
-      strVal === "problem" ||
-      strVal === "wet" ||
-      strVal === "gas" ||
-      strVal === "smoke" ||
-      strVal === "motion"
-    );
-  }
-  if (check === "is_clear" || check === "is_no_motion") {
-    return (
-      strVal === "off" ||
-      strVal === "clear" ||
-      strVal === "safe" ||
-      strVal === "ok" ||
-      strVal === "normal" ||
-      strVal === "dry" ||
-      strVal === "no_motion"
-    );
-  }
-  if (check === "is_occupied") {
-    return strVal === "on" || strVal === "occupied" || strVal === "home";
-  }
-  if (check === "is_not_occupied") {
-    return strVal === "off" || strVal === "not_occupied" || strVal === "clear" || strVal === "not_home";
-  }
-  if (check === "is_plugged_in") {
-    return strVal === "on" || strVal === "plugged" || strVal === "connected" || strVal === "charging";
-  }
-  if (check === "is_unplugged") {
-    return strVal === "off" || strVal === "unplugged" || strVal === "disconnected";
-  }
-  if (check === "is_charging") {
-    return strVal === "charging" || strVal === "on";
-  }
-  if (check === "is_discharging") {
-    return strVal === "discharging";
-  }
-  if (check === "is_low") {
-    return strVal === "on" || strVal === "low";
-  }
-  if (check === "is_normal") {
-    return strVal === "off" || strVal === "normal";
-  }
-  if (check === "is_playing") {
-    return strVal === "playing";
-  }
-  if (check === "is_paused") {
-    return strVal === "paused";
-  }
-  if (check === "is_idle") {
-    return strVal === "idle";
-  }
-  if (check === "is_stopped") {
-    return strVal === "stopped" || strVal === "off" || strVal === "idle";
-  }
-  if (check === "is_cleaning") {
-    return strVal === "cleaning" || strVal === "mowing" || strVal === "on";
-  }
-  if (check === "is_docked") {
-    return strVal === "docked" || strVal === "home" || strVal === "charging";
-  }
-  if (check === "is_returning") {
-    return strVal === "returning";
-  }
-  if (check === "is_error") {
-    return strVal === "error";
-  }
-  if (check === "is_running") {
-    return strVal === "on" || strVal === "running" || strVal === "active";
-  }
-  if (check === "is_not_running") {
-    return strVal === "off" || strVal === "not_running" || strVal === "idle" || strVal === "standby";
-  }
-  if (check === "is_connected") {
-    return strVal === "on" || strVal === "connected";
-  }
-  if (check === "is_disconnected") {
-    return strVal === "off" || strVal === "disconnected";
-  }
-  if (check === "is_disarmed") {
-    return strVal === "disarmed";
-  }
-  if (check === "is_armed_home") {
-    return strVal === "armed_home";
-  }
-  if (check === "is_armed_away") {
-    return strVal === "armed_away";
-  }
-  if (check === "is_armed_night") {
-    return strVal === "armed_night";
-  }
-  if (check === "is_armed_vacation") {
-    return strVal === "armed_vacation";
-  }
-  if (check === "is_armed_custom_bypass") {
-    return strVal === "armed_custom_bypass";
-  }
-  if (check === "is_pending") {
-    return strVal === "pending";
-  }
-  if (check === "is_triggered") {
-    return strVal === "triggered";
-  }
-  if (check === "is_armed") {
-    return strVal.startsWith("armed");
-  }
-  if (check === "is_above_horizon") {
-    return strVal === "above_horizon";
-  }
-  if (check === "is_below_horizon") {
-    return strVal === "below_horizon";
-  }
-
-  // 2. Numeric state and domain threshold conditions (e.g. temperature.is_value, power.is_value, options.threshold)
-  const thresholdObj = (
-    cond.options && typeof cond.options === "object"
-      ? (cond.options as Record<string, unknown>).threshold
-      : undefined
-  ) ?? (cond.threshold && typeof cond.threshold === "object" ? cond.threshold : undefined);
-
-  const isNumericOrThreshold =
-    condType === "numeric_state" ||
-    condType.endsWith(".is_value") ||
-    condType.endsWith(".crossed_threshold") ||
-    cond.above !== undefined ||
-    cond.below !== undefined ||
-    thresholdObj !== undefined;
-
-  if (isNumericOrThreshold) {
-    const num = parseFloat(strVal);
-    if (Number.isNaN(num)) return true; // Fail-open on non-numeric
-
-    const entityUnit = stateObj.attributes?.unit_of_measurement as string | undefined;
-
-    if (thresholdObj && typeof thresholdObj === "object") {
-      const t = thresholdObj as Record<string, unknown>;
-      const threshType = String(t.type ?? "").toLowerCase();
-
-      if (threshType === "below") {
-        const res = resolveThresholdValue(t.value ?? t.below, hass);
-        if (res !== undefined) {
-          const limit = normalizeUnitValue(res.value, res.unit, entityUnit);
-          if (num >= limit) return false;
-        }
-      } else if (threshType === "above") {
-        const res = resolveThresholdValue(t.value ?? t.above, hass);
-        if (res !== undefined) {
-          const limit = normalizeUnitValue(res.value, res.unit, entityUnit);
-          if (num <= limit) return false;
-        }
-      } else if (threshType === "in_range") {
-        const minRes = resolveThresholdValue(t.value_min ?? t.min ?? t.value_lower ?? t.lower ?? t.above, hass);
-        const maxRes = resolveThresholdValue(t.value_max ?? t.max ?? t.value_upper ?? t.upper ?? t.below, hass);
-        if (minRes !== undefined) {
-          const minLimit = normalizeUnitValue(minRes.value, minRes.unit, entityUnit);
-          if (num <= minLimit) return false;
-        }
-        if (maxRes !== undefined) {
-          const maxLimit = normalizeUnitValue(maxRes.value, maxRes.unit, entityUnit);
-          if (num >= maxLimit) return false;
-        }
-      } else if (threshType === "outside_range") {
-        const minRes = resolveThresholdValue(t.value_min ?? t.min ?? t.value_lower ?? t.lower ?? t.above, hass);
-        const maxRes = resolveThresholdValue(t.value_max ?? t.max ?? t.value_upper ?? t.upper ?? t.below, hass);
-        if (minRes !== undefined && maxRes !== undefined) {
-          const minLimit = normalizeUnitValue(minRes.value, minRes.unit, entityUnit);
-          const maxLimit = normalizeUnitValue(maxRes.value, maxRes.unit, entityUnit);
-          if (num >= minLimit && num <= maxLimit) return false;
-        }
-      } else {
-        if (t.above !== undefined) {
-          const res = resolveThresholdValue(t.above, hass);
-          if (res !== undefined) {
-            const limit = normalizeUnitValue(res.value, res.unit, entityUnit);
-            if (num <= limit) return false;
-          }
-        }
-        if (t.below !== undefined) {
-          const res = resolveThresholdValue(t.below, hass);
-          if (res !== undefined) {
-            const limit = normalizeUnitValue(res.value, res.unit, entityUnit);
-            if (num >= limit) return false;
-          }
-        }
-      }
-    }
-
-    if (cond.above !== undefined) {
-      const res = resolveThresholdValue(cond.above, hass);
-      if (res !== undefined) {
-        const limit = normalizeUnitValue(res.value, res.unit, entityUnit);
-        if (num <= limit) return false;
-      }
-    }
-
-    if (cond.below !== undefined) {
-      const res = resolveThresholdValue(cond.below, hass);
-      if (res !== undefined) {
-        const limit = normalizeUnitValue(res.value, res.unit, entityUnit);
-        if (num >= limit) return false;
-      }
-    }
-
-    return true;
-  }
-
-  // 3. State condition (state or state_not) with entity reference resolution
-  const matchesTargetState = (target: unknown): boolean => {
-    if (Array.isArray(target)) {
-      return target.some((t) => matchesTargetState(t));
-    }
-    const s = String(target ?? "");
-    if (s === strVal) return true;
-    if (hass.states[s] && hass.states[s].state === strVal) return true;
-    return false;
-  };
-
-  if (cond.state !== undefined) {
-    if (!matchesTargetState(cond.state)) return false;
-  }
-
-  if (cond.state_not !== undefined) {
-    if (matchesTargetState(cond.state_not)) return false;
-  }
-
-  return true;
-}
-
-/**
- * Parses a time string (HH:MM or HH:MM:SS or entity reference) to seconds from midnight (0..86399).
- */
-function parseTimeToSeconds(timeStr: string, hass: RenderHass): number | null {
-  if (!timeStr) return null;
-  let s = timeStr.trim();
-  // Check if it's an entity ID
-  if (s.includes(".") && !s.includes(" ") && hass.states[s]) {
-    s = String(hass.states[s]?.state ?? "");
-  }
-  const match = s.match(/(?:^|\s|T)(\d{1,2}):(\d{2})(?::(\d{2}))?/);
-  if (!match) return null;
-  const hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  const seconds = match[3] ? parseInt(match[3], 10) : 0;
-  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59 || seconds < 0 || seconds > 59) {
-    return null;
-  }
-  return hours * 3600 + minutes * 60 + seconds;
-}
-
-/**
- * Extracts current time in seconds from midnight and short weekday ("sun", "mon", etc.)
- * honoring the Home Assistant timezone if available.
- */
-function getNowInTimezone(now: Date, timeZone?: string) {
-  const days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-  if (!timeZone) {
-    return {
-      sec: now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds(),
-      weekday: days[now.getDay()],
-    };
-  }
-  try {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone,
-      hour: "numeric",
-      minute: "numeric",
-      second: "numeric",
-      weekday: "short",
-      hourCycle: "h23",
-    }).formatToParts(now);
-    let hours = 0;
-    let minutes = 0;
-    let seconds = 0;
-    let weekday = days[now.getDay()];
-    for (const p of parts) {
-      if (p.type === "hour") hours = parseInt(p.value, 10);
-      else if (p.type === "minute") minutes = parseInt(p.value, 10);
-      else if (p.type === "second") seconds = parseInt(p.value, 10);
-      else if (p.type === "weekday") weekday = p.value.toLowerCase().slice(0, 3);
-    }
-    return {
-      sec: hours * 3600 + minutes * 60 + seconds,
-      weekday,
-    };
-  } catch {
-    return {
-      sec: now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds(),
-      weekday: days[now.getDay()],
-    };
-  }
-}
-
-/**
- * Evaluates a Time condition (after, before, weekdays).
- */
-export function evaluateTimeCondition(
-  cond: Record<string, unknown>,
-  hass: RenderHass,
-  now = new Date()
-): boolean {
-  const configObj = (hass as unknown as { config?: { time_zone?: string } }).config;
-  const localeObj = (hass as unknown as { locale?: { time_zone?: string } }).locale;
-  const timeZone =
-    configObj?.time_zone ?? (localeObj?.time_zone === "server" ? configObj?.time_zone : undefined);
-
-  const { sec: nowSec, weekday } = getNowInTimezone(now, timeZone);
-
-  // Check weekdays
-  if (Array.isArray(cond.weekdays) && cond.weekdays.length > 0) {
-    const validDays = cond.weekdays.map((w) => String(w).toLowerCase().slice(0, 3));
-    if (!validDays.includes(weekday)) return false;
-  }
-
-  const afterSec = typeof cond.after === "string" ? parseTimeToSeconds(cond.after, hass) : null;
-  const beforeSec = typeof cond.before === "string" ? parseTimeToSeconds(cond.before, hass) : null;
-
-  if (afterSec !== null && beforeSec !== null) {
-    if (beforeSec < afterSec) {
-      // Midnight crossing: e.g. 22:00 to 06:00
-      return nowSec >= afterSec || nowSec < beforeSec;
-    }
-    return nowSec >= afterSec && nowSec < beforeSec;
-  }
-
-  if (afterSec !== null) {
-    return nowSec >= afterSec;
-  }
-
-  if (beforeSec !== null) {
-    return nowSec < beforeSec;
-  }
-
-  return true;
+interface ConditionResult {
+  pass: boolean;
+  outage: boolean;
 }
 
 /**
@@ -746,34 +152,85 @@ function parseOffsetSeconds(offset: unknown): number {
 }
 
 /**
- * Evaluates a Sun condition (after/before sunrise/sunset with optional offsets,
- * or sun.is_above_horizon / sun.is_below_horizon).
+ * Evaluates Sun conditions:
+ * - sun ascending / sun descending (sun.sun attribute rising: true / false)
+ * - above / below horizon
+ * - sunrise / sunset with offsets
  */
 export function evaluateSunCondition(
   cond: Record<string, unknown>,
-  hass: RenderHass,
+  hass: HomeAssistant | RenderHass,
   now = new Date()
-): boolean {
-  const sun = hass.states["sun.sun"];
-  if (!sun) return true; // Fail-open if sun entity not tracked
+): ConditionResult {
+  const states = (hass as Partial<HomeAssistant>).states ?? {};
+  const sun = states["sun.sun"];
+  if (!sun) return { pass: true, outage: true };
 
-  const condType = String(cond.condition ?? "");
-  if (condType === "sun.is_above_horizon") {
-    return sun.state === "above_horizon";
-  }
-  if (condType === "sun.is_below_horizon") {
-    return sun.state === "below_horizon";
+  const isUnavailable = sun.state === "unavailable" || sun.state === "unknown";
+  if (isUnavailable) return { pass: true, outage: true };
+
+  const condType = String(cond.condition ?? "").toLowerCase();
+  const actionType = String(cond.type ?? "").toLowerCase();
+  const stateVal = String(cond.state ?? "").toLowerCase();
+
+  // 1. Sun ascending (rising) / descending (setting)
+  const isAscendingCheck =
+    condType === "sun.is_ascending" ||
+    condType === "sun.is_rising" ||
+    actionType === "is_ascending" ||
+    actionType === "is_rising" ||
+    cond.ascending === true ||
+    cond.rising === true ||
+    stateVal === "ascending" ||
+    stateVal === "rising";
+
+  if (isAscendingCheck) {
+    const isRising = sun.attributes?.rising === true;
+    return { pass: isRising, outage: false };
   }
 
+  const isDescendingCheck =
+    condType === "sun.is_descending" ||
+    condType === "sun.is_setting" ||
+    actionType === "is_descending" ||
+    actionType === "is_setting" ||
+    cond.descending === true ||
+    cond.setting === true ||
+    stateVal === "descending" ||
+    stateVal === "setting";
+
+  if (isDescendingCheck) {
+    const isDescending = sun.attributes?.rising === false;
+    return { pass: isDescending, outage: false };
+  }
+
+  // 2. Horizon checks (above_horizon / below_horizon)
+  if (
+    condType === "sun.is_above_horizon" ||
+    actionType === "is_above_horizon" ||
+    stateVal === "above_horizon"
+  ) {
+    return { pass: sun.state === "above_horizon", outage: false };
+  }
+  if (
+    condType === "sun.is_below_horizon" ||
+    actionType === "is_below_horizon" ||
+    stateVal === "below_horizon"
+  ) {
+    return { pass: sun.state === "below_horizon", outage: false };
+  }
+
+  // 3. Sunrise / sunset relative times with offsets
   const after = typeof cond.after === "string" ? cond.after.toLowerCase() : undefined;
   const before = typeof cond.before === "string" ? cond.before.toLowerCase() : undefined;
 
-  if (!after && !before) return true;
+  if (!after && !before) {
+    return { pass: true, outage: false };
+  }
 
   const afterOffset = parseOffsetSeconds(cond.after_offset);
   const beforeOffset = parseOffsetSeconds(cond.before_offset);
 
-  // If timestamps are available on sun entity attributes, use exact timestamps with offsets
   const nextRisingStr = sun.attributes?.next_rising as string | undefined;
   const nextSettingStr = sun.attributes?.next_setting as string | undefined;
 
@@ -783,7 +240,6 @@ export function evaluateSunCondition(
     const nowMs = now.getTime();
     const DAY_MS = 24 * 3600 * 1000;
 
-    // Estimate previous rising and setting
     const prevRising = nextRising > nowMs ? nextRising - DAY_MS : nextRising;
     const prevSetting = nextSetting > nowMs ? nextSetting - DAY_MS : nextSetting;
 
@@ -798,55 +254,25 @@ export function evaluateSunCondition(
     if (before === "sunrise") beforeMatch = nowMs < risingTime;
     else if (before === "sunset") beforeMatch = nowMs < settingTime;
 
-    return afterMatch && beforeMatch;
+    return { pass: afterMatch && beforeMatch, outage: false };
   }
 
-  // Fallback to horizon state
-  if (afterOffset === 0 && beforeOffset === 0) {
-    if (after === "sunrise" && before === "sunset") {
-      return sun.state === "above_horizon";
-    }
-    if (after === "sunset" && before === "sunrise") {
-      return sun.state === "below_horizon";
-    }
-  }
-
+  // Fallback to state check
   if (after === "sunrise" || before === "sunset") {
-    return sun.state === "above_horizon";
+    return { pass: sun.state === "above_horizon", outage: false };
   }
-  return sun.state === "below_horizon";
+  return { pass: sun.state === "below_horizon", outage: false };
 }
 
 /**
- * Evaluates a Zone condition (entity in zone, or person in zone).
- * Supports standard core zone condition, shorthand zone.in_zone / zone.not_in_zone,
- * and device conditions (is_in_zone / is_not_in_zone).
+ * Evaluates Zone, Area, or Location conditions (e.g. Person in area or zone, Person not in area or zone).
  */
-export function evaluateZoneCondition(
+export function evaluateZoneOrAreaCondition(
   cond: Record<string, unknown>,
-  hass: RenderHass,
+  hass: HomeAssistant | RenderHass,
   defaultEntityId?: string
-): boolean {
-  const entityIds = extractSubjectEntityIds(cond);
-  if (entityIds.length === 0 && defaultEntityId) {
-    entityIds.push(defaultEntityId);
-  }
-  if (entityIds.length === 0) {
-    // If no entity specified, try finding user's person
-    const userId = (hass as unknown as { user?: { id?: string } }).user?.id;
-    if (userId) {
-      const person = Object.values(hass.states).find(
-        (s) => s && s.entity_id?.startsWith("person.") && s.attributes?.user_id === userId
-      );
-      if (person) entityIds.push(person.entity_id);
-    }
-  }
-
-  if (entityIds.length === 0) return true; // Fail-open
-
-  const targetZones = extractZoneIds(cond);
-  if (targetZones.length === 0) return true; // Fail-open if no zones specified
-
+): ConditionResult {
+  const states = (hass as Partial<HomeAssistant>).states ?? {};
   const condType = String(cond.condition ?? "").toLowerCase();
   const actionType = String(cond.type ?? "").toLowerCase();
   const stateProp = String(cond.state ?? "").toLowerCase();
@@ -854,237 +280,591 @@ export function evaluateZoneCondition(
   const isNegated =
     condType === "zone.not_in_zone" ||
     condType.endsWith(".not_in_zone") ||
+    condType === "area.not_in_area" ||
+    condType.endsWith(".not_in_area") ||
     actionType === "is_not_in_zone" ||
     actionType === "not_in_zone" ||
-    stateProp === "not_in_zone";
+    actionType === "is_not_in_area" ||
+    actionType === "not_in_area" ||
+    stateProp === "not_in_zone" ||
+    stateProp === "not_in_area";
 
-  const expectInZone = !isNegated;
+  // Check target area
+  const targetArea = (
+    typeof cond.area_id === "string"
+      ? cond.area_id
+      : typeof cond.area === "string"
+        ? cond.area
+        : cond.target && typeof cond.target === "object"
+          ? ((cond.target as Record<string, unknown>).area_id as string | undefined) ??
+            ((cond.target as Record<string, unknown>).area as string | undefined)
+          : undefined
+  )?.trim();
 
-  const options = (cond.options as Record<string, unknown> | undefined) ?? {};
-  const behavior = options.behavior === "all" ? "all" : "any";
+  // Check target zones
+  const targetZones = extractZoneIds(cond);
 
-  const isEntityInSpecificZone = (entId: string, zoneId: string): boolean => {
-    const s = hass.states[entId];
-    if (!s) return false;
-
-    const rawState = String(s.state ?? "").toLowerCase();
-    const inZones = Array.isArray(s.attributes?.in_zones)
-      ? (s.attributes.in_zones as string[]).map((z) => String(z).toLowerCase())
-      : [];
-
-    const normZone = zoneId.toLowerCase().startsWith("zone.")
-      ? zoneId.toLowerCase()
-      : `zone.${zoneId.toLowerCase()}`;
-    const zoneShort = normZone.replace(/^zone\./, "");
-    const zoneEntity = hass.states[normZone] || hass.states[zoneId.toLowerCase()];
-    const zoneFriendlyName = zoneEntity?.attributes?.friendly_name
-      ? String(zoneEntity.attributes.friendly_name).toLowerCase()
-      : undefined;
-
-    // 1. in_zones attribute match (e.g. ["zone.home"])
-    if (inZones.includes(normZone) || inZones.includes(zoneShort)) {
-      return true;
-    }
-
-    // 2. Active zone state match (home, not_home, zone name)
-    if (zoneShort === "home") {
-      if (rawState === "home") return true;
-      if (rawState === "not_home" || rawState === "away") return false;
-    }
-    if (rawState === zoneShort || rawState === normZone) return true;
-    if (zoneFriendlyName && rawState === zoneFriendlyName) return true;
-
-    return false;
-  };
-
-  const isEntityMatching = (entId: string): boolean => {
-    const s = hass.states[entId];
-    if (!s) return true; // Fail-open on missing entity
-    const rawState = String(s.state ?? "").toLowerCase();
-    if (rawState === "unavailable" || rawState === "unknown") {
-      const testsForOutage =
-        isExplicitOutageCheck(cond.state) || isExplicitOutageCheck(cond.state_not);
-      if (!testsForOutage) return true;
-    }
-
-    const inZone = targetZones.some((z) => isEntityInSpecificZone(entId, z));
-    return expectInZone ? inZone : !inZone;
-  };
-
-  if (behavior === "all") {
-    return entityIds.every(isEntityMatching);
-  }
-  return entityIds.some(isEntityMatching);
-}
-
-/**
- * Evaluates a Location condition (person state matching locations, away, or target zones).
- */
-export function evaluateLocationCondition(
-  cond: Record<string, unknown>,
-  hass: RenderHass
-): boolean {
-  const userId = (hass as unknown as { user?: { id?: string } }).user?.id;
-  const person = userId
-    ? Object.values(hass.states).find(
-        (s) => s && s.entity_id?.startsWith("person.") && s.attributes?.user_id === userId
-      )
-    : undefined;
-
-  if (!person) return true; // Fail open if no person found for user
-
-  const personState = String(person.state ?? "").toLowerCase();
-
-  if (cond.away === true) {
-    return personState === "not_home";
-  }
-
-  if (Array.isArray(cond.locations) && cond.locations.length > 0) {
-    const locs = cond.locations.map((l) => String(l).toLowerCase());
-    return locs.includes(personState);
-  }
-
-  const target = cond.target as Record<string, unknown> | undefined;
-  if (target) {
-    const targetEntities: string[] = [];
-    const add = (v: unknown) => {
-      if (typeof v === "string") targetEntities.push(v.toLowerCase());
-      else if (Array.isArray(v)) {
-        for (const i of v) if (typeof i === "string") targetEntities.push(i.toLowerCase());
-      }
-    };
-    add(target.entity_id);
-    add(target.entity);
-
-    if (targetEntities.length > 0) {
-      const inZones = Array.isArray(person.attributes?.in_zones)
-        ? (person.attributes.in_zones as string[]).map((z) => z.toLowerCase())
-        : [];
-
-      if (inZones.some((z) => targetEntities.includes(z))) return true;
-      if (targetEntities.some((t) => t === "zone.home" && personState === "home")) return true;
-      if (targetEntities.some((t) => t.replace(/^zone\./, "") === personState)) return true;
-    }
-  }
-
-  return true;
-}
-
-/**
- * Evaluates whether a single visibility condition is met.
- */
-export function evaluateCondition(
-  cond: VisibilityCondition,
-  hass: RenderHass,
-  defaultEntityId?: string
-): boolean {
-  if (typeof cond === "string") {
-    // Bare template string fails open
-    return true;
-  }
-
-  const c = cond as Record<string, unknown>;
-  const conditionType = String(c.condition ?? "");
-
-  // Logical groups
-  if (conditionType === "and") {
-    const list = Array.isArray(c.conditions) ? (c.conditions as VisibilityCondition[]) : [];
-    return list.every((nested) => evaluateCondition(nested, hass, defaultEntityId));
-  }
-  if (conditionType === "or") {
-    const list = Array.isArray(c.conditions) ? (c.conditions as VisibilityCondition[]) : [];
-    return list.some((nested) => evaluateCondition(nested, hass, defaultEntityId));
-  }
-  if (conditionType === "not") {
-    const list = Array.isArray(c.conditions) ? (c.conditions as VisibilityCondition[]) : [];
-    return !list.some((nested) => evaluateCondition(nested, hass, defaultEntityId));
-  }
-
-  // Shorthand key logical groups e.g. { and: [...] }, { or: [...] }, { not: [...] }
-  if (Array.isArray(c.and)) {
-    return (c.and as VisibilityCondition[]).every((nested) =>
-      evaluateCondition(nested, hass, defaultEntityId)
-    );
-  }
-  if (Array.isArray(c.or)) {
-    return (c.or as VisibilityCondition[]).some((nested) =>
-      evaluateCondition(nested, hass, defaultEntityId)
-    );
-  }
-  if (Array.isArray(c.not)) {
-    return !(c.not as VisibilityCondition[]).some((nested) =>
-      evaluateCondition(nested, hass, defaultEntityId)
-    );
-  }
-
-  // Template condition fails open
-  if (conditionType === "template") {
-    return true;
-  }
-
-  // View columns condition fails open in card view
-  if (conditionType === "view_columns") {
-    return true;
-  }
-
-  // Time condition
-  if (conditionType === "time") {
-    return evaluateTimeCondition(c, hass);
-  }
-
-  // Sun condition
-  if (conditionType === "sun" || conditionType.startsWith("sun.")) {
-    return evaluateSunCondition(c, hass);
-  }
-
-  // Zone condition (core zone, shorthand zone.in_zone / zone.not_in_zone, device is_in_zone)
-  if (
-    conditionType === "zone" ||
-    conditionType.startsWith("zone.") ||
-    (conditionType === "device" && (c.type === "is_in_zone" || c.type === "is_not_in_zone"))
-  ) {
-    return evaluateZoneCondition(c, hass, defaultEntityId);
-  }
-
-  // Location condition
-  if (conditionType === "location") {
-    return evaluateLocationCondition(c, hass);
-  }
-
-  // Screen condition
-  if (conditionType === "screen") {
-    if (typeof window === "undefined" || !window.matchMedia) return true;
-    try {
-      return typeof c.media_query === "string" ? window.matchMedia(c.media_query).matches : true;
-    } catch {
-      return true;
-    }
-  }
-
-  // User condition
-  if (conditionType === "user") {
-    const userId = (hass as unknown as { user?: { id?: string } }).user?.id;
-    if (!userId) return true;
-    const users = Array.isArray(c.users) ? (c.users as string[]) : [];
-    return users.includes(userId);
-  }
-
-  // Entity-based conditions (state, numeric_state, garage_door.is_open, target: { entity_id }, etc.)
-  const entityIds = extractSubjectEntityIds(c);
+  // Subject entities
+  let entityIds = extractSubjectEntityIds(cond);
   if (entityIds.length === 0 && defaultEntityId) {
     entityIds.push(defaultEntityId);
   }
   if (entityIds.length === 0) {
-    return true; // Fail open if no entity can be identified
+    // If no entity specified, check user's person
+    const userId = (hass as Partial<HomeAssistant>).user?.id;
+    if (userId) {
+      const person = Object.values(states).find(
+        (s) => s && s.entity_id?.startsWith("person.") && s.attributes?.user_id === userId
+      );
+      if (person?.entity_id) entityIds.push(person.entity_id);
+    }
+    // Or collect all person entities
+    if (entityIds.length === 0) {
+      for (const id of Object.keys(states)) {
+        if (id.startsWith("person.")) entityIds.push(id);
+      }
+    }
   }
 
-  const options = (c.options as Record<string, unknown> | undefined) ?? {};
-  const behavior = options.behavior === "all" ? "all" : "any";
-
-  if (behavior === "all") {
-    return entityIds.every((id) => evaluateEntityCondition(id, c, hass));
+  // Location condition: locations or away
+  if (condType === "location") {
+    if (entityIds.length === 0) return { pass: true, outage: false };
+    const person = states[entityIds[0]];
+    if (!person) return { pass: true, outage: true };
+    const pState = String(person.state ?? "").toLowerCase();
+    if (cond.away === true) {
+      return { pass: pState === "not_home", outage: false };
+    }
+    if (Array.isArray(cond.locations) && cond.locations.length > 0) {
+      const locs = cond.locations.map((l) => String(l).toLowerCase());
+      return { pass: locs.includes(pState), outage: false };
+    }
   }
-  return entityIds.some((id) => evaluateEntityCondition(id, c, hass));
+
+  // Area-level presence evaluation
+  if (targetArea) {
+    const normArea = targetArea.toLowerCase();
+
+    // Check if any specified person/entity is in the area
+    if (entityIds.length > 0) {
+      let anyMatch = false;
+      let hasOutage = false;
+
+      for (const entId of entityIds) {
+        const s = states[entId];
+        if (!s) {
+          hasOutage = true;
+          continue;
+        }
+        const stateVal = String(s.state ?? "").toLowerCase();
+        const attrArea = String(s.attributes?.area ?? s.attributes?.area_id ?? s.attributes?.room ?? "").toLowerCase();
+
+        if (stateVal === normArea || attrArea === normArea) {
+          anyMatch = true;
+          break;
+        }
+
+        // Entity registry area match
+        const entRegistry = (hass as unknown as { entities?: Record<string, { area_id?: string }> }).entities;
+        if (entRegistry?.[entId]?.area_id?.toLowerCase() === normArea) {
+          if (stateVal === "home" || stateVal === "on") {
+            anyMatch = true;
+            break;
+          }
+        }
+      }
+
+      if (!anyMatch && hasOutage) {
+        return { pass: true, outage: true };
+      }
+      const pass = isNegated ? !anyMatch : anyMatch;
+      return { pass, outage: false };
+    }
+
+    // Zero entities specified: check area entities directly
+    const areaEntities = entityIdsInHaArea(hass, targetArea);
+    const anyActive = areaEntities.some((id) => {
+      const st = states[id]?.state?.toLowerCase();
+      return st === "on" || st === "home" || st === "occupied";
+    });
+    const pass = isNegated ? !anyActive : anyActive;
+    return { pass, outage: false };
+  }
+
+  // Zone condition evaluation
+  if (targetZones.length > 0 && entityIds.length > 0) {
+    const isEntityInZone = (entId: string, zoneId: string): boolean => {
+      const s = states[entId];
+      if (!s) return false;
+
+      const rawState = String(s.state ?? "").toLowerCase();
+      const inZones = Array.isArray(s.attributes?.in_zones)
+        ? (s.attributes.in_zones as string[]).map((z) => String(z).toLowerCase())
+        : [];
+
+      const normZone = zoneId.toLowerCase().startsWith("zone.")
+        ? zoneId.toLowerCase()
+        : `zone.${zoneId.toLowerCase()}`;
+      const zoneShort = normZone.replace(/^zone\./, "");
+      const zoneEntity = states[normZone] || states[zoneId.toLowerCase()];
+      const zoneFriendly = zoneEntity?.attributes?.friendly_name
+        ? String(zoneEntity.attributes.friendly_name).toLowerCase()
+        : undefined;
+
+      if (inZones.includes(normZone) || inZones.includes(zoneShort)) return true;
+
+      if (zoneShort === "home") {
+        if (rawState === "home") return true;
+        if (rawState === "not_home" || rawState === "away") return false;
+      }
+      if (rawState === zoneShort || rawState === normZone) return true;
+      if (zoneFriendly && rawState === zoneFriendly) return true;
+
+      return false;
+    };
+
+    let anyInZone = false;
+    let anyOutage = false;
+
+    for (const entId of entityIds) {
+      const s = states[entId];
+      if (!s || s.state === "unavailable" || s.state === "unknown") {
+        anyOutage = true;
+        continue;
+      }
+      if (targetZones.some((z) => isEntityInZone(entId, z))) {
+        anyInZone = true;
+        break;
+      }
+    }
+
+    if (!anyInZone && anyOutage) {
+      return { pass: true, outage: true };
+    }
+    const pass = isNegated ? !anyInZone : anyInZone;
+    return { pass, outage: false };
+  }
+
+  return { pass: true, outage: false };
+}
+
+/**
+ * Evaluates Device conditions and domain-specific verbs (e.g. garage_door.is_open, cover.is_closed).
+ */
+export function evaluateDeviceOrActionCondition(
+  entityId: string,
+  cond: Record<string, unknown>,
+  hass: HomeAssistant | RenderHass
+): ConditionResult {
+  const states = (hass as Partial<HomeAssistant>).states ?? {};
+  const stateObj = states[entityId];
+  if (!stateObj) return { pass: true, outage: true };
+
+  const raw = cond.attribute ? stateObj.attributes?.[cond.attribute as string] : stateObj.state;
+  const strVal = String(raw ?? "").toLowerCase();
+
+  // Outage handling
+  if (strVal === "unavailable" || strVal === "unknown") {
+    const isExplicit = isExplicitOutageCheck(cond.state) || isExplicitOutageCheck(cond.state_not);
+    if (!isExplicit) return { pass: true, outage: true };
+  }
+
+  const condType = String(cond.condition ?? "").toLowerCase();
+  const actionType = String(cond.type ?? "").toLowerCase();
+
+  const verb = condType.includes(".")
+    ? condType.split(".").pop()!
+    : condType === "device"
+      ? actionType
+      : condType;
+
+  switch (verb) {
+    case "is_open":
+      return {
+        pass: strVal === "open" || strVal === "opening" || strVal === "on" || strVal === "unlocked",
+        outage: false,
+      };
+    case "is_closed":
+      return {
+        pass: strVal === "closed" || strVal === "closing" || strVal === "off" || strVal === "locked",
+        outage: false,
+      };
+    case "is_on":
+      return { pass: strVal === "on", outage: false };
+    case "is_off":
+      return { pass: strVal === "off", outage: false };
+    case "is_locked":
+      return { pass: strVal === "locked" || strVal === "locking", outage: false };
+    case "is_unlocked":
+      return { pass: strVal === "unlocked" || strVal === "unlocking", outage: false };
+    case "is_home":
+      return { pass: strVal === "home" || strVal === "on", outage: false };
+    case "is_not_home":
+      return { pass: strVal !== "home" && strVal !== "on", outage: false };
+    case "is_detected":
+    case "is_motion":
+      return {
+        pass: strVal === "on" || strVal === "detected" || strVal === "motion",
+        outage: false,
+      };
+    case "is_clear":
+    case "is_no_motion":
+      return {
+        pass: strVal === "off" || strVal === "clear" || strVal === "no_motion",
+        outage: false,
+      };
+    case "is_occupied":
+      return { pass: strVal === "on" || strVal === "occupied" || strVal === "home", outage: false };
+    case "is_not_occupied":
+      return { pass: strVal === "off" || strVal === "not_occupied" || strVal === "not_home", outage: false };
+    default:
+      return { pass: true, outage: false };
+  }
+}
+
+/**
+ * Evaluates a Time condition (after, before, weekday / weekdays) in the Home Assistant timezone.
+ */
+export function evaluateTimeCondition(
+  cond: Record<string, unknown>,
+  hass: HomeAssistant | RenderHass
+): ConditionResult {
+  const timeZone = (hass as Partial<HomeAssistant>)?.config?.time_zone;
+  const now = new Date();
+
+  let currentWeekday = "";
+  let currentSeconds = 0;
+
+  try {
+    const formatter = new Intl.DateTimeFormat("en-US", {
+      timeZone: timeZone || undefined,
+      hour12: false,
+      weekday: "short",
+      hour: "2-digit",
+      minute: "2-digit",
+      second: "2-digit",
+    });
+    const parts = formatter.formatToParts(now);
+    let hour = 0;
+    let min = 0;
+    let sec = 0;
+    for (const p of parts) {
+      if (p.type === "weekday") currentWeekday = p.value.toLowerCase().slice(0, 3);
+      else if (p.type === "hour") hour = parseInt(p.value, 10);
+      else if (p.type === "minute") min = parseInt(p.value, 10);
+      else if (p.type === "second") sec = parseInt(p.value, 10);
+    }
+    if (hour === 24) hour = 0;
+    currentSeconds = hour * 3600 + min * 60 + sec;
+  } catch {
+    const days = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    currentWeekday = days[now.getDay()];
+    currentSeconds = now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds();
+  }
+
+  // 1. Weekday check: supports both HA automation `weekday` and dashboard `weekdays`
+  const rawWeekdays = cond.weekday ?? cond.weekdays;
+  if (rawWeekdays !== undefined && rawWeekdays !== null) {
+    const list = Array.isArray(rawWeekdays) ? rawWeekdays : [rawWeekdays];
+    const normalized = list.map((d) => String(d).trim().toLowerCase().slice(0, 3));
+    if (normalized.length > 0 && !normalized.includes(currentWeekday)) {
+      return { pass: false, outage: false };
+    }
+  }
+
+  // 2. Time bounds (after / before)
+  const parseTimeStringToSeconds = (str: string): number | undefined => {
+    const m = str.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+    if (!m) return undefined;
+    const h = parseInt(m[1], 10);
+    const min = parseInt(m[2], 10);
+    const s = m[3] ? parseInt(m[3], 10) : 0;
+    if (h < 0 || h > 23 || min < 0 || min > 59 || s < 0 || s > 59) return undefined;
+    return h * 3600 + min * 60 + s;
+  };
+
+  const resolveTimeSeconds = (val: unknown): number | undefined => {
+    if (typeof val !== "string") return undefined;
+    const trimmed = val.trim();
+    if (!trimmed) return undefined;
+    if (isEntityId(trimmed)) {
+      const states = (hass as Partial<HomeAssistant>).states ?? {};
+      const st = states[trimmed]?.state;
+      if (!st || st === "unavailable" || st === "unknown") return undefined;
+      return parseTimeStringToSeconds(st);
+    }
+    return parseTimeStringToSeconds(trimmed);
+  };
+
+  const afterSec = resolveTimeSeconds(cond.after);
+  const beforeSec = resolveTimeSeconds(cond.before);
+
+  if (afterSec !== undefined && beforeSec !== undefined) {
+    if (afterSec <= beforeSec) {
+      if (currentSeconds < afterSec || currentSeconds >= beforeSec) {
+        return { pass: false, outage: false };
+      }
+    } else {
+      // Overnight span (e.g. 22:00 to 06:00)
+      if (currentSeconds < afterSec && currentSeconds >= beforeSec) {
+        return { pass: false, outage: false };
+      }
+    }
+  } else if (afterSec !== undefined) {
+    if (currentSeconds < afterSec) {
+      return { pass: false, outage: false };
+    }
+  } else if (beforeSec !== undefined) {
+    if (currentSeconds >= beforeSec) {
+      return { pass: false, outage: false };
+    }
+  }
+
+  return { pass: true, outage: false };
+}
+
+/**
+ * Evaluates a single condition node.
+ */
+function evaluateConditionInternal(
+  cond: unknown,
+  hass: HomeAssistant | RenderHass,
+  defaultEntityId?: string
+): ConditionResult {
+  if (!cond || typeof cond !== "object") {
+    return { pass: true, outage: false };
+  }
+
+  const c = cond as Record<string, unknown>;
+  const conditionType = String(c.condition ?? "").toLowerCase();
+
+  // 1. Logical groups: AND
+  if (conditionType === "and" || Array.isArray(c.and)) {
+    const list = Array.isArray(c.conditions)
+      ? (c.conditions as VisibilityCondition[])
+      : Array.isArray(c.and)
+        ? (c.and as VisibilityCondition[])
+        : [];
+    if (list.length === 0) return { pass: true, outage: false };
+    const results = list.map((nested) =>
+      evaluateConditionInternal(nested, hass, defaultEntityId)
+    );
+    const pass = results.every((r) => r.pass);
+    const outage = results.some((r) => r.outage);
+    return { pass, outage };
+  }
+
+  // 2. Logical groups: OR
+  if (conditionType === "or" || Array.isArray(c.or)) {
+    const list = Array.isArray(c.conditions)
+      ? (c.conditions as VisibilityCondition[])
+      : Array.isArray(c.or)
+        ? (c.or as VisibilityCondition[])
+        : [];
+    if (list.length === 0) return { pass: true, outage: false };
+    const results = list.map((nested) =>
+      evaluateConditionInternal(nested, hass, defaultEntityId)
+    );
+    const pass = results.some((r) => r.pass);
+    const outage = results.some((r) => r.outage);
+    return { pass, outage };
+  }
+
+  // 3. Logical groups: NOT
+  if (conditionType === "not" || Array.isArray(c.not)) {
+    const list = Array.isArray(c.conditions)
+      ? (c.conditions as VisibilityCondition[])
+      : Array.isArray(c.not)
+        ? (c.not as VisibilityCondition[])
+        : [];
+    if (list.length === 0) return { pass: true, outage: false };
+    const results = list.map((nested) =>
+      evaluateConditionInternal(nested, hass, defaultEntityId)
+    );
+
+    // Fail-open protection under NOT:
+    // If an inner condition encountered an outage, do not invert fail-open to false.
+    if (results.some((r) => r.outage)) {
+      return { pass: true, outage: true };
+    }
+
+    const pass = !results.some((r) => r.pass);
+    return { pass, outage: false };
+  }
+
+  // 4. Client-side condition: Screen (media_query)
+  if (conditionType === "screen") {
+    if (typeof window === "undefined" || !window.matchMedia) {
+      return { pass: true, outage: false };
+    }
+    const query = typeof c.media_query === "string" ? c.media_query.trim() : "";
+    if (!query) return { pass: true, outage: false };
+    try {
+      const pass = window.matchMedia(query).matches;
+      return { pass, outage: false };
+    } catch {
+      return { pass: true, outage: false };
+    }
+  }
+
+  // 5. Client-side condition: User
+  if (conditionType === "user") {
+    const userHass = hass as Partial<HomeAssistant>;
+    const userId = userHass.user?.id;
+    if (!userId) return { pass: true, outage: false };
+    const allowed = Array.isArray(c.users) ? (c.users as string[]) : [];
+    if (allowed.length === 0) return { pass: true, outage: false };
+    return { pass: allowed.includes(userId), outage: false };
+  }
+
+  // 6. Time condition (weekday, weekdays, after, before, timezone aware)
+  if (conditionType === "time") {
+    return evaluateTimeCondition(c, hass);
+  }
+
+  // 7. Trigger condition: dashboard cards have no automation trigger context
+  if (conditionType === "trigger") {
+    return { pass: false, outage: false };
+  }
+
+  // 8. Sun condition (ascending/descending, horizon, sunrise/sunset)
+  if (conditionType === "sun" || conditionType.startsWith("sun.")) {
+    return evaluateSunCondition(c, hass);
+  }
+
+  // 9. Zone, Area, or Location condition
+  if (
+    conditionType === "zone" ||
+    conditionType.startsWith("zone.") ||
+    conditionType === "area" ||
+    conditionType.startsWith("area.") ||
+    conditionType === "location" ||
+    (conditionType === "device" && (c.type === "is_in_zone" || c.type === "is_not_in_zone"))
+  ) {
+    return evaluateZoneOrAreaCondition(c, hass, defaultEntityId);
+  }
+
+  // 10. Entity-based conditions: state, numeric_state, device, or domain verbs
+  const entityIds = extractSubjectEntityIds(c);
+  if (entityIds.length === 0 && defaultEntityId) {
+    entityIds.push(defaultEntityId);
+  }
+
+  // If device_id is provided without entity_id, attempt to resolve via entity registry
+  if (entityIds.length === 0 && typeof c.device_id === "string") {
+    const entRegistry = (hass as unknown as { entities?: Record<string, { device_id?: string; entity_id?: string }> }).entities;
+    if (entRegistry) {
+      const found = Object.values(entRegistry).find((e) => e?.device_id === c.device_id);
+      if (found?.entity_id) entityIds.push(found.entity_id);
+    }
+  }
+
+  if (entityIds.length === 0) {
+    return { pass: true, outage: false };
+  }
+
+  const primaryEntityId = entityIds[0];
+  const states = (hass as Partial<HomeAssistant>).states ?? {};
+  const stateObj = states[primaryEntityId];
+  const isMissing = !stateObj;
+  const isUnavailable = !isMissing && (stateObj.state === "unavailable" || stateObj.state === "unknown");
+  const isOutage = isMissing || isUnavailable;
+
+  const explicitOutage =
+    isExplicitOutageCheck(c.state) || isExplicitOutageCheck(c.state_not);
+
+  if (isOutage && !explicitOutage) {
+    return { pass: true, outage: true };
+  }
+
+  // Device verbs or domain conditions (e.g. garage_door.is_open, cover.is_closed, type: is_open)
+  const isDeviceOrDomainAction =
+    conditionType === "device" ||
+    conditionType.includes(".") ||
+    typeof c.type === "string";
+
+  if (isDeviceOrDomainAction && conditionType !== "numeric_state" && conditionType !== "state") {
+    return evaluateDeviceOrActionCondition(primaryEntityId, c, hass);
+  }
+
+  // Numeric state condition
+  if (conditionType === "numeric_state") {
+    const attr = typeof c.attribute === "string" ? c.attribute : undefined;
+    const rawVal = attr && stateObj ? stateObj.attributes?.[attr] : stateObj?.state;
+    const num = Number(rawVal);
+    if (Number.isNaN(num)) {
+      return { pass: true, outage: true };
+    }
+
+    if (c.above !== undefined) {
+      let aboveVal: number;
+      if (typeof c.above === "string" && isEntityId(c.above) && states[c.above]) {
+        aboveVal = Number(states[c.above]?.state);
+      } else {
+        aboveVal = Number(c.above);
+      }
+      if (!Number.isNaN(aboveVal) && !(num > aboveVal)) {
+        return { pass: false, outage: false };
+      }
+    }
+
+    if (c.below !== undefined) {
+      let belowVal: number;
+      if (typeof c.below === "string" && isEntityId(c.below) && states[c.below]) {
+        belowVal = Number(states[c.below]?.state);
+      } else {
+        belowVal = Number(c.below);
+      }
+      if (!Number.isNaN(belowVal) && !(num < belowVal)) {
+        return { pass: false, outage: false };
+      }
+    }
+
+    return { pass: true, outage: false };
+  }
+
+  // State condition
+  const attr = typeof c.attribute === "string" ? c.attribute : undefined;
+  const rawVal = attr && stateObj ? stateObj.attributes?.[attr] : stateObj?.state;
+  const actualState =
+    rawVal === undefined || rawVal === null ? (isMissing ? "unavailable" : "") : String(rawVal);
+
+  const resolveTargetState = (val: unknown): string => {
+    if (typeof val === "string" && isEntityId(val) && states[val]) {
+      return String(states[val]?.state ?? val);
+    }
+    return String(val);
+  };
+
+  if (c.state_not !== undefined) {
+    const list = Array.isArray(c.state_not) ? c.state_not : [c.state_not];
+    const targets = list.map(resolveTargetState);
+    if (targets.some((t) => t === actualState)) {
+      return { pass: false, outage: false };
+    }
+  }
+
+  if (c.state !== undefined) {
+    const list = Array.isArray(c.state) ? c.state : [c.state];
+    const targets = list.map(resolveTargetState);
+    const match = targets.some((t) => t === actualState);
+    if (!match) {
+      return { pass: false, outage: false };
+    }
+  }
+
+  return { pass: true, outage: false };
+}
+
+/**
+ * Determines whether a single condition evaluates to true.
+ */
+export function evaluateCondition(
+  cond: unknown,
+  hass: HomeAssistant | RenderHass,
+  defaultEntityId?: string
+): boolean {
+  return evaluateConditionInternal(cond, hass, defaultEntityId).pass;
 }
 
 /**
@@ -1092,77 +872,22 @@ export function evaluateCondition(
  */
 export function evaluateConditions(
   conditions: readonly VisibilityCondition[],
-  hass: RenderHass,
+  hass: HomeAssistant | RenderHass,
   defaultEntityId?: string
 ): boolean {
   return conditions.every((cond) => evaluateCondition(cond, hass, defaultEntityId));
 }
 
 /**
- * Checks if conditions contain any non-standard Lovelace condition shapes
- * (such as domain-specific conditions like temperature.is_value or garage_door.is_open,
- * sun, zone, location, time, view_columns, device conditions, target wrappers, or options.threshold)
- * so our robust pure evaluator is preferred.
- */
-function hasNonStandardConditions(conditions?: readonly VisibilityCondition[]): boolean {
-  if (!conditions) return false;
-  return conditions.some((c) => {
-    if (!c || typeof c !== "object") return true;
-    const cond = c as Record<string, unknown>;
-    const type = String(cond.condition ?? "");
-    if (type.includes(".")) return true;
-    if (
-      type === "device" ||
-      type === "sun" ||
-      type === "zone" ||
-      type === "location" ||
-      type === "time" ||
-      type === "view_columns" ||
-      type === "template"
-    ) {
-      return true;
-    }
-    if (cond.target !== undefined) return true;
-    if (
-      cond.options &&
-      typeof cond.options === "object" &&
-      "threshold" in (cond.options as object)
-    ) {
-      return true;
-    }
-    if (cond.threshold !== undefined) return true;
-    if (Array.isArray(cond.conditions)) {
-      return hasNonStandardConditions(cond.conditions as VisibilityCondition[]);
-    }
-    return false;
-  });
-}
-
-/**
  * Determines whether a piece of furniture should be displayed based on its visibility rules.
- *
- * Checks Home Assistant's native `checkConditionsMet` on window if exposed for standard conditions,
- * otherwise runs the synchronous pure micro-evaluator.
+ * Runs the synchronous pure micro-evaluator against the provided Home Assistant state.
  */
-export function isFurnitureVisible(f: Furniture, hass?: RenderHass): boolean {
+export function isFurnitureVisible(
+  f: Furniture,
+  hass?: HomeAssistant | RenderHass
+): boolean {
   if (!f.visibility || f.visibility.length === 0) return true;
   if (!hass) return true;
-
-  // 1. Dynamic probe to reuse Home Assistant's native validator if exposed for standard conditions
-  if (typeof window !== "undefined" && !hasNonStandardConditions(f.visibility)) {
-    const haCheck = (window as unknown as { checkConditionsMet?: unknown }).checkConditionsMet;
-    if (typeof haCheck === "function") {
-      try {
-        return f.entity
-          ? Boolean(haCheck(f.visibility, hass, { entity_id: f.entity }))
-          : Boolean(haCheck(f.visibility, hass));
-      } catch {
-        // Fall back to pure evaluator on signature mismatch
-      }
-    }
-  }
-
-  // 2. Synchronous pure fallback mirroring Home Assistant validate-condition.ts
   return evaluateConditions(f.visibility, hass, f.entity);
 }
 
@@ -1183,10 +908,93 @@ export function collectConditionEntities(
   const walk = (c: unknown) => {
     if (!c || typeof c !== "object") return;
     const cond = c as Record<string, unknown>;
-    for (const id of extractConditionEntityIds(cond)) {
-      if (!entities.includes(id)) {
-        entities.push(id);
+
+    const add = (id: unknown) => {
+      if (typeof id === "string" && isEntityId(id) && !entities.includes(id)) {
+        entities.push(id.trim());
       }
+    };
+
+    for (const ent of extractSubjectEntityIds(cond)) add(ent);
+
+    // Threshold or state entity comparisons
+    if (typeof cond.above === "string") add(cond.above);
+    if (typeof cond.below === "string") add(cond.below);
+    if (typeof cond.state === "string") add(cond.state);
+    if (typeof cond.state_not === "string") add(cond.state_not);
+
+    // Sun conditions watch sun.sun
+    const cType = String(cond.condition ?? "").toLowerCase();
+    if (cType === "sun" || cType.startsWith("sun.")) {
+      add("sun.sun");
+    }
+
+    // Time condition entities (if after/before references an entity)
+    if (typeof cond.after === "string" && isEntityId(cond.after)) add(cond.after);
+    if (typeof cond.before === "string" && isEntityId(cond.before)) add(cond.before);
+
+    // Zone conditions
+    for (const z of extractZoneIds(cond)) add(z);
+
+    if (Array.isArray(cond.conditions)) {
+      for (const nested of cond.conditions) walk(nested);
+    }
+    if (Array.isArray(cond.and)) {
+      for (const nested of cond.and) walk(nested);
+    }
+    if (Array.isArray(cond.or)) {
+      for (const nested of cond.or) walk(nested);
+    }
+    if (Array.isArray(cond.not)) {
+      for (const nested of cond.not) walk(nested);
+    }
+  };
+
+  for (const cond of conditions) walk(cond);
+  return entities;
+}
+
+/**
+ * Checks if a config defines any furniture with time visibility conditions.
+ */
+export function hasTimeConditions(config?: FloorplanCardConfig): boolean {
+  if (!config) return false;
+  const floors = config.floors ?? [];
+  const walk = (c: unknown): boolean => {
+    if (!c || typeof c !== "object") return false;
+    const cond = c as Record<string, unknown>;
+    if (cond.condition === "time") return true;
+    if (Array.isArray(cond.conditions) && cond.conditions.some(walk)) return true;
+    if (Array.isArray(cond.and) && cond.and.some(walk)) return true;
+    if (Array.isArray(cond.or) && cond.or.some(walk)) return true;
+    if (Array.isArray(cond.not) && cond.not.some(walk)) return true;
+    return false;
+  };
+
+  for (const floor of floors) {
+    for (const f of floor.furniture ?? []) {
+      for (const cond of f.visibility ?? []) {
+        if (walk(cond)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+/**
+ * Extracts all unique media query strings defined across all furniture visibility conditions
+ * on all floors in a floorplan configuration.
+ */
+export function collectConditionMediaQueries(config: FloorplanCardConfig): string[] {
+  const queries: string[] = [];
+  const floors = config.floors ?? [];
+
+  const walk = (c: unknown) => {
+    if (!c || typeof c !== "object") return;
+    const cond = c as Record<string, unknown>;
+    if (cond.condition === "screen" && typeof cond.media_query === "string") {
+      const q = cond.media_query.trim();
+      if (q && !queries.includes(q)) queries.push(q);
     }
     if (Array.isArray(cond.conditions)) {
       for (const nested of cond.conditions) walk(nested);
@@ -1201,6 +1009,14 @@ export function collectConditionEntities(
       for (const nested of cond.not) walk(nested);
     }
   };
-  for (const cond of conditions) walk(cond);
-  return entities;
+
+  for (const floor of floors) {
+    for (const f of floor.furniture ?? []) {
+      for (const cond of f.visibility ?? []) {
+        walk(cond);
+      }
+    }
+  }
+
+  return queries;
 }

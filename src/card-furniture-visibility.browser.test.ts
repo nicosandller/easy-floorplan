@@ -157,7 +157,7 @@ describe("furniture visibility on mounted card", () => {
     expect(card.shadowRoot!.querySelector(".fp-furniture-car")).not.toBeNull();
   });
 
-  it("conditionally toggles furniture visibility with garage_door.is_open and garage_door.is_closed", async () => {
+  it("conditionally toggles furniture visibility on entity state changes", async () => {
     const card = document.createElement("easy-floorplan-card") as FloorplanCard;
     const cfg: FloorplanCardConfig = {
       type: "custom:easy-floorplan-card",
@@ -187,9 +187,9 @@ describe("furniture visibility on mounted card", () => {
               h: 50,
               visibility: [
                 {
-                  condition: "garage_door.is_open",
-                  target: { entity_id: "cover.garage_door" },
-                  options: { behavior: "any", for: "00:00:00" },
+                  condition: "state",
+                  entity: "cover.garage_door",
+                  state: "open",
                 },
               ],
             },
@@ -202,9 +202,9 @@ describe("furniture visibility on mounted card", () => {
               h: 50,
               visibility: [
                 {
-                  condition: "garage_door.is_closed",
-                  target: { entity_id: "cover.garage_door" },
-                  options: { behavior: "any", for: "00:00:00" },
+                  condition: "state",
+                  entity: "cover.garage_door",
+                  state: "closed",
                 },
               ],
             },
@@ -256,6 +256,23 @@ describe("furniture visibility on mounted card", () => {
     // Open: furn_vqvojun (ladderShelf) is visible, furn_1gdbc5q (car_ev) is hidden
     expect(card.shadowRoot!.querySelector(".fp-furniture-ladderShelf")).not.toBeNull();
     expect(card.shadowRoot!.querySelector(".fp-furniture-car_ev")).toBeNull();
+  });
+
+  it("hides furniture when time weekday condition does not match (2D)", async () => {
+    const todayIdx = new Date().getDay();
+    const allDays = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
+    const notToday = allDays[(todayIdx + 3) % 7];
+    const card = makeCard(
+      "2d",
+      {
+        visibility: [{ condition: "time", weekday: [notToday] }],
+      },
+      {}
+    );
+    document.body.append(card);
+    await card.updateComplete;
+
+    expect(card.shadowRoot!.querySelector(".fp-furniture-car")).toBeNull();
   });
 });
 

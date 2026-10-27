@@ -244,7 +244,11 @@ import {
 } from "./label-placement";
 import { ReplayControllerImpl } from "./replay-history/replay-controller";
 import { createReplayPanelProps, renderReplayPanel } from "./replay-history/replay-panel";
-import { isFurnitureVisible } from "./furniture-visibility";
+import {
+  isFurnitureVisible,
+  collectConditionMediaQueries,
+  hasTimeConditions,
+} from "./furniture-visibility";
 
 /**
  * Which floor each plan was last viewed on, keyed by its floor-id set (issue
@@ -392,6 +396,8 @@ export class FloorplanCard extends LitElement {
     this._unsubscribeMotion = subscribeOrientation(motion, (e) => {
       if (e.matches) this._rotation.finish();
     });
+    this._syncScreenMediaSubscriptions();
+    this._syncTimeClockSubscription();
   }
 
   public setConfig(config: FloorplanCardConfig): void {
@@ -466,6 +472,34 @@ export class FloorplanCard extends LitElement {
       if (remembered && floors.some((f) => f.id === remembered)) {
         this._activeFloorId = remembered;
       }
+    }
+    this._syncScreenMediaSubscriptions();
+    this._syncTimeClockSubscription();
+  }
+
+  private _screenMediaQueries: Array<() => void> = [];
+
+  private _syncScreenMediaSubscriptions(): void {
+    for (const unsub of this._screenMediaQueries) unsub();
+    this._screenMediaQueries = [];
+    if (typeof window === "undefined" || !window.matchMedia || !this._config) return;
+    const mqs = collectConditionMediaQueries(this._config);
+    for (const query of mqs) {
+      const mql = window.matchMedia(query);
+      this._screenMediaQueries.push(subscribeOrientation(mql, () => this.requestUpdate()));
+    }
+  }
+
+  private _timeClock?: ReturnType<typeof setInterval>;
+
+  private _syncTimeClockSubscription(): void {
+    if (this._timeClock) {
+      clearInterval(this._timeClock);
+      this._timeClock = undefined;
+    }
+    if (typeof window === "undefined" || !this.isConnected || !this._config) return;
+    if (hasTimeConditions(this._config)) {
+      this._timeClock = setInterval(() => this.requestUpdate(), 30000);
     }
   }
 
@@ -841,6 +875,12 @@ export class FloorplanCard extends LitElement {
     // replace this one — taking the replay loop's cleanup with it.
     this._unsubscribeOrientation?.();
     this._unsubscribeOrientation = undefined;
+    for (const unsub of this._screenMediaQueries) unsub();
+    this._screenMediaQueries = [];
+    if (this._timeClock) {
+      clearInterval(this._timeClock);
+      this._timeClock = undefined;
+    }
     this._autoResize?.disconnect();
     this._autoResize = undefined;
     this._autoResizeTarget = undefined;
@@ -1288,8 +1328,9 @@ export class FloorplanCard extends LitElement {
     const furnitureHeight = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(furnitureHeight, rot);
     const catalog = symbolCatalog(c.symbols);
+    const effHass = this.hass && renderHass ? { ...this.hass, states: renderHass.states } : (this.hass ?? (renderHass as unknown as HomeAssistant));
     for (const f of active.furniture) {
-      if (!isFurnitureVisible(f, renderHass)) continue;
+      if (!isFurnitureVisible(f, effHass)) continue;
       // A piece that hangs rather than stands — an awning under the eaves
       // (issue #196) — is a sheet between its symbol's two heights.
       const raised = findSymbol(catalog, f.type)?.elevation;
@@ -2018,7 +2059,8 @@ export class FloorplanCard extends LitElement {
     if (!standing) this._openingTween.stop();
     const projTransform = planProjectionTransform(frame);
     const dimPad = WALL_THICKNESS + (iso ? frame.wallHeight : 0);
-    const visibleFurniture = active.furniture.filter((f) => isFurnitureVisible(f, renderHass));
+    const effHass = this.hass && renderHass ? { ...this.hass, states: renderHass.states } : (this.hass ?? (renderHass as unknown as HomeAssistant));
+    const visibleFurniture = active.furniture.filter((f) => isFurnitureVisible(f, effHass));
     // One furniture glyph, flat. Drawn on the floor on the flat plan and on
     // top of its block under the isometric view — the same drawing either way.
     // Awnings and curtains at their cover's position (issue #196); every other

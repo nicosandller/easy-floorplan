@@ -476,9 +476,12 @@ furniture:
 
 ### Supported conditions
 
-Furniture visibility supports standard Home Assistant dashboard card condition formats:
+Furniture visibility supports standard Home Assistant condition formats:
 - **`condition: state`**: matches entity state or attribute against `state` or `state_not` (single string or array of values).
 - **`condition: numeric_state`**: compares numerical values against `above` and/or `below` thresholds.
+- **`condition: sun`**: matches sun position (ascending / descending, above / below horizon, or relative to sunrise / sunset).
+- **`condition: device` & cover/door states**: checks device actions and entity verbs (such as `is_open`, `is_closed`, `is_on`, `is_off`, `is_locked`, `is_unlocked`, `is_detected`, etc.).
+- **`condition: zone` / `area` / `location`**: checks presence in a specific area or zone (including person `in_zone` / `not_in_zone`, active room presence, or location matching).
 - **`condition: screen`**: evaluates responsive CSS `media_query` expressions.
 - **`condition: user`**: checks if the current user ID is contained within `users`.
 - **Logical groups**: nest complex logic using `and`, `or`, and `not` condition lists.

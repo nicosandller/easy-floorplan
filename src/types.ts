@@ -1175,17 +1175,17 @@ export type FurnitureType =
  */
 export type SectionalHand = "left" | "right";
 
-/** Base shape for Home Assistant condition rules (Issue #310). */
+/** Base shape for Home Assistant dashboard card visibility conditions (Issue #310). */
 export type VisibilityCondition =
   | StateVisibilityCondition
   | NumericStateVisibilityCondition
-  | TimeVisibilityCondition
+  | ScreenVisibilityCondition
+  | UserVisibilityCondition
   | SunVisibilityCondition
   | ZoneVisibilityCondition
   | LocationVisibilityCondition
-  | ViewColumnsVisibilityCondition
-  | ScreenVisibilityCondition
-  | UserVisibilityCondition
+  | TimeVisibilityCondition
+  | DeviceVisibilityCondition
   | AndVisibilityCondition
   | OrVisibilityCondition
   | NotVisibilityCondition
@@ -1218,87 +1218,36 @@ export interface NumericStateVisibilityCondition {
   attribute?: string;
 }
 
-export interface ThresholdValueConfig {
-  active_choice?: "number" | "entity" | string;
-  number?: number | string;
-  entity?: string;
-  entity_id?: string;
-  unit_of_measurement?: string;
-  [key: string]: unknown;
-}
-
-export interface ThresholdConfig {
-  type?: "above" | "below" | "in_range" | "outside_range" | string;
-  value?: number | string | ThresholdValueConfig;
-  value_min?: number | string | ThresholdValueConfig;
-  value_max?: number | string | ThresholdValueConfig;
-  value_lower?: number | string | ThresholdValueConfig;
-  value_upper?: number | string | ThresholdValueConfig;
-  min?: number | string | ThresholdValueConfig;
-  max?: number | string | ThresholdValueConfig;
-  lower?: number | string | ThresholdValueConfig;
-  upper?: number | string | ThresholdValueConfig;
-  above?: number | string | ThresholdValueConfig;
-  below?: number | string | ThresholdValueConfig;
-  [key: string]: unknown;
-}
-
-export interface EntityTargetVisibilityCondition {
-  condition: string;
-  target?: {
-    entity_id?: string | string[];
-    [key: string]: unknown;
-  };
-  entity?: string;
-  entity_id?: string | string[];
-  options?: {
-    behavior?: "any" | "all";
-    for?: unknown;
-    threshold?: ThresholdConfig;
-    [key: string]: unknown;
-  };
-  threshold?: ThresholdConfig;
-  type?: string;
-  state?: string | string[];
-  state_not?: string | string[];
-  attribute?: string;
-  above?: number | string;
-  below?: number | string;
-  [key: string]: unknown;
-}
-
-export interface TimeVisibilityCondition {
-  condition: "time";
-  after?: string;
-  before?: string;
-  weekdays?: string[];
-}
-
 export interface SunVisibilityCondition {
-  condition: "sun" | "sun.is_above_horizon" | "sun.is_below_horizon" | string;
-  after?: "sunrise" | "sunset" | string;
+  condition: "sun" | "sun.is_above_horizon" | "sun.is_below_horizon" | "sun.is_ascending" | "sun.is_descending" | string;
+  after?: string;
   after_offset?: string | number;
-  before?: "sunrise" | "sunset" | string;
+  before?: string;
   before_offset?: string | number;
+  state?: string;
+  type?: string;
 }
 
 export interface ZoneVisibilityCondition {
-  condition: "zone" | "zone.in_zone" | "zone.not_in_zone" | string;
+  condition: "zone" | "zone.in_zone" | "zone.not_in_zone" | "area" | string;
   entity?: string;
   entity_id?: string | string[];
+  zone?: string | string[];
+  area?: string;
+  area_id?: string;
   target?: {
     entity_id?: string | string[];
     zone?: string | string[];
+    area_id?: string | string[];
     [key: string]: unknown;
   };
-  zone?: string | string[];
   options?: {
     behavior?: "any" | "all";
     zone?: string | string[];
-    for?: unknown;
     [key: string]: unknown;
   };
-  state?: "in_zone" | "not_in_zone" | string;
+  type?: string;
+  state?: string;
 }
 
 export interface LocationVisibilityCondition {
@@ -1307,15 +1256,29 @@ export interface LocationVisibilityCondition {
   away?: boolean;
   target?: {
     entity_id?: string | string[];
+    zone?: string | string[];
     [key: string]: unknown;
   };
-  match_mode?: "any_zone" | "active_zone" | string;
 }
 
-export interface ViewColumnsVisibilityCondition {
-  condition: "view_columns";
-  min?: number;
-  max?: number;
+export interface TimeVisibilityCondition {
+  condition: "time";
+  after?: string;
+  before?: string;
+  weekday?: string | string[];
+  weekdays?: string[];
+}
+
+export interface DeviceVisibilityCondition {
+  condition: "device" | string;
+  device_id?: string;
+  domain?: string;
+  entity_id?: string | string[];
+  type?: string;
+  target?: {
+    entity_id?: string | string[];
+    [key: string]: unknown;
+  };
 }
 
 export interface ScreenVisibilityCondition {
@@ -1330,18 +1293,37 @@ export interface UserVisibilityCondition {
 
 export interface AndVisibilityCondition {
   condition: "and";
-  conditions: VisibilityCondition[];
+  conditions?: VisibilityCondition[];
+  and?: VisibilityCondition[];
 }
 
 export interface OrVisibilityCondition {
   condition: "or";
-  conditions: VisibilityCondition[];
+  conditions?: VisibilityCondition[];
+  or?: VisibilityCondition[];
 }
 
 export interface NotVisibilityCondition {
   condition: "not";
-  conditions: VisibilityCondition[];
+  conditions?: VisibilityCondition[];
+  not?: VisibilityCondition[];
 }
+
+export interface EntityTargetVisibilityCondition {
+  condition: string;
+  target?: {
+    entity_id?: string | string[];
+    [key: string]: unknown;
+  };
+  entity?: string;
+  entity_id?: string | string[];
+  type?: string;
+  state?: string | string[];
+  state_not?: string | string[];
+  options?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
 
 /** A gray furniture/fixture diagram placed on the plan. */
 export interface Furniture {
