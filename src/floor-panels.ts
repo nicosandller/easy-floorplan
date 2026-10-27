@@ -116,7 +116,7 @@ export function resolvePanelMetrics(
       icon,
       unavailable,
     };
-    if (m.showIcon !== undefined || panel.showIcons !== undefined) {
+    if (hideIcon || m.showIcon !== undefined || panel.showIcons !== undefined) {
       ret.showIcon = !hideIcon;
     }
     return ret;

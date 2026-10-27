@@ -254,4 +254,43 @@ describe("floor callout panels in real chromium", () => {
       expect(valEl.scrollWidth).toBeLessThanOrEqual(valEl.clientWidth + 1);
     }
   });
+
+  it("does not render ha-icon when metric has icon: 'none'", async () => {
+    const panel: FloorInfoPanel = {
+      id: "panel_no_icon",
+      x: 300,
+      y: 160,
+      title: "No Icon Panel",
+      metrics: [
+        { entity: "sensor.temp", icon: "none" },
+      ],
+    };
+    const { root } = await mount({ panels: [panel] });
+    const panelEl = root.querySelector<HTMLElement>(".fp-info-panel");
+    expect(panelEl).not.toBeNull();
+    const haIcon = panelEl!.querySelector("ha-icon");
+    expect(haIcon).toBeNull();
+  });
+
+  it("defines animation: none for .fp-panel-status-dot under prefers-reduced-motion: reduce", async () => {
+    const { card } = await mount({
+      panels: [
+        {
+          id: "p1",
+          x: 100,
+          y: 100,
+          metrics: [{ entity: "sensor.temp" }],
+        },
+      ],
+    });
+    const styles = (card.constructor as any).elementStyles || [];
+    const hasReducedRule = styles.some(
+      (s: any) =>
+        typeof s?.cssText === "string" &&
+        s.cssText.includes("prefers-reduced-motion") &&
+        s.cssText.includes(".fp-panel-status-dot") &&
+        s.cssText.includes("animation: none")
+    );
+    expect(hasReducedRule).toBe(true);
+  });
 });

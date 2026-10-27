@@ -116,6 +116,27 @@ describe("resolvePanelMetrics", () => {
     expect(rows.map((r) => r.entity)).toEqual(["sensor.a"]);
   });
 
+  it("hides icon and sets showIcon: false when icon is 'none' or empty string", () => {
+    const panel: FloorInfoPanel = {
+      id: "p_none",
+      x: 0,
+      y: 0,
+      metrics: [
+        { entity: "sensor.temp", icon: "none" },
+        { entity: "sensor.hum", icon: "" },
+      ],
+    };
+    const hass = createMockHass({
+      "sensor.temp": { state: "20", attributes: { icon: "mdi:thermometer" } },
+      "sensor.hum": { state: "50", attributes: { icon: "mdi:water-percent" } },
+    });
+    const rows = resolvePanelMetrics(panel, hass);
+    expect(rows[0]!.icon).toBeUndefined();
+    expect(rows[0]!.showIcon).toBe(false);
+    expect(rows[1]!.icon).toBeUndefined();
+    expect(rows[1]!.showIcon).toBe(false);
+  });
+
   it("reads custom attributes when attribute is configured", () => {
     const panel: FloorInfoPanel = {
       id: "panel_ac",

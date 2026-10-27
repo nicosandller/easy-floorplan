@@ -2261,12 +2261,7 @@ export class FloorplanCard extends LitElement {
         <div class="fp-panel-metrics">
           ${metrics.length
         ? metrics.map((m) => {
-            const mShowIcon =
-              showIcons &&
-              m.showIcon !== false &&
-              m.icon !== "none" &&
-              m.icon !== "" &&
-              (m.icon as any) !== false;
+            const mShowIcon = showIcons && m.showIcon !== false;
             const mIcon = mShowIcon ? (m.icon || this._defaultPanelMetricIcon(m.entity, renderHass)) : undefined;
             const mShowLabel = showLabels && Boolean(m.label);
             const hasLeft = Boolean(mIcon || mShowLabel);
@@ -4392,6 +4387,11 @@ export class FloorplanCard extends LitElement {
       box-shadow: 0 0 6px var(--fp-panel-accent, #00e5ff);
       animation: fp-panel-pulse 2.5s ease-in-out infinite;
       flex-shrink: 0;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .fp-panel-status-dot {
+        animation: none;
+      }
     }
     .fp-panel-metrics {
       display: flex;
