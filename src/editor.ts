@@ -1085,10 +1085,32 @@ export class FloorplanCardEditor extends LitElement {
     if (!el.matches(":popover-open")) {
       try {
         el.showPopover();
+        requestAnimationFrame(() => this._repairPlanStage());
       } catch {
         // Top layer unavailable — the fixed-position styles still apply.
       }
     }
+  }
+
+  /**
+   * Chromium can promote the editor without giving the plan any layout boxes
+   * (issue #401). The stage keeps its size, but under `overlayScale: plan`
+   * (the size container) its SVG and overlay get none, so the canvas is blank
+   * until something rebuilds them. A document rule such as
+   * `[role=dialog] div[style*="height:"] > div` is enough to trigger it, even
+   * one that matches nothing; the LanguageTool extension injects one. Resizing
+   * does not recover it; taking the stage out of layout for one read does.
+   * Only done when the boxes are actually missing, so there is no extra layout
+   * otherwise.
+   */
+  private _repairPlanStage(): void {
+    const stage = this.renderRoot.querySelector<HTMLElement>(".stage.scale-plan");
+    const plan = stage?.firstElementChild;
+    if (!stage || !plan || stage.getBoundingClientRect().width === 0) return;
+    if (plan.getBoundingClientRect().width > 0) return;
+    stage.style.display = "none";
+    void stage.offsetWidth;
+    stage.style.display = "";
   }
 
   /**
