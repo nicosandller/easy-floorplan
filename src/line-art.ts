@@ -105,7 +105,12 @@ export const lineArtStyles = css`
     color: var(--fp-line-ink);
     box-shadow: 0 2px 8px rgba(40, 52, 62, 0.12);
   }
-  .line-art .fp-info-panel.tech {
+  .line-art .fp-info-panel.card {
+    background: #ffffff;
+    border: 1px solid #c3cdd2;
+    box-shadow: 0 2px 8px rgba(40, 52, 62, 0.1);
+  }
+  .line-art .fp-info-panel.hud {
     background: #ffffff;
     border: 1px solid var(--fp-panel-accent, var(--fp-line-ink));
     box-shadow: 0 2px 8px rgba(40, 52, 62, 0.12);
@@ -123,8 +128,15 @@ export const lineArtStyles = css`
   .line-art .fp-panel-header {
     border-bottom: 1px solid #e0e5e8;
   }
-  .line-art .fp-info-panel.tech .fp-panel-header {
+  .line-art .fp-info-panel.hud .fp-panel-header {
     border-bottom: 1px solid var(--fp-panel-accent, var(--fp-line-ink));
+  }
+  .line-art .fp-info-panel.pill .fp-panel-header {
+    border-bottom: none;
+    border-right: 1px solid #e0e5e8;
+  }
+  .line-art .fp-info-panel.pill .fp-panel-metric-row:not(:last-child) {
+    border-right: 1px solid #e0e5e8;
   }
   .line-art .fp-panel-title {
     color: var(--fp-line-ink);

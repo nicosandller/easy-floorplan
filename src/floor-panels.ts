@@ -25,6 +25,7 @@ export interface ResolvedPanelMetric {
   value: string;
   unit: string;
   icon?: string;
+  showIcon?: boolean;
   unavailable: boolean;
 }
 
@@ -45,13 +46,24 @@ export function resolvePanelMetrics(
     const attrs = st?.attributes ?? {};
     const unavailable = !st || st.state === "unavailable" || st.state === "unknown";
 
+    const showLabels = panel.showLabels !== false;
     const label =
-      m.label ?? (attrs.friendly_name as string | undefined) ?? m.entity;
+      !showLabels || m.label === ""
+        ? ""
+        : m.label !== undefined
+          ? m.label
+          : (attrs.friendly_name as string | undefined) ?? m.entity;
 
     const rawAttrUnit = (attrs.unit_of_measurement as string | undefined)?.trim();
     let unit = m.unit !== undefined ? m.unit.trim() : rawAttrUnit ?? "";
 
-    const icon = m.icon ?? (attrs.icon as string | undefined);
+    const hideIcon =
+      panel.showIcons === false ||
+      m.showIcon === false ||
+      m.icon === "none" ||
+      m.icon === "" ||
+      (m.icon as any) === false;
+    const icon = hideIcon ? undefined : (m.icon ?? (attrs.icon as string | undefined));
 
     let valStr = "";
     if (unavailable) {
@@ -95,7 +107,7 @@ export function resolvePanelMetrics(
       }
     }
 
-    return {
+    const ret: ResolvedPanelMetric = {
       entity: m.entity,
       label,
       state: st?.state ?? "unavailable",
@@ -104,6 +116,10 @@ export function resolvePanelMetrics(
       icon,
       unavailable,
     };
+    if (m.showIcon !== undefined || panel.showIcons !== undefined) {
+      ret.showIcon = !hideIcon;
+    }
+    return ret;
   });
 }
 

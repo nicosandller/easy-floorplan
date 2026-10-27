@@ -2594,7 +2594,7 @@ export class FloorplanCardEditor extends LitElement {
       x: this._snap(this._config.width / 2),
       y: this._snap(this._config.height / 2),
       title: "Panel",
-      style: "tech",
+      style: "card",
       // Linked to the room it sits in (or the nearest one), so a new panel
       // gets a leader line straight away.
       targetType: "area",
@@ -6459,7 +6459,7 @@ export class FloorplanCardEditor extends LitElement {
           <span>${p.title || "Telemetry"}</span>
         </div>
         <div class="edit-panel-preview">
-          ${metricCount} ${metricCount === 1 ? "metric" : "metrics"} · ${p.style ?? "tech"}
+          ${metricCount} ${metricCount === 1 ? "metric" : "metrics"} · ${p.style ?? "card"}
         </div>
       </div>
     `;
@@ -7686,16 +7686,59 @@ export class FloorplanCardEditor extends LitElement {
       <div class="row">
         <label>Style</label>
         <select
-          .value=${p.style ?? "tech"}
+          .value=${p.style ?? "card"}
           @change=${(e: Event) =>
             this._updatePanel(p.id, {
-              style: ((e.target as HTMLSelectElement).value || "tech") as FloorInfoPanel["style"],
+              style: ((e.target as HTMLSelectElement).value || "card") as FloorInfoPanel["style"],
             })}
         >
-          <option value="tech">Tech (HUD chamfered)</option>
-          <option value="minimal">Minimal</option>
-          <option value="pill">Pill</option>
+          <option value="card">Card (Home Assistant theme)</option>
+          <option value="minimal">Minimal (Dark translucent)</option>
+          <option value="pill">Pill (Single row)</option>
+          <option value="hud">HUD (Sci-Fi chamfered)</option>
         </select>
+      </div>
+
+      <div class="row wide">
+        <label>
+          <input
+            type="checkbox"
+            .checked=${p.showTitle !== false}
+            @change=${(e: Event) =>
+              this._updatePanel(p.id, {
+                showTitle: (e.target as HTMLInputElement).checked ? undefined : false,
+              })}
+          />
+          Show title header
+        </label>
+      </div>
+
+      <div class="row wide">
+        <label>
+          <input
+            type="checkbox"
+            .checked=${p.showIcons !== false}
+            @change=${(e: Event) =>
+              this._updatePanel(p.id, {
+                showIcons: (e.target as HTMLInputElement).checked ? undefined : false,
+              })}
+          />
+          Show metric icons
+        </label>
+      </div>
+
+      <div class="row wide">
+        <label>
+          <input
+            type="checkbox"
+            .checked=${p.showLabels !== false}
+            @change=${(e: Event) =>
+              this._updatePanel(p.id, {
+                showLabels: (e.target as HTMLInputElement).checked ? undefined : false,
+              })}
+          />
+          Show metric labels
+        </label>
       </div>
 
       ${this._renderColorRow({

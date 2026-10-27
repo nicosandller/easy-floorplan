@@ -47,13 +47,13 @@ afterEach(() => {
 });
 
 describe("floor callout panels in real chromium", () => {
-  it("renders tech callout panel with HUD styling and leader line", async () => {
+  it("renders hud callout panel with HUD styling and leader line", async () => {
     const panel: FloorInfoPanel = {
       id: "panel_1",
       x: 350,
       y: 120,
       title: "Climate Zone",
-      style: "tech",
+      style: "hud",
       color: "#00e5ff",
       anchor: { x: 180, y: 200 },
       showLeaderLine: true,
@@ -65,7 +65,7 @@ describe("floor callout panels in real chromium", () => {
 
     const { root } = await mount({ panels: [panel] });
 
-    const panelEl = root.querySelector<HTMLElement>(".fp-info-panel.tech");
+    const panelEl = root.querySelector<HTMLElement>(".fp-info-panel.hud");
     expect(panelEl).not.toBeNull();
 
     // Verify computed styles in real browser layout
@@ -92,7 +92,8 @@ describe("floor callout panels in real chromium", () => {
   });
 
   it("keeps light text on every dark panel style under a light HA theme", async () => {
-    const panels: FloorInfoPanel[] = (["tech", "minimal", "pill"] as const).map((style, i) => ({
+    const darkStyles = ["hud", "minimal", "pill"] as const;
+    const panels: FloorInfoPanel[] = darkStyles.map((style, i) => ({
       id: `panel_${style}`,
       x: 150 + i * 150,
       y: 150,
@@ -103,12 +104,28 @@ describe("floor callout panels in real chromium", () => {
 
     const { root } = await mount({ panels }, { skin: "pastel" });
 
-    for (const style of ["tech", "minimal", "pill"]) {
+    for (const style of darkStyles) {
       const title = root.querySelector<HTMLElement>(`.fp-info-panel.${style} .fp-panel-title`)!;
       const value = root.querySelector<HTMLElement>(`.fp-info-panel.${style} .fp-panel-metric-value`)!;
       expect(getComputedStyle(title).color, style).toBe("rgb(255, 255, 255)");
       expect(getComputedStyle(value).color, style).toBe("rgb(255, 255, 255)");
     }
+  });
+
+  it("adapts card styled panel to native HA theme variables", async () => {
+    const panel: FloorInfoPanel = {
+      id: "p_card",
+      x: 300,
+      y: 150,
+      title: "Card Panel",
+      style: "card",
+      metrics: [{ entity: "sensor.temp", label: "Temperature" }],
+    };
+    const { root } = await mount({ panels: [panel] });
+    const cardEl = root.querySelector<HTMLElement>(".fp-info-panel.card")!;
+    expect(cardEl).not.toBeNull();
+    const cs = getComputedStyle(cardEl);
+    expect(cs.backgroundColor).toBe("rgb(255, 255, 255)");
   });
 
   it("lets --fp-panel-text and --fp-panel-bg restyle a panel together", async () => {
@@ -127,13 +144,13 @@ describe("floor callout panels in real chromium", () => {
       x: 300,
       y: 150,
       title: "Solar Inverter",
-      style: "tech",
+      style: "hud",
       metrics: [{ entity: "sensor.power", label: "Solar Output" }],
     };
 
     const { root } = await mount({ panels: [panel] }, { appearance: "line-art" });
 
-    const panelEl = root.querySelector<HTMLElement>(".fp-info-panel.tech");
+    const panelEl = root.querySelector<HTMLElement>(".fp-info-panel.hud");
     expect(panelEl).not.toBeNull();
 
     const cs = getComputedStyle(panelEl!);
@@ -180,5 +197,61 @@ describe("floor callout panels in real chromium", () => {
     panelEl.dispatchEvent(new KeyboardEvent("keydown", { key: " ", bubbles: true }));
     await card.updateComplete;
     expect((card as any)._zoomedAreaId).toBeUndefined();
+  });
+
+  it("fits multi-metric pill panels horizontally without cropping text values", async () => {
+    const panel: FloorInfoPanel = {
+      id: "panel_f5nvbzi",
+      x: 300,
+      y: 160,
+      title: "Fixed pill",
+      style: "pill",
+      showLeaderLine: true,
+      metrics: [
+        { entity: "cover.garage_door" },
+        { entity: "cover.hall_window" },
+        { entity: "sensor.outside_temperature" },
+        { entity: "sensor.outside_humidity" },
+      ],
+      targetType: "fixed",
+    };
+
+    const { card, root } = await mount({ panels: [panel] });
+    card.hass = {
+      ...card.hass,
+      states: {
+        ...(card.hass?.states ?? {}),
+        "cover.garage_door": { state: "closed", attributes: { friendly_name: "Garage Door" } },
+        "cover.hall_window": { state: "open", attributes: { friendly_name: "Hall Window" } },
+        "sensor.outside_temperature": { state: "15.6", attributes: { unit_of_measurement: "°C", friendly_name: "Outside Temperature" } },
+        "sensor.outside_humidity": { state: "54", attributes: { unit_of_measurement: "%", friendly_name: "Outside Humidity" } },
+      },
+    } as any;
+    await card.updateComplete;
+
+    const pillEl = root.querySelector<HTMLElement>(".fp-info-panel.pill")!;
+    expect(pillEl).not.toBeNull();
+
+    // Pill width must comfortably fit all metrics without being clamped to 220px or 280px
+    expect(pillEl.clientWidth).toBeGreaterThan(280);
+
+    // No internal clipping: scrollWidth matches clientWidth
+    expect(pillEl.scrollWidth).toBeLessThanOrEqual(pillEl.clientWidth + 1);
+
+    // Check all metric values are present and not truncated
+    const rows = Array.from(pillEl.querySelectorAll<HTMLElement>(".fp-panel-metric-row"));
+    expect(rows.length).toBe(4);
+
+    const values = rows.map((r) => r.querySelector(".fp-panel-metric-value")?.textContent?.trim());
+    expect(values[0]).toBe("closed");
+    expect(values[1]).toBe("open");
+    expect(values[2]).toContain("15.6");
+    expect(values[3]).toContain("54");
+
+    // Every value element must have its full text visible without scroll truncation
+    for (const row of rows) {
+      const valEl = row.querySelector<HTMLElement>(".fp-panel-metric-value")!;
+      expect(valEl.scrollWidth).toBeLessThanOrEqual(valEl.clientWidth + 1);
+    }
   });
 });

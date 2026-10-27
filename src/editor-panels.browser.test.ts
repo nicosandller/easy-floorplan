@@ -41,7 +41,7 @@ function baseConfig(): FloorplanCardConfig {
             title: "Climate HUD",
             targetType: "area",
             targetId: "living_room",
-            style: "tech",
+            style: "hud",
             metrics: [
               { entity: "sensor.temp", label: "Temp", unit: "°C" },
             ],

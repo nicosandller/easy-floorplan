@@ -17,7 +17,7 @@ floors:
       - id: living_room_panel
         targetType: area
         targetId: living_room
-        style: tech
+        style: card
         x: 180
         'y': 140
         title: Living Room
@@ -37,7 +37,7 @@ floors:
       - id: workstation_panel
         targetType: furniture
         targetId: desk_pc
-        style: minimal
+        style: hud
         color: "#ff9100"
         x: 680
         'y': 220
@@ -60,11 +60,14 @@ floors:
 | `x` | `number` | *(required)* | Horizontal center coordinate on the canvas. |
 | `y` | `number` | *(required)* | Vertical center coordinate on the canvas. |
 | `title` | `string` | optional | Header title. Defaults to the linked area name, furniture type, or `Telemetry`. |
-| `style` | `string` | `"tech"` | Visual presentation: `"tech"` (chamfered sci-fi HUD), `"minimal"` (rounded card), or `"pill"` (compact single-row pill). |
+| `style` | `string` | `"card"` | Visual presentation: `"card"` (HA theme card, default), `"minimal"` (rounded dark card), `"pill"` (compact single-row pill), or `"hud"` (chamfered sci-fi HUD). |
 | `color` | `string` | optional | Accent hex/CSS color for borders, leader line, icons, and indicator glow. |
 | `targetType` | `string` | `"floor"` | Spatial anchoring behavior: `"area"`, `"furniture"`, `"roof"`, `"fixed"`, or `"floor"`. |
 | `targetId` | `string` | optional | Target ID of the referenced area, furniture piece, or roof. |
 | `anchor` | `{ x: number, y: number }` | optional | Explicit canvas coordinates for the leader line anchor point (used with `fixed` or as an override). |
+| `showTitle` | `boolean` | `true` | Set to `false` to hide the panel header title row. |
+| `showIcons` | `boolean` | `true` | Set to `false` to hide icons across all metrics in this panel. |
+| `showLabels` | `boolean` | `true` | Set to `false` to hide metric labels / friendly names for clean number-only readouts. |
 | `showLeaderLine` | `boolean` | `true` | Set to `false` to hide the SVG connecting line to the anchor point. |
 | `showIn2D` | `boolean` | `true` | Set to `false` to hide the panel in 2D top-down view. |
 | `showIn3D` | `boolean` | `true` | Set to `false` to hide the panel in 3D perspective / stacked view. |
@@ -79,7 +82,8 @@ floors:
 | `attribute` | `string` | optional | Entity state attribute name to display instead of the primary state value. |
 | `label` | `string` | optional | Row label. Defaults to entity's `friendly_name` or entity ID. |
 | `unit` | `string` | optional | Unit override (e.g., `°C`, `W`, `%`). Defaults to entity `unit_of_measurement`. |
-| `icon` | `string` | optional | MDI icon override (e.g., `mdi:thermometer`). Defaults to entity `icon`. |
+| `icon` | `string` | optional | MDI icon override (e.g., `mdi:thermometer`). Defaults to entity `icon`. Set to `"none"` to hide. |
+| `showIcon` | `boolean` | `true` | Set to `false` to hide the icon for this specific metric row. |
 
 ### Anchor Targets (`targetType`)
 

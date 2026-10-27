@@ -2186,7 +2186,7 @@ export class FloorplanCard extends LitElement {
   ): TemplateResult {
     const { p, d } = this._display(panel.x, panel.y, c, rot, z);
     const accent = cssColor(panel.color);
-    const style = panel.style ?? "tech";
+    const style = panel.style ?? "card";
     const metrics = resolvePanelMetrics(panel, renderHass);
 
     let targetArea: Area | undefined;
@@ -2212,14 +2212,19 @@ export class FloorplanCard extends LitElement {
       targetArea = nearestPanelArea(panel, panelFloor);
     }
 
+    const showTitle =
+      panel.showTitle !== false &&
+      panel.title !== "" &&
+      (panel.title as any) !== false;
     const title =
-      panel.title ||
-      (panel.targetType === "furniture" && panel.targetId
-        ? panelFloor.furniture.find((f) => f.id === panel.targetId)?.type
-        : undefined) ||
-      targetArea?.name ||
-      (panel.targetType === "roof" ? "Roof Telemetry" : undefined) ||
-      "Telemetry";
+      panel.title !== undefined
+        ? panel.title
+        : (panel.targetType === "furniture" && panel.targetId
+          ? panelFloor.furniture.find((f) => f.id === panel.targetId)?.type
+          : undefined) ||
+          targetArea?.name ||
+          (panel.targetType === "roof" ? "Roof Telemetry" : undefined) ||
+          "Telemetry";
 
     const tappable = !!targetArea;
     const onAction = tappable ? () => this._onAreaClick(targetArea!) : undefined;
@@ -2232,6 +2237,9 @@ export class FloorplanCard extends LitElement {
         }
       : undefined;
 
+    const showIcons = panel.showIcons !== false;
+    const showLabels = panel.showLabels !== false;
+
     return html`
       <div
         class="fp-info-panel ${style} ${tappable ? "clickable" : ""}"
@@ -2243,25 +2251,40 @@ export class FloorplanCard extends LitElement {
         @click=${onAction ?? nothing}
         @keydown=${onKeyDown ?? nothing}
       >
-        <div class="fp-panel-header">
-          <span class="fp-panel-title" title=${title}>${title}</span>
-          <span class="fp-panel-status-dot"></span>
-        </div>
+        ${showTitle
+          ? html`
+            <div class="fp-panel-header">
+              <span class="fp-panel-title" title=${title}>${title}</span>
+              <span class="fp-panel-status-dot"></span>
+            </div>`
+          : nothing}
         <div class="fp-panel-metrics">
           ${metrics.length
-        ? metrics.map(
-          (m) => html`
-                  <div class="fp-panel-metric-row">
+        ? metrics.map((m) => {
+            const mShowIcon =
+              showIcons &&
+              m.showIcon !== false &&
+              m.icon !== "none" &&
+              m.icon !== "" &&
+              (m.icon as any) !== false;
+            const mIcon = mShowIcon ? (m.icon || this._defaultPanelMetricIcon(m.entity, renderHass)) : undefined;
+            const mShowLabel = showLabels && Boolean(m.label);
+            const hasLeft = Boolean(mIcon || mShowLabel);
+            return html`
+              <div class="fp-panel-metric-row ${!hasLeft ? "value-only" : ""}">
+                ${hasLeft
+                  ? html`
                     <span class="fp-panel-metric-left">
-                      <ha-icon icon=${m.icon || this._defaultPanelMetricIcon(m.entity, renderHass)}></ha-icon>
-                      <span class="fp-panel-metric-label" title=${m.label}>${m.label}</span>
-                    </span>
-                    <span class="fp-panel-metric-value">
-                      ${m.value}${m.unit ? html`<span class="fp-panel-metric-unit">${m.unit}</span>` : nothing}
-                    </span>
-                  </div>
-                `
-        )
+                      ${mIcon ? html`<ha-icon icon=${mIcon}></ha-icon>` : nothing}
+                      ${mShowLabel ? html`<span class="fp-panel-metric-label" title=${m.label}>${m.label}</span>` : nothing}
+                    </span>`
+                  : nothing}
+                <span class="fp-panel-metric-value ${m.unavailable ? "unavailable" : ""}">
+                  ${m.value}${m.unit ? html`<span class="fp-panel-metric-unit">${m.unit}</span>` : nothing}
+                </span>
+              </div>
+            `;
+          })
         : html`<span style="font-size:10px;opacity:0.6;">No metrics</span>`}
         </div>
       </div>
@@ -4222,6 +4245,8 @@ export class FloorplanCard extends LitElement {
     }
     .fp-info-panel {
       position: absolute;
+      display: flex;
+      flex-direction: column;
       transform: translate(-50%, -50%) scale(var(--fp-inv-zoom, 1));
       transition: transform 0.4s ease, opacity 0.2s ease, box-shadow 0.2s ease;
       pointer-events: auto;
@@ -4232,6 +4257,9 @@ export class FloorplanCard extends LitElement {
          so the text follows the panel, not the theme. Set both together. */
       color: var(--fp-panel-text, #fff);
       font-family: inherit;
+      width: max-content;
+      max-width: 280px;
+      height: auto;
     }
     .fp-info-panel.clickable {
       cursor: pointer;
@@ -4239,7 +4267,25 @@ export class FloorplanCard extends LitElement {
     .fp-info-panel.clickable:hover {
       filter: brightness(1.1);
     }
-    .fp-info-panel.tech {
+    .fp-info-panel.card {
+      background: var(--fp-panel-bg, var(--ha-card-background, var(--card-background-color, #fff)));
+      color: var(--fp-panel-text, var(--primary-text-color, #212121));
+      border: 1px solid var(--fp-panel-border, var(--ha-card-border-color, var(--divider-color, rgba(0, 0, 0, 0.12))));
+      border-radius: var(--ha-card-border-radius, 12px);
+      box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0, 0, 0, 0.12));
+      padding: 8px 12px;
+      min-width: 135px;
+    }
+    .fp-info-panel.minimal {
+      background: var(--fp-panel-bg, rgba(17, 24, 39, 0.88));
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--fp-panel-border, rgba(255, 255, 255, 0.15));
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      padding: 8px 12px;
+      min-width: 130px;
+    }
+    .fp-info-panel.hud {
       background: var(--fp-panel-bg, rgba(9, 23, 38, 0.94));
       border: 1px solid var(--fp-panel-accent, #00e5ff);
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 12px rgba(0, 229, 255, 0.2);
@@ -4256,26 +4302,40 @@ export class FloorplanCard extends LitElement {
       padding: 8px 12px;
       min-width: 140px;
     }
-    .fp-info-panel.minimal {
-      background: var(--fp-panel-bg, rgba(17, 24, 39, 0.88));
-      backdrop-filter: blur(8px);
-      border: 1px solid var(--fp-panel-border, rgba(255, 255, 255, 0.15));
-      border-radius: 8px;
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
-      padding: 8px 12px;
-      min-width: 130px;
-    }
     .fp-info-panel.pill {
       display: inline-flex;
+      flex-direction: row;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
       background: var(--fp-panel-bg, rgba(15, 23, 42, 0.9));
       backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
       border: 1px solid var(--fp-panel-border, var(--fp-panel-accent, rgba(255, 255, 255, 0.15)));
       border-radius: 9999px;
-      padding: 4px 12px;
+      padding: 5px 14px;
       box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
       white-space: nowrap;
+      min-width: 0;
+      width: max-content;
+      max-width: none;
+    }
+    .fp-info-panel.pill .fp-panel-header {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      padding-bottom: 0;
+      margin-bottom: 0;
+      border-bottom: none;
+      border-right: 1px solid var(--fp-panel-border, rgba(255, 255, 255, 0.15));
+      padding-right: 10px;
+      margin-right: 2px;
+      flex-shrink: 0;
+    }
+    .fp-info-panel.pill .fp-panel-title {
+      flex: initial;
+      min-width: 0;
+      max-width: none;
     }
     .fp-panel-header {
       display: flex;
@@ -4285,8 +4345,22 @@ export class FloorplanCard extends LitElement {
       padding-bottom: 4px;
       margin-bottom: 4px;
       border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      min-width: 0;
     }
-    .fp-info-panel.tech .fp-panel-header {
+    .fp-info-panel.card .fp-panel-header {
+      border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
+    }
+    .fp-info-panel.card .fp-panel-title {
+      color: var(--primary-text-color, inherit);
+    }
+    .fp-info-panel.card .fp-panel-metric-label {
+      color: var(--secondary-text-color, inherit);
+      opacity: 0.85;
+    }
+    .fp-info-panel.card .fp-panel-metric-value {
+      color: var(--primary-text-color, inherit);
+    }
+    .fp-info-panel.hud .fp-panel-header {
       border-bottom: 1px solid var(--fp-panel-accent, rgba(0, 229, 255, 0.3));
     }
     .fp-panel-title {
@@ -4297,7 +4371,18 @@ export class FloorplanCard extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      max-width: 160px;
+      flex: 1;
+      min-width: 0;
+    }
+    @keyframes fp-panel-pulse {
+      0%, 100% {
+        transform: scale(1);
+        opacity: 0.95;
+      }
+      50% {
+        transform: scale(1.25);
+        opacity: 0.6;
+      }
     }
     .fp-panel-status-dot {
       width: 6px;
@@ -4305,16 +4390,24 @@ export class FloorplanCard extends LitElement {
       border-radius: 50%;
       background: var(--fp-panel-accent, #00e5ff);
       box-shadow: 0 0 6px var(--fp-panel-accent, #00e5ff);
+      animation: fp-panel-pulse 2.5s ease-in-out infinite;
+      flex-shrink: 0;
     }
     .fp-panel-metrics {
       display: flex;
       flex-direction: column;
       gap: 4px;
+      min-width: 0;
+      max-width: 100%;
     }
     .fp-info-panel.pill .fp-panel-metrics {
+      display: inline-flex;
       flex-direction: row;
       align-items: center;
-      gap: 8px;
+      gap: 10px;
+      min-width: 0;
+      max-width: none;
+      flex-shrink: 0;
     }
     .fp-panel-metric-row {
       display: flex;
@@ -4322,15 +4415,43 @@ export class FloorplanCard extends LitElement {
       justify-content: space-between;
       gap: 8px;
       font-size: 11px;
+      min-width: 0;
+      max-width: 100%;
     }
     .fp-info-panel.pill .fp-panel-metric-row {
-      gap: 4px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      min-width: 0;
+      max-width: none;
+      flex-shrink: 0;
+    }
+    .fp-info-panel.pill .fp-panel-metric-row:not(:last-child) {
+      padding-right: 10px;
+      border-right: 1px solid var(--fp-panel-border, rgba(255, 255, 255, 0.12));
+    }
+    .fp-info-panel.pill .fp-panel-metric-left {
+      flex-shrink: 0;
+      overflow: visible;
+    }
+    .fp-info-panel.pill .fp-panel-metric-label {
+      max-width: none;
+      overflow: visible;
+    }
+    .fp-info-panel.pill .fp-panel-metric-value {
+      max-width: none;
+      overflow: visible;
+      flex-shrink: 0;
+      margin-left: 0;
     }
     .fp-panel-metric-left {
       display: flex;
       align-items: center;
       gap: 4px;
       overflow: hidden;
+      min-width: 0;
+      flex-shrink: 1;
     }
     .fp-panel-metric-left ha-icon {
       --mdc-icon-size: 13px;
@@ -4343,7 +4464,7 @@ export class FloorplanCard extends LitElement {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
-      max-width: 90px;
+      min-width: 0;
     }
     .fp-panel-metric-value {
       font-weight: 600;
@@ -4351,12 +4472,23 @@ export class FloorplanCard extends LitElement {
       font-feature-settings: "tnum";
       white-space: nowrap;
       margin-left: auto;
+      flex-shrink: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 65%;
+    }
+    .fp-panel-metric-value.unavailable {
+      font-weight: 500;
+      opacity: 0.65;
+      font-size: 11px;
+      text-transform: capitalize;
     }
     .fp-panel-metric-unit {
       font-size: 9px;
       font-weight: 500;
       opacity: 0.85;
       margin-left: 2px;
+      white-space: nowrap;
     }
   `,
     lineArtStyles,

@@ -1824,6 +1824,8 @@ export interface FloorInfoPanelMetric {
   attribute?: string;
   icon?: string;
   unit?: string;
+  /** Whether to render the icon for this metric (default: true) */
+  showIcon?: boolean;
 }
 
 /**
@@ -1841,10 +1843,16 @@ export interface FloorInfoPanel {
   anchor?: { x: number; y: number };
   /** Panel display title (defaults to area/furniture/floor name) */
   title?: string;
+  /** Whether to render the title header row (default: true) */
+  showTitle?: boolean;
+  /** Whether to render metric icons across the panel (default: true) */
+  showIcons?: boolean;
+  /** Whether to render metric labels / friendly names (default: true) */
+  showLabels?: boolean;
   /** Theme accent color (e.g. "#00e5ff", "#ff9100", or CSS variable) */
   color?: string;
-  /** Visual style: "tech" (HUD chamfered), "minimal", or "pill" */
-  style?: "tech" | "minimal" | "pill";
+  /** Visual style: "card" (HA theme card, default), "minimal" (dark translucent), "pill" (single row), or "hud" (chamfered sci-fi) */
+  style?: "card" | "minimal" | "pill" | "hud";
   /** Show connecting leader line from anchor to panel (default: true) */
   showLeaderLine?: boolean;
   /** Whether the panel renders in 2D top-down view (default: true) */

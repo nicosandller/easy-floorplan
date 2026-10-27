@@ -403,13 +403,13 @@ describe("computeLeaderLinePath", () => {
 });
 
 describe("Callout Info-Panels & Leader Lines DOM Rendering", () => {
-  it("renders tech info-panel and SVG leader line connected to anchor", async () => {
+  it("renders hud info-panel and SVG leader line connected to anchor", async () => {
     const panel: FloorInfoPanel = {
       id: "panel_living",
       x: 350,
       y: 120,
       title: "Living Room Telemetry",
-      style: "tech",
+      style: "hud",
       color: "#00e5ff",
       anchor: { x: 200, y: 150 },
       showLeaderLine: true,
@@ -448,7 +448,7 @@ describe("Callout Info-Panels & Leader Lines DOM Rendering", () => {
     // Verify HTML Overlay Panel
     const panelEl = root.querySelector<HTMLElement>(".fp-info-panel");
     expect(panelEl).not.toBeNull();
-    expect(panelEl?.classList.contains("tech")).toBe(true);
+    expect(panelEl?.classList.contains("hud")).toBe(true);
     expect(panelEl?.getAttribute("data-panel-id")).toBe("panel_living");
 
     const titleEl = panelEl?.querySelector(".fp-panel-title");
@@ -472,7 +472,15 @@ describe("Callout Info-Panels & Leader Lines DOM Rendering", () => {
     expect(metricRows?.[1]?.querySelector(".fp-panel-metric-unit")?.textContent).toBe("%");
   });
 
-  it("renders minimal and pill styled panels properly", async () => {
+  it("renders card, minimal and pill styled panels properly and defaults to card", async () => {
+    const defaultPanel: FloorInfoPanel = {
+      id: "p_def",
+      x: 50,
+      y: 50,
+      title: "Card Default",
+      showLeaderLine: false,
+      metrics: [{ entity: "sensor.temp", label: "T" }],
+    };
     const minimalPanel: FloorInfoPanel = {
       id: "p_min",
       x: 100,
@@ -494,13 +502,16 @@ describe("Callout Info-Panels & Leader Lines DOM Rendering", () => {
 
     const floor: Floor = {
       ...makeFloor("Main Floor"),
-      panels: [minimalPanel, pillPanel],
+      panels: [defaultPanel, minimalPanel, pillPanel],
     };
 
     const { root } = await mountCard(
       { floors: [floor] },
       { "sensor.temp": { state: "21", attributes: { unit_of_measurement: "°C" } } }
     );
+
+    const defEl = root.querySelector<HTMLElement>('.fp-info-panel[data-panel-id="p_def"]');
+    expect(defEl?.classList.contains("card")).toBe(true);
 
     const minEl = root.querySelector<HTMLElement>('.fp-info-panel[data-panel-id="p_min"]');
     expect(minEl?.classList.contains("minimal")).toBe(true);
@@ -511,6 +522,32 @@ describe("Callout Info-Panels & Leader Lines DOM Rendering", () => {
     // No leader lines rendered since showLeaderLine is false
     const leaders = root.querySelectorAll(".fp-panel-leader");
     expect(leaders.length).toBe(0);
+  });
+
+  it("respects showTitle, showIcons, and showLabels toggles", async () => {
+    const panel: FloorInfoPanel = {
+      id: "p_clean",
+      x: 100,
+      y: 100,
+      title: "Header",
+      showTitle: false,
+      showIcons: false,
+      showLabels: false,
+      metrics: [{ entity: "sensor.temp", label: "Temperature" }],
+    };
+    const floor: Floor = {
+      ...makeFloor("Main Floor"),
+      panels: [panel],
+    };
+    const { root } = await mountCard(
+      { floors: [floor] },
+      { "sensor.temp": { state: "21", attributes: { unit_of_measurement: "°C" } } }
+    );
+    const panelEl = root.querySelector<HTMLElement>('.fp-info-panel[data-panel-id="p_clean"]')!;
+    expect(panelEl.querySelector(".fp-panel-header")).toBeNull();
+    expect(panelEl.querySelector("ha-icon")).toBeNull();
+    expect(panelEl.querySelector(".fp-panel-metric-label")).toBeNull();
+    expect(panelEl.querySelector(".fp-panel-metric-value")?.textContent).toContain("21");
   });
 
   it("links panel to room zoom when linked to an area", async () => {
