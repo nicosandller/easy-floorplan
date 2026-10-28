@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The plan no longer collapses to nothing on Chrome 129-era WebViews, such as the
+  Sonoff NSPanel Pro's, where the container query the card fits the plan with reads
+  a height of 0. The card notices and fits the plan from the stage's measured height
+  instead (#406).
 - Awnings and curtains (#196): an `awning` or `curtain` bound to a `cover` is drawn at
   the cover's position, with `w × h` as its fully extended size. A curtain gathers at
   the end `hand` picks, or at both ends with `hand: center`. Symbols can opt in with

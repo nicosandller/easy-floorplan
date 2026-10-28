@@ -318,6 +318,9 @@ export class FloorplanCard extends LitElement {
   private _autoResize?: ResizeObserver;
   /** The `.plan` element `_autoResize` is watching. */
   private _autoResizeTarget?: HTMLElement;
+  /** Watches `.stage` for engines whose `100cqh` reads 0 (issue #406); see `_watchPlanFit`. */
+  private _fitResize?: ResizeObserver;
+  private _fitTarget?: Element;
   /**
    * Entities the floor summaries find through linked HA areas and floors
    * (issue #234), per floor id. Read from the HA registries, so recomputed
@@ -561,6 +564,7 @@ export class FloorplanCard extends LitElement {
 
   protected updated(changed: PropertyValues): void {
     super.updated(changed);
+    this._watchPlanFit();
     this._syncAutoLabels();
     if (changed.has("hass") || changed.has("_activeFloorId")) {
       this._syncHistoryServiceContext();
@@ -693,6 +697,45 @@ export class FloorplanCard extends LitElement {
     if (!changed) return;
     for (const [k, side] of sides) this._autoSides.set(k, side);
     this.requestUpdate();
+  }
+
+  /**
+   * The plan's width reads the stage's height as `100cqh`. Some engines report
+   * 0 for it while the stage itself is laid out correctly: Chrome 129's WebView
+   * does when the stage's height comes only from its aspect-ratio (issue #406),
+   * and the plan collapses to nothing. Engines without the unit at all are the
+   * stylesheet's `width: 100%` fallback (#339) and never get here.
+   *
+   * So the stage is watched, and once it has a size but the plan has none, the
+   * card switches to the stage's measured height (`fit-measured`, `--fp-stage-h`
+   * on the host, which nothing of ours re-renders). Every other browser keeps
+   * the container query and only pays for the observer. Called on every
+   * update, but reads layout only when the stage element is new.
+   */
+  private _watchPlanFit(): void {
+    const stage = this.renderRoot.querySelector(".stage");
+    if (stage === this._fitTarget || typeof ResizeObserver === "undefined") return;
+    const fit = (el: Element, width: number, height: number) => {
+      if (!this.hasAttribute("fit-measured")) {
+        const plan = el.querySelector(":scope > .plan");
+        if (!plan || !(width > 0 && height > 0) || plan.getBoundingClientRect().width > 0) return;
+        this.setAttribute("fit-measured", "");
+      }
+      this.style.setProperty("--fp-stage-h", `${height}px`);
+    };
+    this._fitResize ??= new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      fit(entry.target, entry.contentRect.width, entry.contentRect.height);
+    });
+    if (this._fitTarget) this._fitResize.unobserve(this._fitTarget);
+    this._fitTarget = stage ?? undefined;
+    if (!stage) return;
+    // Checked once now as well, so a new stage is right in its first frame
+    // rather than after the observer's first report. The used size, unrounded
+    // and untransformed, as the observer reports it.
+    const size = getComputedStyle(stage);
+    fit(stage, parseFloat(size.width), parseFloat(size.height));
+    this._fitResize.observe(stage);
   }
 
   /** A zoom-to-room transition has landed: measure again at its final scale. */
@@ -843,6 +886,9 @@ export class FloorplanCard extends LitElement {
     this._autoResize?.disconnect();
     this._autoResize = undefined;
     this._autoResizeTarget = undefined;
+    this._fitResize?.disconnect();
+    this._fitResize = undefined;
+    this._fitTarget = undefined;
     // Not connected any more, so this stops it.
     this._syncMoonClock();
     super.disconnectedCallback();
@@ -2286,6 +2332,7 @@ export class FloorplanCard extends LitElement {
             style="aspect-ratio: ${dims.w} / ${dims.h};
                    width: min(100%, calc(100cqh * ${dims.w} / ${dims.h}));
                    --fp-plan-w: ${dims.w};
+                   --fp-plan-h: ${dims.h};
                    --fp-wall-opacity: ${lineArt ? 1 : normalizeWallOpacity(c.wallOpacity)};
                    ${minW === undefined ? "" : `--fp-min-w: ${minW}px;`}
                    background:${lineArt ? "#fff" : cssColorOr(c.background, SKIN_PAPER)};"
@@ -2829,6 +2876,11 @@ export class FloorplanCard extends LitElement {
          positioned children, auto width collapses the plan to zero (#339). */
       width: 100%;
       height: auto;
+    }
+    /* 100cqh read 0 on this engine (issue #406): the same fit, from the
+       stage's measured height. !important to beat the inline width. */
+    :host([fit-measured]) .plan {
+      width: min(100%, calc(var(--fp-stage-h) * var(--fp-plan-w) / var(--fp-plan-h))) !important;
     }
     /*
      * overlayScale: plan. The container is .plan, not .stage: since #115 the
