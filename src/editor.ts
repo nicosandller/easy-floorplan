@@ -626,6 +626,9 @@ export class FloorplanCardEditor extends LitElement {
   @query("svg") private _svg?: SVGSVGElement;
   @query(".canvas-wrap") private _canvasWrap?: HTMLElement;
   private _canvasResize?: ResizeObserver;
+  /** Measures the stage for `overlayScale: plan`; see `_observeStage`. */
+  private _stageResize?: ResizeObserver;
+  private _observedStage?: Element;
   @state() private _fitToViewport = true;
   /** Last observed/editor-driven pan; viewport changes can clamp it without user input. */
   private _canvasScroll?: { left: number; top: number; width: number; height: number };
@@ -796,6 +799,8 @@ export class FloorplanCardEditor extends LitElement {
   public disconnectedCallback(): void {
     this._numberDraft = undefined;
     this._canvasResize?.disconnect();
+    this._stageResize?.disconnect();
+    this._observedStage = undefined;
     window.removeEventListener("keydown", this._onKeyDown, true);
     this.removeEventListener("keydown", this._onHostKeyDown);
     window.removeEventListener("focusin", this._onFocusIn);
@@ -1158,8 +1163,36 @@ export class FloorplanCardEditor extends LitElement {
    * hides the popover on its own. Browsers without the API keep the fixed
    * fallback, which is already correct on the mobile dialog (transform: none).
    */
+  /**
+   * `overlayScale: plan` needs the stage's width on screen. The card reads it
+   * with a container query; the editor measures it instead and hands it to the
+   * overlay as `--fp-sw`. A container here went blank in the expanded editor
+   * (issue #401): with the editor in the top layer, a document rule such as
+   * `[role=dialog] div[style*="height:"] > div` (LanguageTool and Kaspersky
+   * inject rules like it) left everything inside the container without layout
+   * boxes. Moving the container only moved the blank.
+   */
+  private _observeStage(): void {
+    const stage = this.renderRoot.querySelector(".stage");
+    if (stage === this._observedStage || typeof ResizeObserver === "undefined") return;
+    const setWidth = (el: Element, width: number) =>
+      el.querySelector<HTMLElement>(":scope > .items")?.style.setProperty("--fp-sw", `${width}px`);
+    this._stageResize ??= new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      setWidth(entry.target, entry.contentRect.width);
+    });
+    if (this._observedStage) this._stageResize.unobserve(this._observedStage);
+    this._observedStage = stage ?? undefined;
+    if (!stage) return;
+    // The observer reports after this render's layout; measure once now so the
+    // first frame already has the unit rather than the 1px fallback.
+    setWidth(stage, stage.getBoundingClientRect().width);
+    this._stageResize.observe(stage);
+  }
+
   protected updated(): void {
     this._syncAutoLabels();
+    this._observeStage();
     // Re-asserted on every render while fullscreen (not just the transition):
     // idempotent via :popover-open, and it self-heals if the browser
     // force-hid the popover, e.g. across a disconnect/reconnect.
@@ -5238,10 +5271,10 @@ export class FloorplanCardEditor extends LitElement {
           @scroll=${this._onCanvasScroll}
         >
           <!-- The stage doubles as the card's .plan box for overlay sizing: same
-               container query, same --fp-u, so a badge measured in canvas units
-               previews here at the size a card of this width would draw it
-               (issue #192). The editor never rotates the plan, so the canvas
-               width is what 100cqw measures against. -->
+               --fp-u, so a badge measured in canvas units previews here at the
+               size a card of this width would draw it (issue #192). The editor
+               never rotates the plan, so the stage's measured width is the
+               plan's. -->
           <div class="stage ${overlay === "plan" ? "scale-plan" : ""}"
                style="aspect-ratio: ${cssNumber(c.width, DEFAULT_WIDTH)} / ${cssNumber(
             c.height, DEFAULT_HEIGHT)}; width:${this._zoom * 100}%;
@@ -8966,53 +8999,25 @@ export class FloorplanCardEditor extends LitElement {
       pointer-events: none;
     }
     /*
-     * overlayScale: plan, previewed (issue #192). The same two lines the card
-     * uses, on the box that plays the same part: the stage carries the canvas
-     * ratio, so 100cqw is the plan's own width on screen and --fp-u is one
-     * canvas unit. Declared on .items rather than .stage for the reason the
-     * card documents — an unregistered custom property substitutes as a token
-     * stream, so the cqw resolves where it is used, which stays correct if
-     * --fp-u is ever registered with @property.
+     * overlayScale: plan, previewed (issue #192). The same unit the card uses,
+     * on the box that plays the same part: the stage carries the canvas ratio,
+     * so its width is the plan's own width on screen and --fp-u is one canvas
+     * unit. The card reads that width with a container query; the editor
+     * measures it (--fp-sw, set by _observeStage) because a container inside
+     * the expanded editor can lose its layout (issue #401).
      *
      * Zoom falls out of it rather than needing a term of its own: the stage's
-     * width is a percentage of the zoom, so zooming in widens the container and
+     * width is a percentage of the zoom, so zooming in widens the stage and
      * every canvas-unit measure grows with the drawing — which is the mode.
-     */
-    .stage.scale-plan {
-      container-type: inline-size;
-    }
-    /*
-     * The unit itself, declared twice on purpose.
      *
-     * The fallback in var(--fp-u, 1px) is not the safety net it looks like: it
-     * fires when the property is *unset*, never when its value fails to
-     * resolve. A browser with no container queries parses the calc quite
-     * happily -- a custom property takes almost any token stream -- and then
-     * every property using it is invalid at computed-value time, so each falls
-     * back to its own initial value. Width becomes auto, and a badge collapses
-     * to its borders: about 3px, with its label landing on top of it because
-     * the item's box collapsed with it.
-     *
-     * So the plain value is declared first, and the container-query one only
-     * where it can actually be computed. One pixel per canvas unit is exactly
-     * what overlayScale fixed draws, which is the right thing to degrade to: a
-     * plan that looks like it did before canvas units existed, rather than one
-     * with 3px badges.
-     *
-     * The guard tests the unit as well as the property, because they are two
-     * features and only one of them is what the declaration is made of. A
-     * browser with container-type but no cqw would pass a check for the
-     * property and then fail on the value, which is the exact collapse this is
-     * here to stop. Test what is actually used; it costs one more clause.
+     * Until the first measurement, --fp-sw falls back to the plan's own width
+     * in pixels, so a unit is 1px: exactly what overlayScale fixed draws.
+     * overlayMinWidth clamps the unit exactly as the card does.
      */
     .stage.scale-plan .items {
-      --fp-u: 1px;
-    }
-    @supports (container-type: inline-size) and (width: 1cqw) {
-      .stage.scale-plan .items {
-        /* overlayMinWidth clamps the unit exactly as the card does. */
-        --fp-u: calc(max(100cqw, var(--fp-min-w, 0px)) / var(--fp-plan-w));
-      }
+      --fp-u: calc(
+        max(var(--fp-sw, calc(var(--fp-plan-w) * 1px)), var(--fp-min-w, 0px)) / var(--fp-plan-w)
+      );
     }
     /* Label padding and offsets go to em so they track the text with the plan,
        exactly as the card's own scale-plan rules do. Hairlines stay px on
