@@ -1811,6 +1811,67 @@ export interface Floor {
   roofs?: Roof[];
   /** Summary metrics configuration for this floor (issue #234). */
   summary?: FloorSummaryConfig;
+  /** Info / telemetry callout panels on this floor. */
+  panels?: FloorInfoPanel[];
+}
+
+/**
+ * Metric row inside an info panel.
+ */
+export interface FloorInfoPanelMetric {
+  entity: string;
+  label?: string;
+  attribute?: string;
+  icon?: string;
+  unit?: string;
+  /** Whether to render the icon for this metric (default: true) */
+  showIcon?: boolean;
+}
+
+/**
+ * Callout Info-Panel / HUD card placed on the floor.
+ */
+export interface FloorInfoPanel {
+  id: string;
+  x: number;
+  y: number;
+  /** Target link type: unanchored floor card, specific area, furniture piece, roof, or free coordinate */
+  targetType?: "floor" | "area" | "furniture" | "roof" | "fixed";
+  /** ID of the linked Area, Furniture, or Roof item */
+  targetId?: string;
+  /** Anchor point coordinate on the plan (defaults to area/furniture center) */
+  anchor?: { x: number; y: number };
+  /** Panel display title (defaults to area/furniture/floor name) */
+  title?: string;
+  /** Whether to render the title header row (default: true) */
+  showTitle?: boolean;
+  /** Whether to render metric icons across the panel (default: true) */
+  showIcons?: boolean;
+  /** Whether to render metric labels / friendly names (default: true) */
+  showLabels?: boolean;
+  /** Theme accent color (e.g. "#00e5ff", "#ff9100", or CSS variable) */
+  color?: string;
+  /** Visual style: "card" (HA theme card, default), "minimal" (dark translucent), "pill" (single row), or "hud" (chamfered sci-fi) */
+  style?: "card" | "minimal" | "pill" | "hud";
+  /** Show connecting leader line from anchor to panel (default: true) */
+  showLeaderLine?: boolean;
+  /** Whether the panel renders in 2D top-down view (default: true) */
+  showIn2D?: boolean;
+  /** Whether the panel renders in 3D perspective / stacked view (default: true) */
+  showIn3D?: boolean;
+  /**
+   * Only show when the room this panel belongs to is zoomed into (issue #222).
+   * Keeps the full-plan view uncluttered while giving rich telemetry on room focus.
+   */
+  showOnlyWhenZoomed?: boolean;
+  /** Telemetry metrics / entity rows to display */
+  metrics?: FloorInfoPanelMetric[];
+}
+
+/** Return the callout panels defined on a floor. */
+export function floorPanels(f: Floor | undefined): FloorInfoPanel[] {
+  if (!f) return [];
+  return f.panels ?? [];
 }
 
 /** Card-level floor summary configuration (issue #234). */
@@ -2336,6 +2397,8 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   roofs?: Roof[];
   /** Floor summary configuration (issue #234). */
   floorSummary?: FloorSummaryCardConfig;
+  /** Info / telemetry callout panels. */
+  panels?: FloorInfoPanel[];
   /**
    * Symbols this plan defines for itself (issue #90), keyed by id and merged
    * over the shipped `furniture/` library — so you can draw a piece nobody has

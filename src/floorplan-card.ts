@@ -17,7 +17,15 @@ import type {
   Wall,
   Roof,
   AreaPoint,
+  FloorInfoPanel,
 } from "./types";
+import { floorPanels } from "./types";
+import {
+  nearestPanelArea,
+  resolvePanelAnchor,
+  computeLeaderLinePath,
+  resolvePanelMetrics,
+} from "./floor-panels";
 import {
   computeFloorSummary,
   floorHaEntityIds,
@@ -975,11 +983,12 @@ export class FloorplanCard extends LitElement {
     x: number,
     y: number,
     c: FloorplanCardConfig,
-    rot: number
+    rot: number,
+    z = 0
   ): { p: { x: number; y: number }; d: { w: number; h: number } } {
     const f = this._frame(c, rot);
     const r = rotatePlanPoint(x, y, c.width, c.height, rot);
-    return { p: projectPlanPoint(r.x, r.y, f), d: projectedCanvasSize(f) };
+    return { p: projectPlanPoint(r.x, r.y, f, z), d: projectedCanvasSize(f) };
   }
 
   /** A screen-space direction out of the rotated frame, turned by the projection as well. */
@@ -1101,14 +1110,7 @@ export class FloorplanCard extends LitElement {
       const unzoomedRoofs = (roofs: readonly Roof[], allAreas: readonly Area[]) => {
         if (!this._zoomedAreaId) return roofs;
         const zoomedArea = allAreas.find((a) => a.id === this._zoomedAreaId);
-        return roofs.filter((r) => {
-          if (r.id === this._zoomedAreaId) return false;
-          if (zoomedArea && zoomedArea.points && zoomedArea.points.length >= 3) {
-            const c = polygonCentroid(zoomedArea.points);
-            if (c && pointInPolygon(r.points, c.x, c.y)) return false;
-          }
-          return true;
-        });
+        return roofs.filter((r) => this._isRoofVisible(r, zoomedArea));
       };
       const floors = getFloors(c);
       const hassSource = renderHass ?? this.hass;
@@ -1983,6 +1985,307 @@ export class FloorplanCard extends LitElement {
     `;
   }
 
+  private _defaultPanelMetricIcon(entityId?: string, renderHass?: RenderHass): string {
+    if (!entityId) return "mdi:gauge";
+    const st = renderHass?.states[entityId];
+    const dc = st?.attributes?.device_class;
+    if (dc === "temperature") return "mdi:thermometer";
+    if (dc === "humidity") return "mdi:water-percent";
+    if (dc === "power" || dc === "energy") return "mdi:flash";
+    if (dc === "motion" || dc === "occupancy" || dc === "presence") return "mdi:motion-sensor";
+    if (dc === "door" || dc === "window" || dc === "garage_door") return "mdi:window-closed";
+    if (dc === "battery") return "mdi:battery";
+
+    const domain = entityId.split(".")[0];
+    if (domain === "climate") return "mdi:thermometer";
+    if (domain === "light") return "mdi:lightbulb";
+    if (domain === "switch") return "mdi:power";
+    if (domain === "cover") return "mdi:window-closed";
+    if (domain === "person") return "mdi:account";
+    return "mdi:gauge";
+  }
+
+  private _isPanelVisible(
+    panel: FloorInfoPanel,
+    iso: boolean,
+    zoomedArea: Area | undefined
+  ): boolean {
+    if (iso ? panel.showIn3D === false : panel.showIn2D === false) {
+      return false;
+    }
+    if (panel.showOnlyWhenZoomed) {
+      if (!zoomedArea) return false;
+      if (panel.targetId && panel.targetId === zoomedArea.id) return true;
+      return pointInPolygon(zoomedArea.points, panel.x, panel.y);
+    }
+    return true;
+  }
+
+  private _isRoofVisible(
+    roof: Roof,
+    zoomedArea: Area | undefined
+  ): boolean {
+    if (!zoomedArea) return true;
+    if (roof.id === zoomedArea.id) return false;
+    if (zoomedArea.points && zoomedArea.points.length >= 3) {
+      const c = polygonCentroid(zoomedArea.points);
+      if (c && pointInPolygon(roof.points, c.x, c.y)) return false;
+    }
+    return true;
+  }
+
+  private _isRoofPanel(panel: FloorInfoPanel, floor: Floor): boolean {
+    if (panel.targetType === "roof") return true;
+    if (panel.targetId && (floor.roofs ?? []).some((r) => r.id === panel.targetId)) return true;
+    return false;
+  }
+
+  private _visibleFloorPanels(
+    active: Floor,
+    c: FloorplanCardConfig,
+    iso: boolean,
+    zoomedArea: Area | undefined,
+    renderHass?: RenderHass
+  ): Array<{ panel: FloorInfoPanel; floor: Floor; z: number }> {
+    const result: Array<{ panel: FloorInfoPanel; floor: Floor; z: number }> = [];
+    // Called on every render: a plan with no panels anywhere returns before
+    // the floor and level lookups below. Read off the raw config, since
+    // getFloors itself normalises every floor.
+    const anyPanels = c.floors?.length
+      ? c.floors.some((f) => floorPanels(f).length > 0)
+      : (c.panels?.length ?? 0) > 0;
+    if (!anyPanels) return result;
+
+    const isOutside3D = !!(active.isOutdoor && iso);
+
+    // 1. Panels on the active floor
+    for (const p of floorPanels(active)) {
+      const isRoof = this._isRoofPanel(p, active);
+      if (isRoof) {
+        // A roof panel should not be visible in 2D or regular 3D rendering.
+        // Show it only when we render outside 3D house rendering and that roof is visible.
+        if (!isOutside3D) continue;
+        const targetRoof = (active.roofs ?? []).find((rf) => rf.id === p.targetId) ??
+          (active.roofs ?? []).find((rf) => pointInPolygon(rf.points, p.x, p.y)) ??
+          active.roofs?.[0];
+        if (!targetRoof || !this._isRoofVisible(targetRoof, zoomedArea)) continue;
+      }
+      if (this._isPanelVisible(p, iso, zoomedArea)) {
+        let z = 0;
+        if (iso && isRoof) {
+          const r = (active.roofs ?? []).find((rf) => rf.id === p.targetId) ?? active.roofs?.[0];
+          const baseWallHeight = normalizeWallHeight(c.wallHeight);
+          z = baseWallHeight + (r?.height ?? 30) * 0.5;
+        }
+        result.push({ panel: p, floor: active, z });
+      }
+    }
+
+    // 2. If active is outdoor and 3D view: include roof panels from stacked indoor floors!
+    if (isOutside3D) {
+      const floors = getFloors(c);
+      const hassSource = renderHass ?? this.hass;
+      const baseLevel = resolveFloorLevel(active, floors, hassSource);
+      const indoorFloors = floors.filter((f) => !f.isOutdoor);
+      const baseWallHeight = normalizeWallHeight(c.wallHeight);
+      const outdoorWallHeight = baseWallHeight * OUTDOOR_WALL_HEIGHT_MULTIPLIER;
+
+      for (const f of indoorFloors) {
+        const lvl = resolveFloorLevel(f, floors, hassSource);
+        const zOffset = (lvl - baseLevel) * outdoorWallHeight;
+
+        for (const p of floorPanels(f)) {
+          const isRoof = this._isRoofPanel(p, f);
+          if (!isRoof) continue;
+          const targetRoof = (f.roofs ?? []).find((rf) => rf.id === p.targetId) ??
+            (f.roofs ?? []).find((rf) => pointInPolygon(rf.points, p.x, p.y)) ??
+            f.roofs?.[0];
+          if (!targetRoof || !this._isRoofVisible(targetRoof, zoomedArea)) continue;
+
+          if (this._isPanelVisible(p, iso, zoomedArea)) {
+            const roofHeight = (targetRoof.height ?? 30) * OUTDOOR_WALL_HEIGHT_MULTIPLIER;
+            const z = zOffset + outdoorWallHeight + roofHeight * 0.5;
+            result.push({ panel: p, floor: f, z });
+          }
+        }
+      }
+    }
+
+    return result;
+  }
+
+  private _renderPanelLeaderLines(
+    list: Array<{ panel: FloorInfoPanel; floor: Floor; z: number }>
+  ): TemplateResult {
+    const withLines = list.filter((item) => item.panel.showLeaderLine !== false);
+    if (!withLines.length) return svg`${nothing}`;
+
+    return svg`
+      <g class="fp-panel-leader-lines">
+        ${withLines.map(({ panel: p, floor }) => {
+      const anchor = resolvePanelAnchor(p, floor);
+      if (!anchor) return nothing;
+      const color = cssColor(p.color) ?? "var(--fp-panel-accent, var(--fp-skin-accent, var(--primary-color, #03a9f4)))";
+      const d = computeLeaderLinePath(anchor, { x: p.x, y: p.y });
+      return svg`
+            <g class="fp-panel-leader" data-panel-id=${p.id}>
+              <circle cx=${anchor.x} cy=${anchor.y} r="3.5" class="fp-panel-anchor-ring" fill=${color} stroke=${color} stroke-width="1.2" fill-opacity="0.25" />
+              <circle cx=${anchor.x} cy=${anchor.y} r="1" class="fp-panel-anchor-dot" fill="#ffffff" />
+              <path d=${d} class="fp-panel-leader-line" stroke=${color} stroke-width="1.4" fill="none" />
+              <circle cx=${p.x} cy=${p.y} r="2.5" class="fp-panel-target-dot" fill=${color} />
+            </g>
+          `;
+    })}
+      </g>
+    `;
+  }
+
+  private _renderIsoPanelLeaderLines(
+    list: Array<{ panel: FloorInfoPanel; floor: Floor; z: number }>,
+    c: FloorplanCardConfig,
+    rot: number
+  ): TemplateResult {
+    const withLines = list.filter((item) => item.panel.showLeaderLine !== false);
+    if (!withLines.length) return svg`${nothing}`;
+
+    const frame = this._frame(c, rot);
+    const map = (x: number, y: number) => rotatePlanPoint(x, y, c.width, c.height, rot);
+
+    return svg`
+      <g class="fp-panel-leader-lines fp-iso-leader-lines">
+        ${withLines.map(({ panel: p, floor, z }) => {
+      const anchor = resolvePanelAnchor(p, floor);
+      if (!anchor) return nothing;
+      const rAnchor = map(anchor.x, anchor.y);
+      const rPanel = map(p.x, p.y);
+      const pAnchor = projectPlanPoint(rAnchor.x, rAnchor.y, frame, z);
+      const pPanel = projectPlanPoint(rPanel.x, rPanel.y, frame, z);
+      const color = cssColor(p.color) ?? "var(--fp-panel-accent, var(--fp-skin-accent, var(--primary-color, #03a9f4)))";
+      const d = computeLeaderLinePath(pAnchor, pPanel);
+      return svg`
+            <g class="fp-panel-leader" data-panel-id=${p.id}>
+              <circle cx=${pAnchor.x} cy=${pAnchor.y} r="3.5" class="fp-panel-anchor-ring" fill=${color} stroke=${color} stroke-width="1.2" fill-opacity="0.25" />
+              <circle cx=${pAnchor.x} cy=${pAnchor.y} r="1" class="fp-panel-anchor-dot" fill="#ffffff" />
+              <path d=${d} class="fp-panel-leader-line" stroke=${color} stroke-width="1.4" fill="none" />
+              <circle cx=${pPanel.x} cy=${pPanel.y} r="2.5" class="fp-panel-target-dot" fill=${color} />
+            </g>
+          `;
+    })}
+      </g>
+    `;
+  }
+
+  private _renderInfoPanel(
+    panel: FloorInfoPanel,
+    panelFloor: Floor,
+    c: FloorplanCardConfig,
+    rot: number,
+    _scale: OverlayScale,
+    renderHass: RenderHass | undefined,
+    z = 0
+  ): TemplateResult {
+    const { p, d } = this._display(panel.x, panel.y, c, rot, z);
+    const accent = cssColor(panel.color);
+    const style = panel.style ?? "card";
+    const metrics = resolvePanelMetrics(panel, renderHass);
+
+    let targetArea: Area | undefined;
+    if (panel.targetId) {
+      targetArea = (panelFloor.areas ?? []).find((a) => a.id === panel.targetId);
+      if (!targetArea) {
+        const roof = (panelFloor.roofs ?? []).find((r) => r.id === panel.targetId);
+        if (roof && roof.points && roof.points.length >= 3) {
+          const rc = polygonCentroid(roof.points);
+          if (rc) {
+            targetArea = (panelFloor.areas ?? []).find((a) => pointInPolygon(a.points, rc.x, rc.y));
+          }
+        }
+      }
+      if (!targetArea && panel.targetType === "furniture") {
+        const furn = (panelFloor.furniture ?? []).find((f) => f.id === panel.targetId);
+        if (furn) {
+          targetArea = (panelFloor.areas ?? []).find((a) => pointInPolygon(a.points, furn.x, furn.y));
+        }
+      }
+    }
+    if (!targetArea && panel.targetType === "area") {
+      targetArea = nearestPanelArea(panel, panelFloor);
+    }
+
+    const showTitle =
+      panel.showTitle !== false &&
+      panel.title !== "" &&
+      (panel.title as any) !== false;
+    const title =
+      panel.title !== undefined
+        ? panel.title
+        : (panel.targetType === "furniture" && panel.targetId
+          ? panelFloor.furniture.find((f) => f.id === panel.targetId)?.type
+          : undefined) ||
+          targetArea?.name ||
+          (panel.targetType === "roof" ? "Roof Telemetry" : undefined) ||
+          "Telemetry";
+
+    const tappable = !!targetArea;
+    const onAction = tappable ? () => this._onAreaClick(targetArea!) : undefined;
+    const onKeyDown = tappable
+      ? (e: KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            this._onAreaClick(targetArea!);
+          }
+        }
+      : undefined;
+
+    const showIcons = panel.showIcons !== false;
+    const showLabels = panel.showLabels !== false;
+
+    return html`
+      <div
+        class="fp-info-panel ${style} ${tappable ? "clickable" : ""}"
+        data-panel-id=${panel.id}
+        role=${tappable ? "button" : nothing}
+        tabindex=${tappable ? "0" : nothing}
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${accent ? `--fp-panel-accent:${accent};` : ""
+      }"
+        @click=${onAction ?? nothing}
+        @keydown=${onKeyDown ?? nothing}
+      >
+        ${showTitle
+          ? html`
+            <div class="fp-panel-header">
+              <span class="fp-panel-title" title=${title}>${title}</span>
+              <span class="fp-panel-status-dot"></span>
+            </div>`
+          : nothing}
+        <div class="fp-panel-metrics">
+          ${metrics.length
+        ? metrics.map((m) => {
+            const mShowIcon = showIcons && m.showIcon !== false;
+            const mIcon = mShowIcon ? (m.icon || this._defaultPanelMetricIcon(m.entity, renderHass)) : undefined;
+            const mShowLabel = showLabels && Boolean(m.label);
+            const hasLeft = Boolean(mIcon || mShowLabel);
+            return html`
+              <div class="fp-panel-metric-row ${!hasLeft ? "value-only" : ""}">
+                ${hasLeft
+                  ? html`
+                    <span class="fp-panel-metric-left">
+                      ${mIcon ? html`<ha-icon icon=${mIcon}></ha-icon>` : nothing}
+                      ${mShowLabel ? html`<span class="fp-panel-metric-label" title=${m.label}>${m.label}</span>` : nothing}
+                    </span>`
+                  : nothing}
+                <span class="fp-panel-metric-value ${m.unavailable ? "unavailable" : ""}">
+                  ${m.value}${m.unit ? html`<span class="fp-panel-metric-unit">${m.unit}</span>` : nothing}
+                </span>
+              </div>
+            `;
+          })
+        : html`<span style="font-size:10px;opacity:0.6;">No metrics</span>`}
+        </div>
+      </div>
+    `;
+  }
+
   protected render(): TemplateResult {
     if (!this._config) return html`${nothing}`;
     const c = this._displayConfig();
@@ -2211,8 +2514,11 @@ export class FloorplanCard extends LitElement {
     // controls, the arrow keys and the dwell all walk the same rooms.
     const roomFocus = normalizeRoomFocus(c.roomFocus);
     const focusRooms = focusOrder(active.areas, roomFocus);
-    const zoomedArea = active.areas?.find((a) => a.id === this._zoomedAreaId);
+    const zoomedArea = (active.isOutdoor ? floors.flatMap((f) => f.areas) : active.areas)?.find(
+      (a) => a.id === this._zoomedAreaId
+    );
     this._autoLayoutBase = `${this._configSerial}|${active.id}|${rot}|${scale}|${this._zoomedAreaId ?? ""}`;
+    const visiblePanels = this._visibleFloorPanels(active, c, iso, zoomedArea, renderHass);
     const zoom = zoomedArea
       ? areaZoomTransform(
         zoomedArea.points,
@@ -2579,8 +2885,10 @@ export class FloorplanCard extends LitElement {
                             opacity=${1 - sunLevel} />`
               : nothing
             }
+            ${!iso ? this._renderPanelLeaderLines(visiblePanels) : nothing}
             </g>
             </g>
+            ${iso ? this._renderIsoPanelLeaderLines(visiblePanels, c, rot) : nothing}
           </svg>`
         )}
           <div
@@ -2623,6 +2931,11 @@ export class FloorplanCard extends LitElement {
           ),
           (it, i) => it.id || i,
           (it) => this._renderItem(it, c, rot, scale, renderHass)
+        )}
+            ${repeat(
+          visiblePanels,
+          (item, i) => item.panel.id || i,
+          (item) => this._renderInfoPanel(item.panel, item.floor, c, rot, scale, renderHass, item.z)
         )}
           </div>
           </div>
@@ -3924,6 +4237,258 @@ export class FloorplanCard extends LitElement {
         opacity: 0;
         stroke-width: 14;
       }
+    }
+    .fp-info-panel {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      transform: translate(-50%, -50%) scale(var(--fp-inv-zoom, 1));
+      transition: transform 0.4s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+      pointer-events: auto;
+      box-sizing: border-box;
+      user-select: none;
+      z-index: 10;
+      /* The panel backgrounds below are dark whatever the HA theme or skin,
+         so the text follows the panel, not the theme. Set both together. */
+      color: var(--fp-panel-text, #fff);
+      font-family: inherit;
+      width: max-content;
+      max-width: 280px;
+      height: auto;
+    }
+    .fp-info-panel.clickable {
+      cursor: pointer;
+    }
+    .fp-info-panel.clickable:hover {
+      filter: brightness(1.1);
+    }
+    .fp-info-panel.card {
+      background: var(--fp-panel-bg, var(--ha-card-background, var(--card-background-color, #fff)));
+      color: var(--fp-panel-text, var(--primary-text-color, #212121));
+      border: 1px solid var(--fp-panel-border, var(--ha-card-border-color, var(--divider-color, rgba(0, 0, 0, 0.12))));
+      border-radius: var(--ha-card-border-radius, 12px);
+      box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0, 0, 0, 0.12));
+      padding: 8px 12px;
+      min-width: 135px;
+    }
+    .fp-info-panel.minimal {
+      background: var(--fp-panel-bg, rgba(17, 24, 39, 0.88));
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--fp-panel-border, rgba(255, 255, 255, 0.15));
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      padding: 8px 12px;
+      min-width: 130px;
+    }
+    .fp-info-panel.hud {
+      background: var(--fp-panel-bg, rgba(9, 23, 38, 0.94));
+      border: 1px solid var(--fp-panel-accent, #00e5ff);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 12px rgba(0, 229, 255, 0.2);
+      clip-path: polygon(
+        0 8px,
+        8px 0,
+        calc(100% - 8px) 0,
+        100% 8px,
+        100% calc(100% - 8px),
+        calc(100% - 8px) 100%,
+        8px 100%,
+        0 calc(100% - 8px)
+      );
+      padding: 8px 12px;
+      min-width: 140px;
+    }
+    .fp-info-panel.pill {
+      display: inline-flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+      background: var(--fp-panel-bg, rgba(15, 23, 42, 0.9));
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--fp-panel-border, var(--fp-panel-accent, rgba(255, 255, 255, 0.15)));
+      border-radius: 9999px;
+      padding: 5px 14px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+      white-space: nowrap;
+      min-width: 0;
+      width: max-content;
+      max-width: none;
+    }
+    .fp-info-panel.pill .fp-panel-header {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      padding-bottom: 0;
+      margin-bottom: 0;
+      border-bottom: none;
+      border-right: 1px solid var(--fp-panel-border, rgba(255, 255, 255, 0.15));
+      padding-right: 10px;
+      margin-right: 2px;
+      flex-shrink: 0;
+    }
+    .fp-info-panel.pill .fp-panel-title {
+      flex: initial;
+      min-width: 0;
+      max-width: none;
+    }
+    .fp-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding-bottom: 4px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      min-width: 0;
+    }
+    .fp-info-panel.card .fp-panel-header {
+      border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
+    }
+    .fp-info-panel.card .fp-panel-title {
+      color: var(--primary-text-color, inherit);
+    }
+    .fp-info-panel.card .fp-panel-metric-label {
+      color: var(--secondary-text-color, inherit);
+      opacity: 0.85;
+    }
+    .fp-info-panel.card .fp-panel-metric-value {
+      color: var(--primary-text-color, inherit);
+    }
+    .fp-info-panel.hud .fp-panel-header {
+      border-bottom: 1px solid var(--fp-panel-accent, rgba(0, 229, 255, 0.3));
+    }
+    .fp-panel-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+    }
+    @keyframes fp-panel-pulse {
+      0%, 100% {
+        transform: scale(1);
+        opacity: 0.95;
+      }
+      50% {
+        transform: scale(1.25);
+        opacity: 0.6;
+      }
+    }
+    .fp-panel-status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--fp-panel-accent, #00e5ff);
+      box-shadow: 0 0 6px var(--fp-panel-accent, #00e5ff);
+      animation: fp-panel-pulse 2.5s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .fp-panel-status-dot {
+        animation: none;
+      }
+    }
+    .fp-panel-metrics {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .fp-info-panel.pill .fp-panel-metrics {
+      display: inline-flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      max-width: none;
+      flex-shrink: 0;
+    }
+    .fp-panel-metric-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11px;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .fp-info-panel.pill .fp-panel-metric-row {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      min-width: 0;
+      max-width: none;
+      flex-shrink: 0;
+    }
+    .fp-info-panel.pill .fp-panel-metric-row:not(:last-child) {
+      padding-right: 10px;
+      border-right: 1px solid var(--fp-panel-border, rgba(255, 255, 255, 0.12));
+    }
+    .fp-info-panel.pill .fp-panel-metric-left {
+      flex-shrink: 0;
+      overflow: visible;
+    }
+    .fp-info-panel.pill .fp-panel-metric-label {
+      max-width: none;
+      overflow: visible;
+    }
+    .fp-info-panel.pill .fp-panel-metric-value {
+      max-width: none;
+      overflow: visible;
+      flex-shrink: 0;
+      margin-left: 0;
+    }
+    .fp-panel-metric-left {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      overflow: hidden;
+      min-width: 0;
+      flex-shrink: 1;
+    }
+    .fp-panel-metric-left ha-icon {
+      --mdc-icon-size: 13px;
+      color: var(--fp-panel-accent, currentColor);
+      flex-shrink: 0;
+    }
+    .fp-panel-metric-label {
+      font-size: 10px;
+      opacity: 0.8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .fp-panel-metric-value {
+      font-weight: 600;
+      font-size: 12px;
+      font-feature-settings: "tnum";
+      white-space: nowrap;
+      margin-left: auto;
+      flex-shrink: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 65%;
+    }
+    .fp-panel-metric-value.unavailable {
+      font-weight: 500;
+      opacity: 0.65;
+      font-size: 11px;
+      text-transform: capitalize;
+    }
+    .fp-panel-metric-unit {
+      font-size: 9px;
+      font-weight: 500;
+      opacity: 0.85;
+      margin-left: 2px;
+      white-space: nowrap;
     }
   `,
     lineArtStyles,

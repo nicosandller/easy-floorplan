@@ -44,5 +44,6 @@ export const SELECTION_PAGES: Record<SelKind, readonly InspectorPage[]> = {
     { id: "marker", label: "Marker", groups: ["Marker"] },
   ],
   text: [properties],
+  panel: [properties],
   wall: [properties],
 };

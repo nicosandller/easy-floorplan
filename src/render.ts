@@ -39,6 +39,7 @@ import type {
   StripSide,
 } from "./types";
 import {
+  floorPanels,
   FURNITURE_COLOR,
   DEFAULT_TRACKER_DOT_SIZE,
   DEFAULT_RIPPLE_SIZE,
@@ -235,6 +236,11 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
       for (const s of [tr.xSensor, tr.ySensor]) {
         if (s?.entity) ids.add(s.entity);
         if (s?.presence?.entity) ids.add(s.presence.entity);
+      }
+    }
+    for (const p of floorPanels(f)) {
+      for (const m of p.metrics ?? []) {
+        if (m.entity) ids.add(m.entity);
       }
     }
     if (f.summary?.temperatureEntity) ids.add(f.summary.temperatureEntity);
