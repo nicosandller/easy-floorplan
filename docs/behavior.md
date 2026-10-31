@@ -455,3 +455,42 @@ a missing threshold, or a sensor gone `unavailable` under a numeric threshold al
 the item on screen, and `hideInvert` doesn't flip that. The exception is an outage you
 asked for by name: `hideMode: state` with `hideState: unavailable` does hide, so
 "hide the badge while this sensor is dead" works as written.
+
+## Conditional furniture visibility
+
+Furniture elements (such as parked cars, office chairs, or seasonal outdoor settings) can be dynamically shown or hidden using Home Assistant's native dashboard card `visibility` condition schema (issue #310). When conditions are unmet, the piece vanishes completely from both 2D top-down and 3D isometric perspectives, clears light glow masks, and drops hit-testing so pointer clicks pass through to the floor or room below.
+
+```yaml
+furniture:
+  - id: garage_car
+    type: car
+    'x': 420
+    'y': 180
+    w: 90
+    h: 180
+    visibility:
+      - condition: state
+        entity: device_tracker.car
+        state: home
+```
+
+### Supported conditions
+
+Furniture visibility supports standard Home Assistant condition formats:
+- **`condition: state`**: matches entity state or attribute against `state` or `state_not` (single string or array of values).
+- **`condition: numeric_state`**: compares numerical values against `above` and/or `below` thresholds.
+- **`condition: sun`**: matches sun position (ascending / descending, above / below horizon, or relative to sunrise / sunset).
+- **`condition: device` & cover/door states**: checks device actions and entity verbs (such as `is_open`, `is_closed`, `is_on`, `is_off`, `is_locked`, `is_unlocked`, `is_detected`, etc.).
+- **`condition: zone` / `area` / `location`**: checks presence in a specific area or zone (including person `in_zone` / `not_in_zone`, active room presence, or location matching).
+- **`condition: screen`**: evaluates responsive CSS `media_query` expressions.
+- **`condition: user`**: checks if the current user ID is contained within `users`.
+- **Logical groups**: nest complex logic using `and`, `or`, and `not` condition lists.
+
+### Fail-open outage protection
+
+If a referenced entity becomes `unavailable`, `unknown`, or is missing during a Home Assistant restart or integration reconnect, conditions fail open (the furniture remains visible), unless the rule explicitly tested for `unavailable` or `unknown`.
+
+### Visual Editor integration
+
+In the visual editor, hidden furniture renders dimmed (`opacity: 0.35`, `.card-hidden`) rather than disappearing, ensuring it remains selectable, movable, and editable. The editor inspector features a dedicated **Visibility** category with a live preview pill (`Visible on floorplan`, `Hidden on floorplan`, or `Always visible`) and Home Assistant's native `<ha-selector>` condition builder.
+

@@ -244,6 +244,11 @@ import {
 } from "./label-placement";
 import { ReplayControllerImpl } from "./replay-history/replay-controller";
 import { createReplayPanelProps, renderReplayPanel } from "./replay-history/replay-panel";
+import {
+  isFurnitureVisible,
+  collectConditionMediaQueries,
+  hasTimeConditions,
+} from "./furniture-visibility";
 
 /**
  * Which floor each plan was last viewed on, keyed by its floor-id set (issue
@@ -391,6 +396,8 @@ export class FloorplanCard extends LitElement {
     this._unsubscribeMotion = subscribeOrientation(motion, (e) => {
       if (e.matches) this._rotation.finish();
     });
+    this._syncScreenMediaSubscriptions();
+    this._syncTimeClockSubscription();
   }
 
   public setConfig(config: FloorplanCardConfig): void {
@@ -465,6 +472,34 @@ export class FloorplanCard extends LitElement {
       if (remembered && floors.some((f) => f.id === remembered)) {
         this._activeFloorId = remembered;
       }
+    }
+    this._syncScreenMediaSubscriptions();
+    this._syncTimeClockSubscription();
+  }
+
+  private _screenMediaQueries: Array<() => void> = [];
+
+  private _syncScreenMediaSubscriptions(): void {
+    for (const unsub of this._screenMediaQueries) unsub();
+    this._screenMediaQueries = [];
+    if (typeof window === "undefined" || !window.matchMedia || !this._config) return;
+    const mqs = collectConditionMediaQueries(this._config);
+    for (const query of mqs) {
+      const mql = window.matchMedia(query);
+      this._screenMediaQueries.push(subscribeOrientation(mql, () => this.requestUpdate()));
+    }
+  }
+
+  private _timeClock?: ReturnType<typeof setInterval>;
+
+  private _syncTimeClockSubscription(): void {
+    if (this._timeClock) {
+      clearInterval(this._timeClock);
+      this._timeClock = undefined;
+    }
+    if (typeof window === "undefined" || !this.isConnected || !this._config) return;
+    if (hasTimeConditions(this._config)) {
+      this._timeClock = setInterval(() => this.requestUpdate(), 30000);
     }
   }
 
@@ -840,6 +875,12 @@ export class FloorplanCard extends LitElement {
     // replace this one — taking the replay loop's cleanup with it.
     this._unsubscribeOrientation?.();
     this._unsubscribeOrientation = undefined;
+    for (const unsub of this._screenMediaQueries) unsub();
+    this._screenMediaQueries = [];
+    if (this._timeClock) {
+      clearInterval(this._timeClock);
+      this._timeClock = undefined;
+    }
     this._autoResize?.disconnect();
     this._autoResize = undefined;
     this._autoResizeTarget = undefined;
@@ -1287,7 +1328,9 @@ export class FloorplanCard extends LitElement {
     const furnitureHeight = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(furnitureHeight, rot);
     const catalog = symbolCatalog(c.symbols);
+    const effHass = this.hass && renderHass ? { ...this.hass, states: renderHass.states } : (this.hass ?? (renderHass as unknown as HomeAssistant));
     for (const f of active.furniture) {
+      if (!isFurnitureVisible(f, effHass)) continue;
       // A piece that hangs rather than stands — an awning under the eaves
       // (issue #196) — is a sheet between its symbol's two heights.
       const raised = findSymbol(catalog, f.type)?.elevation;
@@ -2016,19 +2059,21 @@ export class FloorplanCard extends LitElement {
     if (!standing) this._openingTween.stop();
     const projTransform = planProjectionTransform(frame);
     const dimPad = WALL_THICKNESS + (iso ? frame.wallHeight : 0);
+    const effHass = this.hass && renderHass ? { ...this.hass, states: renderHass.states } : (this.hass ?? (renderHass as unknown as HomeAssistant));
+    const visibleFurniture = active.furniture.filter((f) => isFurnitureVisible(f, effHass));
     // One furniture glyph, flat. Drawn on the floor on the flat plan and on
     // top of its block under the isometric view — the same drawing either way.
     // Awnings and curtains at their cover's position (issue #196); every other
     // piece passes through untouched.
     // A center-closing curtain is two halves; it keeps one action, with its
     // icon on the left half so it never sits over the gap once both gather.
-    const pieces = active.furniture.map((f) =>
+    const pieces = visibleFurniture.map((f) =>
       shownPieces(f, f.entity ? renderHass?.states[f.entity] : undefined, symbolCatalog(c.symbols))
     );
     const furniture = pieces.flat();
     const actionFurniture = pieces.map((p, i) => (p.length === 1
       ? p[0]!
-      : { ...active.furniture[i]!, x: p[0]!.x, y: p[0]!.y }));
+      : { ...visibleFurniture[i]!, x: p[0]!.x, y: p[0]!.y }));
     // With its icon hidden (#362), each half of a centre curtain takes the tap.
     const drawFurniture = (f: Furniture): SVGTemplateResult => this._furnitureHit(f, renderFurniture(
       f,
@@ -2398,7 +2443,7 @@ export class FloorplanCard extends LitElement {
                 `${this._glowIdBase}-mask`, symbolCatalog(c.symbols)
               )}
             <g class="fp-glows"
-               mask=${active.furniture.length ? `url(#${this._glowIdBase}-mask)` : nothing}>
+               mask=${furniture.length ? `url(#${this._glowIdBase}-mask)` : nothing}>
               ${active.items.map((it, i) => {
                 if (!it.glow) return nothing;
                 const paint = glowPaint(it, renderHass?.states[it.entity]);

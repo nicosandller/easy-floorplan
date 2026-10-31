@@ -1244,6 +1244,13 @@ describe("textForm / furnitureForm / trackerForm", () => {
     expect(out.tap_action).toEqual({ action: "toggle" });
   });
 
+  it("furniture toPatch normalizes visibility array", () => {
+    const form = furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10 } as never);
+    expect(form.toPatch({ visibility: [] } as never).visibility).toBeUndefined();
+    expect(form.toPatch({ visibility: [{ condition: "state", entity: "car.1", state: "home" }] } as never).visibility)
+      .toEqual([{ condition: "state", entity: "car.1", state: "home" }]);
+  });
+
   // Issue #362: the round action icon can be hidden.
   it("furniture offers the action icon toggle only once there is an action to show", () => {
     const names = (extra: Record<string, unknown>) =>

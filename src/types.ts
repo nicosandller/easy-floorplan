@@ -41,6 +41,10 @@ export interface HomeAssistant extends BaseHomeAssistant {
    * predates it. Read by `roomTints` to pick each tint's dark side.
    */
   themes: BaseHomeAssistant["themes"] & { darkMode?: boolean };
+  /**
+   * Lazily loads on-demand frontend translation fragments (e.g. "config").
+   */
+  loadFragmentTranslation?(fragment: string): Promise<unknown>;
 }
 
 /**
@@ -1171,6 +1175,156 @@ export type FurnitureType =
  */
 export type SectionalHand = "left" | "right";
 
+/** Base shape for Home Assistant dashboard card visibility conditions (Issue #310). */
+export type VisibilityCondition =
+  | StateVisibilityCondition
+  | NumericStateVisibilityCondition
+  | ScreenVisibilityCondition
+  | UserVisibilityCondition
+  | SunVisibilityCondition
+  | ZoneVisibilityCondition
+  | LocationVisibilityCondition
+  | TimeVisibilityCondition
+  | DeviceVisibilityCondition
+  | AndVisibilityCondition
+  | OrVisibilityCondition
+  | NotVisibilityCondition
+  | EntityTargetVisibilityCondition;
+
+export interface StateVisibilityCondition {
+  condition: "state";
+  entity?: string;
+  entity_id?: string | string[];
+  target?: {
+    entity_id?: string | string[];
+    [key: string]: unknown;
+  };
+  state?: string | string[];
+  state_not?: string | string[];
+  attribute?: string;
+  match?: "any" | "all";
+}
+
+export interface NumericStateVisibilityCondition {
+  condition: "numeric_state";
+  entity?: string;
+  entity_id?: string | string[];
+  target?: {
+    entity_id?: string | string[];
+    [key: string]: unknown;
+  };
+  above?: number | string;
+  below?: number | string;
+  attribute?: string;
+}
+
+export interface SunVisibilityCondition {
+  condition: "sun" | "sun.is_above_horizon" | "sun.is_below_horizon" | "sun.is_ascending" | "sun.is_descending" | string;
+  after?: string;
+  after_offset?: string | number;
+  before?: string;
+  before_offset?: string | number;
+  state?: string;
+  type?: string;
+}
+
+export interface ZoneVisibilityCondition {
+  condition: "zone" | "zone.in_zone" | "zone.not_in_zone" | "area" | string;
+  entity?: string;
+  entity_id?: string | string[];
+  zone?: string | string[];
+  area?: string;
+  area_id?: string;
+  target?: {
+    entity_id?: string | string[];
+    zone?: string | string[];
+    area_id?: string | string[];
+    [key: string]: unknown;
+  };
+  options?: {
+    behavior?: "any" | "all";
+    zone?: string | string[];
+    [key: string]: unknown;
+  };
+  type?: string;
+  state?: string;
+}
+
+export interface LocationVisibilityCondition {
+  condition: "location";
+  locations?: string[];
+  away?: boolean;
+  target?: {
+    entity_id?: string | string[];
+    zone?: string | string[];
+    [key: string]: unknown;
+  };
+}
+
+export interface TimeVisibilityCondition {
+  condition: "time";
+  after?: string;
+  before?: string;
+  weekday?: string | string[];
+  weekdays?: string[];
+}
+
+export interface DeviceVisibilityCondition {
+  condition: "device" | string;
+  device_id?: string;
+  domain?: string;
+  entity_id?: string | string[];
+  type?: string;
+  target?: {
+    entity_id?: string | string[];
+    [key: string]: unknown;
+  };
+}
+
+export interface ScreenVisibilityCondition {
+  condition: "screen";
+  media_query: string;
+}
+
+export interface UserVisibilityCondition {
+  condition: "user";
+  users: string[];
+}
+
+export interface AndVisibilityCondition {
+  condition: "and";
+  conditions?: VisibilityCondition[];
+  and?: VisibilityCondition[];
+}
+
+export interface OrVisibilityCondition {
+  condition: "or";
+  conditions?: VisibilityCondition[];
+  or?: VisibilityCondition[];
+}
+
+export interface NotVisibilityCondition {
+  condition: "not";
+  conditions?: VisibilityCondition[];
+  not?: VisibilityCondition[];
+}
+
+export interface EntityTargetVisibilityCondition {
+  condition: string;
+  target?: {
+    entity_id?: string | string[];
+    [key: string]: unknown;
+  };
+  entity?: string;
+  entity_id?: string | string[];
+  type?: string;
+  state?: string | string[];
+  state_not?: string | string[];
+  options?: Record<string, unknown>;
+  [key: string]: unknown;
+}
+
+
 /** A gray furniture/fixture diagram placed on the plan. */
 export interface Furniture {
   id: string;
@@ -1267,6 +1421,13 @@ export interface Furniture {
    * See {@link Wall.locked} for why it stays selectable.
    */
   locked?: boolean;
+  /**
+   * Visibility conditions for dynamic display (Issue #310).
+   * Follows native Home Assistant dashboard card visibility schema.
+   * If any condition evaluates to false, the furniture is hidden.
+   * When omitted or empty, the piece is always visible.
+   */
+  visibility?: VisibilityCondition[];
 }
 
 /**
