@@ -10,7 +10,7 @@ export interface InspectorPage {
 // These are destinations, not disclosures. Each group belongs to one page;
 // the editor renders only that page, so changing category never adds nesting.
 export const PROJECT_PAGES: readonly InspectorPage[] = [
-  { id: "plan", label: "Plan", hint: "Canvas, floors and background image", groups: ["Project", "Floor image", "Floor switcher"] },
+  { id: "plan", label: "Plan", hint: "Canvas, floors, background and trace", groups: ["Project", "Floor image", "Trace template", "Floor switcher"] },
   { id: "colors", label: "Style", hint: "Colors, theme and named colors", groups: ["Look", "Named colors"] },
   { id: "view", label: "View", hint: "Display, scale and 3D", groups: ["Display"] },
   { id: "lighting", label: "Lighting", groups: ["Sunlight", "Night dimming"] },
