@@ -23,6 +23,8 @@ control lights, and view the plan in 3D.
 
 ## Features
 
+- **Trace a plan** — load a PDF or image in the editor, calibrate its scale and trace walls over it. See [Tracing over an existing plan](docs/editor.md#tracing-over-an-existing-plan).
+
 - **Visual editing** — draw walls, snap doors and windows into place, and arrange
   furniture, text and devices with undo/redo, copy/paste and position locking.
 - **Live devices** — control lights and switches, show sensor readings, and follow
