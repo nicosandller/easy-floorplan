@@ -78,6 +78,37 @@ describe("responsive editor workspace", () => {
     expect(t.rect(".stage").width).toBeLessThanOrEqual(t.el(".canvas-wrap").clientWidth + 1);
   });
 
+  it("keeps raised HA field labels below the sticky project tabs while scrolling", async () => {
+    const t = await mount(842);
+    t.el("#project-tab").click();
+    await settle(t.editor);
+    const group = t.el('[data-group="Floor image"]');
+    // HA text fields give their floating labels a positive z-index inside a shadow root.
+    const field = document.createElement("div");
+    const shadow = field.attachShadow({ mode: "open" });
+    shadow.innerHTML = '<label style="position:relative;z-index:10;display:block;height:36px;background:red">Bg image</label>';
+    group.prepend(field);
+    const spacer = document.createElement("div");
+    spacer.style.height = "600px";
+    group.append(spacer);
+    const tabs = t.el(".settings-category");
+    const side = t.el(".side");
+    side.scrollTop += field.getBoundingClientRect().top - tabs.getBoundingClientRect().top - 12;
+    await settle(t.editor);
+    // Re-align after the category row has reached its sticky position.
+    side.scrollTop += field.getBoundingClientRect().top - tabs.getBoundingClientRect().top - 12;
+    await settle(t.editor);
+    tabs.scrollIntoView({ block: "nearest", inline: "nearest" });
+    await settle(t.editor);
+    const rect = tabs.getBoundingClientRect();
+    const labelRect = field.getBoundingClientRect();
+    const x = rect.left + 30;
+    const y = rect.top + 20;
+    expect(labelRect.top).toBeLessThan(y);
+    expect(labelRect.bottom).toBeGreaterThan(y);
+    expect(t.root.elementFromPoint(x, y)?.closest(".settings-category")).toBe(tabs);
+  });
+
   it("opens project fields directly and switches tabs without moving the selected element", async () => {
     const t = await mount(1300);
     (t.editor as unknown as { _selection: unknown[] })._selection = [{ kind: "furniture", id: "sofa" }];
