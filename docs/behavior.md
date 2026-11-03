@@ -491,5 +491,5 @@ If a referenced entity becomes `unavailable`, `unknown`, or is missing during a 
 
 ### Visual Editor integration
 
-In the visual editor, hidden furniture renders dimmed (`opacity: 0.35`, `.card-hidden`) rather than disappearing, ensuring it remains selectable, movable, and editable. The editor inspector features a dedicated **Visibility** category with a live preview pill (`Visible on floorplan`, `Hidden on floorplan`, or `Always visible`) and Home Assistant's native `<ha-selector>` condition builder.
+In the visual editor, hidden furniture renders dimmed (`opacity: 0.35`, `.card-hidden`) rather than disappearing, ensuring it remains selectable, movable, and editable. The editor inspector features a dedicated **Visibility** category with a live preview pill (`Visible on floorplan`, `Hidden on floorplan`, or `Always visible`) and Home Assistant's native `<ha-card-conditions-editor>` condition builder.
 
