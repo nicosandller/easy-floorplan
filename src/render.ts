@@ -7090,6 +7090,7 @@ export function renderFurniture(
  * The cover's position is read the way a shutter's is ({@link shutterAmount}),
  * so a dropout reads as a closed cover rather than a guess: an awning draws
  * retracted, and a curtain (`open: "retracted"`) draws fully across.
+ * `invert` turns the position round (issue #410) but never the dropout.
  */
 export function shownFurniture(
   f: Furniture,
@@ -7098,7 +7099,7 @@ export function shownFurniture(
 ): Furniture {
   const ext = findSymbol(catalog, f.type)?.extend;
   if (!ext || !f.entity) return f;
-  const open = shutterAmount(state);
+  const open = shutterAmount(state, f.invert === true);
   const out = ext.open === "extended" ? open : 1 - open;
   const k = ext.min + (1 - ext.min) * out;
   if (k >= 1) return f;

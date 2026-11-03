@@ -1254,6 +1254,13 @@ export interface Furniture {
    */
   entity?: string;
   /**
+   * Awning or curtain (issue #410): read the cover's position the other way
+   * round, for a cover that reports 100 % where the piece is retracted. Only
+   * pieces whose symbol has an `extend` read it. A dropout still draws the
+   * piece as a closed cover would, inverted or not.
+   */
+  invert?: boolean;
+  /**
    * Threshold/state colors for the drawing, in the same shape as
    * {@link FloorItem.stateColor}. Evaluated against `entity`'s state; takes
    * precedence over {@link activeColor} and {@link color}.
