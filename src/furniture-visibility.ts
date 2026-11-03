@@ -45,35 +45,16 @@ function isExplicitOutageCheck(stateOrStates: unknown): boolean {
  * Extracts primary subject entity IDs from a condition object:
  * cond.entity, cond.entity_id, cond.target.entity_id, cond.target.entity
  */
-export function extractSubjectEntityIds(
-  c: unknown,
-  hass?: HomeAssistant | RenderHass
-): string[] {
+export function extractSubjectEntityIds(c: unknown): string[] {
   if (!c || typeof c !== "object") return [];
   const cond = c as Record<string, unknown>;
   const ids: string[] = [];
 
-  const reg =
-    hass && "entities" in hass && hass.entities
-      ? (hass.entities as Record<string, { id?: string; device_id?: string; [key: string]: unknown }>)
-      : undefined;
-
   const add = (val: unknown) => {
     if (typeof val === "string") {
       const trimmed = val.trim();
-      if (isEntityId(trimmed)) {
-        if (!ids.includes(trimmed)) ids.push(trimmed);
-        return;
-      }
-      // If val is not an entity_id (e.g. an entity registry ID or UUID),
-      // try to resolve it from hass.entities if available
-      if (reg) {
-        const match = Object.entries(reg).find(
-          ([entId, entry]) => entId === trimmed || entry?.id === trimmed
-        );
-        if (match && isEntityId(match[0]) && !ids.includes(match[0])) {
-          ids.push(match[0]);
-        }
+      if (isEntityId(trimmed) && !ids.includes(trimmed)) {
+        ids.push(trimmed);
       }
     } else if (Array.isArray(val)) {
       for (const item of val) {
@@ -89,31 +70,6 @@ export function extractSubjectEntityIds(
     const target = cond.target as Record<string, unknown>;
     add(target.entity_id);
     add(target.entity);
-  }
-
-  if (cond.options && typeof cond.options === "object") {
-    const opt = cond.options as Record<string, unknown>;
-    add(opt.entity);
-    add(opt.entity_id);
-    if (opt.target && typeof opt.target === "object") {
-      const optTarget = opt.target as Record<string, unknown>;
-      add(optTarget.entity_id);
-      add(optTarget.entity);
-    }
-  }
-
-  // Fallback: If no entity IDs were found, but device_id is present and hass.entities is available:
-  if (ids.length === 0 && reg && typeof cond.device_id === "string") {
-    const devId = cond.device_id.trim();
-    const domain = typeof cond.domain === "string" ? cond.domain.trim() : "";
-    const match = Object.entries(reg).find(
-      ([entId, entry]) =>
-        entry?.device_id === devId &&
-        (domain ? entId.startsWith(`${domain}.`) : true)
-    );
-    if (match && isEntityId(match[0]) && !ids.includes(match[0])) {
-      ids.push(match[0]);
-    }
   }
 
   return ids;
@@ -154,100 +110,6 @@ export function statesMatch(target: unknown, actual: unknown): boolean {
   }
 
   return false;
-}
-
-function deviceTypeToTargetState(type: string): { target: string; negate?: boolean } {
-  const t = type.toLowerCase().trim();
-  if (
-    t === "is_no_motion" ||
-    t === "is_clear" ||
-    t === "is_no_problem" ||
-    t === "is_not_occupied" ||
-    t === "is_disconnected"
-  ) {
-    return { target: "off" };
-  }
-  if (
-    t === "is_motion" ||
-    t === "is_problem" ||
-    t === "is_detected" ||
-    t === "is_occupied" ||
-    t === "is_connected"
-  ) {
-    return { target: "on" };
-  }
-  if (t === "is_not_home") {
-    return { target: "not_home" };
-  }
-  if (t.startsWith("is_not_")) {
-    return { target: t.replace(/^is_not_/, ""), negate: true };
-  }
-  if (t.startsWith("is_")) {
-    return { target: t.replace(/^is_/, "") };
-  }
-  return { target: t };
-}
-
-function isEntityInZone(
-  stateObj: { state: string; attributes?: Record<string, unknown> } | undefined,
-  targetZone: string,
-  states: Record<string, { state: string; attributes?: Record<string, unknown> } | undefined>
-): boolean {
-  if (!stateObj) return false;
-
-  const cleanTarget = targetZone.trim().toLowerCase();
-  const bareZone = cleanTarget.startsWith("zone.") ? cleanTarget.slice(5) : cleanTarget;
-  const fullZone = cleanTarget.startsWith("zone.") ? cleanTarget : `zone.${cleanTarget}`;
-
-  // 1. Check in_zones attribute (array of zone entity_ids)
-  const inZones = stateObj.attributes?.in_zones;
-  if (Array.isArray(inZones)) {
-    if (
-      inZones.some((z) => {
-        const s = String(z).trim().toLowerCase();
-        return s === cleanTarget || s === bareZone || s === fullZone;
-      })
-    ) {
-      return true;
-    }
-  }
-
-  // 2. Check zone attribute
-  const zoneAttr = stateObj.attributes?.zone;
-  if (zoneAttr) {
-    const s = String(zoneAttr).trim().toLowerCase();
-    if (s === cleanTarget || s === bareZone || s === fullZone) {
-      return true;
-    }
-  }
-
-  // 3. Check entity state
-  const curState = stateObj.state.trim().toLowerCase();
-  if (bareZone === "home" && curState === "home") {
-    return true;
-  }
-  if (curState === bareZone || curState === fullZone) {
-    return true;
-  }
-
-  // 4. Check zone's friendly_name against state
-  const zoneEntity = states[fullZone];
-  const friendlyName = zoneEntity?.attributes?.friendly_name;
-  if (typeof friendlyName === "string" && friendlyName.trim().toLowerCase() === curState) {
-    return true;
-  }
-
-  return false;
-}
-
-function parseTimeMinutes(timeVal: unknown): number | null {
-  if (typeof timeVal !== "string") return null;
-  const match = /^(\d{1,2}):(\d{2})(?::(\d{2}))?$/.exec(timeVal.trim());
-  if (!match) return null;
-  const hours = parseInt(match[1], 10);
-  const minutes = parseInt(match[2], 10);
-  if (hours < 0 || hours > 23 || minutes < 0 || minutes > 59) return null;
-  return hours * 60 + minutes;
 }
 
 interface ConditionResult {
@@ -346,7 +208,7 @@ function evaluateConditionInternal(
 
   // 6. Numeric state condition
   if (conditionType === "numeric_state") {
-    const entityIds = extractSubjectEntityIds(c, hass);
+    const entityIds = extractSubjectEntityIds(c);
     if (entityIds.length === 0) {
       return { pass: false, outage: false };
     }
@@ -398,7 +260,7 @@ function evaluateConditionInternal(
 
   // 7. State condition
   if (conditionType === "state") {
-    const entityIds = extractSubjectEntityIds(c, hass);
+    const entityIds = extractSubjectEntityIds(c);
     if (entityIds.length === 0) {
       return { pass: false, outage: false };
     }
@@ -453,173 +315,7 @@ function evaluateConditionInternal(
     return { pass: true, outage: false };
   }
 
-  // 8. Device condition or purpose-specific domain condition (e.g. cover.is_closed, light.is_on)
-  const isDevice = conditionType === "device";
-  const isPurposeSpecific =
-    conditionType.includes(".") && !conditionType.startsWith("zone.");
-
-  if (isDevice || isPurposeSpecific) {
-    const states = (hass as Partial<HomeAssistant>).states ?? {};
-    const entityIds = extractSubjectEntityIds(c, hass);
-
-    if (entityIds.length === 0) {
-      if (typeof c.device_id === "string" || typeof c.entity_id === "string") {
-        return { pass: true, outage: true };
-      }
-      return { pass: false, outage: false };
-    }
-
-    let actionOrType = String(c.type ?? "");
-    if (!actionOrType && isPurposeSpecific) {
-      const dotIdx = conditionType.indexOf(".");
-      actionOrType = conditionType.slice(dotIdx + 1);
-    }
-
-    let target: unknown;
-    let negate = false;
-
-    if (c.state !== undefined) {
-      target = c.state;
-    } else if (actionOrType.toLowerCase() === "is_hvac_mode") {
-      const opt = (c.options && typeof c.options === "object" ? c.options : {}) as Record<
-        string,
-        unknown
-      >;
-      target = c.hvac_mode ?? opt.hvac_mode ?? "";
-    } else {
-      const parsed = deviceTypeToTargetState(actionOrType);
-      target = parsed.target;
-      negate = Boolean(parsed.negate);
-    }
-
-    const opt = (c.options && typeof c.options === "object" ? c.options : {}) as Record<
-      string,
-      unknown
-    >;
-    const behavior = String(opt.behavior ?? c.behavior ?? "any").toLowerCase();
-
-    const results = entityIds.map((entId) => {
-      const stateObj = states[entId];
-      const isMissing = !stateObj;
-      const isUnavailable =
-        !isMissing && (stateObj.state === "unavailable" || stateObj.state === "unknown");
-      if (isMissing || isUnavailable) {
-        return { pass: true, outage: true };
-      }
-      const match = statesMatch(target, stateObj.state);
-      const pass = negate ? !match : match;
-      return { pass, outage: false };
-    });
-
-    if (results.some((r) => r.outage)) {
-      return { pass: true, outage: true };
-    }
-
-    const pass = behavior === "all" ? results.every((r) => r.pass) : results.some((r) => r.pass);
-    return { pass, outage: false };
-  }
-
-  // 9. Zone condition
-  if (
-    conditionType === "zone" ||
-    conditionType === "zone.in_zone" ||
-    conditionType === "zone.not_in_zone"
-  ) {
-    const entityIds = extractSubjectEntityIds(c, hass);
-    if (entityIds.length === 0) {
-      return { pass: false, outage: false };
-    }
-
-    const opt = (c.options && typeof c.options === "object" ? c.options : {}) as Record<
-      string,
-      unknown
-    >;
-    const rawZones: unknown[] = [];
-    const collectZone = (val: unknown) => {
-      if (typeof val === "string") rawZones.push(val);
-      else if (Array.isArray(val)) {
-        for (const item of val) {
-          if (typeof item === "string") rawZones.push(item);
-        }
-      }
-    };
-    collectZone(c.zone);
-    collectZone(c.zones);
-    collectZone(opt.zone);
-    collectZone(opt.zones);
-
-    const targetZones = rawZones.length > 0 ? (rawZones as string[]) : ["zone.home"];
-
-    const states = (hass as Partial<HomeAssistant>).states ?? {};
-
-    // Outage check: if any subject entity is missing or unavailable, fail open
-    for (const entId of entityIds) {
-      const stateObj = states[entId];
-      if (!stateObj || stateObj.state === "unavailable" || stateObj.state === "unknown") {
-        return { pass: true, outage: true };
-      }
-    }
-
-    const behavior = String(opt.behavior ?? c.behavior ?? "any").toLowerCase();
-    const isNegated = conditionType === "zone.not_in_zone" || c.not_in_zone === true;
-
-    const inZoneResults = entityIds.map((entId) => {
-      const stateObj = states[entId];
-      return targetZones.some((z) => isEntityInZone(stateObj, z, states));
-    });
-
-    const passResult =
-      behavior === "all" ? inZoneResults.every(Boolean) : inZoneResults.some(Boolean);
-
-    const pass = isNegated ? !passResult : passResult;
-    return { pass, outage: false };
-  }
-
-  // 10. Time condition
-  if (conditionType === "time") {
-    const now = new Date();
-    // Weekday check
-    const weekdaysRaw = c.weekday ?? c.weekdays;
-    if (weekdaysRaw !== undefined) {
-      const list = (Array.isArray(weekdaysRaw) ? weekdaysRaw : [weekdaysRaw]).map((w) =>
-        String(w).trim().toLowerCase().slice(0, 3)
-      );
-      const dayNames = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-      const currentDay = dayNames[now.getDay()];
-      if (!list.includes(currentDay)) {
-        return { pass: false, outage: false };
-      }
-    }
-
-    const curMin = now.getHours() * 60 + now.getMinutes();
-    const afterMin = c.after !== undefined ? parseTimeMinutes(c.after) : null;
-    const beforeMin = c.before !== undefined ? parseTimeMinutes(c.before) : null;
-
-    if (afterMin !== null && beforeMin !== null) {
-      if (afterMin <= beforeMin) {
-        if (!(curMin >= afterMin && curMin < beforeMin)) {
-          return { pass: false, outage: false };
-        }
-      } else {
-        // Spans midnight, e.g. after 22:00, before 06:00
-        if (!(curMin >= afterMin || curMin < beforeMin)) {
-          return { pass: false, outage: false };
-        }
-      }
-    } else if (afterMin !== null) {
-      if (curMin < afterMin) {
-        return { pass: false, outage: false };
-      }
-    } else if (beforeMin !== null) {
-      if (curMin >= beforeMin) {
-        return { pass: false, outage: false };
-      }
-    }
-
-    return { pass: true, outage: false };
-  }
-
-  // Any other unsupported condition type (e.g. template, sun, etc.) fails closed
+  // Any other unsupported condition type (e.g. template, sun, device, time, zone, etc.) fails closed
   return { pass: false, outage: false };
 }
 
@@ -628,8 +324,7 @@ function evaluateConditionInternal(
  */
 export function evaluateCondition(
   cond: unknown,
-  hass: HomeAssistant | RenderHass,
-  _defaultEntityId?: string
+  hass: HomeAssistant | RenderHass
 ): boolean {
   return evaluateConditionInternal(cond, hass).pass;
 }
@@ -639,8 +334,7 @@ export function evaluateCondition(
  */
 export function evaluateConditions(
   conditions: readonly VisibilityCondition[],
-  hass: HomeAssistant | RenderHass,
-  _defaultEntityId?: string
+  hass: HomeAssistant | RenderHass
 ): boolean {
   return conditions.every((cond) => evaluateCondition(cond, hass));
 }
@@ -662,8 +356,7 @@ export function isFurnitureVisible(
  */
 export function collectConditionEntities(
   conditions?: readonly VisibilityCondition[],
-  defaultEntityId?: string,
-  hass?: HomeAssistant | RenderHass
+  defaultEntityId?: string
 ): string[] {
   const entities: string[] = [];
   if (defaultEntityId && isEntityId(defaultEntityId)) {
@@ -681,25 +374,7 @@ export function collectConditionEntities(
       }
     };
 
-    const addZone = (z: unknown) => {
-      if (typeof z === "string") {
-        const trimmed = z.trim();
-        if (isEntityId(trimmed)) add(trimmed);
-        else if (isEntityId(`zone.${trimmed}`)) add(`zone.${trimmed}`);
-      } else if (Array.isArray(z)) {
-        for (const item of z) addZone(item);
-      }
-    };
-
-    for (const ent of extractSubjectEntityIds(cond, hass)) add(ent);
-
-    if (cond.zone !== undefined) addZone(cond.zone);
-    if (cond.zones !== undefined) addZone(cond.zones);
-    if (cond.options && typeof cond.options === "object") {
-      const opt = cond.options as Record<string, unknown>;
-      if (opt.zone !== undefined) addZone(opt.zone);
-      if (opt.zones !== undefined) addZone(opt.zones);
-    }
+    for (const ent of extractSubjectEntityIds(cond)) add(ent);
 
     if (typeof cond.above === "string") add(cond.above);
     if (typeof cond.below === "string") add(cond.below);

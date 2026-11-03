@@ -1183,11 +1183,7 @@ export type VisibilityCondition =
   | UserVisibilityCondition
   | AndVisibilityCondition
   | OrVisibilityCondition
-  | NotVisibilityCondition
-  | DeviceVisibilityCondition
-  | ZoneVisibilityCondition
-  | TimeVisibilityCondition
-  | CustomVisibilityCondition;
+  | NotVisibilityCondition;
 
 export interface StateVisibilityCondition {
   condition: "state";
@@ -1242,40 +1238,6 @@ export interface NotVisibilityCondition {
   condition: "not";
   conditions?: VisibilityCondition[];
   not?: VisibilityCondition[];
-}
-
-export interface DeviceVisibilityCondition {
-  condition: "device";
-  device_id?: string;
-  domain?: string;
-  entity_id?: string | string[];
-  type?: string;
-  subtype?: string;
-  [key: string]: unknown;
-}
-
-export interface ZoneVisibilityCondition {
-  condition: "zone" | "zone.in_zone" | "zone.not_in_zone";
-  entity?: string;
-  entity_id?: string | string[];
-  zone?: string;
-  zones?: string[];
-  behavior?: "all" | "any";
-  [key: string]: unknown;
-}
-
-export interface TimeVisibilityCondition {
-  condition: "time";
-  after?: string;
-  before?: string;
-  weekday?: string | string[];
-  weekdays?: string | string[];
-  [key: string]: unknown;
-}
-
-export interface CustomVisibilityCondition {
-  condition: string & {};
-  [key: string]: unknown;
 }
 
 

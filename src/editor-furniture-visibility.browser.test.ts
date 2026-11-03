@@ -4,7 +4,29 @@ import "./editor";
 import type { FloorplanCardEditor } from "./editor";
 import type { FloorplanCardConfig, Furniture, VisibilityCondition } from "./types";
 
-// Mock ha-selector for browser tests if not defined by HA frontend
+// Mock ha-card-conditions-editor and ha-selector for browser tests if not defined by HA frontend
+if (!customElements.get("ha-card-conditions-editor")) {
+  class MockHaCardConditionsEditor extends LitElement {
+    static properties = {
+      hass: { type: Object },
+      conditions: { type: Array },
+    };
+    hass: unknown;
+    conditions: unknown;
+
+    emitChange(val: unknown) {
+      this.dispatchEvent(
+        new CustomEvent("value-changed", {
+          detail: { value: val },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
+  }
+  customElements.define("ha-card-conditions-editor", MockHaCardConditionsEditor);
+}
+
 if (!customElements.get("ha-selector")) {
   class MockHaSelector extends LitElement {
     static properties = {
@@ -218,7 +240,7 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     expect(neutralBadge.textContent).toContain("Always visible");
   });
 
-  it("updates furniture visibility when ha-selector emits value-changed", async () => {
+  it("updates furniture visibility when ha-card-conditions-editor emits value-changed", async () => {
     const piece: Furniture = {
       id: "car_1",
       type: "car",
@@ -234,10 +256,10 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     root(editor).querySelector<HTMLButtonElement>("#object-category-visibility")!.click();
     await editor.updateComplete;
 
-    const haSelector = root(editor).querySelector("ha-selector") as HTMLElement & {
+    const conditionsEditor = root(editor).querySelector("ha-card-conditions-editor") as HTMLElement & {
       emitChange?: (val: unknown) => void;
     };
-    expect(haSelector).not.toBeNull();
+    expect(conditionsEditor).not.toBeNull();
 
     const newConditions: VisibilityCondition[] = [
       {
@@ -247,10 +269,10 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
       },
     ];
 
-    if (typeof haSelector.emitChange === "function") {
-      haSelector.emitChange(newConditions);
+    if (typeof conditionsEditor.emitChange === "function") {
+      conditionsEditor.emitChange(newConditions);
     } else {
-      haSelector.dispatchEvent(
+      conditionsEditor.dispatchEvent(
         new CustomEvent("value-changed", {
           detail: { value: newConditions },
           bubbles: true,
@@ -263,6 +285,60 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     expect(saved.length).toBeGreaterThan(0);
     const updated = saved[saved.length - 1].floors![0].furniture[0];
     expect(updated.visibility).toEqual(newConditions);
+  });
+
+  it("preserves conditions array reference on echo to prevent accordion collapse", async () => {
+    const piece: Furniture = {
+      id: "car_1",
+      type: "car",
+      x: 300,
+      y: 200,
+      w: 80,
+      h: 160,
+    };
+
+    const { editor, saved } = await mount(piece, "home");
+    (editor as unknown as Internals)._selection = [{ kind: "furniture", id: "car_1" }];
+    await editor.updateComplete;
+    root(editor).querySelector<HTMLButtonElement>("#object-category-visibility")!.click();
+    await editor.updateComplete;
+
+    const conditionsEditor = root(editor).querySelector("ha-card-conditions-editor") as HTMLElement & {
+      conditions?: unknown;
+      emitChange?: (val: unknown) => void;
+    };
+    expect(conditionsEditor).not.toBeNull();
+
+    const emittedConditions: VisibilityCondition[] = [
+      {
+        condition: "state",
+        entity: "cover.garage_door",
+        state: "open",
+      },
+    ];
+
+    // Simulate ha-card-conditions-editor emitting value-changed
+    if (typeof conditionsEditor.emitChange === "function") {
+      conditionsEditor.emitChange(emittedConditions);
+    } else {
+      conditionsEditor.dispatchEvent(
+        new CustomEvent("value-changed", {
+          detail: { value: emittedConditions },
+          bubbles: true,
+          composed: true,
+        })
+      );
+    }
+    await editor.updateComplete;
+
+    // Home Assistant echoes back the saved config (cloned)
+    const latestConfig = structuredClone(saved[saved.length - 1]);
+    editor.setConfig(latestConfig);
+    await editor.updateComplete;
+
+    // The conditions property must remain strictly identical by reference to what was emitted
+    // so Lit avoids property reassignment and does not collapse child ha-expansion-panel elements
+    expect(conditionsEditor.conditions).toBe(emittedConditions);
   });
 
   it("displays correct status for state condition with entity_id", async () => {
@@ -312,7 +388,7 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     expect(badge.textContent).toContain("Visible on floorplan");
   });
 
-  it("passes condition-wrapped hass with translation fallbacks to ha-selector condition builder", async () => {
+  it("passes hass and conditions directly to ha-card-conditions-editor", async () => {
     const sofa: Furniture = {
       id: "fu1",
       type: "sofa",
@@ -336,21 +412,13 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     root(editor).querySelector<HTMLButtonElement>("#object-category-visibility")!.click();
     await editor.updateComplete;
 
-    const haSelector = root(editor).querySelector("ha-selector") as HTMLElement & {
-      hass?: {
-        localize?: (key: string) => string;
-        states?: Record<string, unknown>;
-      };
+    const conditionsEditor = root(editor).querySelector("ha-card-conditions-editor") as HTMLElement & {
+      hass?: unknown;
+      conditions?: unknown;
     };
-    expect(haSelector).not.toBeNull();
-    expect(haSelector.hass).toBeDefined();
-
-    // Verify proxy delegates to hass states
-    expect(haSelector.hass?.states).toBe(editor.hass?.states);
-
-    // Verify proxy falls back to FALLBACK_CONFIG_TRANSLATIONS for unlocalised automation keys
-    expect(haSelector.hass?.localize?.("ui.panel.config.automation.editor.conditions.add")).toBe("Add condition");
-    expect(haSelector.hass?.localize?.("ui.panel.config.automation.editor.conditions.type.state.label")).toBe("State");
+    expect(conditionsEditor).not.toBeNull();
+    expect(conditionsEditor.hass).toBe(editor.hass);
+    expect(conditionsEditor.conditions).toEqual(sofa.visibility);
   });
 
   it("evaluates numeric_state condition with status badges and canvas dimming", async () => {

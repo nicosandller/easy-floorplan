@@ -33,110 +33,7 @@ import type {
 } from "./types";
 import { isFurnitureVisible } from "./furniture-visibility";
 
-const CONDITION_SELECTOR = { condition: {} };
 const EMPTY_VISIBILITY: VisibilityCondition[] = [];
-
-/**
- * Fallback translations for Home Assistant automation condition selector (<ha-selector .selector=${{ condition: {} }}>).
- *
- * In Lovelace dashboard card editors, Home Assistant loads only the "lovelace" translation fragment
- * by default. The condition builder UI components (<ha-automation-condition>) belong to the automation
- * config panel and rely on keys under "ui.panel.config.automation.editor.conditions.*" and backend
- * "conditions" translations. Without these loaded, condition labels and buttons render blank in Lovelace.
- */
-export const FALLBACK_CONFIG_TRANSLATIONS: Record<string, string> = {
-  // Condition builder buttons and headers
-  "ui.panel.config.automation.editor.conditions.add": "Add condition",
-  "ui.panel.config.automation.editor.conditions.name": "Conditions",
-  "ui.panel.config.automation.editor.conditions.select": "Select condition",
-  "ui.panel.config.automation.editor.blocks": "Building blocks",
-  "ui.panel.config.automation.editor.tabs.type": "By type",
-  "ui.panel.config.automation.editor.tabs.target": "By entity",
-
-  // Condition type labels
-  "ui.panel.config.automation.editor.conditions.type.state.label": "State",
-  "ui.panel.config.automation.editor.conditions.type.numeric_state.label": "Numeric state",
-  "ui.panel.config.automation.editor.conditions.type.screen.label": "Screen",
-  "ui.panel.config.automation.editor.conditions.type.user.label": "User",
-  "ui.panel.config.automation.editor.conditions.type.and.label": "And",
-  "ui.panel.config.automation.editor.conditions.type.or.label": "Or",
-  "ui.panel.config.automation.editor.conditions.type.not.label": "Not",
-  "ui.panel.config.automation.editor.conditions.type.device.label": "Device",
-  "ui.panel.config.automation.editor.conditions.type.time.label": "Time",
-  "ui.panel.config.automation.editor.conditions.type.template.label": "Template",
-  "ui.panel.config.automation.editor.conditions.type.zone.label": "Zone",
-  "ui.panel.config.automation.editor.conditions.type.sun.label": "Sun",
-
-  // Numeric state condition options
-  "ui.panel.config.automation.editor.conditions.type.numeric_state.type_value": "Fixed number",
-  "ui.panel.config.automation.editor.conditions.type.numeric_state.type_input": "Value of an entity",
-  "ui.panel.config.automation.editor.triggers.type.numeric_state.type_value": "Fixed number",
-  "ui.panel.config.automation.editor.triggers.type.numeric_state.type_input": "Value of an entity",
-  "ui.panel.config.automation.editor.triggers.type.numeric_state.lower_limit": "Above",
-  "ui.panel.config.automation.editor.triggers.type.numeric_state.upper_limit": "Below",
-  "ui.panel.config.automation.editor.triggers.type.numeric_state.above": "Above",
-  "ui.panel.config.automation.editor.triggers.type.numeric_state.below": "Below",
-  "ui.panel.config.automation.editor.triggers.type.numeric_state.value_template": "Value template",
-
-  // Screen condition options
-  "ui.panel.config.automation.editor.conditions.type.screen.media_query": "Media query",
-  "ui.panel.config.automation.editor.conditions.type.screen.breakpoints": "Screen size",
-
-  // State condition options
-  "ui.panel.config.automation.editor.conditions.type.state.entity": "Entity",
-  "ui.panel.config.automation.editor.conditions.type.state.state": "State",
-  "ui.panel.config.automation.editor.conditions.type.state.attribute": "Attribute",
-  "ui.panel.config.automation.editor.conditions.type.state.for": "For",
-  "ui.panel.config.automation.editor.triggers.type.state.for": "For",
-  "ui.panel.config.automation.editor.triggers.type.state.entity": "Entity",
-  "ui.panel.config.automation.editor.triggers.type.state.to": "To",
-  "ui.panel.config.automation.editor.triggers.type.state.from": "From",
-  "ui.components.entity.entity-picker.entity": "Entity",
-  "ui.components.entity.entity-picker.clear": "Clear",
-
-  // Device condition options
-  "ui.panel.config.automation.editor.conditions.type.device.device": "Device",
-  "ui.panel.config.automation.editor.conditions.type.device.type": "Type",
-  "ui.panel.config.automation.editor.triggers.type.device.device": "Device",
-  "ui.panel.config.automation.editor.triggers.type.device.type": "Type",
-  "ui.components.device-picker.device": "Device",
-  "ui.components.device-picker.clear": "Clear",
-
-  // Zone condition options
-  "ui.panel.config.automation.editor.conditions.type.zone.entity": "Entity",
-  "ui.panel.config.automation.editor.conditions.type.zone.zone": "Zone",
-  "ui.panel.config.automation.editor.triggers.type.zone.entity": "Entity",
-  "ui.panel.config.automation.editor.triggers.type.zone.zone": "Zone",
-  "ui.components.zone-picker.zone": "Zone",
-
-  // Time condition options
-  "ui.panel.config.automation.editor.conditions.type.time.after": "After",
-  "ui.panel.config.automation.editor.conditions.type.time.before": "Before",
-  "ui.panel.config.automation.editor.conditions.type.time.weekday": "Weekday",
-  "ui.panel.config.automation.editor.triggers.type.time.at": "At",
-
-  // Item menu actions
-  "ui.panel.config.automation.editor.actions.delete": "Delete",
-  "ui.panel.config.automation.editor.del": "Delete",
-  "ui.panel.config.automation.editor.actions.disable": "Disable",
-  "ui.panel.config.automation.editor.actions.enable": "Enable",
-  "ui.panel.config.automation.editor.actions.disabled": "Disabled",
-  "ui.panel.config.automation.editor.conditions.test": "Test",
-  "ui.panel.config.automation.editor.conditions.testing_pass": "Passed",
-  "ui.panel.config.automation.editor.conditions.testing_error": "Failed",
-  "ui.panel.config.automation.editor.conditions.rename": "Rename",
-  "ui.panel.config.automation.editor.conditions.change_alias": "Change alias",
-  "ui.panel.config.automation.editor.conditions.alias": "Alias",
-  "ui.panel.config.automation.editor.re-order": "Re-order",
-  "ui.panel.config.automation.editor.move_up": "Move up",
-  "ui.panel.config.automation.editor.move_down": "Move down",
-
-  // Common UI keys used by editor dialogs
-  "ui.common.menu": "Menu",
-  "ui.common.submit": "Submit",
-  "ui.common.undo": "Undo",
-  "ui.common.successfully_deleted": "Successfully deleted",
-};
 
 import {
   normalizeSymbol,
@@ -554,28 +451,6 @@ function isTypingPath(path: EventTarget[]): boolean {
   });
 }
 
-/**
- * True when the event originates in an overlay, dialog, popup, or picker outside
- * the editor root (e.g. Home Assistant's condition builder dialog, entity picker
- * dropdown, or action popup).
- */
-function isExternalOverlayPath(path: EventTarget[]): boolean {
-  return path.some((el) => {
-    if (!(el instanceof Element)) return false;
-    const tag = el.tagName.toLowerCase();
-    return (
-      tag.includes("dialog") ||
-      tag.includes("menu") ||
-      tag.includes("overlay") ||
-      tag.includes("picker") ||
-      tag.includes("selector") ||
-      tag.includes("condition") ||
-      el.matches("dialog, [role='dialog'], [role='menu'], [role='listbox'], [role='option'], input, textarea, select") ||
-      isTypingPath([el])
-    );
-  });
-}
-
 @customElement("easy-floorplan-card-editor")
 export class FloorplanCardEditor extends LitElement {
   private static _nextWallMaskId = 0;
@@ -585,9 +460,6 @@ export class FloorplanCardEditor extends LitElement {
   @property({ attribute: false }) public hass?: HomeAssistant;
   /** Entity ids this plan displays; used to skip irrelevant hass updates. */
   private _watchedEntities: Set<string> = new Set();
-  private _loadedConfigTranslations = false;
-  private _lastConditionHassBase?: HomeAssistant;
-  private _cachedConditionHass?: HomeAssistant;
   @state() private _config!: FloorplanCardConfig;
   @state() private _tool: Tool = "select";
   @state() private _selection: Sel[] = [];
@@ -679,6 +551,16 @@ export class FloorplanCardEditor extends LitElement {
    * change is its own echo, which would throw the cursor away mid-word.
    */
   private _actionYamlSeen = { key: "", json: "", gen: 0 };
+  /**
+   * Active conditions reference passed to `<ha-card-conditions-editor>`.
+   * HA's `<ha-card-conditions-editor>` re-initializes its child condition editors
+   * and collapses open `<ha-expansion-panel>` sections whenever its `.conditions`
+   * property is assigned a new array reference. We cache the exact array instance
+   * emitted by `value-changed` so that after `_updateFurniture` -> `config-changed` ->
+   * `setConfig` (which structuredClones), Lit's property dirty-check detects
+   * `oldVal === newVal` and avoids re-assigning `.conditions`.
+   */
+  private _activeConditionsRef?: { id: string; conditions: VisibilityCondition[] };
   @state() private _mobileInspector = false;
   @state() private _previewCollapsed = false;
   @state() private _keyboardOpen = false;
@@ -790,7 +672,11 @@ export class FloorplanCardEditor extends LitElement {
     ev.stopPropagation();
     this._canvasWrap?.focus({ preventScroll: true });
   };
-  private _onFocusIn = (_ev: FocusEvent) => {
+  private _onFocusIn = (ev: FocusEvent) => {
+    // While the fullscreen popover is up, anything that pulls focus outside the
+    // editor (Tab past the last control, a dialog opening above) lands on UI
+    // hidden behind the top layer. Collapse instead of leaving the user blind.
+    if (this._fullscreen && !ev.composedPath().includes(this)) this._fullscreen = false;
     this._syncVisualViewport();
   };
 
@@ -841,6 +727,7 @@ export class FloorplanCardEditor extends LitElement {
 
   public disconnectedCallback(): void {
     this._numberDraft = undefined;
+    this._activeConditionsRef = undefined;
     this._canvasResize?.disconnect();
     window.removeEventListener("keydown", this._onKeyDown, true);
     this.removeEventListener("keydown", this._onHostKeyDown);
@@ -927,6 +814,7 @@ export class FloorplanCardEditor extends LitElement {
       this._history = [];
       this._future = [];
       this._liveEditKey = null;
+      this._activeConditionsRef = undefined;
     }
     this._watchedEntities = collectWatchedEntities(this._config);
   }
@@ -1061,7 +949,6 @@ export class FloorplanCardEditor extends LitElement {
 
   protected firstUpdated(): void {
     void this._ensureHaComponents();
-    this._ensureConfigTranslations();
     if (this._canvasWrap && typeof ResizeObserver !== "undefined") {
       this._canvasResize = new ResizeObserver(() => {
         // The phone inspector is a close-up of the object being edited.
@@ -1083,6 +970,7 @@ export class FloorplanCardEditor extends LitElement {
     for (const tag of [
       "ha-form",
       "ha-selector",
+      "ha-card-conditions-editor",
       "ha-entity-picker",
       "ha-entity-attribute-picker",
       "ha-icon-picker",
@@ -1245,75 +1133,6 @@ export class FloorplanCardEditor extends LitElement {
     this.requestUpdate();
   }
 
-  /**
-   * Request Home Assistant to load automation config translations and backend condition translations.
-   * Runs in the background and calls requestUpdate() once loaded so live translations take effect.
-   */
-  private _ensureConfigTranslations(): void {
-    if (this._loadedConfigTranslations || !this.hass) return;
-    this._loadedConfigTranslations = true;
-    const hassAny = this.hass as unknown as {
-      loadFragmentTranslation?: (fragment: string) => Promise<unknown>;
-      loadBackendTranslation?: (category: string) => Promise<unknown>;
-    };
-    if (typeof hassAny.loadFragmentTranslation === "function") {
-      void hassAny.loadFragmentTranslation("config").then(() => this.requestUpdate());
-    }
-    if (typeof hassAny.loadBackendTranslation === "function") {
-      void hassAny.loadBackendTranslation("conditions").then(() => this.requestUpdate());
-    }
-  }
-
-  /**
-   * Returns a lightweight Proxy of `this.hass` that wraps `localize` to fall back to
-   * `FALLBACK_CONFIG_TRANSLATIONS` when Home Assistant hasn't loaded the "config" translation fragment.
-   * This ensures `<ha-selector .selector=${{ condition: {} }}>` buttons and labels are never blank.
-   */
-  public _getConditionHass(): HomeAssistant | undefined {
-    if (!this.hass) return undefined;
-    this._ensureConfigTranslations();
-    if (this.hass === this._lastConditionHassBase && this._cachedConditionHass) {
-      return this._cachedConditionHass;
-    }
-    this._lastConditionHassBase = this.hass;
-    const currentHass = this.hass;
-    const origLocalize = typeof currentHass.localize === "function" ? currentHass.localize.bind(currentHass) : undefined;
-    const wrappedLocalize = (key: string, ...args: unknown[]): string => {
-      const res = origLocalize ? origLocalize(key, ...args) : "";
-      if (res) return res;
-      return FALLBACK_CONFIG_TRANSLATIONS[key] ?? "";
-    };
-    const currentResources = currentHass.resources;
-    const wrappedResources = currentResources
-      ? new Proxy(currentResources, {
-          get: (resTarget, langProp, resReceiver) => {
-            const langObj = Reflect.get(resTarget, langProp, resReceiver);
-            if (typeof langObj === "object" && langObj !== null) {
-              return new Proxy(langObj, {
-                get: (dictTarget, keyProp, dictReceiver) => {
-                  const res = Reflect.get(dictTarget, keyProp, dictReceiver);
-                  if (res !== undefined && res !== "") return res;
-                  if (typeof keyProp === "string" && keyProp in FALLBACK_CONFIG_TRANSLATIONS) {
-                    return FALLBACK_CONFIG_TRANSLATIONS[keyProp];
-                  }
-                  return res;
-                },
-              });
-            }
-            return langObj;
-          },
-        })
-      : currentResources;
-    this._cachedConditionHass = new Proxy(currentHass, {
-      get: (target, prop, receiver) => {
-        if (prop === "localize") return wrappedLocalize;
-        if (prop === "resources") return wrappedResources;
-        const val = Reflect.get(target, prop, receiver);
-        return typeof val === "function" ? val.bind(target) : val;
-      },
-    });
-    return this._cachedConditionHass;
-  }
 
   private get grid(): number {
     return this._config.grid ?? DEFAULT_GRID;
@@ -1517,6 +1336,7 @@ export class FloorplanCardEditor extends LitElement {
 
   /** Keep property edits in context, but never retain an object removed by undo. */
   private _restoreHistory(config: FloorplanCardConfig): void {
+    this._activeConditionsRef = undefined;
     const floor = config.floors?.find((f) => f.id === this._activeFloorId);
     this._selection = floor ? this._selection.filter((s) => findElement(floor, s)) : [];
     this._emit(config);
@@ -1530,6 +1350,9 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _selectOne(sel: Sel): void {
+    if (this._selection.length !== 1 || this._selection[0].kind !== sel.kind || this._selection[0].id !== sel.id) {
+      this._activeConditionsRef = undefined;
+    }
     this._selection = [sel];
     // Selection changes end any live-edit burst: re-selecting the same
     // element later must start a new undo step, not extend the old one.
@@ -1537,6 +1360,7 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _toggleSel(sel: Sel): void {
+    this._activeConditionsRef = undefined;
     this._selection = this._isSel(sel.kind, sel.id)
       ? this._selection.filter((s) => !(s.kind === sel.kind && s.id === sel.id))
       : [...this._selection, sel];
@@ -1544,6 +1368,7 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _clearSel(): void {
+    this._activeConditionsRef = undefined;
     this._selection = [];
     this._liveEditKey = null;
   }
@@ -1587,10 +1412,9 @@ export class FloorplanCardEditor extends LitElement {
       // While fullscreen the workspace owns the screen: an Escape that fires
       // from `body` (focus dropped after a blur or a dead-space click) must
       // collapse it rather than reach — and close — HA's dialog hidden
-      // underneath. If focus is inside an overlay, dialog, menu, or selector
-      // stacked above us (such as HA's condition selector dialog or an entity picker),
-      // let that element handle Escape itself instead of collapsing the workspace.
-      if (this._fullscreen && ev.key === "Escape" && !isExternalOverlayPath(path)) {
+      // underneath. A dialog stacked above us is unaffected: it takes focus,
+      // and the focusin guard has already collapsed fullscreen by then.
+      if (this._fullscreen && ev.key === "Escape") {
         ev.preventDefault();
         ev.stopPropagation();
         this._fullscreen = false;
@@ -3489,6 +3313,7 @@ export class FloorplanCardEditor extends LitElement {
   /** Tabs and in-panel shortcuts share draft, scroll and keyboard-focus handling. */
   private async _choosePage(id: string, project = false): Promise<void> {
     this._numberDraft = undefined;
+    this._activeConditionsRef = undefined;
     if (project) this._projectPage = id;
     else this._selectionPage = id;
     this.renderRoot.querySelector<HTMLElement>(".side")?.scrollTo({ top: 0 });
@@ -3755,8 +3580,8 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
-   * Dedicated visibility inspector group using Home Assistant's native condition builder
-   * (<ha-selector .selector=${{ condition: {} }}>) and real-time status indication (Issue #310).
+   * Dedicated visibility inspector group using Home Assistant's native card conditions editor
+   * (<ha-card-conditions-editor>) and real-time status indication (Issue #310).
    */
   private _renderFurnitureVisibility(f: Furniture): TemplateResult {
     const hasConditions = Array.isArray(f.visibility) && f.visibility.length > 0;
@@ -3780,6 +3605,13 @@ export class FloorplanCardEditor extends LitElement {
       statusIcon = "mdi:eye-off-outline";
     }
 
+    const effectiveVisibility = f.visibility ?? EMPTY_VISIBILITY;
+    const conditions =
+      this._activeConditionsRef?.id === f.id &&
+      configsEqual(this._activeConditionsRef.conditions, effectiveVisibility)
+        ? this._activeConditionsRef.conditions
+        : effectiveVisibility;
+
     return html`
       <div class="visibility-group">
         <div class="visibility-status-row">
@@ -3791,18 +3623,18 @@ export class FloorplanCardEditor extends LitElement {
         <p class="hint">
           Control when this piece appears on the floorplan. In the editor, hidden furniture is dimmed so it can still be moved or edited.
         </p>
-        <ha-selector
-          .hass=${this._getConditionHass()}
-          .selector=${CONDITION_SELECTOR}
-          .value=${f.visibility ?? EMPTY_VISIBILITY}
+        <ha-card-conditions-editor
+          .hass=${this.hass}
+          .conditions=${conditions}
           @value-changed=${(e: CustomEvent<{ value: VisibilityCondition[] }>) => {
             e.stopPropagation();
             const val = e.detail?.value;
             const visibility = Array.isArray(val) && val.length > 0 ? val : undefined;
+            this._activeConditionsRef = { id: f.id, conditions: val ?? EMPTY_VISIBILITY };
             if (configsEqual(visibility, f.visibility)) return;
             this._updateFurniture(f.id, { visibility });
           }}
-        ></ha-selector>
+        ></ha-card-conditions-editor>
       </div>
     `;
   }
