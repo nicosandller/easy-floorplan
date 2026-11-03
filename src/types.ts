@@ -1181,15 +1181,13 @@ export type VisibilityCondition =
   | NumericStateVisibilityCondition
   | ScreenVisibilityCondition
   | UserVisibilityCondition
-  | SunVisibilityCondition
-  | ZoneVisibilityCondition
-  | LocationVisibilityCondition
-  | TimeVisibilityCondition
-  | DeviceVisibilityCondition
   | AndVisibilityCondition
   | OrVisibilityCondition
   | NotVisibilityCondition
-  | EntityTargetVisibilityCondition;
+  | DeviceVisibilityCondition
+  | ZoneVisibilityCondition
+  | TimeVisibilityCondition
+  | CustomVisibilityCondition;
 
 export interface StateVisibilityCondition {
   condition: "state";
@@ -1216,69 +1214,6 @@ export interface NumericStateVisibilityCondition {
   above?: number | string;
   below?: number | string;
   attribute?: string;
-}
-
-export interface SunVisibilityCondition {
-  condition: "sun" | "sun.is_above_horizon" | "sun.is_below_horizon" | "sun.is_ascending" | "sun.is_descending" | string;
-  after?: string;
-  after_offset?: string | number;
-  before?: string;
-  before_offset?: string | number;
-  state?: string;
-  type?: string;
-}
-
-export interface ZoneVisibilityCondition {
-  condition: "zone" | "zone.in_zone" | "zone.not_in_zone" | "area" | string;
-  entity?: string;
-  entity_id?: string | string[];
-  zone?: string | string[];
-  area?: string;
-  area_id?: string;
-  target?: {
-    entity_id?: string | string[];
-    zone?: string | string[];
-    area_id?: string | string[];
-    [key: string]: unknown;
-  };
-  options?: {
-    behavior?: "any" | "all";
-    zone?: string | string[];
-    [key: string]: unknown;
-  };
-  type?: string;
-  state?: string;
-}
-
-export interface LocationVisibilityCondition {
-  condition: "location";
-  locations?: string[];
-  away?: boolean;
-  target?: {
-    entity_id?: string | string[];
-    zone?: string | string[];
-    [key: string]: unknown;
-  };
-}
-
-export interface TimeVisibilityCondition {
-  condition: "time";
-  after?: string;
-  before?: string;
-  weekday?: string | string[];
-  weekdays?: string[];
-}
-
-export interface DeviceVisibilityCondition {
-  condition: "device" | string;
-  device_id?: string;
-  domain?: string;
-  entity_id?: string | string[];
-  type?: string;
-  target?: {
-    entity_id?: string | string[];
-    [key: string]: unknown;
-  };
 }
 
 export interface ScreenVisibilityCondition {
@@ -1309,18 +1244,37 @@ export interface NotVisibilityCondition {
   not?: VisibilityCondition[];
 }
 
-export interface EntityTargetVisibilityCondition {
-  condition: string;
-  target?: {
-    entity_id?: string | string[];
-    [key: string]: unknown;
-  };
-  entity?: string;
+export interface DeviceVisibilityCondition {
+  condition: "device";
+  device_id?: string;
+  domain?: string;
   entity_id?: string | string[];
   type?: string;
-  state?: string | string[];
-  state_not?: string | string[];
-  options?: Record<string, unknown>;
+  subtype?: string;
+  [key: string]: unknown;
+}
+
+export interface ZoneVisibilityCondition {
+  condition: "zone" | "zone.in_zone" | "zone.not_in_zone";
+  entity?: string;
+  entity_id?: string | string[];
+  zone?: string;
+  zones?: string[];
+  behavior?: "all" | "any";
+  [key: string]: unknown;
+}
+
+export interface TimeVisibilityCondition {
+  condition: "time";
+  after?: string;
+  before?: string;
+  weekday?: string | string[];
+  weekdays?: string | string[];
+  [key: string]: unknown;
+}
+
+export interface CustomVisibilityCondition {
+  condition: string & {};
   [key: string]: unknown;
 }
 

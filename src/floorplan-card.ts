@@ -247,7 +247,6 @@ import { createReplayPanelProps, renderReplayPanel } from "./replay-history/repl
 import {
   isFurnitureVisible,
   collectConditionMediaQueries,
-  hasTimeConditions,
 } from "./furniture-visibility";
 
 /**
@@ -397,7 +396,6 @@ export class FloorplanCard extends LitElement {
       if (e.matches) this._rotation.finish();
     });
     this._syncScreenMediaSubscriptions();
-    this._syncTimeClockSubscription();
   }
 
   public setConfig(config: FloorplanCardConfig): void {
@@ -474,7 +472,6 @@ export class FloorplanCard extends LitElement {
       }
     }
     this._syncScreenMediaSubscriptions();
-    this._syncTimeClockSubscription();
   }
 
   private _screenMediaQueries: Array<() => void> = [];
@@ -487,19 +484,6 @@ export class FloorplanCard extends LitElement {
     for (const query of mqs) {
       const mql = window.matchMedia(query);
       this._screenMediaQueries.push(subscribeOrientation(mql, () => this.requestUpdate()));
-    }
-  }
-
-  private _timeClock?: ReturnType<typeof setInterval>;
-
-  private _syncTimeClockSubscription(): void {
-    if (this._timeClock) {
-      clearInterval(this._timeClock);
-      this._timeClock = undefined;
-    }
-    if (typeof window === "undefined" || !this.isConnected || !this._config) return;
-    if (hasTimeConditions(this._config)) {
-      this._timeClock = setInterval(() => this.requestUpdate(), 30000);
     }
   }
 
@@ -877,10 +861,6 @@ export class FloorplanCard extends LitElement {
     this._unsubscribeOrientation = undefined;
     for (const unsub of this._screenMediaQueries) unsub();
     this._screenMediaQueries = [];
-    if (this._timeClock) {
-      clearInterval(this._timeClock);
-      this._timeClock = undefined;
-    }
     this._autoResize?.disconnect();
     this._autoResize = undefined;
     this._autoResizeTarget = undefined;

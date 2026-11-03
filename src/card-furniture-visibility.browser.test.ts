@@ -258,16 +258,15 @@ describe("furniture visibility on mounted card", () => {
     expect(card.shadowRoot!.querySelector(".fp-furniture-car_ev")).toBeNull();
   });
 
-  it("hides furniture when time weekday condition does not match (2D)", async () => {
-    const todayIdx = new Date().getDay();
-    const allDays = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-    const notToday = allDays[(todayIdx + 3) % 7];
+  it("hides furniture when numeric_state condition does not match (2D)", async () => {
     const card = makeCard(
       "2d",
       {
-        visibility: [{ condition: "time", weekday: [notToday] }],
+        visibility: [{ condition: "numeric_state", entity: "sensor.temp", below: 18 }],
       },
-      {}
+      {
+        "sensor.temp": "22",
+      }
     );
     document.body.append(card);
     await card.updateComplete;

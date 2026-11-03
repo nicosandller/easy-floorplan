@@ -37,19 +37,37 @@ const CONDITION_SELECTOR = { condition: {} };
 const EMPTY_VISIBILITY: VisibilityCondition[] = [];
 
 /**
- * Fallback localization strings for condition and automation editor components.
+ * Fallback translations for Home Assistant automation condition selector (<ha-selector .selector=${{ condition: {} }}>).
  *
- * In Home Assistant, the Condition Selector (<ha-selector .selector=${{ condition: {} }}>)
- * renders subcomponents (such as ha-automation-condition-numeric_state) whose schemas
- * and options fetch strings from the "config" translation fragment (ui.panel.config.automation.editor.*).
- * Because Lovelace dashboard cards operate outside the configuration panel, the "config" fragment
- * is not loaded by default, leaving radio button options (like "Fixed number" and "Value of an entity")
- * and threshold labels ("Above", "Below") with empty strings.
- *
- * We both lazily trigger hass.loadFragmentTranslation("config") and defensively provide these
- * standard fallbacks so the condition builder remains fully labeled at all times.
+ * In Lovelace dashboard card editors, Home Assistant loads only the "lovelace" translation fragment
+ * by default. The condition builder UI components (<ha-automation-condition>) belong to the automation
+ * config panel and rely on keys under "ui.panel.config.automation.editor.conditions.*" and backend
+ * "conditions" translations. Without these loaded, condition labels and buttons render blank in Lovelace.
  */
 export const FALLBACK_CONFIG_TRANSLATIONS: Record<string, string> = {
+  // Condition builder buttons and headers
+  "ui.panel.config.automation.editor.conditions.add": "Add condition",
+  "ui.panel.config.automation.editor.conditions.name": "Conditions",
+  "ui.panel.config.automation.editor.conditions.select": "Select condition",
+  "ui.panel.config.automation.editor.blocks": "Building blocks",
+  "ui.panel.config.automation.editor.tabs.type": "By type",
+  "ui.panel.config.automation.editor.tabs.target": "By entity",
+
+  // Condition type labels
+  "ui.panel.config.automation.editor.conditions.type.state.label": "State",
+  "ui.panel.config.automation.editor.conditions.type.numeric_state.label": "Numeric state",
+  "ui.panel.config.automation.editor.conditions.type.screen.label": "Screen",
+  "ui.panel.config.automation.editor.conditions.type.user.label": "User",
+  "ui.panel.config.automation.editor.conditions.type.and.label": "And",
+  "ui.panel.config.automation.editor.conditions.type.or.label": "Or",
+  "ui.panel.config.automation.editor.conditions.type.not.label": "Not",
+  "ui.panel.config.automation.editor.conditions.type.device.label": "Device",
+  "ui.panel.config.automation.editor.conditions.type.time.label": "Time",
+  "ui.panel.config.automation.editor.conditions.type.template.label": "Template",
+  "ui.panel.config.automation.editor.conditions.type.zone.label": "Zone",
+  "ui.panel.config.automation.editor.conditions.type.sun.label": "Sun",
+
+  // Numeric state condition options
   "ui.panel.config.automation.editor.conditions.type.numeric_state.type_value": "Fixed number",
   "ui.panel.config.automation.editor.conditions.type.numeric_state.type_input": "Value of an entity",
   "ui.panel.config.automation.editor.triggers.type.numeric_state.type_value": "Fixed number",
@@ -59,15 +77,67 @@ export const FALLBACK_CONFIG_TRANSLATIONS: Record<string, string> = {
   "ui.panel.config.automation.editor.triggers.type.numeric_state.above": "Above",
   "ui.panel.config.automation.editor.triggers.type.numeric_state.below": "Below",
   "ui.panel.config.automation.editor.triggers.type.numeric_state.value_template": "Value template",
-  "ui.panel.config.automation.editor.conditions.type.time.type_value": "Fixed time",
-  "ui.panel.config.automation.editor.conditions.type.time.type_input": "Value of an entity",
-  "ui.panel.config.automation.editor.triggers.type.time.type_value": "Fixed time",
-  "ui.panel.config.automation.editor.triggers.type.time.type_input": "Value of an entity",
-  "ui.panel.config.automation.editor.triggers.type.time.after": "After",
-  "ui.panel.config.automation.editor.triggers.type.time.before": "Before",
-  "ui.panel.config.automation.editor.conditions.type.state.label": "State",
-  "ui.panel.config.automation.editor.conditions.type.numeric_state.label": "Numeric state",
+
+  // Screen condition options
+  "ui.panel.config.automation.editor.conditions.type.screen.media_query": "Media query",
+  "ui.panel.config.automation.editor.conditions.type.screen.breakpoints": "Screen size",
+
+  // State condition options
+  "ui.panel.config.automation.editor.conditions.type.state.entity": "Entity",
+  "ui.panel.config.automation.editor.conditions.type.state.state": "State",
+  "ui.panel.config.automation.editor.conditions.type.state.attribute": "Attribute",
+  "ui.panel.config.automation.editor.conditions.type.state.for": "For",
+  "ui.panel.config.automation.editor.triggers.type.state.for": "For",
+  "ui.panel.config.automation.editor.triggers.type.state.entity": "Entity",
+  "ui.panel.config.automation.editor.triggers.type.state.to": "To",
+  "ui.panel.config.automation.editor.triggers.type.state.from": "From",
+  "ui.components.entity.entity-picker.entity": "Entity",
+  "ui.components.entity.entity-picker.clear": "Clear",
+
+  // Device condition options
+  "ui.panel.config.automation.editor.conditions.type.device.device": "Device",
+  "ui.panel.config.automation.editor.conditions.type.device.type": "Type",
+  "ui.panel.config.automation.editor.triggers.type.device.device": "Device",
+  "ui.panel.config.automation.editor.triggers.type.device.type": "Type",
+  "ui.components.device-picker.device": "Device",
+  "ui.components.device-picker.clear": "Clear",
+
+  // Zone condition options
+  "ui.panel.config.automation.editor.conditions.type.zone.entity": "Entity",
+  "ui.panel.config.automation.editor.conditions.type.zone.zone": "Zone",
+  "ui.panel.config.automation.editor.triggers.type.zone.entity": "Entity",
+  "ui.panel.config.automation.editor.triggers.type.zone.zone": "Zone",
+  "ui.components.zone-picker.zone": "Zone",
+
+  // Time condition options
+  "ui.panel.config.automation.editor.conditions.type.time.after": "After",
+  "ui.panel.config.automation.editor.conditions.type.time.before": "Before",
+  "ui.panel.config.automation.editor.conditions.type.time.weekday": "Weekday",
+  "ui.panel.config.automation.editor.triggers.type.time.at": "At",
+
+  // Item menu actions
+  "ui.panel.config.automation.editor.actions.delete": "Delete",
+  "ui.panel.config.automation.editor.del": "Delete",
+  "ui.panel.config.automation.editor.actions.disable": "Disable",
+  "ui.panel.config.automation.editor.actions.enable": "Enable",
+  "ui.panel.config.automation.editor.actions.disabled": "Disabled",
+  "ui.panel.config.automation.editor.conditions.test": "Test",
+  "ui.panel.config.automation.editor.conditions.testing_pass": "Passed",
+  "ui.panel.config.automation.editor.conditions.testing_error": "Failed",
+  "ui.panel.config.automation.editor.conditions.rename": "Rename",
+  "ui.panel.config.automation.editor.conditions.change_alias": "Change alias",
+  "ui.panel.config.automation.editor.conditions.alias": "Alias",
+  "ui.panel.config.automation.editor.re-order": "Re-order",
+  "ui.panel.config.automation.editor.move_up": "Move up",
+  "ui.panel.config.automation.editor.move_down": "Move down",
+
+  // Common UI keys used by editor dialogs
+  "ui.common.menu": "Menu",
+  "ui.common.submit": "Submit",
+  "ui.common.undo": "Undo",
+  "ui.common.successfully_deleted": "Successfully deleted",
 };
+
 import {
   normalizeSymbol,
   symbolCatalog,
@@ -484,6 +554,28 @@ function isTypingPath(path: EventTarget[]): boolean {
   });
 }
 
+/**
+ * True when the event originates in an overlay, dialog, popup, or picker outside
+ * the editor root (e.g. Home Assistant's condition builder dialog, entity picker
+ * dropdown, or action popup).
+ */
+function isExternalOverlayPath(path: EventTarget[]): boolean {
+  return path.some((el) => {
+    if (!(el instanceof Element)) return false;
+    const tag = el.tagName.toLowerCase();
+    return (
+      tag.includes("dialog") ||
+      tag.includes("menu") ||
+      tag.includes("overlay") ||
+      tag.includes("picker") ||
+      tag.includes("selector") ||
+      tag.includes("condition") ||
+      el.matches("dialog, [role='dialog'], [role='menu'], [role='listbox'], [role='option'], input, textarea, select") ||
+      isTypingPath([el])
+    );
+  });
+}
+
 @customElement("easy-floorplan-card-editor")
 export class FloorplanCardEditor extends LitElement {
   private static _nextWallMaskId = 0;
@@ -493,6 +585,9 @@ export class FloorplanCardEditor extends LitElement {
   @property({ attribute: false }) public hass?: HomeAssistant;
   /** Entity ids this plan displays; used to skip irrelevant hass updates. */
   private _watchedEntities: Set<string> = new Set();
+  private _loadedConfigTranslations = false;
+  private _lastConditionHassBase?: HomeAssistant;
+  private _cachedConditionHass?: HomeAssistant;
   @state() private _config!: FloorplanCardConfig;
   @state() private _tool: Tool = "select";
   @state() private _selection: Sel[] = [];
@@ -695,36 +790,7 @@ export class FloorplanCardEditor extends LitElement {
     ev.stopPropagation();
     this._canvasWrap?.focus({ preventScroll: true });
   };
-  private _onFocusIn = (ev: FocusEvent) => {
-    // While the fullscreen popover is up, anything that pulls focus outside the
-    // editor (Tab past the last control, a dialog opening above) lands on UI
-    // hidden behind the top layer. Collapse instead of leaving the user blind.
-    // Menus, listboxes, dialogs, and popovers (such as HA's condition picker, entity
-    // autocomplete, or dropdown overlays) are attached outside the host or at document root;
-    // do not collapse when focus moves into one of these overlays.
-    const path = ev.composedPath();
-    if (this._fullscreen && !path.includes(this)) {
-      const isOverlay = path.some((el) => {
-        if (!(el instanceof Element)) return false;
-        const tag = el.tagName.toLowerCase();
-        const role = el.getAttribute("role");
-        return (
-          tag.includes("menu") ||
-          tag.includes("dialog") ||
-          tag.includes("overlay") ||
-          tag.includes("popover") ||
-          tag.includes("select") ||
-          tag.includes("picker") ||
-          tag.includes("dropdown") ||
-          role === "menu" ||
-          role === "menuitem" ||
-          role === "listbox" ||
-          role === "option" ||
-          role === "dialog"
-        );
-      });
-      if (!isOverlay) this._fullscreen = false;
-    }
+  private _onFocusIn = (_ev: FocusEvent) => {
     this._syncVisualViewport();
   };
 
@@ -1179,6 +1245,76 @@ export class FloorplanCardEditor extends LitElement {
     this.requestUpdate();
   }
 
+  /**
+   * Request Home Assistant to load automation config translations and backend condition translations.
+   * Runs in the background and calls requestUpdate() once loaded so live translations take effect.
+   */
+  private _ensureConfigTranslations(): void {
+    if (this._loadedConfigTranslations || !this.hass) return;
+    this._loadedConfigTranslations = true;
+    const hassAny = this.hass as unknown as {
+      loadFragmentTranslation?: (fragment: string) => Promise<unknown>;
+      loadBackendTranslation?: (category: string) => Promise<unknown>;
+    };
+    if (typeof hassAny.loadFragmentTranslation === "function") {
+      void hassAny.loadFragmentTranslation("config").then(() => this.requestUpdate());
+    }
+    if (typeof hassAny.loadBackendTranslation === "function") {
+      void hassAny.loadBackendTranslation("conditions").then(() => this.requestUpdate());
+    }
+  }
+
+  /**
+   * Returns a lightweight Proxy of `this.hass` that wraps `localize` to fall back to
+   * `FALLBACK_CONFIG_TRANSLATIONS` when Home Assistant hasn't loaded the "config" translation fragment.
+   * This ensures `<ha-selector .selector=${{ condition: {} }}>` buttons and labels are never blank.
+   */
+  public _getConditionHass(): HomeAssistant | undefined {
+    if (!this.hass) return undefined;
+    this._ensureConfigTranslations();
+    if (this.hass === this._lastConditionHassBase && this._cachedConditionHass) {
+      return this._cachedConditionHass;
+    }
+    this._lastConditionHassBase = this.hass;
+    const currentHass = this.hass;
+    const origLocalize = typeof currentHass.localize === "function" ? currentHass.localize.bind(currentHass) : undefined;
+    const wrappedLocalize = (key: string, ...args: unknown[]): string => {
+      const res = origLocalize ? origLocalize(key, ...args) : "";
+      if (res) return res;
+      return FALLBACK_CONFIG_TRANSLATIONS[key] ?? "";
+    };
+    const currentResources = currentHass.resources;
+    const wrappedResources = currentResources
+      ? new Proxy(currentResources, {
+          get: (resTarget, langProp, resReceiver) => {
+            const langObj = Reflect.get(resTarget, langProp, resReceiver);
+            if (typeof langObj === "object" && langObj !== null) {
+              return new Proxy(langObj, {
+                get: (dictTarget, keyProp, dictReceiver) => {
+                  const res = Reflect.get(dictTarget, keyProp, dictReceiver);
+                  if (res !== undefined && res !== "") return res;
+                  if (typeof keyProp === "string" && keyProp in FALLBACK_CONFIG_TRANSLATIONS) {
+                    return FALLBACK_CONFIG_TRANSLATIONS[keyProp];
+                  }
+                  return res;
+                },
+              });
+            }
+            return langObj;
+          },
+        })
+      : currentResources;
+    this._cachedConditionHass = new Proxy(currentHass, {
+      get: (target, prop, receiver) => {
+        if (prop === "localize") return wrappedLocalize;
+        if (prop === "resources") return wrappedResources;
+        const val = Reflect.get(target, prop, receiver);
+        return typeof val === "function" ? val.bind(target) : val;
+      },
+    });
+    return this._cachedConditionHass;
+  }
+
   private get grid(): number {
     return this._config.grid ?? DEFAULT_GRID;
   }
@@ -1451,9 +1587,10 @@ export class FloorplanCardEditor extends LitElement {
       // While fullscreen the workspace owns the screen: an Escape that fires
       // from `body` (focus dropped after a blur or a dead-space click) must
       // collapse it rather than reach — and close — HA's dialog hidden
-      // underneath. A dialog stacked above us is unaffected: it takes focus,
-      // and the focusin guard has already collapsed fullscreen by then.
-      if (this._fullscreen && ev.key === "Escape") {
+      // underneath. If focus is inside an overlay, dialog, menu, or selector
+      // stacked above us (such as HA's condition selector dialog or an entity picker),
+      // let that element handle Escape itself instead of collapsing the workspace.
+      if (this._fullscreen && ev.key === "Escape" && !isExternalOverlayPath(path)) {
         ev.preventDefault();
         ev.stopPropagation();
         this._fullscreen = false;
@@ -3617,55 +3754,6 @@ export class FloorplanCardEditor extends LitElement {
     `;
   }
 
-  private _loadedConfigTranslations = false;
-  private _lastConditionHassBase?: HomeAssistant;
-  private _cachedConditionHass?: HomeAssistant;
-
-  /**
-   * Proactively lazy-loads Home Assistant's "config" translation fragment
-   * so subcomponents of the automation condition editor (like numeric_state, time, state)
-   * can display localized radio button and limit labels.
-   */
-  private _ensureConfigTranslations(): void {
-    if (this._loadedConfigTranslations || !this.hass) return;
-    const loadFn = (this.hass as unknown as { loadFragmentTranslation?: (fragment: string) => Promise<unknown> })
-      .loadFragmentTranslation;
-    if (typeof loadFn !== "function") return;
-    this._loadedConfigTranslations = true;
-    void loadFn.call(this.hass, "config").then(() => {
-      this.requestUpdate();
-    }).catch(() => {
-      this._loadedConfigTranslations = false;
-    });
-  }
-
-  /**
-   * Returns a hass object for condition selectors with defensive translation
-   * fallbacks for missing config keys, ensuring radio options like "Fixed number"
-   * and "Value of an entity" never display with empty labels.
-   */
-  private _getConditionHass(): HomeAssistant | undefined {
-    if (!this.hass) return undefined;
-    this._ensureConfigTranslations();
-    if (this.hass === this._lastConditionHassBase && this._cachedConditionHass) {
-      return this._cachedConditionHass;
-    }
-    this._lastConditionHassBase = this.hass;
-    const origLocalize = this.hass.localize ? this.hass.localize.bind(this.hass) : undefined;
-    const wrappedLocalize = (key: string, ...args: unknown[]): string => {
-      const res = origLocalize ? origLocalize(key, ...args) : "";
-      if (res) return res;
-      return FALLBACK_CONFIG_TRANSLATIONS[key] ?? "";
-    };
-    this._cachedConditionHass = new Proxy(this.hass, {
-      get: (target, prop, receiver) => {
-        if (prop === "localize") return wrappedLocalize;
-        return Reflect.get(target, prop, receiver);
-      },
-    });
-    return this._cachedConditionHass;
-  }
-
   /**
    * Dedicated visibility inspector group using Home Assistant's native condition builder
    * (<ha-selector .selector=${{ condition: {} }}>) and real-time status indication (Issue #310).
@@ -3712,7 +3800,7 @@ export class FloorplanCardEditor extends LitElement {
             const val = e.detail?.value;
             const visibility = Array.isArray(val) && val.length > 0 ? val : undefined;
             if (configsEqual(visibility, f.visibility)) return;
-            this._updateFurnitureLive(f.id, { visibility });
+            this._updateFurniture(f.id, { visibility });
           }}
         ></ha-selector>
       </div>

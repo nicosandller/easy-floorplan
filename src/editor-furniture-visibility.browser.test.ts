@@ -312,7 +312,7 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     expect(badge.textContent).toContain("Visible on floorplan");
   });
 
-  it("provides fallback translations for numeric_state condition radio selects and loads config fragment", async () => {
+  it("passes condition-wrapped hass with translation fallbacks to ha-selector condition builder", async () => {
     const sofa: Furniture = {
       id: "fu1",
       type: "sofa",
@@ -322,25 +322,14 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
       h: 60,
       visibility: [
         {
-          condition: "numeric_state",
-          entity_id: "sensor.living_area_temperature",
+          condition: "state",
+          entity: "binary_sensor.car_present",
+          state: "on",
         },
       ],
     };
 
-    let loadedFragment: string | undefined;
     const { editor } = await mount(sofa, "home");
-    editor.hass = {
-      states: {
-        "sensor.living_area_temperature": { state: "21.5", attributes: {} },
-      },
-      entities: {},
-      localize: () => "", // Empty like in Lovelace without config fragment
-      loadFragmentTranslation: async (frag: string) => {
-        loadedFragment = frag;
-      },
-    } as unknown as FloorplanCardEditor["hass"];
-
     (editor as unknown as Internals)._selection = [{ kind: "furniture", id: "fu1" }];
     await editor.updateComplete;
 
@@ -348,28 +337,20 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     await editor.updateComplete;
 
     const haSelector = root(editor).querySelector("ha-selector") as HTMLElement & {
-      hass?: { localize?: (key: string) => string };
+      hass?: {
+        localize?: (key: string) => string;
+        states?: Record<string, unknown>;
+      };
     };
     expect(haSelector).not.toBeNull();
     expect(haSelector.hass).toBeDefined();
 
-    // Verify defensive translations return non-empty strings
-    const localize = haSelector.hass!.localize!;
-    expect(
-      localize("ui.panel.config.automation.editor.conditions.type.numeric_state.type_value")
-    ).toBe("Fixed number");
-    expect(
-      localize("ui.panel.config.automation.editor.conditions.type.numeric_state.type_input")
-    ).toBe("Value of an entity");
-    expect(
-      localize("ui.panel.config.automation.editor.triggers.type.numeric_state.lower_limit")
-    ).toBe("Above");
-    expect(
-      localize("ui.panel.config.automation.editor.triggers.type.numeric_state.upper_limit")
-    ).toBe("Below");
+    // Verify proxy delegates to hass states
+    expect(haSelector.hass?.states).toBe(editor.hass?.states);
 
-    // Verify loadFragmentTranslation was triggered
-    expect(loadedFragment).toBe("config");
+    // Verify proxy falls back to FALLBACK_CONFIG_TRANSLATIONS for unlocalised automation keys
+    expect(haSelector.hass?.localize?.("ui.panel.config.automation.editor.conditions.add")).toBe("Add condition");
+    expect(haSelector.hass?.localize?.("ui.panel.config.automation.editor.conditions.type.state.label")).toBe("State");
   });
 
   it("evaluates numeric_state condition with status badges and canvas dimming", async () => {
@@ -424,34 +405,6 @@ describe("Editor Furniture Visibility (Issue #310)", () => {
     expect(furnHit.classList.contains("card-hidden")).toBe(false);
     expect(badge.classList.contains("status-met")).toBe(true);
     expect(badge.textContent).toContain("Visible on floorplan");
-  });
-
-  it("does not exit fullscreen when focus moves to an overlay, menu, or dropdown", async () => {
-    const { editor } = await mount({
-      id: "fu1",
-      type: "sofa",
-      x: 100,
-      y: 100,
-      w: 80,
-      h: 50,
-    });
-
-    // Simulate expanding editor into fullscreen mode
-    (editor as unknown as { _fullscreen: boolean })._fullscreen = true;
-    await editor.updateComplete;
-
-    // Create a mock menu item on document.body (simulating HA condition picker / mwc-menu)
-    const menuItem = document.createElement("mwc-list-item");
-    menuItem.setAttribute("role", "menuitem");
-    document.body.append(menuItem);
-
-    // Focus lands on the menu item outside the editor
-    menuItem.dispatchEvent(new FocusEvent("focusin", { bubbles: true, composed: true }));
-
-    // Editor should still be in fullscreen mode
-    expect((editor as unknown as { _fullscreen: boolean })._fullscreen).toBe(true);
-
-    menuItem.remove();
   });
 });
 

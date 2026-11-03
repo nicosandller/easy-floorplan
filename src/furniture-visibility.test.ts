@@ -5,15 +5,16 @@ import {
   collectConditionMediaQueries,
   evaluateCondition,
   evaluateConditions,
-  hasTimeConditions,
   isEntityId,
   isFurnitureVisible,
+  statesMatch,
 } from "./furniture-visibility";
 import type { FloorplanCardConfig, Furniture, HomeAssistant, VisibilityCondition } from "./types";
 
 const mockHass = (
   states: Record<string, { state: string; attributes?: Record<string, unknown> }>,
-  userId?: string
+  userId?: string,
+  entities?: Record<string, { entity_id: string; device_id?: string; [key: string]: unknown }>
 ): HomeAssistant =>
   ({
     states: Object.fromEntries(
@@ -29,6 +30,7 @@ const mockHass = (
         },
       ])
     ),
+    entities: entities ?? {},
     user: userId ? { id: userId } : undefined,
   } as unknown as HomeAssistant);
 
@@ -192,21 +194,458 @@ describe("furniture-visibility", () => {
       expect(evaluateCondition(cond, mockHass({ "light.living_room": { state: "off" } }))).toBe(false);
     });
 
-    it("falls back to defaultEntityId when entity and entity_id are omitted", () => {
-      const cond = {
-        condition: "state",
-        state: "on",
-      };
+    it("fails closed when entity and entity_id are omitted or empty", () => {
+      const condEmpty = { condition: "state", entity: "", state: "on" };
+      const condMissing = { condition: "state", state: "on" };
+      expect(evaluateCondition(condEmpty as VisibilityCondition, mockHass({ "light.desk": { state: "on" } }))).toBe(false);
+      expect(evaluateCondition(condMissing as VisibilityCondition, mockHass({ "light.desk": { state: "on" } }))).toBe(false);
+    });
+
+    it("matches open and closed aliases across covers and binary sensors", () => {
+      // Cover entity with 'closed' state matches state: 'closed' and state: 'off'
+      const coverClosed = mockHass({ "cover.garage_door": { state: "closed" } });
+      const coverOpen = mockHass({ "cover.garage_door": { state: "open" } });
+
       expect(
-        evaluateCondition(cond, mockHass({ "light.desk": { state: "on" } }), "light.desk")
+        evaluateCondition(
+          { condition: "state", entity: "cover.garage_door", state: "closed" } as VisibilityCondition,
+          coverClosed
+        )
       ).toBe(true);
       expect(
-        evaluateCondition(cond, mockHass({ "light.desk": { state: "off" } }), "light.desk")
+        evaluateCondition(
+          { condition: "state", entity: "cover.garage_door", state: "closed" } as VisibilityCondition,
+          coverOpen
+        )
       ).toBe(false);
+
+      expect(
+        evaluateCondition(
+          { condition: "state", entity: "cover.garage_door", state: "off" } as VisibilityCondition,
+          coverClosed
+        )
+      ).toBe(true);
+      expect(
+        evaluateCondition(
+          { condition: "state", entity: "cover.garage_door", state: "on" } as VisibilityCondition,
+          coverOpen
+        )
+      ).toBe(true);
+
+      // Binary sensor with 'off' state matches state: 'closed' and state: 'off'
+      const sensorOff = mockHass({ "binary_sensor.garage_door": { state: "off" } });
+      const sensorOn = mockHass({ "binary_sensor.garage_door": { state: "on" } });
+
+      expect(
+        evaluateCondition(
+          { condition: "state", entity: "binary_sensor.garage_door", state: "closed" } as VisibilityCondition,
+          sensorOff
+        )
+      ).toBe(true);
+      expect(
+        evaluateCondition(
+          { condition: "state", entity: "binary_sensor.garage_door", state: "closed" } as VisibilityCondition,
+          sensorOn
+        )
+      ).toBe(false);
+
+      expect(
+        evaluateCondition(
+          { condition: "state", entity: "binary_sensor.garage_door", state: "open" } as VisibilityCondition,
+          sensorOn
+        )
+      ).toBe(true);
+    });
+
+    it("handles boolean coercion and case-insensitivity", () => {
+      const hassOn = mockHass({ "switch.relay": { state: "on" } });
+      const hassOff = mockHass({ "switch.relay": { state: "off" } });
+
+      expect(
+        evaluateCondition(
+          { condition: "state", entity: "switch.relay", state: true } as unknown as VisibilityCondition,
+          hassOn
+        )
+      ).toBe(true);
+      expect(
+        evaluateCondition(
+          { condition: "state", entity: "switch.relay", state: false } as unknown as VisibilityCondition,
+          hassOff
+        )
+      ).toBe(true);
+
+      expect(
+        evaluateCondition(
+          { condition: "state", entity: "switch.relay", state: "ON" } as VisibilityCondition,
+          hassOn
+        )
+      ).toBe(true);
+      expect(
+        evaluateCondition(
+          { condition: "state", entity: "switch.relay", state: "OFF" } as VisibilityCondition,
+          hassOff
+        )
+      ).toBe(true);
+    });
+  });
+
+  describe("statesMatch", () => {
+    it("matches exact values", () => {
+      expect(statesMatch("home", "home")).toBe(true);
+      expect(statesMatch("heat", "heat")).toBe(true);
+      expect(statesMatch("auto", "auto")).toBe(true);
+      expect(statesMatch("home", "away")).toBe(false);
+    });
+
+    it("matches case-insensitively", () => {
+      expect(statesMatch("Open", "open")).toBe(true);
+      expect(statesMatch("CLOSED", "closed")).toBe(true);
+      expect(statesMatch("Home", "home")).toBe(true);
+    });
+
+    it("matches open / on / unlocked / true / 1 aliases", () => {
+      expect(statesMatch("open", "on")).toBe(true);
+      expect(statesMatch("opened", "open")).toBe(true);
+      expect(statesMatch("unlocked", "open")).toBe(true);
+      expect(statesMatch(true, "on")).toBe(true);
+      expect(statesMatch("1", "on")).toBe(true);
+    });
+
+    it("matches closed / off / locked / false / 0 aliases", () => {
+      expect(statesMatch("closed", "off")).toBe(true);
+      expect(statesMatch("closing", "closed")).toBe(true);
+      expect(statesMatch("locked", "closed")).toBe(true);
+      expect(statesMatch(false, "off")).toBe(true);
+      expect(statesMatch("0", "off")).toBe(true);
+    });
+
+    it("matches away / not_home aliases", () => {
+      expect(statesMatch("away", "not_home")).toBe(true);
+      expect(statesMatch("not_home", "away")).toBe(true);
+    });
+
+    it("matches numeric equivalence", () => {
+      expect(statesMatch(20, "20")).toBe(true);
+      expect(statesMatch("20.0", 20)).toBe(true);
+      expect(statesMatch(0, "0")).toBe(true);
+      expect(statesMatch(20, "25")).toBe(false);
+    });
+  });
+
+  describe("device condition", () => {
+    it("evaluates is_closed and is_open for garage door / cover", () => {
+      const condClosed: VisibilityCondition = {
+        condition: "device",
+        domain: "cover",
+        device_id: "dev-garage",
+        entity_id: "cover.garage_door",
+        type: "is_closed",
+      };
+      const condOpen: VisibilityCondition = {
+        condition: "device",
+        domain: "cover",
+        device_id: "dev-garage",
+        entity_id: "cover.garage_door",
+        type: "is_open",
+      };
+
+      const hassClosed = mockHass({ "cover.garage_door": { state: "closed" } });
+      const hassOpen = mockHass({ "cover.garage_door": { state: "open" } });
+
+      expect(evaluateCondition(condClosed, hassClosed)).toBe(true);
+      expect(evaluateCondition(condClosed, hassOpen)).toBe(false);
+
+      expect(evaluateCondition(condOpen, hassOpen)).toBe(true);
+      expect(evaluateCondition(condOpen, hassClosed)).toBe(false);
+    });
+
+    it("resolves entity via hass.entities when entity_id is not in condition", () => {
+      const cond: VisibilityCondition = {
+        condition: "device",
+        device_id: "dev-garage-123",
+        type: "is_closed",
+      };
+      const hass = mockHass(
+        { "cover.garage_door": { state: "closed" } },
+        undefined,
+        { "cover.garage_door": { entity_id: "cover.garage_door", device_id: "dev-garage-123" } }
+      );
+
+      expect(evaluateCondition(cond, hass)).toBe(true);
+    });
+
+    it("evaluates motion and occupancy types", () => {
+      const condMotion: VisibilityCondition = {
+        condition: "device",
+        entity_id: "binary_sensor.driveway_motion",
+        type: "is_motion",
+      };
+      const condNoMotion: VisibilityCondition = {
+        condition: "device",
+        entity_id: "binary_sensor.driveway_motion",
+        type: "is_no_motion",
+      };
+
+      const hassActive = mockHass({ "binary_sensor.driveway_motion": { state: "on" } });
+      const hassClear = mockHass({ "binary_sensor.driveway_motion": { state: "off" } });
+
+      expect(evaluateCondition(condMotion, hassActive)).toBe(true);
+      expect(evaluateCondition(condMotion, hassClear)).toBe(false);
+
+      expect(evaluateCondition(condNoMotion, hassClear)).toBe(true);
+      expect(evaluateCondition(condNoMotion, hassActive)).toBe(false);
+    });
+
+    it("fails open during outage when device entity is unavailable or unknown", () => {
+      const cond: VisibilityCondition = {
+        condition: "device",
+        entity_id: "cover.garage_door",
+        type: "is_closed",
+      };
+      expect(evaluateCondition(cond, mockHass({ "cover.garage_door": { state: "unavailable" } }))).toBe(true);
+      expect(evaluateCondition(cond, mockHass({ "cover.garage_door": { state: "unknown" } }))).toBe(true);
+    });
+
+    it("resolves entity registry UUID from hass.entities", () => {
+      const cond: VisibilityCondition = {
+        condition: "device",
+        entity_id: "uuid-garage-door-entry",
+        type: "is_closed",
+      };
+      const hass = mockHass(
+        { "cover.garage_door": { state: "closed" } },
+        undefined,
+        {
+          "cover.garage_door": {
+            entity_id: "cover.garage_door",
+            id: "uuid-garage-door-entry",
+          },
+        }
+      );
+      expect(evaluateCondition(cond, hass)).toBe(true);
+
+      const hassOpen = mockHass(
+        { "cover.garage_door": { state: "open" } },
+        undefined,
+        {
+          "cover.garage_door": {
+            entity_id: "cover.garage_door",
+            id: "uuid-garage-door-entry",
+          },
+        }
+      );
+      expect(evaluateCondition(cond, hassOpen)).toBe(false);
+    });
+  });
+
+  describe("purpose-specific domain conditions (HA 2024.8+)", () => {
+    it("evaluates cover.is_closed and cover.is_open with entity_id", () => {
+      const condClosed: VisibilityCondition = {
+        condition: "cover.is_closed",
+        entity_id: "cover.garage_door",
+      };
+      const condOpen: VisibilityCondition = {
+        condition: "cover.is_open",
+        entity_id: "cover.garage_door",
+      };
+
+      const hassClosed = mockHass({ "cover.garage_door": { state: "closed" } });
+      const hassOpen = mockHass({ "cover.garage_door": { state: "open" } });
+
+      expect(evaluateCondition(condClosed, hassClosed)).toBe(true);
+      expect(evaluateCondition(condClosed, hassOpen)).toBe(false);
+
+      expect(evaluateCondition(condOpen, hassOpen)).toBe(true);
+      expect(evaluateCondition(condOpen, hassClosed)).toBe(false);
+    });
+
+    it("evaluates cover.is_closed with target.entity_id", () => {
+      const cond: VisibilityCondition = {
+        condition: "cover.is_closed",
+        target: { entity_id: "cover.garage_door" },
+      } as unknown as VisibilityCondition;
+
+      expect(evaluateCondition(cond, mockHass({ "cover.garage_door": { state: "closed" } }))).toBe(true);
+      expect(evaluateCondition(cond, mockHass({ "cover.garage_door": { state: "open" } }))).toBe(false);
+    });
+
+    it("evaluates light.is_on and light.is_off", () => {
+      const condOn: VisibilityCondition = {
+        condition: "light.is_on",
+        entity_id: "light.garage",
+      };
+      const condOff: VisibilityCondition = {
+        condition: "light.is_off",
+        entity_id: "light.garage",
+      };
+
+      expect(evaluateCondition(condOn, mockHass({ "light.garage": { state: "on" } }))).toBe(true);
+      expect(evaluateCondition(condOn, mockHass({ "light.garage": { state: "off" } }))).toBe(false);
+
+      expect(evaluateCondition(condOff, mockHass({ "light.garage": { state: "off" } }))).toBe(true);
+      expect(evaluateCondition(condOff, mockHass({ "light.garage": { state: "on" } }))).toBe(false);
+    });
+
+    it("evaluates lock.is_locked and lock.is_unlocked", () => {
+      const condLocked: VisibilityCondition = {
+        condition: "lock.is_locked",
+        entity_id: "lock.front_door",
+      };
+      const condUnlocked: VisibilityCondition = {
+        condition: "lock.is_unlocked",
+        entity_id: "lock.front_door",
+      };
+
+      expect(evaluateCondition(condLocked, mockHass({ "lock.front_door": { state: "locked" } }))).toBe(true);
+      expect(evaluateCondition(condLocked, mockHass({ "lock.front_door": { state: "unlocked" } }))).toBe(false);
+
+      expect(evaluateCondition(condUnlocked, mockHass({ "lock.front_door": { state: "unlocked" } }))).toBe(true);
+      expect(evaluateCondition(condUnlocked, mockHass({ "lock.front_door": { state: "locked" } }))).toBe(false);
+    });
+
+    it("evaluates climate.is_hvac_mode", () => {
+      const cond: VisibilityCondition = {
+        condition: "climate.is_hvac_mode",
+        entity_id: "climate.living_room",
+        hvac_mode: "heat",
+      } as unknown as VisibilityCondition;
+
+      expect(evaluateCondition(cond, mockHass({ "climate.living_room": { state: "heat" } }))).toBe(true);
+      expect(evaluateCondition(cond, mockHass({ "climate.living_room": { state: "cool" } }))).toBe(false);
+    });
+
+    it("resolves entity registry UUID for purpose-specific conditions", () => {
+      const cond: VisibilityCondition = {
+        condition: "cover.is_closed",
+        entity_id: "uuid-garage-door-entry",
+      };
+      const hass = mockHass(
+        { "cover.garage_door": { state: "closed" } },
+        undefined,
+        {
+          "cover.garage_door": {
+            entity_id: "cover.garage_door",
+            id: "uuid-garage-door-entry",
+          },
+        }
+      );
+      expect(evaluateCondition(cond, hass)).toBe(true);
+    });
+
+    it("fails open during outage when entity is missing, unavailable, or unknown", () => {
+      const cond: VisibilityCondition = {
+        condition: "cover.is_closed",
+        entity_id: "cover.garage_door",
+      };
+      expect(evaluateCondition(cond, mockHass({}))).toBe(true);
+      expect(evaluateCondition(cond, mockHass({ "cover.garage_door": { state: "unavailable" } }))).toBe(true);
+      expect(evaluateCondition(cond, mockHass({ "cover.garage_door": { state: "unknown" } }))).toBe(true);
+    });
+  });
+
+  describe("zone condition", () => {
+    it("evaluates entity state 'home' against zone.home", () => {
+      const cond: VisibilityCondition = {
+        condition: "zone",
+        entity: "device_tracker.car",
+        zone: "zone.home",
+      };
+      const hassHome = mockHass({ "device_tracker.car": { state: "home" } });
+      const hassAway = mockHass({ "device_tracker.car": { state: "not_home" } });
+
+      expect(evaluateCondition(cond, hassHome)).toBe(true);
+      expect(evaluateCondition(cond, hassAway)).toBe(false);
+    });
+
+    it("evaluates in_zones attribute", () => {
+      const cond: VisibilityCondition = {
+        condition: "zone",
+        entity: "device_tracker.car",
+        zone: "zone.work",
+      };
+      const hassInZone = mockHass({
+        "device_tracker.car": { state: "away", attributes: { in_zones: ["zone.work", "zone.downtown"] } },
+      });
+      const hassOther = mockHass({
+        "device_tracker.car": { state: "away", attributes: { in_zones: ["zone.school"] } },
+      });
+
+      expect(evaluateCondition(cond, hassInZone)).toBe(true);
+      expect(evaluateCondition(cond, hassOther)).toBe(false);
+    });
+
+    it("supports zone.in_zone and zone.not_in_zone condition types", () => {
+      const condIn: VisibilityCondition = {
+        condition: "zone.in_zone",
+        entity: "device_tracker.car",
+        zone: "zone.home",
+      };
+      const condNotIn: VisibilityCondition = {
+        condition: "zone.not_in_zone",
+        entity: "device_tracker.car",
+        zone: "zone.home",
+      };
+
+      const hassHome = mockHass({ "device_tracker.car": { state: "home" } });
+      const hassAway = mockHass({ "device_tracker.car": { state: "not_home" } });
+
+      expect(evaluateCondition(condIn, hassHome)).toBe(true);
+      expect(evaluateCondition(condIn, hassAway)).toBe(false);
+
+      expect(evaluateCondition(condNotIn, hassAway)).toBe(true);
+      expect(evaluateCondition(condNotIn, hassHome)).toBe(false);
+    });
+
+    it("fails open during outage when tracker entity is unavailable", () => {
+      const cond: VisibilityCondition = {
+        condition: "zone",
+        entity: "device_tracker.car",
+        zone: "zone.home",
+      };
+      expect(evaluateCondition(cond, mockHass({ "device_tracker.car": { state: "unavailable" } }))).toBe(true);
+    });
+  });
+
+  describe("time condition", () => {
+    it("evaluates before and after time constraints", () => {
+      const condAlways: VisibilityCondition = {
+        condition: "time",
+        after: "00:00:00",
+        before: "23:59:59",
+      };
+      expect(evaluateCondition(condAlways, mockHass({}))).toBe(true);
+
+      const condImpossible: VisibilityCondition = {
+        condition: "time",
+        after: "12:00:00",
+        before: "12:00:00",
+      };
+      expect(evaluateCondition(condImpossible, mockHass({}))).toBe(false);
+    });
+
+    it("evaluates weekday constraints", () => {
+      const allDays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+      const condAllDays: VisibilityCondition = {
+        condition: "time",
+        weekday: allDays,
+      };
+      expect(evaluateCondition(condAllDays, mockHass({}))).toBe(true);
+
+      const condNoDays: VisibilityCondition = {
+        condition: "time",
+        weekday: [],
+      };
+      expect(evaluateCondition(condNoDays, mockHass({}))).toBe(false);
     });
   });
 
   describe("numeric_state condition", () => {
+    it("fails closed when entity is omitted or empty in numeric_state", () => {
+      const condEmpty = { condition: "numeric_state", entity: "", above: 20 };
+      const condMissing = { condition: "numeric_state", above: 20 };
+      expect(evaluateCondition(condEmpty as VisibilityCondition, mockHass({}))).toBe(false);
+      expect(evaluateCondition(condMissing as VisibilityCondition, mockHass({}))).toBe(false);
+    });
     it("evaluates above threshold", () => {
       const cond: VisibilityCondition = {
         condition: "numeric_state",
@@ -540,140 +979,47 @@ describe("furniture-visibility", () => {
       expect(entities).toContain("alarm_control_panel.home");
     });
 
-    it("collects target entities and sun.sun for sun conditions", () => {
+    it("collects zone entities and device entities", () => {
       const conditions: VisibilityCondition[] = [
-        { condition: "garage_door.is_open", target: { entity_id: "cover.garage_door" } },
-        { condition: "sun.is_ascending" },
-        { condition: "zone", target: { zone: "zone.home" } },
+        { condition: "zone", entity: "device_tracker.car", zone: "zone.home" },
+        { condition: "zone", entity: "device_tracker.bike", zones: ["work", "zone.school"] },
+        { condition: "device", entity_id: "cover.garage_door", type: "is_closed" },
       ];
       const entities = collectConditionEntities(conditions);
-      expect(entities).toContain("cover.garage_door");
-      expect(entities).toContain("sun.sun");
+      expect(entities).toContain("device_tracker.car");
       expect(entities).toContain("zone.home");
+      expect(entities).toContain("device_tracker.bike");
+      expect(entities).toContain("zone.work");
+      expect(entities).toContain("zone.school");
+      expect(entities).toContain("cover.garage_door");
+    });
+
+    it("ignores conditions without valid entity", () => {
+      const conditions = [
+        { condition: "screen", media_query: "(min-width: 800px)" },
+        { condition: "user", users: ["admin"] },
+        { condition: "unsupported" },
+      ] as unknown as VisibilityCondition[];
+      const entities = collectConditionEntities(conditions);
+      expect(entities).toEqual([]);
     });
   });
 
-  describe("sun conditions", () => {
-    it("evaluates sun ascending and descending based on rising attribute", () => {
-      const condAscending: VisibilityCondition = { condition: "sun.is_ascending" };
-      const condDescending: VisibilityCondition = { condition: "sun.is_descending" };
-
-      const hassRising = mockHass({
-        "sun.sun": { state: "above_horizon", attributes: { rising: true } },
-      });
-      const hassSetting = mockHass({
-        "sun.sun": { state: "above_horizon", attributes: { rising: false } },
-      });
-
-      expect(evaluateCondition(condAscending, hassRising)).toBe(true);
-      expect(evaluateCondition(condAscending, hassSetting)).toBe(false);
-
-      expect(evaluateCondition(condDescending, hassSetting)).toBe(true);
-      expect(evaluateCondition(condDescending, hassRising)).toBe(false);
-    });
-
-    it("evaluates sun above and below horizon", () => {
-      const condAbove: VisibilityCondition = { condition: "sun.is_above_horizon" };
-      const condBelow: VisibilityCondition = { condition: "sun.is_below_horizon" };
-
-      const hassDay = mockHass({ "sun.sun": { state: "above_horizon" } });
-      const hassNight = mockHass({ "sun.sun": { state: "below_horizon" } });
-
-      expect(evaluateCondition(condAbove, hassDay)).toBe(true);
-      expect(evaluateCondition(condAbove, hassNight)).toBe(false);
-
-      expect(evaluateCondition(condBelow, hassNight)).toBe(true);
-      expect(evaluateCondition(condBelow, hassDay)).toBe(false);
-    });
-  });
-
-  describe("garage door and cover conditions", () => {
-    it("evaluates garage_door.is_open and garage_door.is_closed", () => {
-      const condOpen: VisibilityCondition = {
-        condition: "garage_door.is_open",
-        target: { entity_id: "cover.garage_door" },
-      };
-      const condClosed: VisibilityCondition = {
-        condition: "garage_door.is_closed",
-        target: { entity_id: "cover.garage_door" },
-      };
-
-      const hassOpen = mockHass({ "cover.garage_door": { state: "open" } });
-      const hassClosed = mockHass({ "cover.garage_door": { state: "closed" } });
-
-      expect(evaluateCondition(condOpen, hassOpen)).toBe(true);
-      expect(evaluateCondition(condOpen, hassClosed)).toBe(false);
-
-      expect(evaluateCondition(condClosed, hassClosed)).toBe(true);
-      expect(evaluateCondition(condClosed, hassOpen)).toBe(false);
-    });
-
-    it("evaluates device condition with type is_open and is_closed", () => {
-      const condDeviceOpen: VisibilityCondition = {
-        condition: "device",
-        type: "is_open",
-        entity_id: "cover.garage_door",
-      };
-      const condDeviceClosed: VisibilityCondition = {
-        condition: "device",
-        type: "is_closed",
-        entity_id: "cover.garage_door",
-      };
-
-      const hassOpen = mockHass({ "cover.garage_door": { state: "open" } });
-      const hassClosed = mockHass({ "cover.garage_door": { state: "closed" } });
-
-      expect(evaluateCondition(condDeviceOpen, hassOpen)).toBe(true);
-      expect(evaluateCondition(condDeviceOpen, hassClosed)).toBe(false);
-
-      expect(evaluateCondition(condDeviceClosed, hassClosed)).toBe(true);
-      expect(evaluateCondition(condDeviceClosed, hassOpen)).toBe(false);
-    });
-  });
-
-  describe("person in area and zone conditions", () => {
-    it("evaluates person in zone and not in zone", () => {
-      const condInZone: VisibilityCondition = {
-        condition: "zone",
-        entity: "person.andrei",
-        zone: "zone.home",
-      };
-      const condNotInZone: VisibilityCondition = {
-        condition: "zone.not_in_zone",
-        entity: "person.andrei",
-        zone: "zone.home",
-      };
-
-      const hassHome = mockHass({ "person.andrei": { state: "home" } });
-      const hassAway = mockHass({ "person.andrei": { state: "not_home" } });
-
-      expect(evaluateCondition(condInZone, hassHome)).toBe(true);
-      expect(evaluateCondition(condInZone, hassAway)).toBe(false);
-
-      expect(evaluateCondition(condNotInZone, hassAway)).toBe(true);
-      expect(evaluateCondition(condNotInZone, hassHome)).toBe(false);
-    });
-
-    it("evaluates person room-level presence in area", () => {
-      const condInArea: VisibilityCondition = {
-        condition: "area",
-        entity: "person.andrei",
-        area: "office",
-      };
-      const condNotInArea: VisibilityCondition = {
-        condition: "area.not_in_area",
-        entity: "person.andrei",
-        area: "office",
-      };
-
-      const hassOffice = mockHass({ "person.andrei": { state: "office" } });
-      const hassLivingRoom = mockHass({ "person.andrei": { state: "living_room" } });
-
-      expect(evaluateCondition(condInArea, hassOffice)).toBe(true);
-      expect(evaluateCondition(condInArea, hassLivingRoom)).toBe(false);
-
-      expect(evaluateCondition(condNotInArea, hassLivingRoom)).toBe(true);
-      expect(evaluateCondition(condNotInArea, hassOffice)).toBe(false);
+  describe("unsupported condition types fail closed", () => {
+    it("fails closed for automation, template, and unsupported condition types", () => {
+      const unsupported = [
+        { condition: "sun", after: "sunset" },
+        { condition: "sun.is_ascending" },
+        { condition: "sun.is_descending" },
+        { condition: "sun.is_above_horizon" },
+        { condition: "sun.is_below_horizon" },
+        { condition: "garage_door.is_open" },
+        { condition: "area", area: "living_room" },
+        { condition: "template", value_template: "{{ true }}" },
+      ];
+      for (const cond of unsupported) {
+        expect(evaluateCondition(cond as unknown as VisibilityCondition, mockHass({}))).toBe(false);
+      }
     });
   });
 
@@ -707,98 +1053,6 @@ describe("furniture-visibility", () => {
       expect(queries).toHaveLength(2);
       expect(queries).toContain("(min-width: 768px)");
       expect(queries).toContain("(max-width: 1200px)");
-    });
-  });
-
-  describe("time conditions", () => {
-    it("evaluates time condition with after and before bounds", () => {
-      // 12:00 is between 08:00 and 20:00
-      const cond: VisibilityCondition = {
-        condition: "time",
-        after: "00:00:00",
-        before: "23:59:59",
-      };
-      expect(evaluateCondition(cond, mockHass({}))).toBe(true);
-
-      const unmatchCond: VisibilityCondition = {
-        condition: "time",
-        after: "03:00:00",
-        before: "03:00:01",
-      };
-      // Unless run exactly at 03:00:00, this fails
-      expect(typeof evaluateCondition(unmatchCond, mockHass({}))).toBe("boolean");
-    });
-
-    it("evaluates automation weekday and dashboard weekdays", () => {
-      const days = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
-      const matchWeekday: VisibilityCondition = {
-        condition: "time",
-        weekday: days,
-      };
-      expect(evaluateCondition(matchWeekday, mockHass({}))).toBe(true);
-
-      const matchWeekdays: VisibilityCondition = {
-        condition: "time",
-        weekdays: days,
-      };
-      expect(evaluateCondition(matchWeekdays, mockHass({}))).toBe(true);
-    });
-
-    it("hides when weekday does not include today", () => {
-      const todayIdx = new Date().getDay();
-      const allDays = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-      const notToday = allDays[(todayIdx + 3) % 7];
-      const cond: VisibilityCondition = {
-        condition: "time",
-        weekday: [notToday],
-      };
-      expect(evaluateCondition(cond, mockHass({}))).toBe(false);
-    });
-
-    it("detects time conditions in config with hasTimeConditions", () => {
-      const withTime: FloorplanCardConfig = {
-        type: "custom:easy-floorplan-card",
-        floors: [
-          {
-            id: "f1",
-            furniture: [
-              {
-                id: "desk",
-                type: "desk",
-                x: 0,
-                y: 0,
-                w: 10,
-                h: 10,
-                visibility: [{ condition: "time", after: "20:00" }],
-              },
-            ],
-          },
-        ],
-      } as unknown as FloorplanCardConfig;
-
-      const withoutTime: FloorplanCardConfig = {
-        type: "custom:easy-floorplan-card",
-        floors: [
-          {
-            id: "f1",
-            furniture: [
-              {
-                id: "desk",
-                type: "desk",
-                x: 0,
-                y: 0,
-                w: 10,
-                h: 10,
-                visibility: [{ condition: "state", entity: "light.lamp", state: "on" }],
-              },
-            ],
-          },
-        ],
-      } as unknown as FloorplanCardConfig;
-
-      expect(hasTimeConditions(withTime)).toBe(true);
-      expect(hasTimeConditions(withoutTime)).toBe(false);
-      expect(hasTimeConditions(undefined)).toBe(false);
     });
   });
 });
