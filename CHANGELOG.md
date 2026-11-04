@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Tilt-and-turn windows (#409): a hinged window takes a `tiltEntity`, an angle sensor or
+  an on/off contact, and draws tilted (shut in its frame, head leaning in) apart from
+  swung open. A handle sensor reporting `tilted` works on its own. Tilted counts as a
+  little open for the light layers. See [Tilt-and-turn windows](docs/configuration.md#tilt-and-turn-windows).
 - Awnings and curtains (#196): an `awning` or `curtain` bound to a `cover` is drawn at
   the cover's position, with `w × h` as its fully extended size. A curtain gathers at
   the end `hand` picks, or at both ends with `hand: center`. Symbols can opt in with

@@ -200,6 +200,9 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
       // intermittent rather than broken.
       if (o.secondaryEntity) ids.add(o.secondaryEntity);
       if (o.shutterSecondaryEntity) ids.add(o.shutterSecondaryEntity);
+      // The tilt sensor (issue #409): the contact reads open whether tilted
+      // or swung, so only this one moves between the two.
+      if (o.tiltEntity) ids.add(o.tiltEntity);
     }
     for (const it of f.items) {
       if (it.entity) ids.add(it.entity);
@@ -3818,7 +3821,98 @@ export function openingIsActive(
   state: { state: string; attributes?: Record<string, unknown> } | undefined,
 ): boolean {
   if (!o.entity || !state || isSensorOutage(state.state)) return false;
+  // A handle sensor's `tilted` is open, just not swung (issue #409).
+  if (state.state === "tilted" && openingCanTilt(o)) return true;
   return openingInMotion(state.state) || resolveOpeningAmount(o, state) > 0;
+}
+
+/**
+ * A tilted sash seen from above (issue #409): its head leaning in over the
+ * room on the side the casement opens to, and the dashed V of the tilt
+ * symbol, from the jambs at the hinged sill up to the middle of the head. The leaf itself stays shut on the
+ * wall line, which is what tells tilted from swung at a glance. `width` is
+ * the first leaf's, hinged at the −x jamb like everything else here.
+ */
+function tiltMark(
+  o: Opening,
+  tilt: number | undefined,
+  width: number,
+  half: number,
+  tone: string,
+): SVGTemplateResult | typeof nothing {
+  const t = o.type === "window" ? Math.max(0, Math.min(1, cssNumber(tilt, 0))) : 0;
+  if (t <= 0) return nothing;
+  // Deeper than a real tilt, which is a hand's width: drawn true it would be
+  // a hairline beside the wall at any card size.
+  const depth = Math.min(width * 0.22, 26) * t;
+  const x0 = -half;
+  const x1 = -half + width;
+  const mid = (x0 + x1) / 2;
+  return svg`<g class="fp-tilt" style="opacity:${t};">
+      <line x1=${x0} y1=${-depth} x2=${x1} y2=${-depth}
+            stroke-width="2" stroke-linecap="round" style="stroke:${tone};" />
+      <polyline points="${x0},0 ${mid},${-depth} ${x1},0"
+                fill="none" stroke-width="1.5" stroke-dasharray="4 3"
+                style="stroke:${tone};" />
+    </g>`;
+}
+
+/** Degrees at or above which an angle sensor reads a sash as tilted (issue #409). */
+export const DEFAULT_TILT_THRESHOLD = 2;
+
+/**
+ * How much of its gap a tilted sash clears for the light layers (issue #409):
+ * a hand's width at the head of the window, not the opening.
+ */
+export const TILT_CLEAR_FRACTION = 0.1;
+
+/**
+ * Whether an opening can tilt (issue #409): a hinged window. A door, a slider,
+ * a top-hung window and a roof light all move some other way.
+ */
+export function openingCanTilt(o: Pick<Opening, "type" | "motion">): boolean {
+  return o.type === "window" && openingMotion(o) === "swing";
+}
+
+/**
+ * Whether a tilt sensor's state says tilted. A number is an angle in degrees,
+ * either way round, against `threshold`; anything else is an on/off reading.
+ * An outage is never tilted.
+ */
+export function tiltReading(state: string | undefined, threshold = DEFAULT_TILT_THRESHOLD): boolean {
+  if (state === undefined || isSensorOutage(state)) return false;
+  const deg = state.trim() === "" ? NaN : Number(state);
+  if (Number.isFinite(deg)) return Math.abs(deg) >= threshold;
+  return state === "on" || state === "open" || state === "tilted";
+}
+
+/**
+ * Whether a window is tilted rather than shut or swung open (issue #409).
+ *
+ * The open contact has the first word. Shut is shut, whatever the tilt sensor
+ * says, because a sash cannot lean in from a closed frame and an angle sensor
+ * can drift; an outage on it fails closed like every other opening. A handle
+ * sensor that reports `tilted` itself needs nothing else. Otherwise the
+ * contact reads open, and {@link Opening.tiltEntity} decides between tilted
+ * and swung. A window with a tilt sensor and no contact is shut until it tilts.
+ */
+export function resolveOpeningTilted(
+  o: Opening,
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+  tiltState: { state: string } | undefined,
+): boolean {
+  if (!openingCanTilt(o)) return false;
+  if (o.entity) {
+    if (!state || isSensorOutage(state.state)) return false;
+    if (state.state === "tilted") return true;
+    if (resolveOpeningAmount(o, state) === 0) return false;
+  }
+  if (!o.tiltEntity) return false;
+  const t = o.tiltThreshold;
+  return tiltReading(
+    tiltState?.state,
+    typeof t === "number" && Number.isFinite(t) && t > 0 ? t : DEFAULT_TILT_THRESHOLD,
+  );
 }
 
 /**
@@ -4251,6 +4345,13 @@ export interface OpeningStyle {
    * existing callers are unaffected. See {@link resolveOpeningAmount}.
    */
   amount?: number;
+  /**
+   * How far a tilt-and-turn sash leans in (issue #409), 0..1: 1 tilted, 0 not.
+   * A number rather than a flag so the card eases it like any other travel.
+   * Hinged windows only, on the first leaf, which stays shut in its frame
+   * while it leans. See {@link resolveOpeningTilted}.
+   */
+  tilt?: number;
   /** Entity-driven "actively open" state: tints the moving parts with `accent`. */
   active?: boolean;
   /**
@@ -4470,6 +4571,7 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
               stroke=${color} stroke-width=${o.type === "window" ? 1.5 : 2.5} />`
             : nothing
         }
+        ${tiltMark(o, style.tilt, two ? half : leafW, half, tone)}
         <!-- leaf hinged at the left jamb (flipH mirrors it to the right one) -->
         <g transform="translate(${-half} 0)">
           <g class="fp-door-leaf" style="transform:rotate(${-90 * amt}deg);">

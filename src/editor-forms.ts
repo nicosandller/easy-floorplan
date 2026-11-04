@@ -68,6 +68,8 @@ import {
   skylightCeilingHeight,
   MIN_SASH_SPAN,
   openingHasTwoLeaves,
+  openingCanTilt,
+  DEFAULT_TILT_THRESHOLD,
   sliderStyleHasTwoLeaves,
   pressEffectOf,
   labelPositionOf,
@@ -558,6 +560,24 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: { entity: { filter: [{ domain: OPENING_ENTITY_DOMAINS }] } },
     });
   }
+  // Tilt-and-turn (issue #409): a hinged window only. The threshold is asked
+  // only of an angle sensor; a contact is tilted or it is not.
+  if (openingCanTilt(o)) {
+    fields.push({
+      name: "tiltEntity",
+      label: "Tilt sensor",
+      helper: "Tilt-and-turn: an angle sensor or a contact that reads tilted. A handle sensor that reports tilted needs none",
+      selector: { entity: { filter: [{ domain: ["sensor", "binary_sensor"] }] } },
+    });
+    if (o.tiltEntity?.startsWith("sensor.")) {
+      fields.push({
+        name: "tiltThreshold",
+        label: "Tilted from",
+        helper: "The angle at which the sash counts as tilted",
+        selector: { number: { min: 0.5, max: 45, step: 0.5, mode: "box", unit_of_measurement: "°" } },
+      });
+    }
+  }
   // Offered on doors too: French doors and patio doors get shutters as well.
   // A hinged shutter usually reports through a contact sensor, so binary
   // sensors belong in the picker next to covers (issue #74).
@@ -775,6 +795,8 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       sash: openingSash(o),
       entity: o.entity ?? "",
       secondaryEntity: o.secondaryEntity ?? "",
+      tiltEntity: o.tiltEntity ?? "",
+      tiltThreshold: o.tiltThreshold ?? DEFAULT_TILT_THRESHOLD,
       glazed: openingIsGlazed(o),
       sunlight: o.sunlight ?? true,
       shutterEntity: o.shutterEntity ?? "",
@@ -925,6 +947,13 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           if (!sliderStyleHasTwoLeaves(v as SliderStyle)) out.secondaryEntity = undefined;
         }
         else if (k === "invert") out.invert = v || undefined;
+        else if (k === "tiltEntity") {
+          out.tiltEntity = v || undefined;
+          // A contact has no angle to compare.
+          if (typeof v !== "string" || !v.startsWith("sensor.")) out.tiltThreshold = undefined;
+        } else if (k === "tiltThreshold") {
+          out.tiltThreshold = typeof v === "number" && v > 0 && v !== DEFAULT_TILT_THRESHOLD ? v : undefined;
+        }
         else if (k === "type") {
           out.type = v;
           // Only a window stands on a sill; anything else would carry it as
@@ -1004,6 +1033,15 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       // override would silently reapply the next time it was switched on. That
       // covers the switch turned off and, since the default moves with the
       // entity, a contact cleared from under a badge that was only on by default.
+      // Only a hinged window tilts (issue #409): a type or motion change that
+      // makes it anything else takes the tilt sensor with it.
+      if (("type" in out || "motion" in out) && !openingCanTilt({
+        type: ("type" in out ? out.type : o.type) as Opening["type"],
+        motion: ("motion" in out ? out.motion : o.motion) as Opening["motion"],
+      })) {
+        out.tiltEntity = undefined;
+        out.tiltThreshold = undefined;
+      }
       if (!("shutterEntity" in patch && !patch.shutterEntity)) {
         const after = { entity: "entity" in out ? (out.entity as string | undefined) : o.entity };
         const byDefault = shutterMarkDefault(after);

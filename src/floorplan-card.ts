@@ -63,6 +63,8 @@ import {
   hassDarkMode,
   sunBrightness,
   resolveOpeningAmount,
+  resolveOpeningTilted,
+  TILT_CLEAR_FRACTION,
   openingIsActive,
   openingActionForGesture,
   openingIsPressable,
@@ -707,16 +709,38 @@ export class FloorplanCard extends LitElement {
     return entityIsActive(item.entity, renderHass?.states[item.entity]?.state);
   }
 
-  /** How far open an opening should be drawn (0..1), from its entity (or default). */
+  /**
+   * How far open an opening should be drawn (0..1), from its entity (or
+   * default). A tilted sash (issue #409) is drawn shut in its frame, leaning.
+   */
   private _openingAmount(o: Opening, renderHass: RenderHass | undefined): number {
+    if (this._openingTilted(o, renderHass)) return 0;
     const state = o.entity ? renderHass?.states[o.entity] : undefined;
     return resolveOpeningAmount(o, state);
   }
 
-  /** Whether an opening wears its accent: drawn open, or a cover still in transit. */
+  /** Whether a tilt-and-turn window is tilted rather than shut or swung (issue #409). */
+  private _openingTilted(o: Opening, renderHass: RenderHass | undefined): boolean {
+    if (!o.tiltEntity && !o.entity) return false;
+    return resolveOpeningTilted(
+      o,
+      o.entity ? renderHass?.states[o.entity] : undefined,
+      o.tiltEntity ? renderHass?.states[o.tiltEntity] : undefined,
+    );
+  }
+
+  /**
+   * The first leaf's travel as the light layers read it: what it is drawn at,
+   * except that a tilted sash lets a little through (issue #409).
+   */
+  private _openingLightAmount(o: Opening, renderHass: RenderHass | undefined): number {
+    return this._openingTilted(o, renderHass) ? TILT_CLEAR_FRACTION : this._openingAmount(o, renderHass);
+  }
+
+  /** Whether an opening wears its accent: drawn open, tilted, or a cover still in transit. */
   private _openingActive(o: Opening, renderHass: RenderHass | undefined): boolean {
     const state = o.entity ? renderHass?.states[o.entity] : undefined;
-    return openingIsActive(o, state);
+    return openingIsActive(o, state) || this._openingTilted(o, renderHass);
   }
 
   /**
@@ -1012,6 +1036,7 @@ export class FloorplanCard extends LitElement {
           : o.inactiveColor,
       open: amount > 0,
       amount,
+      tilt: this._openingTilted(o, renderHass) ? 1 : 0,
       active: this._openingActive(o, renderHass),
       accent: o.activeColor ?? SKIN_ACCENT,
       // Per-leaf state for a two-sensor biparting slider (issue #145).
@@ -1052,6 +1077,7 @@ export class FloorplanCard extends LitElement {
       ...style,
       amount,
       open: amount > 0,
+      tilt: at("tilt", style.tilt ?? 0),
       second: style.second ? { ...style.second, amount: at("leaf2", style.second.amount) } : undefined,
       shutter: shutter
         ? {
@@ -1438,7 +1464,7 @@ export class FloorplanCard extends LitElement {
   ): TemplateResult {
     const id = o.entity!;
     const st = renderHass?.states[id];
-    const open = this._openingAmount(o, renderHass) > 0;
+    const open = this._openingAmount(o, renderHass) > 0 || this._openingTilted(o, renderHass);
     const active = this._openingActive(o, renderHass);
     const icon = openingMarkIcon(o, st, open, this.hass?.entities?.[id]?.icon);
     const accent = cssColor(o.activeColor) ?? SKIN_ACCENT;
@@ -2118,7 +2144,7 @@ export class FloorplanCard extends LitElement {
         // does for sunlight.
         glowClearSpan(
           o,
-          this._openingAmount(o, renderHass),
+          this._openingLightAmount(o, renderHass),
           this._openingSecond(o, renderHass)?.amount,
           o.shutterEntity ? shutterAmount(renderHass?.states[o.shutterEntity], o.shutterInvert) : undefined
         )
@@ -2135,7 +2161,7 @@ export class FloorplanCard extends LitElement {
       openAmount: (o) =>
         openingClearFraction(
           o,
-          this._openingAmount(o, renderHass),
+          this._openingLightAmount(o, renderHass),
           this._openingSecond(o, renderHass)?.amount
         ),
       // A shutter that is all the way down stops the light, as one does.
@@ -2372,7 +2398,7 @@ export class FloorplanCard extends LitElement {
                 renderHass,
                 `${this._wallMaskId}-ambient`,
                 {
-                  amount: (o) => this._openingAmount(o, renderHass),
+                  amount: (o) => this._openingLightAmount(o, renderHass),
                   secondAmount: (o) => this._openingSecond(o, renderHass)?.amount,
                 }
               )}

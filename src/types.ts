@@ -350,6 +350,25 @@ export interface Opening {
   secondaryEntity?: string;
   /** Flip the open/closed interpretation of `entity` (for inverted sensors). */
   invert?: boolean;
+  /**
+   * Tilt-and-turn windows (issue #409): a sensor that tells a tilted sash from
+   * one swung fully open. Either an angle in degrees — a Shelly BLU
+   * Door/Window's rotation reads 0 shut, about 5 tilted and 0 again swung open
+   * — or an on/off contact. While `entity` reads open and this reads tilted,
+   * the sash is drawn leaning in from its head instead of swung; when
+   * `entity` reads shut, the window is shut whatever this says.
+   *
+   * A window handle sensor needs none: an `entity` whose state is `tilted`
+   * draws tilted on its own. Hinged windows only, and on a double the tilt is
+   * the first leaf's, the one `entity` drives. See {@link resolveOpeningTilted}.
+   */
+  tiltEntity?: string;
+  /**
+   * Degrees at or above which a numeric {@link tiltEntity} reads tilted
+   * (issue #409). Default {@link DEFAULT_TILT_THRESHOLD}. Ignored for an
+   * on/off sensor.
+   */
+  tiltThreshold?: number;
   /** Color of the leaf/sash and swing arc while actively open. Falls back to the primary color. */
   activeColor?: string;
   /**

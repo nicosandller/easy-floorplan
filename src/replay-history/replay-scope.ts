@@ -32,6 +32,7 @@ export class ReplayScopeService {
       if (opening.secondaryEntity) ids.add(opening.secondaryEntity);
       if (opening.shutterEntity) ids.add(opening.shutterEntity);
       if (opening.shutterSecondaryEntity) ids.add(opening.shutterSecondaryEntity);
+      if (opening.tiltEntity) ids.add(opening.tiltEntity);
     }
     for (const item of activeFloor.items) {
       if (item.entity) ids.add(item.entity);
