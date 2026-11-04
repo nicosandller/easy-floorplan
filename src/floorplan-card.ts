@@ -63,7 +63,7 @@ import {
   hassDarkMode,
   sunBrightness,
   resolveOpeningAmount,
-  resolveOpeningTilted,
+  resolveOpeningTilt,
   TILT_CLEAR_FRACTION,
   openingIsActive,
   openingActionForGesture,
@@ -721,8 +721,13 @@ export class FloorplanCard extends LitElement {
 
   /** Whether a tilt-and-turn window is tilted rather than shut or swung (issue #409). */
   private _openingTilted(o: Opening, renderHass: RenderHass | undefined): boolean {
-    if (!o.tiltEntity && !o.entity) return false;
-    return resolveOpeningTilted(
+    return this._openingTilt(o, renderHass) > 0;
+  }
+
+  /** How far it is tilted, 0..1: an angle sensor leans it in proportion (issue #409). */
+  private _openingTilt(o: Opening, renderHass: RenderHass | undefined): number {
+    if (!o.tiltEntity && !o.entity) return 0;
+    return resolveOpeningTilt(
       o,
       o.entity ? renderHass?.states[o.entity] : undefined,
       o.tiltEntity ? renderHass?.states[o.tiltEntity] : undefined,
@@ -734,7 +739,8 @@ export class FloorplanCard extends LitElement {
    * except that a tilted sash lets a little through (issue #409).
    */
   private _openingLightAmount(o: Opening, renderHass: RenderHass | undefined): number {
-    return this._openingTilted(o, renderHass) ? TILT_CLEAR_FRACTION : this._openingAmount(o, renderHass);
+    const tilt = this._openingTilt(o, renderHass);
+    return tilt > 0 ? TILT_CLEAR_FRACTION * tilt : this._openingAmount(o, renderHass);
   }
 
   /** Whether an opening wears its accent: drawn open, tilted, or a cover still in transit. */
@@ -1036,7 +1042,7 @@ export class FloorplanCard extends LitElement {
           : o.inactiveColor,
       open: amount > 0,
       amount,
-      tilt: this._openingTilted(o, renderHass) ? 1 : 0,
+      tilt: this._openingTilt(o, renderHass),
       active: this._openingActive(o, renderHass),
       accent: o.activeColor ?? SKIN_ACCENT,
       // Per-leaf state for a two-sensor biparting slider (issue #145).

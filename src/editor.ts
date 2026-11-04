@@ -3358,7 +3358,7 @@ export class FloorplanCardEditor extends LitElement {
       "angle",
     ]],
     // Which contacts drive it — the opening's own, before the shutter's.
-    ["What it reads", ["entity", "secondaryEntity", "tiltEntity", "tiltThreshold", "invert"]],
+    ["What it reads", ["entity", "secondaryEntity", "tiltEntity", "tiltThreshold", "tiltFull", "invert"]],
     // How it behaves toward the sun (issue #177), which is neither shape nor
     // state but gets asked about as its own thing.
     ["Sunlight", ["glazed", "sunlight"]],

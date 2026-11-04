@@ -3848,7 +3848,9 @@ function tiltMark(
   const x0 = -half;
   const x1 = -half + width;
   const mid = (x0 + x1) / 2;
-  return svg`<g class="fp-tilt" style="opacity:${t};">
+  // Faded in over the first part of the lean only, so a partial tilt reads
+  // as a shallower lean rather than a fainter one.
+  return svg`<g class="fp-tilt" style="opacity:${Math.min(1, t * 4)};">
       <line x1=${x0} y1=${-depth} x2=${x1} y2=${-depth}
             stroke-width="2" stroke-linecap="round" style="stroke:${tone};" />
       <polyline points="${x0},0 ${mid},${-depth} ${x1},0"
@@ -3859,6 +3861,12 @@ function tiltMark(
 
 /** Degrees at or above which an angle sensor reads a sash as tilted (issue #409). */
 export const DEFAULT_TILT_THRESHOLD = 2;
+
+/**
+ * Degrees at which an angle sensor reads a sash as fully tilted (issue #409):
+ * what the reporter's Shelly BLU Door/Window reads against the tilt stop.
+ */
+export const DEFAULT_TILT_FULL = 5;
 
 /**
  * How much of its gap a tilted sash clears for the light layers (issue #409):
@@ -3875,15 +3883,25 @@ export function openingCanTilt(o: Pick<Opening, "type" | "motion">): boolean {
 }
 
 /**
- * Whether a tilt sensor's state says tilted. A number is an angle in degrees,
- * either way round, against `threshold`; anything else is an on/off reading.
- * An outage is never tilted.
+ * How far a tilt sensor's state says the sash leans, 0..1. A number is an
+ * angle in degrees, either way round: nothing below `threshold`, then in
+ * proportion up to fully tilted at `full`. Anything else is an on/off reading,
+ * all or nothing. An outage is never tilted.
  */
+export function tiltLean(
+  state: string | undefined,
+  threshold = DEFAULT_TILT_THRESHOLD,
+  full = DEFAULT_TILT_FULL,
+): number {
+  if (state === undefined || isSensorOutage(state)) return 0;
+  const deg = state.trim() === "" ? NaN : Math.abs(Number(state));
+  if (Number.isFinite(deg)) return deg < threshold ? 0 : Math.min(1, deg / Math.max(full, threshold));
+  return state === "on" || state === "open" || state === "tilted" ? 1 : 0;
+}
+
+/** Whether a tilt sensor's state says tilted at all. See {@link tiltLean}. */
 export function tiltReading(state: string | undefined, threshold = DEFAULT_TILT_THRESHOLD): boolean {
-  if (state === undefined || isSensorOutage(state)) return false;
-  const deg = state.trim() === "" ? NaN : Number(state);
-  if (Number.isFinite(deg)) return Math.abs(deg) >= threshold;
-  return state === "on" || state === "open" || state === "tilted";
+  return tiltLean(state, threshold) > 0;
 }
 
 /**
@@ -3901,17 +3919,32 @@ export function resolveOpeningTilted(
   state: { state: string; attributes?: Record<string, unknown> } | undefined,
   tiltState: { state: string } | undefined,
 ): boolean {
-  if (!openingCanTilt(o)) return false;
+  return resolveOpeningTilt(o, state, tiltState) > 0;
+}
+
+/**
+ * How far a window is tilted, 0..1, on the rules of {@link
+ * resolveOpeningTilted}: an angle sensor leans it in proportion, up to
+ * {@link Opening.tiltFull}; a contact or a handle's `tilted` leans it fully.
+ */
+export function resolveOpeningTilt(
+  o: Opening,
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+  tiltState: { state: string } | undefined,
+): number {
+  if (!openingCanTilt(o)) return 0;
   if (o.entity) {
-    if (!state || isSensorOutage(state.state)) return false;
-    if (state.state === "tilted") return true;
-    if (resolveOpeningAmount(o, state) === 0) return false;
+    if (!state || isSensorOutage(state.state)) return 0;
+    if (state.state === "tilted") return 1;
+    if (resolveOpeningAmount(o, state) === 0) return 0;
   }
-  if (!o.tiltEntity) return false;
-  const t = o.tiltThreshold;
-  return tiltReading(
+  if (!o.tiltEntity) return 0;
+  const positive = (v: number | undefined, d: number) =>
+    typeof v === "number" && Number.isFinite(v) && v > 0 ? v : d;
+  return tiltLean(
     tiltState?.state,
-    typeof t === "number" && Number.isFinite(t) && t > 0 ? t : DEFAULT_TILT_THRESHOLD,
+    positive(o.tiltThreshold, DEFAULT_TILT_THRESHOLD),
+    positive(o.tiltFull, DEFAULT_TILT_FULL),
   );
 }
 

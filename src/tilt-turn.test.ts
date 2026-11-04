@@ -1,7 +1,10 @@
 import { describe, it, expect } from "vitest";
 import {
+  DEFAULT_TILT_FULL,
   DEFAULT_TILT_THRESHOLD,
   openingCanTilt,
+  resolveOpeningTilt,
+  tiltLean,
   openingIsActive,
   renderOpening,
   resolveOpeningTilted,
@@ -50,6 +53,23 @@ describe("tilt-and-turn windows (issue #409)", () => {
     expect(tiltReading("unavailable")).toBe(false);
     expect(tiltReading("")).toBe(false);
     expect(tiltReading(undefined)).toBe(false);
+  });
+
+  it("leans in proportion to the angle, fully from tiltFull", () => {
+    expect(tiltLean("0.0")).toBe(0);
+    expect(tiltLean("1.5")).toBe(0);
+    expect(tiltLean("2.5")).toBeCloseTo(2.5 / DEFAULT_TILT_FULL);
+    expect(tiltLean("5.0")).toBe(1);
+    expect(tiltLean("12")).toBe(1);
+    expect(tiltLean("on")).toBe(1);
+    expect(tiltLean("3", 2, 10)).toBeCloseTo(0.3);
+    // A full angle below the threshold cannot leave a gap where nothing draws.
+    expect(tiltLean("3", 3, 1)).toBe(1);
+    expect(resolveOpeningTilt(win, st("on"), st("2.5"))).toBeCloseTo(0.5);
+    expect(resolveOpeningTilt({ ...win, tiltFull: 10 }, st("on"), st("5"))).toBeCloseTo(0.5);
+    expect(resolveOpeningTilt({ ...win, tiltFull: -3 }, st("on"), st("5"))).toBe(1);
+    expect(resolveOpeningTilt({ ...win, tiltEntity: undefined }, st("tilted"), undefined)).toBe(1);
+    expect(resolveOpeningTilt(win, st("off"), st("5"))).toBe(0);
   });
 
   it("tells shut, tilted and swung apart from the Shelly's two entities", () => {
@@ -105,8 +125,11 @@ describe("tilt-and-turn windows (issue #409)", () => {
     expect(tilted).toContain("stroke-dasharray=\"4 3\"");
     expect(tilted).toContain("rotate(0deg)");
     expect(tilted).toContain("stroke:#ff0000");
-    // Eased: half-way through, half the depth and half the opacity.
-    expect(svgOf({}, { amount: 0, tilt: 0.5 })).toContain("opacity:0.5");
+    // A partial lean is shallower, not fainter; only its first stretch fades in.
+    expect(svgOf({}, { amount: 0, tilt: 0.5 })).toContain("opacity:1");
+    expect(svgOf({}, { amount: 0, tilt: 0.1 })).toContain("opacity:0.4");
+    const head = (t: number) => Number(/y1=(-?[\d.]+)/.exec(svgOf({}, { amount: 0, tilt: t }).split("fp-tilt")[1]!)![1]);
+    expect(head(0.5)).toBeCloseTo(head(1) / 2);
     // A door never tilts, whatever the style says.
     expect(svgOf({ type: "door" }, { amount: 0, tilt: 1 })).not.toContain("fp-tilt");
   });
@@ -152,26 +175,31 @@ describe("tilt fields in the editor (issue #409)", () => {
   it("offers the tilt sensor on a hinged window, and the threshold only for an angle", () => {
     expect(names(win)).toContain("tiltEntity");
     expect(names(win)).toContain("tiltThreshold");
+    expect(names(win)).toContain("tiltFull");
     expect(names({ ...win, tiltEntity: "binary_sensor.tilt" })).not.toContain("tiltThreshold");
+    expect(names({ ...win, tiltEntity: "binary_sensor.tilt" })).not.toContain("tiltFull");
     expect(names({ ...win, tiltEntity: undefined })).not.toContain("tiltThreshold");
     expect(names({ ...win, type: "door" })).not.toContain("tiltEntity");
     expect(names({ ...win, motion: "slide" })).not.toContain("tiltEntity");
     expect(openingForm(win).data.tiltThreshold).toBe(DEFAULT_TILT_THRESHOLD);
+    expect(openingForm(win).data.tiltFull).toBe(DEFAULT_TILT_FULL);
   });
 
   it("writes only what differs from the default", () => {
     const f = openingForm(win);
     expect(f.toPatch({ tiltThreshold: DEFAULT_TILT_THRESHOLD })).toEqual({ tiltThreshold: undefined });
     expect(f.toPatch({ tiltThreshold: 4 })).toEqual({ tiltThreshold: 4 });
-    expect(f.toPatch({ tiltEntity: "" })).toEqual({ tiltEntity: undefined, tiltThreshold: undefined });
+    expect(f.toPatch({ tiltFull: DEFAULT_TILT_FULL })).toEqual({ tiltFull: undefined });
+    expect(f.toPatch({ tiltFull: 8 })).toEqual({ tiltFull: 8 });
+    expect(f.toPatch({ tiltEntity: "" })).toEqual({ tiltEntity: undefined, tiltThreshold: undefined, tiltFull: undefined });
     expect(f.toPatch({ tiltEntity: "binary_sensor.tilt" })).toEqual({
-      tiltEntity: "binary_sensor.tilt", tiltThreshold: undefined,
+      tiltEntity: "binary_sensor.tilt", tiltThreshold: undefined, tiltFull: undefined,
     });
   });
 
   it("drops the tilt sensor when the window stops being hinged", () => {
-    const f = openingForm({ ...win, tiltThreshold: 4 });
-    expect(f.toPatch({ motion: "slide" })).toMatchObject({ tiltEntity: undefined, tiltThreshold: undefined });
+    const f = openingForm({ ...win, tiltThreshold: 4, tiltFull: 8 });
+    expect(f.toPatch({ motion: "slide" })).toMatchObject({ tiltEntity: undefined, tiltThreshold: undefined, tiltFull: undefined });
     expect(f.toPatch({ type: "door" })).toMatchObject({ tiltEntity: undefined, tiltThreshold: undefined });
     expect(f.toPatch({ motion: "swing" })).not.toHaveProperty("tiltEntity");
   });

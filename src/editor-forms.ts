@@ -70,6 +70,7 @@ import {
   openingHasTwoLeaves,
   openingCanTilt,
   DEFAULT_TILT_THRESHOLD,
+  DEFAULT_TILT_FULL,
   sliderStyleHasTwoLeaves,
   pressEffectOf,
   labelPositionOf,
@@ -576,6 +577,12 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         helper: "The angle at which the sash counts as tilted",
         selector: { number: { min: 0.5, max: 45, step: 0.5, mode: "box", unit_of_measurement: "°" } },
       });
+      fields.push({
+        name: "tiltFull",
+        label: "Fully tilted at",
+        helper: "The angle the sensor reads against the tilt stop. Smaller angles lean it in proportion",
+        selector: { number: { min: 0.5, max: 90, step: 0.5, mode: "box", unit_of_measurement: "°" } },
+      });
     }
   }
   // Offered on doors too: French doors and patio doors get shutters as well.
@@ -797,6 +804,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       secondaryEntity: o.secondaryEntity ?? "",
       tiltEntity: o.tiltEntity ?? "",
       tiltThreshold: o.tiltThreshold ?? DEFAULT_TILT_THRESHOLD,
+      tiltFull: o.tiltFull ?? DEFAULT_TILT_FULL,
       glazed: openingIsGlazed(o),
       sunlight: o.sunlight ?? true,
       shutterEntity: o.shutterEntity ?? "",
@@ -950,9 +958,14 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         else if (k === "tiltEntity") {
           out.tiltEntity = v || undefined;
           // A contact has no angle to compare.
-          if (typeof v !== "string" || !v.startsWith("sensor.")) out.tiltThreshold = undefined;
+          if (typeof v !== "string" || !v.startsWith("sensor.")) {
+            out.tiltThreshold = undefined;
+            out.tiltFull = undefined;
+          }
         } else if (k === "tiltThreshold") {
           out.tiltThreshold = typeof v === "number" && v > 0 && v !== DEFAULT_TILT_THRESHOLD ? v : undefined;
+        } else if (k === "tiltFull") {
+          out.tiltFull = typeof v === "number" && v > 0 && v !== DEFAULT_TILT_FULL ? v : undefined;
         }
         else if (k === "type") {
           out.type = v;
@@ -1041,6 +1054,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       })) {
         out.tiltEntity = undefined;
         out.tiltThreshold = undefined;
+        out.tiltFull = undefined;
       }
       if (!("shutterEntity" in patch && !patch.shutterEntity)) {
         const after = { entity: "entity" in out ? (out.entity as string | undefined) : o.entity };

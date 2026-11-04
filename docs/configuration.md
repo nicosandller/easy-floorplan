@@ -242,6 +242,7 @@ See [Skylights](lighting.md#skylights) for what the sun does with one and
 | `secondaryEntity` | string                  | Anything with **two leaves**: a second contact / `cover` for the other leaf, so each moves on its own state. That means the two-panel sliders (`biparting`, `biparting-bypass`, `converging`) and any hinged double — a casement window, or a `sash: double` door. `entity` drives the leaf at the −x jamb, so `flipH` swaps which sensor draws which. Unset = both follow `entity`; ignored where there is only one leaf. |
 | `tiltEntity`  | string                      | Hinged windows only: a tilt-and-turn window's tilt sensor, an angle in degrees (a Shelly BLU Door/Window's `rotation`) or an on/off contact. While `entity` reads open and this reads tilted, the sash is drawn shut in its frame with its head leaning in (a dashed V in plan, leaning in 3D), and the light layers count it as only a little open. When `entity` reads shut the window is shut, whatever this says. A handle sensor whose `entity` state is `tilted` needs none. On a double sash the tilt is the first leaf's. See [Tilt-and-turn windows](#tilt-and-turn-windows). |
 | `tiltThreshold` | number (°)                | The angle at or above which a numeric `tiltEntity` reads tilted. Default `2`. Ignored for an on/off sensor. |
+| `tiltFull`    | number (°)                  | The angle a numeric `tiltEntity` reads fully tilted, against the tilt stop. Between `tiltThreshold` and this the sash leans in proportion. Default `5`. Ignored for an on/off sensor, which tilts all or nothing. |
 | `invert`      | boolean                     | Flip the open/closed interpretation.                   |
 | `activeColor` | string                      | Leaf/arc color while actively open (default primary). On a roll-up it colours the curtain and the track it leaves behind, so a fully raised shutter still reads as open. |
 | `inactiveColor` | string                    | Leaf/arc color while **closed** (default: the wall color). The moving parts only — the jambs and frame stay the wall's color either way, so the symbol still reads as a hole in a wall. A shutter that is down follows it, as one that is up follows `activeColor`. An [offline](behavior.md#offline-devices) contact falls back to the wall color rather than drawing a confident "shut". See [Colors for on and off](behavior.md#colors-for-on-and-off). |
@@ -277,8 +278,15 @@ them apart as `tiltEntity`:
 
 A Shelly BLU Door/Window reports its rotation as 0° shut, about 5° tilted and 0° again
 swung open, so the default `tiltThreshold` of 2° separates them. Raise it if a sensor
-drifts. In the editor, both are under **What it reads** as **Tilt sensor** and
-**Tilted from**.
+drifts. The angle also sets how far the sash leans: fully at `tiltFull` (5° by default),
+and in proportion below it, so a window part way to its tilt stop draws part tilted. Set
+`tiltFull` to what your sensor reads with the window tilted fully. In the editor, these
+are under **What it reads** as **Tilt sensor**, **Tilted from** and **Fully tilted at**.
+
+How far a window is *swung* open comes from `entity`, as for any window: a contact is
+shut or open, and a `cover` with a `current_position` draws part open. An accelerometer
+like the Shelly's reads the lean against gravity, so it measures the tilt and not the
+swing.
 
 ## Item (device)
 

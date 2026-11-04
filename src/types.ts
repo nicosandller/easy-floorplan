@@ -369,6 +369,13 @@ export interface Opening {
    * on/off sensor.
    */
   tiltThreshold?: number;
+  /**
+   * Degrees at which a numeric {@link tiltEntity} reads fully tilted (issue
+   * #409); between {@link tiltThreshold} and this the sash is drawn leaning
+   * in proportion. Default {@link DEFAULT_TILT_FULL}. Ignored for an on/off
+   * sensor, which is all or nothing.
+   */
+  tiltFull?: number;
   /** Color of the leaf/sash and swing arc while actively open. Falls back to the primary color. */
   activeColor?: string;
   /**
