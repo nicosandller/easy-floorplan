@@ -1,10 +1,12 @@
 // @vitest-environment jsdom
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   collectConditionEntities,
   collectConditionMediaQueries,
   evaluateCondition,
   evaluateConditions,
+  hasLocationConditions,
+  hasTimeConditions,
   isEntityId,
   isFurnitureVisible,
   statesMatch,
@@ -201,10 +203,10 @@ describe("furniture-visibility", () => {
       expect(evaluateCondition(condMissing as VisibilityCondition, mockHass({ "light.desk": { state: "on" } }))).toBe(false);
     });
 
-    it("matches open and closed aliases across covers and binary sensors", () => {
-      // Cover entity with 'closed' state matches state: 'closed' and state: 'off'
+    it("matches exact states across covers and binary sensors", () => {
       const coverClosed = mockHass({ "cover.garage_door": { state: "closed" } });
       const coverOpen = mockHass({ "cover.garage_door": { state: "open" } });
+      const coverClosing = mockHass({ "cover.garage_door": { state: "closing" } });
 
       expect(
         evaluateCondition(
@@ -218,61 +220,49 @@ describe("furniture-visibility", () => {
           coverOpen
         )
       ).toBe(false);
+      // 'closing' does NOT match 'closed'
+      expect(
+        evaluateCondition(
+          { condition: "state", entity: "cover.garage_door", state: "closed" } as VisibilityCondition,
+          coverClosing
+        )
+      ).toBe(false);
 
+      // 'off' does NOT match cover's 'closed'
       expect(
         evaluateCondition(
           { condition: "state", entity: "cover.garage_door", state: "off" } as VisibilityCondition,
           coverClosed
         )
-      ).toBe(true);
-      expect(
-        evaluateCondition(
-          { condition: "state", entity: "cover.garage_door", state: "on" } as VisibilityCondition,
-          coverOpen
-        )
-      ).toBe(true);
+      ).toBe(false);
 
-      // Binary sensor with 'off' state matches state: 'closed' and state: 'off'
       const sensorOff = mockHass({ "binary_sensor.garage_door": { state: "off" } });
       const sensorOn = mockHass({ "binary_sensor.garage_door": { state: "on" } });
 
       expect(
         evaluateCondition(
-          { condition: "state", entity: "binary_sensor.garage_door", state: "closed" } as VisibilityCondition,
+          { condition: "state", entity: "binary_sensor.garage_door", state: "off" } as VisibilityCondition,
           sensorOff
         )
       ).toBe(true);
       expect(
         evaluateCondition(
-          { condition: "state", entity: "binary_sensor.garage_door", state: "closed" } as VisibilityCondition,
+          { condition: "state", entity: "binary_sensor.garage_door", state: "on" } as VisibilityCondition,
           sensorOn
+        )
+      ).toBe(true);
+      // 'closed' does NOT match binary_sensor's 'off'
+      expect(
+        evaluateCondition(
+          { condition: "state", entity: "binary_sensor.garage_door", state: "closed" } as VisibilityCondition,
+          sensorOff
         )
       ).toBe(false);
-
-      expect(
-        evaluateCondition(
-          { condition: "state", entity: "binary_sensor.garage_door", state: "open" } as VisibilityCondition,
-          sensorOn
-        )
-      ).toBe(true);
     });
 
-    it("handles boolean coercion and case-insensitivity", () => {
+    it("handles case-insensitivity", () => {
       const hassOn = mockHass({ "switch.relay": { state: "on" } });
       const hassOff = mockHass({ "switch.relay": { state: "off" } });
-
-      expect(
-        evaluateCondition(
-          { condition: "state", entity: "switch.relay", state: true } as unknown as VisibilityCondition,
-          hassOn
-        )
-      ).toBe(true);
-      expect(
-        evaluateCondition(
-          { condition: "state", entity: "switch.relay", state: false } as unknown as VisibilityCondition,
-          hassOff
-        )
-      ).toBe(true);
 
       expect(
         evaluateCondition(
@@ -303,25 +293,14 @@ describe("furniture-visibility", () => {
       expect(statesMatch("Home", "home")).toBe(true);
     });
 
-    it("matches open / on / unlocked / true / 1 aliases", () => {
-      expect(statesMatch("open", "on")).toBe(true);
-      expect(statesMatch("opened", "open")).toBe(true);
-      expect(statesMatch("unlocked", "open")).toBe(true);
-      expect(statesMatch(true, "on")).toBe(true);
-      expect(statesMatch("1", "on")).toBe(true);
-    });
-
-    it("matches closed / off / locked / false / 0 aliases", () => {
-      expect(statesMatch("closed", "off")).toBe(true);
-      expect(statesMatch("closing", "closed")).toBe(true);
-      expect(statesMatch("locked", "closed")).toBe(true);
-      expect(statesMatch(false, "off")).toBe(true);
-      expect(statesMatch("0", "off")).toBe(true);
-    });
-
-    it("matches away / not_home aliases", () => {
-      expect(statesMatch("away", "not_home")).toBe(true);
-      expect(statesMatch("not_home", "away")).toBe(true);
+    it("does not alias closed/closing, on/unlocked or open/opening", () => {
+      expect(statesMatch("closed", "off")).toBe(false);
+      expect(statesMatch("closing", "closed")).toBe(false);
+      expect(statesMatch("locked", "closed")).toBe(false);
+      expect(statesMatch("unlocked", "on")).toBe(false);
+      expect(statesMatch("opening", "open")).toBe(false);
+      expect(statesMatch("open", "on")).toBe(false);
+      expect(statesMatch("away", "not_home")).toBe(false);
     });
 
     it("matches numeric equivalence", () => {
@@ -693,6 +672,204 @@ describe("furniture-visibility", () => {
       const entities = collectConditionEntities(conditions);
       expect(entities).toEqual([]);
     });
+
+    it("collects target zone entities from location conditions", () => {
+      const conditions: VisibilityCondition[] = [
+        {
+          condition: "location",
+          target: { entity_id: "zone.home" },
+        },
+        {
+          condition: "location",
+          target: { entity_id: ["zone.work", "zone.school"] },
+        },
+      ];
+      const entities = collectConditionEntities(conditions);
+      expect(entities).toContain("zone.home");
+      expect(entities).toContain("zone.work");
+      expect(entities).toContain("zone.school");
+    });
+  });
+
+  describe("time condition", () => {
+    it("matches time range within the same day", () => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date(2025, 0, 15, 14, 30, 0)); // 14:30
+
+      const cond: VisibilityCondition = {
+        condition: "time",
+        after: "10:00:00",
+        before: "18:00:00",
+      };
+      expect(evaluateCondition(cond, mockHass({}))).toBe(true);
+
+      const condBefore: VisibilityCondition = {
+        condition: "time",
+        after: "15:00:00",
+      };
+      expect(evaluateCondition(condBefore, mockHass({}))).toBe(false);
+
+      const condAfter: VisibilityCondition = {
+        condition: "time",
+        before: "14:00:00",
+      };
+      expect(evaluateCondition(condAfter, mockHass({}))).toBe(false);
+
+      vi.useRealTimers();
+    });
+
+    it("supports midnight-crossing intervals", () => {
+      vi.useFakeTimers();
+      // 23:30 (should match 22:00 -> 06:00)
+      vi.setSystemTime(new Date(2025, 0, 15, 23, 30, 0));
+      const condNight: VisibilityCondition = {
+        condition: "time",
+        after: "22:00:00",
+        before: "06:00:00",
+      };
+      expect(evaluateCondition(condNight, mockHass({}))).toBe(true);
+
+      // 03:00 (should match 22:00 -> 06:00)
+      vi.setSystemTime(new Date(2025, 0, 15, 3, 0, 0));
+      expect(evaluateCondition(condNight, mockHass({}))).toBe(true);
+
+      // 12:00 (should NOT match 22:00 -> 06:00)
+      vi.setSystemTime(new Date(2025, 0, 15, 12, 0, 0));
+      expect(evaluateCondition(condNight, mockHass({}))).toBe(false);
+
+      vi.useRealTimers();
+    });
+
+    it("evaluates weekday restrictions", () => {
+      vi.useFakeTimers();
+      // 2025-01-15 is a Wednesday ("wed")
+      vi.setSystemTime(new Date(2025, 0, 15, 12, 0, 0));
+
+      const matchWeekday: VisibilityCondition = {
+        condition: "time",
+        weekdays: ["mon", "wed", "fri"],
+      };
+      expect(evaluateCondition(matchWeekday, mockHass({}))).toBe(true);
+
+      const nonMatchWeekday: VisibilityCondition = {
+        condition: "time",
+        weekdays: ["sat", "sun"],
+      };
+      expect(evaluateCondition(nonMatchWeekday, mockHass({}))).toBe(false);
+
+      vi.useRealTimers();
+    });
+
+    it("detects time conditions in config with hasTimeConditions", () => {
+      const configWithTime: FloorplanCardConfig = {
+        type: "custom:easy-floorplan-card",
+        floors: [
+          {
+            id: "f1",
+            furniture: [
+              {
+                id: "lamp",
+                type: "lamp",
+                x: 0,
+                y: 0,
+                w: 10,
+                h: 10,
+                visibility: [{ condition: "time", after: "18:00:00" }],
+              },
+            ],
+          },
+        ],
+      } as unknown as FloorplanCardConfig;
+
+      expect(hasTimeConditions(configWithTime)).toBe(true);
+
+      const configWithoutTime: FloorplanCardConfig = {
+        type: "custom:easy-floorplan-card",
+        floors: [
+          {
+            id: "f1",
+            furniture: [{ id: "lamp", type: "lamp", x: 0, y: 0, w: 10, h: 10 }],
+          },
+        ],
+      } as unknown as FloorplanCardConfig;
+
+      expect(hasTimeConditions(configWithoutTime)).toBe(false);
+    });
+  });
+
+  describe("location condition", () => {
+    const userHass = (personState: string, inZones?: string[]) =>
+      mockHass(
+        {
+          "person.john": {
+            state: personState,
+            attributes: { user_id: "user_123", in_zones: inZones ?? [] },
+          },
+          "zone.home": {
+            state: "0",
+            attributes: { friendly_name: "Home" },
+          },
+          "zone.work": {
+            state: "0",
+            attributes: { friendly_name: "Work" },
+          },
+        },
+        "user_123"
+      );
+
+    it("evaluates away condition", () => {
+      const cond: VisibilityCondition = { condition: "location", away: true };
+      expect(evaluateCondition(cond, userHass("not_home"))).toBe(true);
+      expect(evaluateCondition(cond, userHass("Home"))).toBe(false);
+    });
+
+    it("evaluates locations list condition", () => {
+      const cond: VisibilityCondition = { condition: "location", locations: ["Home", "Work"] };
+      expect(evaluateCondition(cond, userHass("Home"))).toBe(true);
+      expect(evaluateCondition(cond, userHass("Work"))).toBe(true);
+      expect(evaluateCondition(cond, userHass("not_home"))).toBe(false);
+    });
+
+    it("evaluates target zone condition", () => {
+      const cond: VisibilityCondition = {
+        condition: "location",
+        target: { entity_id: "zone.home" },
+      };
+      expect(evaluateCondition(cond, userHass("Home"))).toBe(true);
+      expect(evaluateCondition(cond, userHass("Work"))).toBe(false);
+      expect(evaluateCondition(cond, userHass("not_home"))).toBe(false);
+    });
+
+    it("fails open during outages (unavailable / unknown / empty states)", () => {
+      const cond: VisibilityCondition = { condition: "location", away: true };
+      expect(evaluateCondition(cond, userHass("unavailable"))).toBe(true);
+      expect(evaluateCondition(cond, userHass("unknown"))).toBe(true);
+      expect(evaluateCondition(cond, mockHass({}, "user_123"))).toBe(true);
+    });
+
+    it("detects location conditions in config with hasLocationConditions", () => {
+      const configWithLocation: FloorplanCardConfig = {
+        type: "custom:easy-floorplan-card",
+        floors: [
+          {
+            id: "f1",
+            furniture: [
+              {
+                id: "car",
+                type: "car",
+                x: 0,
+                y: 0,
+                w: 10,
+                h: 10,
+                visibility: [{ condition: "location", away: true }],
+              },
+            ],
+          },
+        ],
+      } as unknown as FloorplanCardConfig;
+
+      expect(hasLocationConditions(configWithLocation)).toBe(true);
+    });
   });
 
   describe("unsupported condition types fail closed", () => {
@@ -708,7 +885,6 @@ describe("furniture-visibility", () => {
         { condition: "template", value_template: "{{ true }}" },
         { condition: "device", device_id: "dev1", type: "is_on" },
         { condition: "zone", entity: "device_tracker.car", zone: "zone.home" },
-        { condition: "time", after: "10:00:00" },
       ];
       for (const cond of unsupported) {
         expect(evaluateCondition(cond as unknown as VisibilityCondition, mockHass({}))).toBe(false);
@@ -746,6 +922,26 @@ describe("furniture-visibility", () => {
       expect(queries).toHaveLength(2);
       expect(queries).toContain("(min-width: 768px)");
       expect(queries).toContain("(max-width: 1200px)");
+    });
+
+    it("extracts media queries from single-floor plans without config.floors", () => {
+      const config = {
+        type: "custom:easy-floorplan-card",
+        furniture: [
+          {
+            id: "car",
+            type: "car",
+            x: 0,
+            y: 0,
+            w: 10,
+            h: 10,
+            visibility: [{ condition: "screen", media_query: "(min-width: 1024px)" }],
+          },
+        ],
+      } as unknown as FloorplanCardConfig;
+
+      const queries = collectConditionMediaQueries(config);
+      expect(queries).toEqual(["(min-width: 1024px)"]);
     });
   });
 });

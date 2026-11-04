@@ -516,7 +516,7 @@ destination. Tapping the drawing itself then runs it, instead of passing through
 room. Default `true`.
 
 **`visibility`** conditionally shows or hides furniture using Home Assistant dashboard
-card visibility rules (state, numeric_state, screen, user, and logical groups). See
+card visibility rules (state, numeric_state, screen, user, time, location, and logical groups). See
 [Conditional furniture visibility](behavior.md#conditional-furniture-visibility).
 
 ```yaml

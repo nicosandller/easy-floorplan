@@ -247,6 +247,9 @@ import { createReplayPanelProps, renderReplayPanel } from "./replay-history/repl
 import {
   isFurnitureVisible,
   collectConditionMediaQueries,
+  hasLocationConditions,
+  hasTimeConditions,
+  TIME_CONDITION_TICK_MS,
 } from "./furniture-visibility";
 
 /**
@@ -379,6 +382,7 @@ export class FloorplanCard extends LitElement {
   public connectedCallback(): void {
     super.connectedCallback();
     this._syncMoonClock();
+    this._syncTimeClock();
     // Subscribed unconditionally rather than only when an override is set:
     // the config can change under a live card, and a query that is listened
     // to but never read costs nothing.
@@ -443,6 +447,7 @@ export class FloorplanCard extends LitElement {
     this._summaryDiscoveryInputs = undefined;
     this._syncSummaryDiscovery();
     this._syncMoonClock();
+    this._syncTimeClock();
     this._syncHistoryServiceContext();
     this._replayController.clearConfigColorCache();
     // HA calls setConfig on every keystroke in the config box. Clearing the
@@ -547,6 +552,11 @@ export class FloorplanCard extends LitElement {
     const perFloor = new Map<string, string[]>();
     const all = new Set<string>();
     if (c && reg) {
+      if (hasLocationConditions(c) && this.hass?.states) {
+        for (const id of Object.keys(this.hass.states)) {
+          if (id.startsWith("person.")) all.add(id);
+        }
+      }
       for (const f of getFloors(c)) {
         if (!floorSummaryShown(f, c.floorSummary)) continue;
         const ids = floorHaEntityIds(f, reg);
@@ -866,6 +876,7 @@ export class FloorplanCard extends LitElement {
     this._autoResizeTarget = undefined;
     // Not connected any more, so this stops it.
     this._syncMoonClock();
+    this._syncTimeClock();
     super.disconnectedCallback();
   }
 
@@ -888,6 +899,23 @@ export class FloorplanCard extends LitElement {
     } else if (!wanted && this._moonClock !== undefined) {
       clearInterval(this._moonClock);
       this._moonClock = undefined;
+    }
+  }
+
+  /**
+   * Periodic clock for live time condition transitions (Issue #310).
+   * Automatically redraws the card when time conditions are present so pieces
+   * appear or disappear at their scheduled times without waiting for entity updates.
+   */
+  private _timeConditionClock?: ReturnType<typeof setInterval>;
+
+  private _syncTimeClock(): void {
+    const wanted = this.isConnected && !!this._config && hasTimeConditions(this._config);
+    if (wanted && this._timeConditionClock === undefined) {
+      this._timeConditionClock = setInterval(() => this.requestUpdate(), TIME_CONDITION_TICK_MS);
+    } else if (!wanted && this._timeConditionClock !== undefined) {
+      clearInterval(this._timeConditionClock);
+      this._timeConditionClock = undefined;
     }
   }
 
@@ -2698,10 +2726,10 @@ export class FloorplanCard extends LitElement {
           setAppearance: (appearance) => { this._appearanceOverride = appearance === normalizeAppearance(this._config!.appearance) ? undefined : appearance; },
           rotate: (step) => this._rotation.turn(step, iso && this.isConnected && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches),
           reset: () => this._resetView(),
-          download: () => downloadLineArtSvg(c, active, targetRotation),
+          download: () => downloadLineArtSvg(c, active, targetRotation, effHass),
         }) : c.showExport ? html`<div class="export-bar">
           <button type="button" title=${`Download line art of ${active.name} as SVG`}
-            @click=${() => downloadLineArtSvg(c, active, targetRotation)}>Export SVG</button>
+            @click=${() => downloadLineArtSvg(c, active, targetRotation, effHass)}>Export SVG</button>
         </div>` : nothing}
         </div>
       </ha-card>

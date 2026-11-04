@@ -481,6 +481,8 @@ Furniture visibility follows Home Assistant's native dashboard card visibility s
 - **`condition: numeric_state`**: compares numerical values against `above` and/or `below` thresholds (with optional helper thresholds). Requires an explicit `entity` or `entity_id`.
 - **`condition: screen`**: evaluates responsive CSS `media_query` expressions.
 - **`condition: user`**: checks if the current user ID is contained within `users`.
+- **`condition: time`**: evaluates time windows (`after`, `before` with midnight crossing support) and optional `weekdays` in server or local timezone.
+- **`condition: location`**: checks if the logged-in user's person is in target zones (`locations` / `target.entity_id`) or `away` (with outage fail-open protection).
 - **Logical groups**: nest complex logic using `and`, `or`, and `not` condition lists.
 
 Unsupported condition types (such as automation-only conditions) and conditions with a missing or empty entity fail closed (hidden).

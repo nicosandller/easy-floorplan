@@ -1181,6 +1181,8 @@ export type VisibilityCondition =
   | NumericStateVisibilityCondition
   | ScreenVisibilityCondition
   | UserVisibilityCondition
+  | TimeCondition
+  | LocationCondition
   | AndVisibilityCondition
   | OrVisibilityCondition
   | NotVisibilityCondition;
@@ -1188,23 +1190,22 @@ export type VisibilityCondition =
 export interface StateVisibilityCondition {
   condition: "state";
   entity?: string;
-  entity_id?: string | string[];
+  entity_id?: string;
   target?: {
-    entity_id?: string | string[];
+    entity_id?: string;
     [key: string]: unknown;
   };
   state?: string | string[];
   state_not?: string | string[];
   attribute?: string;
-  match?: "any" | "all";
 }
 
 export interface NumericStateVisibilityCondition {
   condition: "numeric_state";
   entity?: string;
-  entity_id?: string | string[];
+  entity_id?: string;
   target?: {
-    entity_id?: string | string[];
+    entity_id?: string;
     [key: string]: unknown;
   };
   above?: number | string;
@@ -1220,6 +1221,24 @@ export interface ScreenVisibilityCondition {
 export interface UserVisibilityCondition {
   condition: "user";
   users: string[];
+}
+
+export interface TimeCondition {
+  condition: "time";
+  after?: string;
+  before?: string;
+  weekdays?: string[];
+}
+
+export interface LocationCondition {
+  condition: "location";
+  match_mode?: "active_zone" | "any_zone";
+  target?: {
+    entity_id?: string | string[];
+    [key: string]: unknown;
+  };
+  locations?: string[];
+  away?: boolean;
 }
 
 export interface AndVisibilityCondition {
