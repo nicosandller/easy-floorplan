@@ -35,7 +35,13 @@ export interface HomeAssistant extends BaseHomeAssistant {
    * the user's per-entity icon override, which never appears in the state's
    * `attributes`.
    */
-  entities?: Record<string, { icon?: string } | undefined>;
+  entities?: Record<string, { entity_id?: string; area_id?: string | null; device_id?: string | null; labels?: string[]; icon?: string } | undefined>;
+  /** The device registry exposed by the frontend. */
+  devices?: Record<string, { id?: string; area_id?: string | null; labels?: string[] } | undefined>;
+  /** The area registry exposed by the frontend. */
+  areas?: Record<string, { area_id?: string; floor_id?: string | null; labels?: string[] } | undefined>;
+  /** The floor registry exposed by the frontend. */
+  floors?: Record<string, { floor_id?: string; labels?: string[] } | undefined>;
   /**
    * HA has carried `darkMode` on `themes` since 2021; `custom-card-helpers`
    * predates it. Read by `roomTints` to pick each tint's dark side.
@@ -1183,6 +1189,7 @@ export type VisibilityCondition =
   | UserVisibilityCondition
   | TimeCondition
   | LocationCondition
+  | ZoneVisibilityCondition
   | AndVisibilityCondition
   | OrVisibilityCondition
   | NotVisibilityCondition;
@@ -1235,10 +1242,46 @@ export interface LocationCondition {
   match_mode?: "active_zone" | "any_zone";
   target?: {
     entity_id?: string | string[];
+    device_id?: string | string[];
+    area_id?: string | string[];
+    floor_id?: string | string[];
+    label_id?: string | string[];
+    exclude?: {
+      entity_id?: string | string[];
+      device_id?: string | string[];
+      area_id?: string | string[];
+      floor_id?: string | string[];
+      label_id?: string | string[];
+    };
     [key: string]: unknown;
   };
   locations?: string[];
   away?: boolean;
+}
+
+export interface ZoneVisibilityCondition {
+  condition:
+    | "zone"
+    | "zone.in_zone"
+    | "zone.not_in_zone"
+    | "not_in_zone"
+    | "zone.occupancy_is_detected"
+    | "zone.occupancy_is_not_detected";
+  entity?: string | string[];
+  entity_id?: string | string[];
+  target?: {
+    entity_id?: string | string[];
+    zone?: string | string[];
+    [key: string]: unknown;
+  };
+  zone?: string | string[];
+  options?: {
+    zone?: string | string[];
+    [key: string]: unknown;
+  };
+  match?: "all" | "any";
+  behavior?: "all" | "any";
+  not?: boolean;
 }
 
 export interface AndVisibilityCondition {

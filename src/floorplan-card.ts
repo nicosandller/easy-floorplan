@@ -545,24 +545,29 @@ export class FloorplanCard extends LitElement {
   private _syncSummaryDiscovery(): boolean {
     const c = this._config;
     const reg = this.hass as unknown as { entities?: unknown; devices?: unknown; areas?: unknown } | undefined;
-    const inputs = [c, reg?.entities, reg?.devices, reg?.areas];
+    const personKey = hasLocationConditions(c) && this.hass?.states
+      ? Object.keys(this.hass.states).filter((id) => id.startsWith("person.") || id.startsWith("zone.")).sort().join(",")
+      : "";
+    const inputs = [c, reg?.entities, reg?.devices, reg?.areas, personKey];
     const prev = this._summaryDiscoveryInputs;
     if (prev && inputs.every((v, i) => v === prev[i])) return false;
     this._summaryDiscoveryInputs = inputs;
     const perFloor = new Map<string, string[]>();
     const all = new Set<string>();
-    if (c && reg) {
+    if (c) {
       if (hasLocationConditions(c) && this.hass?.states) {
         for (const id of Object.keys(this.hass.states)) {
-          if (id.startsWith("person.")) all.add(id);
+          if (id.startsWith("person.") || id.startsWith("zone.")) all.add(id);
         }
       }
-      for (const f of getFloors(c)) {
-        if (!floorSummaryShown(f, c.floorSummary)) continue;
-        const ids = floorHaEntityIds(f, reg);
-        if (!ids.length) continue;
-        perFloor.set(f.id, ids);
-        for (const id of ids) all.add(id);
+      if (reg) {
+        for (const f of getFloors(c)) {
+          if (!floorSummaryShown(f, c.floorSummary)) continue;
+          const ids = floorHaEntityIds(f, reg);
+          if (!ids.length) continue;
+          perFloor.set(f.id, ids);
+          for (const id of ids) all.add(id);
+        }
       }
     }
     const before = this._renderEntities;
@@ -1336,7 +1341,7 @@ export class FloorplanCard extends LitElement {
     const furnitureHeight = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(furnitureHeight, rot);
     const catalog = symbolCatalog(c.symbols);
-    const effHass = this.hass && renderHass ? { ...this.hass, states: renderHass.states } : (this.hass ?? (renderHass as unknown as HomeAssistant));
+    const effHass = this.hass && renderHass ? { ...this.hass, states: { ...this.hass.states, ...renderHass.states } } : (this.hass ?? (renderHass as unknown as HomeAssistant));
     for (const f of active.furniture) {
       if (!isFurnitureVisible(f, effHass)) continue;
       // A piece that hangs rather than stands — an awning under the eaves
@@ -2067,7 +2072,7 @@ export class FloorplanCard extends LitElement {
     if (!standing) this._openingTween.stop();
     const projTransform = planProjectionTransform(frame);
     const dimPad = WALL_THICKNESS + (iso ? frame.wallHeight : 0);
-    const effHass = this.hass && renderHass ? { ...this.hass, states: renderHass.states } : (this.hass ?? (renderHass as unknown as HomeAssistant));
+    const effHass = this.hass && renderHass ? { ...this.hass, states: { ...this.hass.states, ...renderHass.states } } : (this.hass ?? (renderHass as unknown as HomeAssistant));
     const visibleFurniture = active.furniture.filter((f) => isFurnitureVisible(f, effHass));
     // One furniture glyph, flat. Drawn on the floor on the flat plan and on
     // top of its block under the isometric view — the same drawing either way.
