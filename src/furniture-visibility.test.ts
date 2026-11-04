@@ -840,6 +840,40 @@ describe("furniture-visibility", () => {
       expect(evaluateCondition(cond, userHass("not_home"))).toBe(false);
     });
 
+    it("passes if any of locations, away, or target zones match", () => {
+      // PR #399 review: HA's location condition passes if any of locations, away or target zones match
+      const cond: VisibilityCondition = {
+        condition: "location",
+        locations: ["Home"],
+        away: true,
+      };
+      // When at home: locations matches -> true
+      expect(evaluateCondition(cond, userHass("Home"))).toBe(true);
+      // When away: away matches -> true
+      expect(evaluateCondition(cond, userHass("not_home"))).toBe(true);
+      // When at work: neither matches -> false
+      expect(evaluateCondition(cond, userHass("Work"))).toBe(false);
+    });
+
+    it("evaluates combination of target zones and away", () => {
+      const cond: VisibilityCondition = {
+        condition: "location",
+        target: { entity_id: "zone.work" },
+        away: true,
+      };
+      // When at work: target zone matches -> true
+      expect(evaluateCondition(cond, userHass("Work", ["zone.work"]))).toBe(true);
+      // When away (not_home): away matches -> true
+      expect(evaluateCondition(cond, userHass("not_home"))).toBe(true);
+      // When at home: neither matches -> false
+      expect(evaluateCondition(cond, userHass("Home", ["zone.home"]))).toBe(false);
+    });
+
+    it("fails when location condition has no matching criteria or is empty", () => {
+      const emptyCond = { condition: "location" } as unknown as VisibilityCondition;
+      expect(evaluateCondition(emptyCond, userHass("Home"))).toBe(false);
+    });
+
     it("fails open during outages (unavailable / unknown / empty states)", () => {
       const cond: VisibilityCondition = { condition: "location", away: true };
       expect(evaluateCondition(cond, userHass("unavailable"))).toBe(true);

@@ -267,15 +267,14 @@ export function checkLocationCondition(
     return { pass: true, outage: true };
   }
 
-  if (cond.away) {
-    return { pass: stateStr === "not_home", outage: false };
-  }
+  const matchesLocations =
+    Array.isArray(cond.locations) &&
+    cond.locations.length > 0 &&
+    cond.locations.some((l) => String(l).toLowerCase() === stateStr.toLowerCase());
 
-  if (Array.isArray(cond.locations) && cond.locations.length > 0) {
-    const locs = cond.locations.map((l) => String(l).toLowerCase());
-    return { pass: locs.includes(stateStr.toLowerCase()), outage: false };
-  }
+  const matchesAway = cond.away === true && stateStr.toLowerCase() === "not_home";
 
+  let matchesTarget = false;
   if (cond.target && typeof cond.target === "object") {
     const targetObj = cond.target as Record<string, unknown>;
     const targetVal = targetObj.entity_id;
@@ -296,31 +295,49 @@ export function checkLocationCondition(
         if (tid.toLowerCase() === stateStr.toLowerCase()) return true;
         const stripped = tid.replace(/^zone\./i, "");
         if (stripped.toLowerCase() === stateStr.toLowerCase()) return true;
-        const zoneObj = states[tid];
+        const zoneObj = states[tid] ?? (tid.startsWith("zone.") ? undefined : states[`zone.${tid}`]);
         const friendly = zoneObj?.attributes?.friendly_name;
         if (typeof friendly === "string" && friendly.toLowerCase() === stateStr.toLowerCase()) {
+          return true;
+        }
+        if (tid.toLowerCase() === "zone.home" && stateStr.toLowerCase() === "home") {
           return true;
         }
         return false;
       };
 
-      if (cond.match_mode === "active_zone") {
-        const pass = targetIds.some(matchesActiveZone);
-        return { pass, outage: false };
+      if (!inZones || inZones.length === 0) {
+        if (stateStr.toLowerCase() !== "not_home" && targetIds.some(matchesActiveZone)) {
+          matchesTarget = true;
+        }
+      } else if (cond.match_mode === "active_zone") {
+        const activeZone = inZones.find((zoneId) => {
+          const zoneObj = states[zoneId];
+          if (zoneObj?.attributes?.passive) return false;
+          const friendly = zoneId === "zone.home" ? "home" : zoneObj?.attributes?.friendly_name;
+          return typeof friendly === "string" && friendly.toLowerCase() === stateStr.toLowerCase();
+        });
+        if (activeZone && targetIds.some((t) => t.toLowerCase() === activeZone.toLowerCase())) {
+          matchesTarget = true;
+        } else if (stateStr.toLowerCase() !== "not_home" && targetIds.some(matchesActiveZone)) {
+          matchesTarget = true;
+        }
+      } else {
+        // Default or "any_zone":
+        if (targetIds.some((t) => inZones.some((z) => z.toLowerCase() === t.toLowerCase()))) {
+          matchesTarget = true;
+        } else if (stateStr.toLowerCase() !== "not_home" && targetIds.some(matchesActiveZone)) {
+          matchesTarget = true;
+        }
       }
-
-      // Default or "any_zone":
-      if (inZones.length > 0) {
-        const pass = targetIds.some((t) => inZones.includes(t));
-        return { pass, outage: false };
-      }
-
-      const pass = targetIds.some(matchesActiveZone);
-      return { pass, outage: false };
     }
   }
 
-  return { pass: true, outage: false };
+  if (matchesLocations || matchesAway || matchesTarget) {
+    return { pass: true, outage: false };
+  }
+
+  return { pass: false, outage: false };
 }
 
 interface ConditionResult {
