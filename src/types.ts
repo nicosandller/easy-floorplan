@@ -1189,7 +1189,6 @@ export type VisibilityCondition =
   | UserVisibilityCondition
   | TimeCondition
   | LocationCondition
-  | ZoneVisibilityCondition
   | AndVisibilityCondition
   | OrVisibilityCondition
   | NotVisibilityCondition;
@@ -1257,31 +1256,6 @@ export interface LocationCondition {
   };
   locations?: string[];
   away?: boolean;
-}
-
-export interface ZoneVisibilityCondition {
-  condition:
-    | "zone"
-    | "zone.in_zone"
-    | "zone.not_in_zone"
-    | "not_in_zone"
-    | "zone.occupancy_is_detected"
-    | "zone.occupancy_is_not_detected";
-  entity?: string | string[];
-  entity_id?: string | string[];
-  target?: {
-    entity_id?: string | string[];
-    zone?: string | string[];
-    [key: string]: unknown;
-  };
-  zone?: string | string[];
-  options?: {
-    zone?: string | string[];
-    [key: string]: unknown;
-  };
-  match?: "all" | "any";
-  behavior?: "all" | "any";
-  not?: boolean;
 }
 
 export interface AndVisibilityCondition {

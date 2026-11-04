@@ -22,7 +22,6 @@ import {
   type RenderHass,
   type TimeCondition,
   type VisibilityCondition,
-  type ZoneVisibilityCondition,
 } from "./types";
 
 /** Periodic polling interval for live time condition transitions (10 seconds). */
@@ -409,34 +408,12 @@ export function getUserPerson(hass: HomeAssistant | RenderHass): string | undefi
   if (!states) return undefined;
 
   const userId = fullHass.user?.id;
-  // 1. Direct match by user_id attribute on person.* entity (HA standard)
-  if (userId) {
-    for (const [entityId, stateObj] of Object.entries(states)) {
-      if (entityId.startsWith("person.") && stateObj?.attributes?.user_id === userId) {
-        return entityId;
-      }
-    }
-  }
+  if (!userId) return undefined;
 
-  // 2. Name / username match if user_id is not mapped on entity attributes
-  const userName = fullHass.user?.name;
-  if (userName) {
-    const cleanUser = userName.toLowerCase().trim().replace(/\s+/g, "_");
-    for (const [entityId, stateObj] of Object.entries(states)) {
-      if (!entityId.startsWith("person.")) continue;
-      const stripped = entityId.replace(/^person\./, "").toLowerCase();
-      if (stripped === cleanUser) return entityId;
-      const friendly = typeof stateObj?.attributes?.friendly_name === "string"
-        ? (stateObj.attributes.friendly_name as string).toLowerCase().trim()
-        : undefined;
-      if (friendly === userName.toLowerCase().trim()) return entityId;
+  for (const [entityId, stateObj] of Object.entries(states)) {
+    if (entityId.startsWith("person.") && stateObj?.attributes?.user_id === userId) {
+      return entityId;
     }
-  }
-
-  // 3. Single-person fallback if instance only tracks 1 person
-  const personEntities = Object.keys(states).filter((id) => id.startsWith("person."));
-  if (personEntities.length === 1) {
-    return personEntities[0];
   }
 
   return undefined;
@@ -523,238 +500,6 @@ export function checkLocationCondition(
   }
 
   return { pass: false, outage: false };
-}
-
-/**
- * Great-circle distance between two GPS coordinates in meters via Haversine formula.
- */
-export function haversineDistanceMeters(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-): number {
-  const R = 6371000; // Earth radius in meters
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-  const a =
-    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) *
-      Math.sin(dLon / 2);
-  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-  return R * c;
-}
-
-/**
- * Checks whether an entity is currently inside a given zone.
- */
-export function isEntityInZone(
-  hass: HomeAssistant | RenderHass,
-  entityId: string,
-  rawZoneId: string
-): { inZone: boolean; outage: boolean } {
-  const fullHass = hass as Partial<HomeAssistant>;
-  const states = fullHass.states ?? {};
-
-  // If states haven't loaded yet, fail open
-  if (Object.keys(states).length === 0) {
-    return { inZone: false, outage: true };
-  }
-
-  const entityObj = states[entityId];
-  if (!entityObj) {
-    return { inZone: false, outage: true };
-  }
-
-  const stateStr = entityObj.state;
-  if (stateStr === "unavailable" || stateStr === "unknown") {
-    return { inZone: false, outage: true };
-  }
-
-  const zoneId = rawZoneId.startsWith("zone.") ? rawZoneId : `zone.${rawZoneId}`;
-  const zoneObj = states[zoneId];
-  if (zoneObj && (zoneObj.state === "unavailable" || zoneObj.state === "unknown")) {
-    return { inZone: false, outage: true };
-  }
-
-  // 1. Check in_zones attribute (HA standard for person and device_tracker)
-  const inZones = entityObj.attributes?.in_zones;
-  if (Array.isArray(inZones)) {
-    const bareZone = zoneId.replace(/^zone\./, "");
-    if (
-      inZones.includes(zoneId) ||
-      inZones.includes(rawZoneId) ||
-      inZones.includes(bareZone)
-    ) {
-      return { inZone: true, outage: false };
-    }
-  }
-
-  // 2. State-based matching
-  const az = activeZoneState(hass, zoneId);
-  if (az !== undefined) {
-    if (stateStr === az) {
-      return { inZone: true, outage: false };
-    }
-    if (az.toLowerCase() === "home" && stateStr.toLowerCase() === "home") {
-      return { inZone: true, outage: false };
-    }
-  }
-
-  if (zoneId === "zone.home" && stateStr.toLowerCase() === "home") {
-    return { inZone: true, outage: false };
-  }
-
-  const friendlyName = zoneObj?.attributes?.friendly_name;
-  if (
-    typeof friendlyName === "string" &&
-    stateStr.toLowerCase() === friendlyName.toLowerCase()
-  ) {
-    return { inZone: true, outage: false };
-  }
-
-  const bareZone = zoneId.replace(/^zone\./, "");
-  if (stateStr.toLowerCase() === bareZone.toLowerCase()) {
-    return { inZone: true, outage: false };
-  }
-
-  // 3. GPS coordinate distance check
-  const entityLat =
-    entityObj.attributes?.latitude != null ? Number(entityObj.attributes.latitude) : NaN;
-  const entityLon =
-    entityObj.attributes?.longitude != null ? Number(entityObj.attributes.longitude) : NaN;
-  const zoneLat =
-    zoneObj?.attributes?.latitude != null ? Number(zoneObj.attributes.latitude) : NaN;
-  const zoneLon =
-    zoneObj?.attributes?.longitude != null ? Number(zoneObj.attributes.longitude) : NaN;
-
-  if (
-    !Number.isNaN(entityLat) &&
-    !Number.isNaN(entityLon) &&
-    !Number.isNaN(zoneLat) &&
-    !Number.isNaN(zoneLon)
-  ) {
-    const radius = Number(zoneObj?.attributes?.radius ?? 100);
-    const dist = haversineDistanceMeters(entityLat, entityLon, zoneLat, zoneLon);
-    if (!Number.isNaN(dist) && !Number.isNaN(radius) && dist <= radius) {
-      return { inZone: true, outage: false };
-    }
-  }
-
-  return { inZone: false, outage: false };
-}
-
-/**
- * Evaluates Home Assistant zone conditions (e.g. condition: zone, zone.in_zone, not_in_zone).
- */
-export function checkZoneCondition(
-  cond: ZoneVisibilityCondition | unknown,
-  hass: HomeAssistant | RenderHass
-): ConditionResult {
-  const c = cond as Record<string, unknown>;
-  const conditionType = String(c.condition ?? "").toLowerCase();
-
-  const isNot =
-    conditionType === "zone.not_in_zone" ||
-    conditionType === "not_in_zone" ||
-    conditionType === "zone.occupancy_is_not_detected" ||
-    c.not === true;
-
-  // Extract entity / entity_id / target.entity_id
-  let entityIds: string[] = [];
-  if (typeof c.entity_id === "string") entityIds.push(c.entity_id);
-  else if (Array.isArray(c.entity_id)) entityIds.push(...(c.entity_id as string[]));
-
-  if (typeof c.entity === "string") entityIds.push(c.entity);
-  else if (Array.isArray(c.entity)) entityIds.push(...(c.entity as string[]));
-
-  if (c.target && typeof c.target === "object") {
-    const targetObj = c.target as Record<string, unknown>;
-    if (typeof targetObj.entity_id === "string") entityIds.push(targetObj.entity_id);
-    else if (Array.isArray(targetObj.entity_id)) {
-      entityIds.push(...(targetObj.entity_id as string[]));
-    }
-  }
-
-  entityIds = Array.from(
-    new Set(entityIds.filter((id) => typeof id === "string" && id.trim().length > 0))
-  );
-
-  // If no entity explicitly specified, fallback to logged-in user person
-  if (entityIds.length === 0) {
-    const userPerson = getUserPerson(hass);
-    if (userPerson) {
-      entityIds.push(userPerson);
-    } else {
-      const states = (hass as Partial<HomeAssistant>).states ?? {};
-      if (Object.keys(states).length === 0) {
-        return { pass: true, outage: true };
-      }
-      return { pass: false, outage: false };
-    }
-  }
-
-  // Extract zone / options.zone / target.zone
-  let zones: string[] = [];
-  if (typeof c.zone === "string") zones.push(c.zone);
-  else if (Array.isArray(c.zone)) zones.push(...(c.zone as string[]));
-
-  if (c.options && typeof c.options === "object") {
-    const opts = c.options as Record<string, unknown>;
-    if (typeof opts.zone === "string") zones.push(opts.zone);
-    else if (Array.isArray(opts.zone)) zones.push(...(opts.zone as string[]));
-  }
-
-  if (c.target && typeof c.target === "object") {
-    const targetObj = c.target as Record<string, unknown>;
-    if (typeof targetObj.zone === "string") zones.push(targetObj.zone);
-    else if (Array.isArray(targetObj.zone)) zones.push(...(targetObj.zone as string[]));
-  }
-
-  zones = Array.from(
-    new Set(zones.filter((z) => typeof z === "string" && z.trim().length > 0))
-  );
-  if (zones.length === 0) {
-    return { pass: false, outage: false };
-  }
-
-  const matchMode = (c.match ?? c.behavior ?? "all") === "any" ? "any" : "all";
-
-  let hasOutage = false;
-  const entityResults = entityIds.map((entityId) => {
-    let inAnyZone = false;
-    for (const z of zones) {
-      const res = isEntityInZone(hass, entityId, z);
-      if (res.outage) {
-        hasOutage = true;
-      }
-      if (res.inZone) {
-        inAnyZone = true;
-        break;
-      }
-    }
-    return inAnyZone;
-  });
-
-  const pass =
-    matchMode === "any"
-      ? entityResults.some((matched) => matched)
-      : entityResults.every((matched) => matched);
-
-  if (isNot) {
-    if (hasOutage) {
-      return { pass: true, outage: true };
-    }
-    return { pass: !pass, outage: false };
-  }
-
-  if (!pass && hasOutage) {
-    return { pass: true, outage: true };
-  }
-
-  return { pass, outage: false };
 }
 
 interface ConditionResult {
@@ -859,15 +604,6 @@ function evaluateConditionInternal(
   // 7. Location condition
   if (conditionType === "location") {
     return checkLocationCondition(c as unknown as LocationCondition, hass);
-  }
-
-  // 7b. Zone condition
-  if (
-    conditionType === "zone" ||
-    conditionType.startsWith("zone.") ||
-    conditionType === "not_in_zone"
-  ) {
-    return checkZoneCondition(c, hass);
   }
 
   // 8. Numeric state condition
@@ -1025,8 +761,7 @@ export function hasConditionType(
   for (const c of conditions) {
     if (!c || typeof c !== "object") continue;
     const cond = c as unknown as Record<string, unknown>;
-    const ct = String(cond.condition ?? "").toLowerCase();
-    if (ct === targetType || ct.startsWith(`${targetType}.`)) return true;
+    if (String(cond.condition ?? "").toLowerCase() === targetType) return true;
     if (Array.isArray(cond.conditions) && hasConditionType(cond.conditions as VisibilityCondition[], type)) return true;
     if (Array.isArray(cond.and) && hasConditionType(cond.and as VisibilityCondition[], type)) return true;
     if (Array.isArray(cond.or) && hasConditionType(cond.or as VisibilityCondition[], type)) return true;
@@ -1049,19 +784,13 @@ export function hasTimeConditions(config?: FloorplanCardConfig): boolean {
 }
 
 /**
- * Checks whether any furniture visibility rules across the floorplan reference location or zone conditions.
+ * Checks whether any furniture visibility rules across the floorplan reference location conditions.
  */
 export function hasLocationConditions(config?: FloorplanCardConfig): boolean {
   if (!config) return false;
   for (const floor of getFloors(config)) {
     for (const f of floor.furniture ?? []) {
-      if (
-        hasConditionType(f.visibility, "location") ||
-        hasConditionType(f.visibility, "zone") ||
-        hasConditionType(f.visibility, "not_in_zone")
-      ) {
-        return true;
-      }
+      if (hasConditionType(f.visibility, "location")) return true;
     }
   }
   return false;
@@ -1093,45 +822,11 @@ export function collectConditionEntities(
     const ent = extractSubjectEntityId(cond);
     if (ent) add(ent);
 
-    if (Array.isArray(cond.entity_id)) {
-      for (const eid of cond.entity_id) add(eid);
-    }
-    if (Array.isArray(cond.entity)) {
-      for (const eid of cond.entity) add(eid);
-    }
-
-    if (cond.zone) {
-      if (typeof cond.zone === "string") {
-        add(cond.zone.includes(".") ? cond.zone : `zone.${cond.zone}`);
-      } else if (Array.isArray(cond.zone)) {
-        for (const z of cond.zone) {
-          if (typeof z === "string") add(z.includes(".") ? z : `zone.${z}`);
-        }
-      }
-    }
-    if (cond.options && typeof cond.options === "object") {
-      const opts = cond.options as Record<string, unknown>;
-      if (typeof opts.zone === "string") {
-        add(opts.zone.includes(".") ? opts.zone : `zone.${opts.zone}`);
-      } else if (Array.isArray(opts.zone)) {
-        for (const z of opts.zone) {
-          if (typeof z === "string") add(z.includes(".") ? z : `zone.${z}`);
-        }
-      }
-    }
-
-    if (cond.target && typeof cond.target === "object") {
+    if (cond.condition === "location" && cond.target && typeof cond.target === "object") {
       const targetObj = cond.target as Record<string, unknown>;
       if (typeof targetObj.entity_id === "string") add(targetObj.entity_id);
       else if (Array.isArray(targetObj.entity_id)) {
         for (const tid of targetObj.entity_id) add(tid);
-      }
-      if (typeof targetObj.zone === "string") {
-        add(targetObj.zone.includes(".") ? targetObj.zone : `zone.${targetObj.zone}`);
-      } else if (Array.isArray(targetObj.zone)) {
-        for (const z of targetObj.zone) {
-          if (typeof z === "string") add(z.includes(".") ? z : `zone.${z}`);
-        }
       }
     }
 

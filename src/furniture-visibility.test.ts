@@ -990,8 +990,7 @@ describe("furniture-visibility", () => {
       expect(evaluateCondition(excludeCond, hassWithRegistries)).toBe(false);
     });
 
-    it("resolves user person via user_id, username, and single person fallback", () => {
-      // 1. Matched by user_id
+    it("resolves user person entity strictly by user_id", () => {
       const hassById = {
         states: {
           "person.alice": {
@@ -1004,7 +1003,7 @@ describe("furniture-visibility", () => {
       } as unknown as HomeAssistant;
       expect(getUserPerson(hassById)).toBe("person.alice");
 
-      // 2. Matched by username
+      // Returns undefined for guest/unmatched user even if name matches
       const hassByName = {
         states: {
           "person.bob_smith": {
@@ -1015,9 +1014,9 @@ describe("furniture-visibility", () => {
         },
         user: { id: "user_999", name: "Bob Smith" },
       } as unknown as HomeAssistant;
-      expect(getUserPerson(hassByName)).toBe("person.bob_smith");
+      expect(getUserPerson(hassByName)).toBeUndefined();
 
-      // 3. Fallback to single person entity
+      // Returns undefined when user_id is not mapped even if only 1 person entity exists
       const hassSingle = {
         states: {
           "person.only_one": {
@@ -1028,7 +1027,7 @@ describe("furniture-visibility", () => {
         },
         user: { id: "unmatched", name: "Stranger" },
       } as unknown as HomeAssistant;
-      expect(getUserPerson(hassSingle)).toBe("person.only_one");
+      expect(getUserPerson(hassSingle)).toBeUndefined();
     });
 
     it("fails when location condition has no matching criteria or is empty", () => {
@@ -1068,193 +1067,10 @@ describe("furniture-visibility", () => {
     });
   });
 
-  describe("zone condition", () => {
-    it("evaluates person in zone.home using user configuration", () => {
-      const cond: VisibilityCondition = {
-        condition: "zone",
-        entity_id: "person.person2",
-        zone: "zone.home",
-      };
-      const f: Furniture = {
-        id: "furn_mbvw47c",
-        type: "redCarToastie",
-        x: 940,
-        y: 680,
-        w: 200,
-        h: 400,
-        angle: 90,
-        visibility: [cond],
-      };
-      const hassHome = mockHass({
-        "person.person2": { state: "home" },
-        "zone.home": { state: "zoning", attributes: { friendly_name: "Home" } },
-      });
-      const hassAway = mockHass({
-        "person.person2": { state: "not_home" },
-        "zone.home": { state: "zoning", attributes: { friendly_name: "Home" } },
-      });
-      expect(isFurnitureVisible(f, hassHome)).toBe(true);
-      expect(isFurnitureVisible(f, hassAway)).toBe(false);
-    });
-
-    it("matches when zone is in person in_zones attribute", () => {
-      const cond: VisibilityCondition = {
-        condition: "zone",
-        entity_id: "person.person2",
-        zone: "zone.office",
-      };
-      const hass = mockHass({
-        "person.person2": {
-          state: "not_home",
-          attributes: { in_zones: ["zone.office"] },
-        },
-        "zone.office": { state: "zoning" },
-      });
-      expect(evaluateCondition(cond, hass)).toBe(true);
-    });
-
-    it("matches when person state is zone friendly name", () => {
-      const cond: VisibilityCondition = {
-        condition: "zone",
-        entity_id: "person.person2",
-        zone: "zone.work",
-      };
-      const hass = mockHass({
-        "person.person2": { state: "Headquarters" },
-        "zone.work": {
-          state: "zoning",
-          attributes: { friendly_name: "Headquarters" },
-        },
-      });
-      expect(evaluateCondition(cond, hass)).toBe(true);
-    });
-
-    it("matches when GPS coordinates are within zone radius", () => {
-      const cond: VisibilityCondition = {
-        condition: "zone",
-        entity_id: "device_tracker.phone",
-        zone: "zone.store",
-      };
-      const hassIn = mockHass({
-        "device_tracker.phone": {
-          state: "not_home",
-          attributes: { latitude: 50.1234, longitude: 14.4567 },
-        },
-        "zone.store": {
-          state: "zoning",
-          attributes: { latitude: 50.1235, longitude: 14.4568, radius: 100 },
-        },
-      });
-      const hassFar = mockHass({
-        "device_tracker.phone": {
-          state: "not_home",
-          attributes: { latitude: 50.2, longitude: 14.6 },
-        },
-        "zone.store": {
-          state: "zoning",
-          attributes: { latitude: 50.1235, longitude: 14.4568, radius: 100 },
-        },
-      });
-      expect(evaluateCondition(cond, hassIn)).toBe(true);
-      expect(evaluateCondition(cond, hassFar)).toBe(false);
-    });
-
-    it("handles not_in_zone condition", () => {
-      const cond: VisibilityCondition = {
-        condition: "not_in_zone",
-        entity_id: "person.person2",
-        zone: "zone.home",
-      };
-      const hassHome = mockHass({
-        "person.person2": { state: "home" },
-      });
-      const hassAway = mockHass({
-        "person.person2": { state: "not_home" },
-      });
-      expect(evaluateCondition(cond, hassHome)).toBe(false);
-      expect(evaluateCondition(cond, hassAway)).toBe(true);
-    });
-
-    it("handles multiple entities with match mode", () => {
-      const condAll: VisibilityCondition = {
-        condition: "zone",
-        entity_id: ["person.p1", "person.p2"],
-        zone: "zone.home",
-        match: "all",
-      };
-      const condAny: VisibilityCondition = {
-        condition: "zone",
-        entity_id: ["person.p1", "person.p2"],
-        zone: "zone.home",
-        match: "any",
-      };
-      const hassOneHome = mockHass({
-        "person.p1": { state: "home" },
-        "person.p2": { state: "not_home" },
-      });
-      expect(evaluateCondition(condAll, hassOneHome)).toBe(false);
-      expect(evaluateCondition(condAny, hassOneHome)).toBe(true);
-    });
-
-    it("fails open on outage (unavailable, unknown, or empty states)", () => {
-      const cond: VisibilityCondition = {
-        condition: "zone",
-        entity_id: "person.person2",
-        zone: "zone.home",
-      };
-      expect(
-        evaluateCondition(
-          cond,
-          mockHass({ "person.person2": { state: "unavailable" } })
-        )
-      ).toBe(true);
-      expect(
-        evaluateCondition(
-          cond,
-          mockHass({ "person.person2": { state: "unknown" } })
-        )
-      ).toBe(true);
-      expect(evaluateCondition(cond, mockHass({}))).toBe(true);
-    });
-
-    it("detects zone conditions with hasLocationConditions", () => {
-      const config: FloorplanCardConfig = {
-        type: "custom:easy-floorplan-card",
-        floors: [
-          {
-            id: "f1",
-            furniture: [
-              {
-                id: "car",
-                type: "car",
-                x: 0,
-                y: 0,
-                w: 10,
-                h: 10,
-                visibility: [
-                  { condition: "zone", entity_id: "person.p1", zone: "zone.home" },
-                ],
-              },
-            ],
-          },
-        ],
-      } as unknown as FloorplanCardConfig;
-      expect(hasLocationConditions(config)).toBe(true);
-    });
-
-    it("collects entity_id and zone from zone conditions", () => {
-      const cond: VisibilityCondition = {
-        condition: "zone",
-        entity_id: "person.person2",
-        zone: "zone.home",
-      };
-      expect(collectConditionEntities([cond])).toEqual(["person.person2", "zone.home"]);
-    });
-  });
-
   describe("unsupported condition types fail closed", () => {
     it("fails closed for automation, template, and unsupported condition types", () => {
       const unsupported = [
+        { condition: "zone", entity: "device_tracker.car", zone: "zone.home" },
         { condition: "sun", after: "sunset" },
         { condition: "sun.is_ascending" },
         { condition: "sun.is_descending" },
