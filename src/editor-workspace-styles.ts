@@ -156,7 +156,7 @@ export const editorWorkspaceStyles = css`
   .cfg-group-head .cfg-group-mode { min-height: 28px; padding: 4px 6px; margin-right: -6px; color: var(--editor-accent); background: transparent; border: 0; border-radius: 6px; font-size: 13px; font-weight: 500; white-space: nowrap; cursor: pointer; }
   .cfg-group-head .cfg-group-mode:hover { background: color-mix(in srgb, currentColor 10%, transparent); }
   .action-yaml-error { margin: 6px 0 0; color: var(--error-color, #db4437); }
-  .settings-category { position: sticky; top: 43px; z-index: 1; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 0 0 16px; padding: 6px 0; background: var(--editor-paper); border-bottom: 1px solid var(--editor-line); }
+  .settings-category { position: sticky; top: 43px; z-index: 50; display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 4px; margin: 0 0 16px; padding: 6px 0; background: var(--editor-paper); border-bottom: 1px solid var(--editor-line); }
   .settings-category.two-columns { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .settings-category > button { min-width: 0; min-height: 36px; padding: 7px 4px; color: var(--editor-muted); background: transparent; border: 1px solid transparent; border-radius: 6px; font-size: 13px; font-weight: 500; }
   .settings-category > button[aria-selected="true"] { color: var(--editor-accent); background: color-mix(in srgb, var(--editor-accent) 10%, var(--editor-paper)); border-color: color-mix(in srgb, var(--editor-accent) 25%, var(--editor-line)); font-weight: 600; }
