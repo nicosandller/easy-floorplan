@@ -1,3 +1,4 @@
+import { furnitureModelHeight } from "./symbol-model";
 /**
  * The isometric view (issue #261).
  *
@@ -517,18 +518,19 @@ export function furnitureSectionHeight(c: {
 
 /** Preserve real heights; section furniture at the displayed wall height. */
 export function furnitureModelSolids(
-  f: { id?: string; x: number; y: number; w: number; h: number; angle?: number },
+  f: { id?: string; x: number; y: number; w: number; h: number; angle?: number; height3d?: number },
   model: SymbolModel, map: (x: number, y: number) => Pt, wallHeight: number, color: string
 ): IsoSolid[] {
   const angle = (f.angle ?? 0) * Math.PI / 180, c = Math.cos(angle), s = Math.sin(angle);
-  return model.parts.filter(part => part.z0 < wallHeight).map(part => ({
+  const scaleZ = furnitureModelHeight(f, model) / model.size.height;
+  return model.parts.filter(part => part.z0 * scaleZ < wallHeight).map(part => ({
     kind: "furniture", id: f.id, color, glass: part.glass,
     base: part.base.map(([x, y]) => {
       const dx = (x / model.size.width - 0.5) * f.w;
       const dy = (y / model.size.depth - 0.5) * f.h;
       return map(f.x + dx * c - dy * s, f.y + dx * s + dy * c);
     }),
-    z0: part.z0, z1: Math.min(part.z1, wallHeight),
+    z0: part.z0 * scaleZ, z1: Math.min(part.z1 * scaleZ, wallHeight),
   }));
 }
 

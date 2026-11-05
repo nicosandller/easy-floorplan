@@ -3144,7 +3144,7 @@ export class FloorplanCardEditor extends LitElement {
   ] as const;
 
   private static readonly FURNITURE_GROUPS = [
-    ["Shape", ["type", "hand", "w", "h", "angle"]],
+    ["Shape", ["type", "hand", "w", "h", "height3d", "angle"]],
     ["What it reads", ["entity"]],
     // What clicking it does — a staircase that changes floor (issue #121).
     ["Behavior", ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"]],
@@ -7045,7 +7045,7 @@ export class FloorplanCardEditor extends LitElement {
         this._applyElementPatch("furniture", f.id, patch, live);
       const roofsOver = this._roofsOverPoint(f.x, f.y);
       if (this._selectionPage === "properties") return html`
-        ${this._renderEssentialForm(fSpec, ["w", "h", "angle", ...(f.type === "stairs" ? ["goToFloor"] : []), "hand"], fApply)}
+        ${this._renderEssentialForm(fSpec, ["w", "h", "height3d", "angle", ...(f.type === "stairs" ? ["goToFloor"] : []), "hand"], fApply)}
         ${this._renderColorRow({
           label: "Color", value: f.color, swatch: "#9e9e9e", placeholder: "Default",
           onLive: (color) => this._updateFurnitureLive(f.id, { color }),

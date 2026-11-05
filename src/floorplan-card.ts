@@ -1,3 +1,4 @@
+import { furnitureModelHeight } from "./symbol-model";
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -829,7 +830,7 @@ export class FloorplanCard extends LitElement {
       const catalog = symbolCatalog(c.symbols);
       for (const f of active?.furniture ?? []) {
         const model = catalog[f.type]?.model3d;
-        if (model) wallHeight = Math.max(wallHeight, Math.min(model.size.height, furnitureSectionHeight(c)));
+        if (model) wallHeight = Math.max(wallHeight, Math.min(furnitureModelHeight(f, model), furnitureSectionHeight(c)));
       }
     }
     return {
@@ -1208,7 +1209,7 @@ export class FloorplanCard extends LitElement {
         const keyboard = !modelHitIds.has(solid.id);
         modelHitIds.add(solid.id);
         const model = catalog[f.type]!.model3d!;
-        const height = Math.min(model.size.height, sectionHeight);
+        const height = Math.min(furnitureModelHeight(f, model), sectionHeight);
         const footprint = furnitureSolid(f, map, height, furnitureTone(f)).base;
         const xs = footprint.map(p => p.x - height), ys = footprint.map(p => p.y - height);
         const focus = svg`<rect class="fp-furniture-focus" aria-hidden="true"
@@ -1500,15 +1501,19 @@ export class FloorplanCard extends LitElement {
     if (f.showIcon !== false) return drawn;
     const ctl = this._furnitureControl(f, c, floors, activeId);
     if (!ctl) return drawn;
+    // Depth sorting splits a model across siblings. Only one part represents
+    // the furniture in the accessibility tree; every part still accepts pointers.
+    const accessible = modelHit?.keyboard ?? true;
     // An SVG tooltip is a <title> child; a title= attribute does nothing here.
     return svg`<g class="fp-furniture-hit"
         data-id=${cssIdent(f.id) ?? nothing}
-        role=${ctl.tappable ? "button" : "group"}
+        role=${accessible ? (ctl.tappable ? "button" : "group") : nothing}
+        aria-hidden=${accessible ? nothing : "true"}
         tabindex=${ctl.tappable && (modelHit?.keyboard ?? true) ? "0" : nothing}
-        aria-label=${ctl.name}
-        aria-description=${`${ctl.gestures} actions`}
+        aria-label=${accessible ? ctl.name : nothing}
+        aria-description=${accessible ? `${ctl.gestures} actions` : nothing}
         @action=${ctl.onAction}
-        @keydown=${ctl.onKeydown}
+        @keydown=${accessible ? ctl.onKeydown : nothing}
         .actionHandler=${actionHandler({ hasHold: ctl.hasHold, hasDoubleClick: ctl.hasDoubleClick })}>
       <title>${`${ctl.name} · ${ctl.gestures}`}</title>
       ${drawn}
@@ -1538,7 +1543,7 @@ export class FloorplanCard extends LitElement {
     const frame = this._frame(c, rot);
     const at = rotatePlanPoint(f.x, f.y, c.width, c.height, rot);
     const model = c.furniture3d === true ? symbolCatalog(c.symbols)[f.type]?.model3d : undefined;
-    const height = model ? Math.min(model.size.height, furnitureSectionHeight(c))
+    const height = model ? Math.min(furnitureModelHeight(f, model), furnitureSectionHeight(c))
       : normalizeWallHeight(c.wallHeight) * FURNITURE_HEIGHT_FRACTION;
     const p = projectPlanPoint(at.x, at.y, frame, height);
     const d = projectedCanvasSize(frame);

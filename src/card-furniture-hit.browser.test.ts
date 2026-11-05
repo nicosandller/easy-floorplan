@@ -348,3 +348,24 @@ describe("the furniture action icon follows overlayScale (#362)", () => {
     );
   });
 });
+
+it.each([false, true])("exposes one accessible control for a multipart 3D model (hold only: %s)", async holdOnly => {
+  const card = await mount("3d", {
+    type: "bunkBed", showIcon: false,
+    ...(holdOnly ? { hold_action: fire } : { tap_action: fire }),
+  });
+  const parts = Array.from(card.shadowRoot!.querySelectorAll<SVGGElement>(".fp-furniture-hit"));
+  expect(parts.length).toBeGreaterThan(1);
+  expect(parts.filter(p => p.hasAttribute("role"))).toHaveLength(1);
+  expect(parts[0]!.getAttribute("role")).toBe(holdOnly ? "group" : "button");
+  expect(parts.filter(p => p.getAttribute("tabindex") === "0")).toHaveLength(holdOnly ? 0 : 1);
+  for (const part of parts.slice(1)) {
+    expect(part.getAttribute("aria-hidden")).toBe("true");
+    expect(part.hasAttribute("aria-label")).toBe(false);
+    expect(part.hasAttribute("tabindex")).toBe(false);
+  }
+  // A part hidden from assistive technology remains a working pointer target.
+  const actions = recordActions(card);
+  parts[parts.length - 1]!.dispatchEvent(new CustomEvent("action", { detail: { action: holdOnly ? "hold" : "tap" } }));
+  expect(actions).toHaveLength(1);
+});

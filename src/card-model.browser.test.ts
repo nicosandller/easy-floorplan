@@ -73,3 +73,10 @@ it("keeps tall furniture within the canvas with low walls", async () => {
     }
   }
 });
+
+it("scales the model before cutting so a shorter shelf retains all five levels", async () => {
+  const root = await mount({ furniture: [{ id: "shelf", type: "cornerShelf", x: 200, y: 200, w: 60, h: 60, height3d: 100 }] });
+  const tops = Array.from(root.querySelectorAll('.fp-iso-furniture .fp-iso-top'));
+  expect(tops.filter(p => p.getAttribute("points")!.split(" ").length === 5)).toHaveLength(5);
+  for (const p of tops) expect(p.getAttribute("points")).not.toMatch(/NaN|Infinity/);
+});

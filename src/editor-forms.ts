@@ -1,3 +1,4 @@
+import { normalizeHeight3d } from "./symbol-model";
 /**
  * Schema-driven form definitions for the editor: one `FormSpec` per element
  * kind, rendered either through HA's `<ha-form>` (native selectors) or the
@@ -1980,6 +1981,7 @@ export function furnitureForm(
         : []),
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
+      { name: "height3d", label: "3D height", helper: "Optional height in canvas units. Leave empty to use the model height. Applied before cutting.", selector: { number: { min: 0.1, max: 10000, step: 0.1, mode: "box" } } },
       angleField(),
       // Optional entity that makes the drawing live (issue #82) — a soil
       // sensor on a plant, a contact sensor on a cabinet. Last, because most
@@ -2045,6 +2047,7 @@ export function furnitureForm(
       ...(f.type === "sectional" ? { hand: f.hand ?? "right" } : {}),
       w: f.w,
       h: f.h,
+      height3d: f.height3d,
       angle: f.angle ?? 0,
       entity: f.entity ?? "",
       goToFloor: namedFloor !== undefined
@@ -2056,6 +2059,7 @@ export function furnitureForm(
       showIcon: f.showIcon ?? true,
     },
     toPatch: (raw) => {
+      if ("height3d" in raw) raw = { ...raw, height3d: normalizeHeight3d(raw.height3d) };
       // On is the default, so only "off" is worth writing down.
       const p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
       if (!("goToFloor" in p)) return p;

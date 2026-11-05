@@ -74,3 +74,22 @@ describe("optional 3D furniture", () => {
     expect(furnitureModelSolids({ x: 0, y: 0, w: 60, h: 60 }, m, (x, y) => ({ x, y }), 60, "#555")[0].z1).toBe(60);
   });
 });
+
+describe("placed 3D height", () => {
+  const m = normalizeModel(model([{ box: [60, 60, 20], position: [0, 0, 100] }]))!;
+  const f = { x: 0, y: 0, w: 60, h: 60 };
+  const map = (x: number, y: number) => ({ x, y });
+  it("scales vertical positions and thickness before sectioning, leaving the footprint unchanged", () => {
+    const original = furnitureModelSolids(f, m, map, 400, "#555")[0]!;
+    const scaled = furnitureModelSolids({ ...f, height3d: 90 }, m, map, 55, "#555")[0]!;
+    expect(scaled.base).toEqual(original.base);
+    expect(scaled.z0).toBe(50);
+    expect(scaled.z1).toBe(55);
+    expect(furnitureModelSolids({ ...f, height3d: 360 }, m, map, 400, "#555")[0]).toMatchObject({ z0: 200, z1: 240 });
+  });
+  it("preserves authored heights for absent or invalid overrides", () => {
+    for (const height3d of [undefined, 0, -10, NaN, Infinity, 10001]) {
+      expect(furnitureModelSolids({ ...f, height3d }, m, map, 400, "#555")[0]).toMatchObject({ z0: 100, z1: 120 });
+    }
+  });
+});

@@ -75,3 +75,12 @@ export function normalizeModel(raw: unknown): SymbolModel | undefined {
   for (const p of r.parts) if (!add(p, [0, 0, 0])) return;
   return { size: { width: width!, depth: depth!, height: height! }, parts };
 }
+
+/** Optional placed height in canvas units; invalid values preserve the authored height. */
+export function normalizeHeight3d(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 10000
+    ? value : undefined;
+}
+export function furnitureModelHeight(f: { height3d?: number }, model: SymbolModel): number {
+  return normalizeHeight3d(f.height3d) ?? model.size.height;
+}

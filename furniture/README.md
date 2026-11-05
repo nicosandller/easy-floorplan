@@ -200,3 +200,13 @@ All parts join the existing wall/opening depth ordering. This is an SVG solid
 renderer, not a mesh engine: complex interpenetrating solids and layered transparency
 are approximate. The supplied models are stylised silhouettes; heights not specified
 by a manufacturer are illustrative defaults, not measured product specifications.
+
+### Placed 3D height
+
+Each furniture item can optionally set `height3d` (shown as **3D height** in the editor).
+It scales the model's vertical positions and thicknesses to that total height in canvas units,
+independently of `w` and `h`. Scaling happens before the furniture cut height is applied.
+For example, `height3d: 100` scales a 200-high shelf to half height, including shelf spacing.
+Leave the field empty to retain `model3d.size.height`. Only finite values greater than zero
+and at most 10000 are accepted. This does not change the 2D symbol or enable 3D rendering;
+symbols without a 3D model retain their existing fallback rendering.

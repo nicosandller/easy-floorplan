@@ -2266,7 +2266,7 @@ describe("every field lands in exactly one panel group", () => {
     ["tapTarget", "tap_action", "hold_action", "double_tap_action"],
   ];
   const FURNITURE_GROUPS = [
-    ["type", "hand", "w", "h", "angle"],
+    ["type", "hand", "w", "h", "height3d", "angle"],
     ["entity"],
     ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"],
   ];
@@ -2938,4 +2938,14 @@ describe("3D furniture display controls", () => {
     expect(configured.toPatch({ furniture3d: false })).toEqual({ furniture3d: false });
     expect(configured.toPatch({ furnitureSectionHeight: 220 })).toEqual({ furnitureSectionHeight: 220 });
   });
+});
+
+it("edits and clears the optional furniture 3D height", () => {
+  const f = { id: "s", type: "cornerShelf", x: 0, y: 0, w: 60, h: 60, height3d: 100 };
+  const form = furnitureForm(f);
+  expect(form.fields.some(field => field.name === "height3d")).toBe(true);
+  expect(form.data.height3d).toBe(100);
+  expect(form.toPatch!({ height3d: 150 })).toMatchObject({ height3d: 150 });
+  expect(form.toPatch!({ height3d: "" })).toHaveProperty("height3d", undefined);
+  expect(form.toPatch!({ height3d: -1 })).toHaveProperty("height3d", undefined);
 });

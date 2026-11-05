@@ -1142,6 +1142,8 @@ export type SectionalHand = "left" | "right";
 
 /** A gray furniture/fixture diagram placed on the plan. */
 export interface Furniture {
+  /** Physical 3D height in canvas units; defaults to the model height. */
+  height3d?: number;
   id: string;
   /**
    * Which symbol to draw — a built-in {@link FurnitureType}, a symbol
