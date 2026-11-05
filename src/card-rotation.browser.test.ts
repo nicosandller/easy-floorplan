@@ -9,7 +9,7 @@ afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); });
 
 async function mount(extra: Partial<FloorplanCardConfig> = {}) {
   const config: FloorplanCardConfig = { ...emptyConfig("custom:easy-floorplan-card"),
-    width: 600, height: 400, wallHeight: 100, view: "3d", showViewControls: true, wallOpacity: .5, ...extra };
+    width: 600, height: 400, wallHeight: 100, furniture3d: true, view: "3d", showViewControls: true, wallOpacity: .5, ...extra };
   const floor = getFloors(config)[0];
   floor.walls = [
     { id: "north", x1: 0, y1: 0, x2: 600, y2: 0 },

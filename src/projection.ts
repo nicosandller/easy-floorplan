@@ -507,6 +507,14 @@ export function furnitureSolid(
   return { kind: "furniture", id: f.id, base, z0: 0, z1: height, color, top };
 }
 
+/** A separate furniture cut is opt-in; otherwise retain the wall-height cut. */
+export function furnitureSectionHeight(c: {
+  wallHeight?: number; furnitureSeparateSection?: boolean; furnitureSectionHeight?: number;
+}): number {
+  return normalizeWallHeight(c.furnitureSeparateSection === true
+    ? (c.furnitureSectionHeight ?? 180) : c.wallHeight);
+}
+
 /** Preserve real heights; section furniture at the displayed wall height. */
 export function furnitureModelSolids(
   f: { id?: string; x: number; y: number; w: number; h: number; angle?: number },

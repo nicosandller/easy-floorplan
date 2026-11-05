@@ -14,7 +14,7 @@ afterEach(() => { document.body.replaceChildren(); vi.restoreAllMocks(); });
 
 async function mount(extra: Partial<FloorplanCardConfig> = {}) {
   const config = { ...emptyConfig("custom:easy-floorplan-card"), width: 600, height: 400,
-    view: "3d", wallHeight: 100, showViewControls: true, wallOpacity: .4, ...extra } as FloorplanCardConfig;
+    view: "3d", wallHeight: 100, furniture3d: true, showViewControls: true, wallOpacity: .4, ...extra } as FloorplanCardConfig;
   const floor = getFloors(config)[0];
   floor.walls = [{id:"north",x1:70,y1:70,x2:530,y2:70}];
   floor.openings = [{id:"entry",type:"door",x:240,y:70,angle:0,length:70,entity:"binary_sensor.entry"}];

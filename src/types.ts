@@ -1944,6 +1944,12 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * survey. Ignored on the flat plan.
    */
   wallHeight?: number;
+  /** Opt in to detailed models in the isometric view. */
+  furniture3d?: boolean;
+  /** Use a furniture section plane independent of wall height. */
+  furnitureSeparateSection?: boolean;
+  /** Furniture section height in canvas units; defaults to 180 when enabled. */
+  furnitureSectionHeight?: number;
   /**
    * Built-in skin id (issue #122), e.g. `odnetnin`, `pastel`, `tron`. Restyles
    * the whole plan at once — paper, walls, badges, accents — by supplying the

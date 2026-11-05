@@ -190,6 +190,7 @@ import {
   wallHeadroom,
   furnitureSolid,
   furnitureModelSolids,
+  furnitureSectionHeight,
   renderIsoSolids,
   FURNITURE_HEIGHT_FRACTION,
   OUTDOOR_WALL_HEIGHT_MULTIPLIER,
@@ -824,6 +825,13 @@ export class FloorplanCard extends LitElement {
       wallHeight = wallHeadroom(outdoorBaseHeight, allWalls);
       lowerDepth = baseWallHeight * OUTDOOR_WALL_HEIGHT_MULTIPLIER * lowerLevels;
     }
+    if (c.furniture3d === true && c.furnitureSeparateSection === true) {
+      const catalog = symbolCatalog(c.symbols);
+      for (const f of active?.furniture ?? []) {
+        const model = catalog[f.type]?.model3d;
+        if (model) wallHeight = Math.max(wallHeight, Math.min(model.size.height, furnitureSectionHeight(c)));
+      }
+    }
     return {
       w: d.w,
       h: d.h,
@@ -1154,13 +1162,14 @@ export class FloorplanCard extends LitElement {
       }
     }
 
+    const sectionHeight = furnitureSectionHeight(c);
     const furnitureHeight = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(furnitureHeight, rot);
     const catalog = symbolCatalog(c.symbols);
     for (const f of active.furniture) {
-      const model = catalog[f.type]?.model3d;
+      const model = c.furniture3d === true ? catalog[f.type]?.model3d : undefined;
       if (model) {
-        solids.push(...furnitureModelSolids(f, model, map, baseWallHeight, furnitureTone(f)));
+        solids.push(...furnitureModelSolids(f, model, map, sectionHeight, furnitureTone(f)));
         continue;
       }
       solids.push(
@@ -1194,12 +1203,12 @@ export class FloorplanCard extends LitElement {
     const solidEdges = c.appearance === "line-art" ? solidEdgeRenderer(solids, LINE_INK) : undefined;
     return renderIsoSolids(solids, (solid, drawing) => {
       if (solidEdges) drawing = svg`${drawing}${solidEdges(solid)}`;
-      if (solid.kind === "furniture" && solid.id && catalog[active.furniture.find(f => f.id === solid.id)?.type ?? ""]?.model3d) {
+      if (c.furniture3d === true && solid.kind === "furniture" && solid.id && catalog[active.furniture.find(f => f.id === solid.id)?.type ?? ""]?.model3d) {
         const f = active.furniture.find(f => f.id === solid.id)!;
         const keyboard = !modelHitIds.has(solid.id);
         modelHitIds.add(solid.id);
         const model = catalog[f.type]!.model3d!;
-        const height = Math.min(model.size.height, baseWallHeight);
+        const height = Math.min(model.size.height, sectionHeight);
         const footprint = furnitureSolid(f, map, height, furnitureTone(f)).base;
         const xs = footprint.map(p => p.x - height), ys = footprint.map(p => p.y - height);
         const focus = svg`<rect class="fp-furniture-focus" aria-hidden="true"
@@ -1528,8 +1537,8 @@ export class FloorplanCard extends LitElement {
     // Floor-level coordinates would leave the control below the table in 3D.
     const frame = this._frame(c, rot);
     const at = rotatePlanPoint(f.x, f.y, c.width, c.height, rot);
-    const model = symbolCatalog(c.symbols)[f.type]?.model3d;
-    const height = model ? Math.min(model.size.height, normalizeWallHeight(c.wallHeight))
+    const model = c.furniture3d === true ? symbolCatalog(c.symbols)[f.type]?.model3d : undefined;
+    const height = model ? Math.min(model.size.height, furnitureSectionHeight(c))
       : normalizeWallHeight(c.wallHeight) * FURNITURE_HEIGHT_FRACTION;
     const p = projectPlanPoint(at.x, at.y, frame, height);
     const d = projectedCanvasSize(frame);

@@ -51,6 +51,7 @@ it("keeps the reporter's bathtub behind the partition's front face", async () =>
   // Isolate the bathtub: the full-height stove on the near side now genuinely
   // covers this pixel, unlike the old 40-unit furniture blocks.
   const config = structuredClone(reporter) as unknown as FloorplanCardConfig;
+  config.furniture3d = true;
   for (const floor of config.floors!) floor.furniture = floor.furniture.filter(f => f.type === "bathtub");
   const unobstructed = structuredClone(config);
   for (const floor of unobstructed.floors!) { floor.walls = []; floor.openings = []; }
@@ -63,7 +64,7 @@ it("keeps the reporter's bathtub behind the partition's front face", async () =>
 });
 
 it("paints the full-height stove in front of the partition in the complete plan", async () => {
-  const card = await mount(reporter as unknown as FloorplanCardConfig);
+  const card = await mount({ ...reporter, furniture3d: true } as unknown as FloorplanCardConfig);
   // The same viewing ray reaches the stove at x=519, y=725, z=90,
   // in front of the wall at x=484, y=690, z=55.
   expect(frontAt(card, 484 - 55, 690 - 55)).toBe("furn_gihjrnl");

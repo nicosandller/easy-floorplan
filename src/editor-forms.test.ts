@@ -2915,3 +2915,27 @@ describe("roofForm", () => {
   });
 });
 
+
+describe("3D furniture display controls", () => {
+  const base = { type: "custom:easy-floorplan-card", width: 400, height: 400 } as FloorplanCardConfig;
+  const names = (c: Partial<FloorplanCardConfig>) => projectDisplayForm({ ...base, ...c }).fields.map(f => f.name);
+  it("reveals the opt-in, separate cut and height progressively", () => {
+    expect(names({ view: "2d", furniture3d: true, furnitureSeparateSection: true })).not.toContain("furniture3d");
+    expect(names({ view: "3d" })).toContain("furniture3d");
+    expect(names({ view: "3d" })).not.toContain("furnitureSeparateSection");
+    expect(names({ view: "3d", furniture3d: true })).toContain("furnitureSeparateSection");
+    expect(names({ view: "3d", furniture3d: true })).not.toContain("furnitureSectionHeight");
+    expect(names({ view: "3d", furniture3d: true, furnitureSeparateSection: true })).toContain("furnitureSectionHeight");
+    expect(names({ projection: "iso" })).toContain("furniture3d");
+  });
+  it("starts disabled and retains the saved height when toggles change", () => {
+    const form = projectDisplayForm(base);
+    expect(form.data.furniture3d).toBe(false);
+    expect(form.data.furnitureSeparateSection).toBe(false);
+    expect(form.data.furnitureSectionHeight).toBe(180);
+    const configured = projectDisplayForm({ ...base, furniture3d: true, furnitureSeparateSection: true, furnitureSectionHeight: 150 });
+    expect(configured.toPatch({ furnitureSeparateSection: false })).toEqual({ furnitureSeparateSection: false });
+    expect(configured.toPatch({ furniture3d: false })).toEqual({ furniture3d: false });
+    expect(configured.toPatch({ furnitureSectionHeight: 220 })).toEqual({ furnitureSectionHeight: 220 });
+  });
+});

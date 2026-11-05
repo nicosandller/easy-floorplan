@@ -121,7 +121,8 @@ same flat line-art style as the rest, and give it keywords someone would actuall
 
 ## Optional 3D models (version 1)
 
-`model3d` is an optional, declarative model used only in the standing isometric view.
+`model3d` is an optional, declarative model used only in the standing isometric view
+when `furniture3d: true`. Existing plans retain the block rendering by default.
 The existing `parts`, `viewBox`, and `size.w/h` still define the 2D symbol, picker,
 footprint and glow mask. Missing, invalid or unsupported 3D models use the previous
 isometric block with the 2D glyph on top. Older readers ignore `model3d`.
@@ -171,12 +172,29 @@ no effect. No external textures, URLs, scripts or raw SVG are loaded.
 
 Horizontal dimensions follow the placed furniture's width and depth. Z uses the
 same scale as floor coordinates: heights are not compressed when resizing furniture.
-The displayed wall height currently acts as a section plane. Parts above it are
-omitted, and crossing parts are clipped with a flat top at that height. For example,
-a 200 cm shelf unit viewed at 60 cm retains only its lower shelves and the cut sides.
+In **Project → Display**, select **3D isometric** to reveal the **3D furniture**
+switch. Enabling it reveals **Separate furniture cut height**; enabling that switch
+reveals the numeric **Furniture cut height** field (0–400 canvas units, default 180).
+
+```yaml
+view: 3d
+furniture3d: true
+furnitureSeparateSection: true
+furnitureSectionHeight: 180
+wallHeight: 60
+```
+
+Without a separate cut, the configured wall height remains the section plane.
+With a separate cut, only furniture uses `furnitureSectionHeight`; walls retain
+`wallHeight`. Parts above the plane are omitted, and crossing parts receive a flat
+top. A cut height of zero hides model geometry. Missing or invalid models continue
+to use the previous block at its usual wall-relative height. The canvas reserves
+space for visible models above low walls. Switching these options off preserves
+the saved cut height, and 2D rendering is unchanged.
+
 Beds have a 50 cm sleeping surface (the headboard may be taller); tables are 80 cm.
-At wall height zero the existing flat symbols remain visible. A separate section-height
-setting can be introduced later; there is no additional configuration parameter yet.
+Heights still use the plan coordinate scale directly; automatic vertical scaling
+when resizing a furniture footprint is not part of these controls.
 
 All parts join the existing wall/opening depth ordering. This is an SVG solid
 renderer, not a mesh engine: complex interpenetrating solids and layered transparency

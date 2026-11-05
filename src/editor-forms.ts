@@ -85,6 +85,7 @@ import {
 import {
   normalizeProjection,
   normalizeWallHeight,
+  furnitureSectionHeight,
   normalizeWallOpacity,
   MAX_WALL_HEIGHT,
   defaultRoofHeight,
@@ -2609,6 +2610,23 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
       },
       ...(normalizeProjection(c.view ?? c.projection) === "iso" ? [
         {
+          name: "furniture3d", label: "3D furniture",
+          helper: "Show detailed furniture models instead of simple blocks",
+          selector: { boolean: {} },
+        },
+        ...(c.furniture3d === true ? [
+          {
+            name: "furnitureSeparateSection", label: "Separate furniture cut height",
+            helper: "Cut furniture independently of wall height",
+            selector: { boolean: {} },
+          },
+          ...(c.furnitureSeparateSection === true ? [{
+            name: "furnitureSectionHeight", label: "Furniture cut height",
+            helper: "Canvas units. Furniture above this height is cut away; walls stay unchanged",
+            selector: { number: { min: 0, max: MAX_WALL_HEIGHT, step: 1, mode: "box" } },
+          }] : []),
+        ] : []),
+        {
           name: "wallHeight",
           label: "Wall height",
           helper: "Canvas units. Lower walls reveal more of each room",
@@ -2726,6 +2744,9 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
       appearance: normalizeAppearance(c.appearance),
       showViewControls: c.showViewControls ?? false,
       showExport: c.showExport ?? false,
+      furniture3d: c.furniture3d === true,
+      furnitureSeparateSection: c.furnitureSeparateSection === true,
+      furnitureSectionHeight: furnitureSectionHeight({ ...c, furnitureSeparateSection: true }),
       wallHeight: normalizeWallHeight(c.wallHeight),
       wallOpacity: normalizeWallOpacity(c.wallOpacity),
       rotation: String(normalizePlanRotation(c.rotation)),
@@ -2753,6 +2774,8 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
     },
     toPatch: (p) => {
       let out = p;
+      if ("furnitureSectionHeight" in out)
+        out = { ...out, furnitureSectionHeight: furnitureSectionHeight({ furnitureSeparateSection: true, furnitureSectionHeight: out.furnitureSectionHeight as number }) };
       // A deliberate 2D selection must also clear the prototype alias.
       if ("view" in out) out = { ...out, projection: undefined };
       if ("rotation" in out)

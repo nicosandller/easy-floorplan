@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Detailed 3D furniture is now opt-in under Project → Display. Isometric view
+  reveals the model switch, followed by an optional separate furniture cut and
+  its height field; existing plans keep their block furniture.
 - Furniture symbols can supply an optional `model3d` section for the isometric
   view. Built-in furniture now uses simple volumes with shelves, legs and open
   interiors. The 2D view is unchanged; symbols without a valid model retain the

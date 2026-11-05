@@ -18,7 +18,7 @@ async function mount(
   card.style.width = "400px";
   card.setConfig({
     type: "custom:easy-floorplan-card", width: 500, height: 400, view, rotation,
-    wallHeight: 100, ...extra, walls: [], openings: [], items: [], texts: [], trackers: [],
+    wallHeight: 100, furniture3d: true, ...extra, walls: [], openings: [], items: [], texts: [], trackers: [],
     furniture: [{ id: "table", type: "table", x: 220, y: 170, w: 130, h: 90, ...piece }],
     areas: [{ id: "room", points: [{ x: 120, y: 80 }, { x: 380, y: 80 },
       { x: 380, y: 320 }, { x: 120, y: 320 }] }],
@@ -266,7 +266,7 @@ describe("hiding the furniture action icon (#362)", () => {
       [{ x: x0, y: y0 }, { x: x1, y: y0 }, { x: x1, y: y1 }, { x: x0, y: y1 }];
     const empty = { openings: [], items: [], trackers: [], texts: [] };
     card.setConfig({
-      type: "custom:easy-floorplan-card", width: 500, height: 400, view: "3d", wallHeight: 60,
+      type: "custom:easy-floorplan-card", width: 500, height: 400, view: "3d", wallHeight: 60, furniture3d: true,
       defaultFloor: `garden-${seq}`,
       floors: [
         {
