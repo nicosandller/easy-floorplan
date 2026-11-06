@@ -35,12 +35,22 @@ export interface HomeAssistant extends BaseHomeAssistant {
    * the user's per-entity icon override, which never appears in the state's
    * `attributes`.
    */
-  entities?: Record<string, { icon?: string } | undefined>;
+  entities?: Record<string, { entity_id?: string; area_id?: string | null; device_id?: string | null; labels?: string[]; icon?: string } | undefined>;
+  /** The device registry exposed by the frontend. */
+  devices?: Record<string, { id?: string; area_id?: string | null; labels?: string[] } | undefined>;
+  /** The area registry exposed by the frontend. */
+  areas?: Record<string, { area_id?: string; floor_id?: string | null; labels?: string[] } | undefined>;
+  /** The floor registry exposed by the frontend. */
+  floors?: Record<string, { floor_id?: string; labels?: string[] } | undefined>;
   /**
    * HA has carried `darkMode` on `themes` since 2021; `custom-card-helpers`
    * predates it. Read by `roomTints` to pick each tint's dark side.
    */
   themes: BaseHomeAssistant["themes"] & { darkMode?: boolean };
+  /**
+   * Lazily loads on-demand frontend translation fragments (e.g. "config").
+   */
+  loadFragmentTranslation?(fragment: string): Promise<unknown>;
 }
 
 /**
@@ -1171,6 +1181,102 @@ export type FurnitureType =
  */
 export type SectionalHand = "left" | "right";
 
+/** Base shape for Home Assistant dashboard card visibility conditions (Issue #310). */
+export type VisibilityCondition =
+  | StateVisibilityCondition
+  | NumericStateVisibilityCondition
+  | ScreenVisibilityCondition
+  | UserVisibilityCondition
+  | TimeCondition
+  | LocationCondition
+  | AndVisibilityCondition
+  | OrVisibilityCondition
+  | NotVisibilityCondition;
+
+export interface StateVisibilityCondition {
+  condition: "state";
+  entity?: string;
+  entity_id?: string;
+  target?: {
+    entity_id?: string;
+    [key: string]: unknown;
+  };
+  state?: string | string[];
+  state_not?: string | string[];
+  attribute?: string;
+}
+
+export interface NumericStateVisibilityCondition {
+  condition: "numeric_state";
+  entity?: string;
+  entity_id?: string;
+  target?: {
+    entity_id?: string;
+    [key: string]: unknown;
+  };
+  above?: number | string;
+  below?: number | string;
+  attribute?: string;
+}
+
+export interface ScreenVisibilityCondition {
+  condition: "screen";
+  media_query: string;
+}
+
+export interface UserVisibilityCondition {
+  condition: "user";
+  users: string[];
+}
+
+export interface TimeCondition {
+  condition: "time";
+  after?: string;
+  before?: string;
+  weekdays?: string[];
+}
+
+export interface LocationCondition {
+  condition: "location";
+  match_mode?: "active_zone" | "any_zone";
+  target?: {
+    entity_id?: string | string[];
+    device_id?: string | string[];
+    area_id?: string | string[];
+    floor_id?: string | string[];
+    label_id?: string | string[];
+    exclude?: {
+      entity_id?: string | string[];
+      device_id?: string | string[];
+      area_id?: string | string[];
+      floor_id?: string | string[];
+      label_id?: string | string[];
+    };
+    [key: string]: unknown;
+  };
+  locations?: string[];
+  away?: boolean;
+}
+
+export interface AndVisibilityCondition {
+  condition: "and";
+  conditions?: VisibilityCondition[];
+  and?: VisibilityCondition[];
+}
+
+export interface OrVisibilityCondition {
+  condition: "or";
+  conditions?: VisibilityCondition[];
+  or?: VisibilityCondition[];
+}
+
+export interface NotVisibilityCondition {
+  condition: "not";
+  conditions?: VisibilityCondition[];
+  not?: VisibilityCondition[];
+}
+
+
 /** A gray furniture/fixture diagram placed on the plan. */
 export interface Furniture {
   id: string;
@@ -1267,6 +1373,13 @@ export interface Furniture {
    * See {@link Wall.locked} for why it stays selectable.
    */
   locked?: boolean;
+  /**
+   * Visibility conditions for dynamic display (Issue #310).
+   * Follows native Home Assistant dashboard card visibility schema.
+   * If any condition evaluates to false, the furniture is hidden.
+   * When omitted or empty, the piece is always visible.
+   */
+  visibility?: VisibilityCondition[];
 }
 
 /**

@@ -15,7 +15,11 @@ import {
 import { openingSolids } from "./projection-openings";
 import { LINE_INK, solidEdgeRenderer } from "./line-art";
 import { symbolCatalog } from "./symbols";
-import { DEFAULT_HEIGHT, DEFAULT_WIDTH, type Floor, type FloorplanCardConfig, type Opening } from "./types";
+import { isFurnitureVisible } from "./furniture-visibility";
+import {
+  DEFAULT_HEIGHT, DEFAULT_WIDTH, type Floor, type FloorplanCardConfig,
+  type HomeAssistant, type Opening, type RenderHass,
+} from "./types";
 
 const PAPER = "#ffffff";
 
@@ -35,7 +39,12 @@ export interface LineArtExport {
  * Exports a single floor's architectural line art without multi-story stacking
  * or opaque roof caps, keeping room layouts visible.
  */
-export function createLineArtSvg(c: FloorplanCardConfig, floor: Floor, rot: PlanRotation): LineArtExport {
+export function createLineArtSvg(
+  c: FloorplanCardConfig,
+  floor: Floor,
+  rot: PlanRotation,
+  hass?: HomeAssistant | RenderHass
+): LineArtExport {
   const width = Math.max(1, cssNumber(c.width, DEFAULT_WIDTH));
   const height = Math.max(1, cssNumber(c.height, DEFAULT_HEIGHT));
   const walls = [...floor.walls, ...floor.areas.flatMap((a) => rectAreaSideWalls(a.id, a.points, a.sideWalls ?? {}))];
@@ -52,6 +61,7 @@ export function createLineArtSvg(c: FloorplanCardConfig, floor: Floor, rot: Plan
   const rotate = planRotationTransform(width, height, rot);
   const map = (x: number, y: number) => rotatePlanPoint(x, y, width, height, rot);
   const catalog = symbolCatalog(c.symbols);
+  const visibleFurniture = floor.furniture.filter((f) => isFurnitureVisible(f, hass));
   const drawFurniture = (f: Floor["furniture"][number]) => renderFurniture(f, LINE_INK, catalog);
   const solids: IsoSolid[] = [];
   if (standing) {
@@ -66,7 +76,7 @@ export function createLineArtSvg(c: FloorplanCardConfig, floor: Floor, rot: Plan
     }
     const h = defaultWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(h, rot);
-    for (const f of floor.furniture) solids.push(furnitureSolid(f, map, h, PAPER,
+    for (const f of visibleFurniture) solids.push(furnitureSolid(f, map, h, PAPER,
       svg`<g transform=${rotate || nothing}><g transform="translate(${lift.x} ${lift.y})">${drawFurniture(f)}</g></g>`));
   }
   const solidEdges = solidEdgeRenderer(solids, LINE_INK);
@@ -90,7 +100,7 @@ export function createLineArtSvg(c: FloorplanCardConfig, floor: Floor, rot: Plan
               stroke-width=${w.divider ? 1 : wallThickness(w.thickness) * (isRailing(w) ? RAILING_WEIGHT : 1)}
               stroke-dasharray=${w.divider ? "5 4" : nothing} />`)}</g>
           ${standing ? nothing : floor.openings.map((o) => renderOpening(o, openingStyle(o)))}
-          ${standing ? nothing : floor.furniture.map(drawFurniture)}
+          ${standing ? nothing : visibleFurniture.map(drawFurniture)}
         </g>
         ${standing ? renderIsoSolids(solids.filter((s) => s.kind !== "opening-hit"), (s, drawing) =>
           svg`<g>${drawing}${solidEdges(s)}</g>`) : nothing}
@@ -144,8 +154,13 @@ export function createLineArtSvg(c: FloorplanCardConfig, floor: Floor, rot: Plan
     filename: `floorplan-${name}-${view}.svg` };
 }
 
-export function downloadLineArtSvg(c: FloorplanCardConfig, floor: Floor, rot: PlanRotation): void {
-  const result = createLineArtSvg(c, floor, rot);
+export function downloadLineArtSvg(
+  c: FloorplanCardConfig,
+  floor: Floor,
+  rot: PlanRotation,
+  hass?: HomeAssistant | RenderHass
+): void {
+  const result = createLineArtSvg(c, floor, rot, hass);
   const url = URL.createObjectURL(new Blob([result.svg], { type: "image/svg+xml;charset=utf-8" }));
   const link = document.createElement("a");
   link.href = url;
