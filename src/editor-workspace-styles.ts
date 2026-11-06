@@ -320,4 +320,44 @@ export const editorWorkspaceStyles = css`
     }
   }
   @media (prefers-reduced-motion: reduce) { button { transition: none; } }
+  /* Edit Callout Panels in Workspace */
+  .edit-panel {
+    position: absolute;
+    transform: translate(-50%, -50%);
+    cursor: grab;
+    pointer-events: auto;
+    background: rgba(10, 20, 36, 0.9);
+    border: 1px solid var(--fp-panel-accent, #00e5ff);
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    border-radius: 4px;
+    padding: 4px 8px;
+    font-size: 11px;
+    color: #fff;
+    white-space: nowrap;
+    user-select: none;
+    z-index: 10;
+  }
+  .edit-panel.selected {
+    outline: 2px solid var(--primary-color, #03a9f4);
+    outline-offset: 2px;
+    box-shadow: 0 0 10px rgba(3, 169, 244, 0.5);
+  }
+  .edit-panel:active {
+    cursor: grabbing;
+  }
+  .edit-panel-header {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-weight: 600;
+  }
+  .edit-panel-icon {
+    --mdc-icon-size: 13px;
+    color: var(--fp-panel-accent, #00e5ff);
+  }
+  .edit-panel-preview {
+    font-size: 9px;
+    opacity: 0.7;
+    margin-top: 2px;
+  }
 `;
