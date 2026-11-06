@@ -10,6 +10,7 @@ export const editorWorkspaceStyles = css`
     --editor-ground: var(--secondary-background-color, #f3f5f7);
     --editor-line: var(--divider-color, #dfe5e9);
     --editor-accent: var(--primary-color, #00897b);
+    --editor-warning: var(--warning-color, #ffa600);
     container: workspace / inline-size;
     display: flex;
     flex-direction: column;
@@ -125,6 +126,22 @@ export const editorWorkspaceStyles = css`
   .context-bar > .snap-hint { flex: 1 1 100%; text-align: right; }
   .context-bar .ctx-divider { margin-left: auto; }
   .context-bar button { font-size: 12px; min-height: 32px; padding: 4px 8px; }
+  /* Plan check (issue #403): rings on the canvas, one notice above the context bar. */
+  .wall-check { pointer-events: none; }
+  .wall-check-mark { opacity: .55; }
+  .wall-check-mark.current { opacity: 1; }
+  .wall-check-mark circle { fill: color-mix(in srgb, var(--editor-warning) 18%, transparent); stroke: var(--editor-warning); stroke-width: 2; vector-effect: non-scaling-stroke; }
+  .wall-check-mark.current circle { fill: color-mix(in srgb, var(--editor-warning) 26%, transparent); stroke-width: 2.5; }
+  .wall-check-fix { stroke: var(--editor-warning); stroke-width: 1.5; stroke-dasharray: 3 3; vector-effect: non-scaling-stroke; }
+  .wall-check-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 8px; padding: 6px 12px; font-size: 12px; color: var(--editor-ink); background: color-mix(in srgb, var(--editor-warning) 9%, var(--editor-paper)); border-top: 1px solid color-mix(in srgb, var(--editor-warning) 30%, var(--editor-line)); }
+  .wall-check-bar > ha-icon { --mdc-icon-size: 18px; color: var(--editor-warning); flex: none; }
+  .wall-check-text { flex: 1 1 160px; min-width: 0; line-height: 1.5; }
+  .wall-check-nav { display: inline-flex; align-items: center; gap: 2px; color: var(--editor-muted); white-space: nowrap; }
+  .wall-check-bar button { display: inline-flex; align-items: center; justify-content: center; min-height: 30px; padding: 4px 10px; font-size: 12px; color: var(--editor-ink); background: var(--editor-paper); border: 1px solid var(--editor-line); border-radius: 6px; }
+  .wall-check-bar .wall-check-step { width: 30px; padding: 3px; color: var(--editor-muted); background: transparent; border-color: transparent; }
+  .wall-check-step ha-icon { --mdc-icon-size: 18px; }
+  .wall-check-bar .wall-check-apply { color: var(--editor-accent); font-weight: 600; }
+  .wall-check-bar .wall-check-apply:disabled { color: var(--editor-muted); cursor: default; font-weight: 400; }
   .snap-control { display: flex; align-items: center; gap: 6px; color: var(--editor-muted); font-size: 12px; white-space: nowrap; }
   .snap-control select { min-height: 30px; padding: 3px 6px; border: 1px solid var(--editor-line); border-radius: 6px; color: var(--editor-ink); background: var(--editor-paper); }
   .ctx-count { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -285,6 +302,9 @@ export const editorWorkspaceStyles = css`
   }
   @container workspace (max-width: 759px) {
     .toolbar button, .tool-compact select, .canvas-heading button, .floors select, .zoom-overlay button, .snap-control select, .context-bar .inspector-jump { min-height: 44px; }
+    .wall-check-bar { padding: 6px 8px; }
+    .wall-check-bar button { min-height: 44px; }
+    .wall-check-bar .wall-check-step { width: 44px; }
     .toolbar .project-settings { min-height: 44px; min-width: 40px; }
     .toolbar .history button, .toolbar .expand-toggle, .floors > button { min-width: 44px; }
     .inspector-heading { padding: 0 12px; gap: 4px; }
@@ -299,7 +319,7 @@ export const editorWorkspaceStyles = css`
     .side { display: none; border-top: 1px solid var(--editor-line); }
     .show-inspector .workspace { grid-template-rows: minmax(130px, .28fr) minmax(200px, .72fr); }
     .show-inspector .side { display: flex; }
-    .show-inspector .canvas-heading, .show-inspector .context-bar { display: none; }
+    .show-inspector .canvas-heading, .show-inspector .context-bar, .show-inspector .wall-check-bar { display: none; }
     .show-inspector .canvas-outer { padding: 6px; }
     .show-inspector .zoom-overlay { position: static; align-self: flex-end; margin-top: 4px; flex: none; box-shadow: none; }
     .show-inspector .zoom-overlay button { min-height: 36px; }
