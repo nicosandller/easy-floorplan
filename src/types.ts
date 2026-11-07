@@ -1743,6 +1743,19 @@ export interface Floor {
   /** Whether this floor represents an outdoor courtyard area. */
   isOutdoor?: boolean;
   /**
+   * Draw this floor as a **vertical section** (issue #414) — a cut through the
+   * building with the sky at the top of the canvas and the ground at the
+   * bottom, every storey stacked on the one below — looking toward this
+   * compass bearing (0 = north, 90 = east). Absent, the floor is an ordinary
+   * plan.
+   *
+   * Only the sunlight reads it: on a section the sun's height sets the angle
+   * the light comes in at, and its bearing which side it comes from, so a
+   * window lets in a steep beam at noon and a level one in the evening. On a
+   * plan the same light is aimed by the bearing alone.
+   */
+  sectionFacing?: number;
+  /**
    * Explicit level number for 3D stacking (0 for ground floor, 1 for 1st floor, -1 for basement).
    * When omitted, defaults to Home Assistant's floor level or its relative order in the floor list.
    */
