@@ -27,6 +27,8 @@ control lights, and view the plan in 3D.
 
 - **Visual editing** — draw walls, snap doors and windows into place, and arrange
   furniture, text and devices with undo/redo, copy/paste and position locking.
+  Rooms snap to square corners, join along a shared edge, and take walls on
+  just part of a side (see [Areas](docs/elements.md#areas)).
 - **Live devices** — control lights and switches, show sensor readings, and follow
   doors, windows, shutters, awnings and curtains as they open and close. Device
   labels can sit on any side, or [pick the clearest one](docs/elements.md#devices) (`labelPosition: auto`).
