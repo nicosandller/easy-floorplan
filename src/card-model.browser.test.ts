@@ -35,7 +35,7 @@ it("keeps the configured section height when a tall wall expands the frame", asy
   expect(root.querySelectorAll('.fp-iso-furniture[data-id="shelf"]')).toHaveLength(6);
 });
 it("renders a newly added 2D-only symbol with the block fallback", async () => {
-  const root = await mount({ furniture: [{ id: "palm", type: "indoorPalm", x: 200, y: 200, w: 40, h: 40 }] });
+  const root = await mount({ furniture: [{ id: "palm", type: "awning", x: 200, y: 200, w: 40, h: 40 }] });
   expect(root.querySelectorAll('.fp-iso-furniture[data-id="palm"]')).toHaveLength(1);
 });
 

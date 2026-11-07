@@ -93,3 +93,13 @@ describe("placed 3D height", () => {
     }
   });
 });
+
+it("keeps the indoor palm inside 40×40 with a 120 cm crown", () => {
+  const m = BUILTIN_SYMBOLS.indoorPalm.model3d!;
+  expect(m).toBeDefined();
+  expect(m.size).toEqual({ width: 40, depth: 40, height: 120 });
+  expect(Math.max(...m.parts.map(p => p.z1))).toBeCloseTo(120);
+  expect(m.parts.length).toBeLessThanOrEqual(64);
+  const leaves = m.parts.filter(p => Math.abs(p.z1 - p.z0 - 1.2) < 1e-6);
+  expect(new Set(leaves.map(p => Math.round(p.z0 / 10))).size).toBeGreaterThanOrEqual(3);
+});
