@@ -36,6 +36,11 @@ export interface HomeAssistant extends BaseHomeAssistant {
    * `attributes`.
    */
   entities?: Record<string, { icon?: string } | undefined>;
+  /**
+   * HA has carried `darkMode` on `themes` since 2021; `custom-card-helpers`
+   * predates it. Read by `roomTints` to pick each tint's dark side.
+   */
+  themes: BaseHomeAssistant["themes"] & { darkMode?: boolean };
 }
 
 /**
@@ -51,6 +56,8 @@ export interface RenderHass {
   states: Record<string, HassEntity | undefined>;
   formatEntityState(stateObj: HassEntity): string;
   formatEntityAttributeValue?(stateObj: HassEntity, attribute: string): string;
+  /** Read only for dark mode, which picks the side of every room tint. */
+  themes?: { darkMode?: boolean };
 }
 
 /** A straight wall segment in virtual coordinate space. */
@@ -310,6 +317,18 @@ export interface Opening {
    * multiplier on it.
    */
   ceilingHeight?: number;
+  /**
+   * A **window**'s sill height, as a fraction of the wall height (default
+   * `0.35`, what every window stood on before this existed). `0` is a
+   * floor-to-ceiling window — a French window, a glazed wall — whose glass
+   * starts at the floor; `0.6` a high bathroom or kitchen window.
+   *
+   * Only the 3D view reads it: a plan draws a window the same at any height,
+   * as a plan does, and the light it lets in is worked out on the plan too.
+   * Clamped to 0..{@link MAX_SILL} so there is always glass above it. Doors,
+   * passages and skylights have no sill and ignore it.
+   */
+  sill?: number;
   /**
    * Optional entity (e.g. a contact `binary_sensor` or a `cover`) whose state
    * drives whether the opening is drawn open or closed. When unset, doors are
@@ -634,9 +653,14 @@ export interface ItemReading {
  * `left` / `right` exist because a long reading under a badge grows in both
  * directions and collides with whatever is beside it, while a label hung off
  * one side grows only one way — which is what a row of devices along a wall
- * needs.
+ * needs. `above` is the fourth side, centred over the badge.
+ *
+ * `auto` lets the card choose among those four once the plan is laid out:
+ * whichever side covers the least wall, opening, badge, other label, room
+ * name and plan edge, in the order below → right → left → above when sides
+ * tie (see label-placement.ts). It falls back to `below` under the 3D view.
  */
-export type LabelPosition = "below" | "left" | "right";
+export type LabelPosition = "below" | "left" | "right" | "above" | "auto";
 
 /** An entity icon placed on the plan. */
 export interface FloorItem {
@@ -948,6 +972,19 @@ export interface FloorItem {
    * a cabinet, along a shelf.
    */
   stripSide?: StripSide;
+  /**
+   * Opening of the cast light in degrees (issue #388): a spot, a wall washer
+   * or a picture light lights a cone, not a disc. Default 360 — the ordinary
+   * pool all round. Below {@link MIN_SPOT_WIDTH} counts as that minimum.
+   * Ignored on a strip, which already has a direction of its own.
+   */
+  glowWidth?: number;
+  /**
+   * Which way the cone points, in degrees, measured on the **plan** like
+   * {@link rippleDirection}: 0° straight up, 90° to the right. Default 0.
+   * Only read while {@link glowWidth} is under 360.
+   */
+  glowDirection?: number;
   /** Lovelace actions. Defaults: tap = toggle (controllable domains) or more-info; hold/double = none. */
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
@@ -1123,7 +1160,9 @@ export type FurnitureType =
   | "piano"
   | "hotTub"
   | "quarterTub"
-  | "cornerShowerCurved";
+  | "cornerShowerCurved"
+  | "awning"
+  | "curtain";
 
 /**
  * Which end of an L-shaped sectional the chaise sits on, facing the sofa from
@@ -1142,8 +1181,13 @@ export interface Furniture {
    * plain box, so a missing symbol is a visible placeholder rather than a hole.
    */
   type: FurnitureType | (string & {});
-  /** L-shaped sectional only: which side the chaise extends on. Default `right`. */
-  hand?: SectionalHand;
+  /**
+   * L-shaped sectional: which side the chaise extends on. Curtain (issue
+   * #196): which side it gathers at when open, or `center` for a pair that
+   * meets in the middle and gathers at both ends. `left` mirrors the symbol,
+   * so it works on any glyph with a handedness. Default `right` (unmirrored).
+   */
+  hand?: SectionalHand | "center";
   x: number;
   y: number;
   /** Width / height in virtual units. */
@@ -1189,6 +1233,19 @@ export interface Furniture {
   tap_action?: ActionConfig;
   hold_action?: ActionConfig;
   double_tap_action?: ActionConfig;
+  /**
+   * Draw the round action icon at the piece's centre (default true).
+   *
+   * The icon is what makes a piece's gestures discoverable, and since #323 it
+   * is the only thing that takes them: the drawing passes taps through to the
+   * room underneath. On a plan where many pieces carry an action — a sensor
+   * on every plant, more-info on every cabinet — that is a circle on every
+   * one of them (issue #362). `false` drops the circle and gives the gestures
+   * back to the drawing itself, the way furniture answered before the icon:
+   * tapping the piece runs its action, and only the space around it reaches
+   * the room.
+   */
+  showIcon?: boolean;
   /**
    * Optional entity that makes the drawing live (issue #82) — a soil sensor on
    * a plant, a water temperature sensor on a fish tank, a contact sensor on a
@@ -1600,6 +1657,8 @@ export const DEFAULT_GLOW_RADIUS = 140;
  * in all but name, and a zero-length run has no direction to light across.
  */
 export const MIN_STRIP_LENGTH = 4;
+/** Narrowest cone a spot casts (issue #388), in degrees. */
+export const MIN_SPOT_WIDTH = 10;
 /** What turning a light into a strip starts it at, in canvas units. */
 export const DEFAULT_STRIP_LENGTH = 160;
 /**
@@ -1666,6 +1725,15 @@ export const DEFAULT_ITEM_SIZE = 34;
  * would otherwise shrink its touch targets with it.
  */
 export const MIN_TOUCH_TARGET = 34;
+/**
+ * The round action icon on a piece of furniture (issues #323, #362): its
+ * diameter and its glyph. Overlay measures like a device badge's `size` —
+ * screen pixels under `overlayScale: fixed`, canvas units under `plan` — so
+ * on a plan that shrinks its badges with the card these shrink with them.
+ * Same diameter as a default badge, which is a finger at `fixed`.
+ */
+export const FURNITURE_ICON_SIZE = DEFAULT_ITEM_SIZE;
+export const FURNITURE_ICON_GLYPH = 20;
 export const DEFAULT_TEXT_SIZE = 16;
 export const DEFAULT_RIPPLE_SIZE = 80;
 export const DEFAULT_RIPPLE_DIRECTION = 0;
@@ -1737,6 +1805,18 @@ export interface Floor {
   imageFit?: "stretch" | "contain" | "cover";
   /** Background image opacity, 0–1. Default 1. */
   imageOpacity?: number;
+  /**
+   * The background image to show instead while Home Assistant is in dark mode
+   * (issue #366) — a plan someone has inverted or recoloured themselves. Takes
+   * precedence over {@link imageInvertDark}.
+   */
+  imageDark?: string;
+  /**
+   * Invert the background image while Home Assistant is in dark mode (issue
+   * #366), so a black-on-white scan becomes white-on-black. Hues are turned
+   * back round, so coloured marks keep roughly their colour.
+   */
+  imageInvertDark?: boolean;
   walls: Wall[];
   openings: Opening[];
   items: FloorItem[];
@@ -1745,7 +1825,50 @@ export interface Floor {
   trackers: Tracker[];
   areas: Area[];
   roofs?: Roof[];
+  /** Summary metrics configuration for this floor (issue #234). */
+  summary?: FloorSummaryConfig;
 }
+
+/** Card-level floor summary configuration (issue #234). */
+export interface FloorSummaryCardConfig {
+  /** Master toggle to show summaries (default: false). */
+  enabled?: boolean;
+  /** Metrics to display in the floor buttons (default: all five). */
+  metrics?: Array<"temperature" | "humidity" | "presence" | "lights" | "windows">;
+  /** Number of decimal places for temperature (default: 1). */
+  decimals?: number;
+}
+
+/** Per-floor summary configuration (issue #234). */
+export interface FloorSummaryConfig {
+  /** Enable/disable summary for this specific floor (inherits card default if unset). */
+  enabled?: boolean;
+  /** Explicit entity override for temperature (bypasses auto-calculation). */
+  temperatureEntity?: string;
+  /** Explicit entity override for humidity (bypasses auto-calculation). */
+  humidityEntity?: string;
+  /** Explicit entity override for presence/occupancy. */
+  presenceEntity?: string;
+  /**
+   * Entity IDs on this floor to exclude from auto-aggregation
+   * (e.g. garage temperature, outdoor patio sensor).
+   */
+  excludeEntities?: string[];
+  /** Optional custom badge/subtitle string template (e.g. "21.5° | Eco"). */
+  customText?: string;
+}
+
+/** Default floor summary decimal precision */
+export const DEFAULT_FLOOR_SUMMARY_DECIMALS = 1;
+
+/** Default metrics displayed in floor switcher summary */
+export const DEFAULT_FLOOR_SUMMARY_METRICS: Array<"temperature" | "humidity" | "presence" | "lights" | "windows"> = [
+  "temperature",
+  "humidity",
+  "presence",
+  "lights",
+  "windows",
+];
 
 /** Sizing mode for the HTML overlay layer. See {@link FloorplanCardConfig.overlayScale}. */
 export type OverlayScale = "fixed" | "plan";
@@ -1899,6 +2022,15 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * an entry moves every element that names it. See `src/palette.ts`.
    */
   palette?: PaletteColor[];
+  /**
+   * `auto` gives every room without a `color` of its own a soft tint from a
+   * small built-in palette, picked so rooms that share a wall never share a
+   * tint and the same room keeps its tint from load to load. Off when unset,
+   * which renders every uncoloured room in the accent as it always has. Never
+   * touches a room's own colour or its live `stateColor`/`activeColor`. See
+   * `src/room-tints.ts`.
+   */
+  roomTints?: "auto" | "off";
   /**
    * How the HTML overlay (badges, labels, room names, text) is sized.
    *
@@ -2218,6 +2350,8 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   trackers?: Tracker[];
   areas?: Area[];
   roofs?: Roof[];
+  /** Floor summary configuration (issue #234). */
+  floorSummary?: FloorSummaryCardConfig;
   /**
    * Symbols this plan defines for itself (issue #90), keyed by id and merged
    * over the shipped `furniture/` library — so you can draw a piece nobody has
@@ -2298,6 +2432,7 @@ export function haFloorsOf(hass: unknown): HaFloorInfo[] {
 export interface HaAreaInfo {
   area_id: string;
   name: string;
+  floor_id?: string | null;
 }
 
 /**

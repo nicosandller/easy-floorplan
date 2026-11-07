@@ -44,3 +44,44 @@ and the first thing you do is position it.
 
 Nothing about the rendered card reads this — it is an editing aid, and `locked: true` in
 the YAML changes nothing a viewer sees.
+
+## Tracing over an existing plan
+
+Open **Project → Plan → Trace template** and choose **Load PDF or image…**.
+A PDF (with a page picker), PNG, JPG or SVG is laid under the canvas. Each floor
+has its own template. It is editor-only: the template is not saved to YAML and
+is not displayed by the dashboard card.
+
+Use **Set by 2 points** to click the ends of a known length and enter its size in
+canvas units (an ordinary door is 60, a wall is 8, a grid square is 20).
+Then draw walls over the template. **Move**, position, rotation, width and opacity
+adjust the placement. **Replace** loads another drawing; **Remove** drops it.
+Escape or selecting a drawing tool ends moving or calibration.
+
+**Floor under** displays another floor as a faint reference so you can align
+storeys. Reference corners also participate in snapping when editing existing
+wall ends and area vertices.
+
+PDFs use pinned pdf.js 4.10.38, fetched on first use from jsDelivr. Both the reader
+and its worker are checked against fixed SHA-384 hashes before execution; the
+browser rejects changed files. Only verified source is imported from a blob URL,
+and PDF font evaluation is disabled. This retains the single JS file installed
+by HACS. PDF loading requires access to the CDN and permission for blob modules
+and workers; without that, export the plan as PNG/JPG and load the image instead.
+PDF files themselves stay in the browser and are not sent to the CDN.
+
+### Remembered wall thickness
+
+The Wall tool's **Thickness** stays in effect for every new wall until you change
+it again. Setting thickness on a selected wall also updates this preference.
+It is remembered in this browser across plans and dashboards. Clearing the input
+keeps the previous thickness. Existing walls are not all changed together.
+
+### Follow-up limitations
+
+Templates remain in memory while their editor instance exists. Deleting a floor
+releases its template and reference entries, but cleanup on a real editor close
+is deferred because Home Assistant can temporarily reparent the editor.
+Reference-wall style parity, applying the remembered thickness to automatic
+room-outline walls, the image-size fallback and caching parsed PDFs between page
+changes remain separate follow-ups.

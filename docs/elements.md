@@ -35,10 +35,14 @@ then pick the entity in the **Selection** inspector.
   — leave the entity empty and it reads that attribute off this device, so one climate
   entity can show four of its own numbers. See
   [More readings per device](configuration.md#more-readings-per-device).
-- **Label position** — **Below** the badge (the default), or hung off its **left** or
-  **right**. A reading under a badge grows in both directions and meets whatever sits
-  beside it; hung off one side it grows one way only. Left and right hold their place
-  when the badge is set to show nothing.
+- **Label position** — **Below** the badge (the default), **above** it, or hung off its
+  **left** or **right**. A reading under a badge grows in both directions and meets
+  whatever sits beside it; hung off one side it grows one way only. Left, right and above
+  hold their place when the badge is set to show nothing. **Auto** picks the side for you
+  once the plan is laid out: the one that covers the least wall, door or window, other
+  badge or label, room name and plan edge, preferring below, then right, left and above.
+  It re-checks when the plan, the card's size or a label's length changes, and only
+  moves a label when another side is clearly better. The 3D view keeps auto labels below.
 - **Disable label color** — an item's label normally follows the same state and active
   color rules its badge does. That is useful as a status cue and awkward when it hurts
   readability or fights a deliberately plain dashboard, so this pins the text to the

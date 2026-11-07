@@ -39,6 +39,7 @@ import {
   DEFAULT_GLOW_RADIUS,
   DEFAULT_STRIP_LENGTH,
   MIN_STRIP_LENGTH,
+  MIN_SPOT_WIDTH,
   DEFAULT_TEXT_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
   DEFAULT_SUN_MIN,
@@ -55,6 +56,7 @@ import {
   domainIconAnimation,
   entitySupportsGlow,
   stripRun,
+  spotCone,
   isRippleEntity,
   normalizeOverlayScale,
   normalizeOverlayMinWidth,
@@ -86,11 +88,16 @@ import {
   normalizeProjection,
   normalizeWallHeight,
   normalizeWallOpacity,
+  openingSill,
+  MAX_SILL,
   MAX_WALL_HEIGHT,
+  SILL_FRACTION,
   defaultRoofHeight,
 } from "./projection";
 import { defaultItemAction } from "./actions";
+import { cssNumber } from "./css-safe";
 import { DEFAULT_SKIN, SKINS, findSkin, MAX_SKIN_WALL_WIDTH } from "./skins";
+import { roomTintsOf } from "./room-tints";
 
 /** One ha-form schema item, extended with our label/helper (read by computeLabel). */
 export interface FormField {
@@ -98,6 +105,11 @@ export interface FormField {
   label: string;
   helper?: string;
   required?: boolean;
+  /**
+   * Angle only: a full turn stays 360 instead of wrapping to 0. On badges and
+   * text, 360 turns with a rotated display while 0 stays upright (issue #387).
+   */
+  keepFullTurn?: boolean;
   selector: Record<string, unknown>;
 }
 
@@ -122,7 +134,8 @@ export function diffFormValue(
 /**
  * Per-field cleanup between the form and the config: empty optional strings
  * become undefined; invalid required numbers are dropped (keep the old
- * value); numbers clamp to the selector range; angle wraps to 0..360.
+ * value); numbers clamp to the selector range; angle wraps to 0..360, with
+ * a full turn kept as 360 on keepFullTurn fields.
  */
 export function normalizeFormPatch(
   patch: Record<string, unknown>,
@@ -146,7 +159,11 @@ export function normalizeFormPatch(
         v = undefined;
       } else {
         const sel = field.selector.number as { min?: number; max?: number };
-        let num = field.name === "angle" ? ((n % 360) + 360) % 360 : n;
+        let num = n;
+        if (field.name === "angle") {
+          num = ((n % 360) + 360) % 360;
+          if (num === 0 && n !== 0 && field.keepFullTurn) num = 360;
+        }
         if (sel.min !== undefined && num < sel.min) num = sel.min;
         if (sel.max !== undefined && num > sel.max) num = sel.max;
         v = num;
@@ -213,9 +230,54 @@ export function formSlice(spec: FormSpec, names: readonly string[]): FormSpec {
   return { fields, data: spec.data, toPatch: spec.toPatch };
 }
 
-const angleField = (): FormField => ({
+/**
+ * The tap/hold/double-tap fields of a form, which the Behavior group can show
+ * as YAML instead (issue #314): some actions — a popup card's, say — exist only
+ * in YAML, and the whole card's code editor is a long way to go for one press.
+ */
+export function actionFieldNames(spec: FormSpec): string[] {
+  return spec.fields.filter((f) => "ui_action" in f.selector).map((f) => f.name);
+}
+
+/**
+ * Turn what the Behavior code editor parsed into a patch for `names`. A key
+ * that is missing clears that action, as deleting its lines should. Anything
+ * that is not one of `names`, or not an action, is refused as a whole rather
+ * than half-applied, and the message says which line to look at.
+ */
+export function actionYamlPatch(
+  value: unknown,
+  names: readonly string[]
+): { patch: Record<string, unknown> } | { error: string } {
+  if (value == null) value = {};
+  if (typeof value !== "object" || Array.isArray(value)) {
+    return { error: `Expected ${names.join(", ")} as keys.` };
+  }
+  const doc = value as Record<string, unknown>;
+  const unknownKeys = Object.keys(doc).filter((k) => !names.includes(k));
+  if (unknownKeys.length) {
+    return { error: `Only ${names.join(", ")} belong here, not ${unknownKeys.join(", ")}.` };
+  }
+  const patch: Record<string, unknown> = {};
+  for (const name of names) {
+    const action = doc[name];
+    if (action == null) {
+      patch[name] = undefined;
+      continue;
+    }
+    if (typeof action !== "object" || Array.isArray(action) ||
+        typeof (action as Record<string, unknown>).action !== "string") {
+      return { error: `${name} needs an "action:" line.` };
+    }
+    patch[name] = action;
+  }
+  return { patch };
+}
+
+const angleField = (keepFullTurn = false): FormField => ({
   name: "angle",
   label: "Angle",
+  ...(keepFullTurn ? { keepFullTurn } : {}),
   selector: { number: { min: 0, max: 360, step: 1, mode: "slider", unit_of_measurement: "°" } },
 });
 
@@ -332,6 +394,18 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       label: "Ceiling height",
       helper: "1 is an ordinary storey; higher throws the patch of sun further across the room",
       selector: { number: { min: 0.2, max: 4, step: 0.1, mode: "slider" } },
+    });
+  }
+  // How high the glass starts. Windows only: a door, a passage and a skylight
+  // have no sill. A slider rather than a box for the same reason as the
+  // skylight's ceiling height — the plan has no vertical unit, so this is a
+  // share of the wall height, and only the 3D view draws it.
+  if (o.type === "window") {
+    fields.push({
+      name: "sill",
+      label: "Sill height",
+      helper: "Share of the wall height under the glass, in the 3D view — 0 is floor-to-ceiling",
+      selector: { number: { min: 0, max: MAX_SILL, step: 0.05, mode: "slider" } },
     });
   }
   // Leaf count, for anything hinged. Offered on doors too: a double door is
@@ -693,6 +767,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       // canvas would be a box claiming the drawing has no width.
       width: skylightWidth(o),
       ceilingHeight: skylightCeilingHeight(o),
+      sill: openingSill(o),
       hinge: o.flipH ? "right" : "left",
       opens: o.flipV ? "other" : "this",
       slide: o.flipH ? "right" : "left",
@@ -806,6 +881,11 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
             sliderStyle: v === "slide" ? o.sliderStyle : undefined,
           } as Opening))
             out.secondaryEntity = undefined;
+        } else if (k === "sill") {
+          // The sill every window stood on before this field is the default,
+          // so it stays out of the YAML.
+          out.sill =
+            o.type === "window" && typeof v === "number" && v !== SILL_FRACTION ? v : undefined;
         } else if (k === "sashSpan") {
           // A full-width sash is what every opening drew before this field,
           // so it is the default and stays out of the YAML (issue #218).
@@ -847,6 +927,9 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         else if (k === "invert") out.invert = v || undefined;
         else if (k === "type") {
           out.type = v;
+          // Only a window stands on a sill; anything else would carry it as
+          // noise until it became a window again.
+          if (v !== "window" || o.type !== "window") out.sill = undefined;
           if (v === "skylight") {
             out.motion = undefined;
             out.sliderStyle = undefined;
@@ -1176,8 +1259,14 @@ export function itemLabelForm(it: FloorItem): FormSpec {
     {
       name: "labelPosition",
       label: "Label position",
-      helper: "Beside the badge instead of under it — a long reading then grows one way only",
-      selector: dropdown(opt("below", "Below"), opt("left", "Left"), opt("right", "Right")),
+      helper: "Beside the badge, a long reading grows one way only. Auto picks the side that stays clear of walls and other labels",
+      selector: dropdown(
+        opt("below", "Below"),
+        opt("above", "Above"),
+        opt("left", "Left"),
+        opt("right", "Right"),
+        opt("auto", "Auto")
+      ),
     },
     {
       name: "labelSize",
@@ -1292,7 +1381,7 @@ export function itemBadgeForm(it: FloorItem, badgeSource?: BadgeSourceInfo): For
       label: "Size",
       selector: { number: { min: 16, max: 160, step: 2, mode: "slider", unit_of_measurement: "px" } },
     },
-    angleField()
+    angleField(true)
   );
   return {
     fields,
@@ -1352,6 +1441,7 @@ export function itemEffectsForm(
   const casts = entitySupportsGlow(entity) || !!it.glow;
   if (!canRipple && !casts) return undefined;
   const strip = stripRun(it) !== undefined;
+  const spot = spotCone(it) !== undefined;
   const fields: FormField[] = [];
   if (canRipple) {
     fields.push({
@@ -1415,6 +1505,26 @@ export function itemEffectsForm(
           selector: { boolean: {} },
         }
       );
+      // A spot (issue #388): a cone of the same pool. A strip already has a
+      // direction of its own, so the two are offered one at a time.
+      if (!strip) {
+        fields.push({
+          name: "glowWidth",
+          label: "Beam width",
+          helper: "Under 360° lights a cone, for spots and wall washers; drag its tip on the plan to aim it",
+          selector: {
+            number: { min: MIN_SPOT_WIDTH, max: 360, step: 5, mode: "slider", unit_of_measurement: "°" },
+          },
+        });
+        if (spot)
+          fields.push({
+            name: "glowDirection",
+            label: "Beam direction",
+            selector: {
+              number: { min: 0, max: 360, step: 1, mode: "slider", unit_of_measurement: "°" },
+            },
+          });
+      }
       if (strip) {
         fields.push(
           {
@@ -1470,6 +1580,8 @@ export function itemEffectsForm(
       stripLength: it.stripLength ?? DEFAULT_STRIP_LENGTH,
       stripAngle: it.stripAngle ?? 0,
       stripSide: it.stripSide ?? "auto",
+      glowWidth: it.glowWidth ?? 360,
+      glowDirection: it.glowDirection ?? 0,
     },
     toPatch: (p) => {
       let out = p;
@@ -1484,6 +1596,9 @@ export function itemEffectsForm(
       }
       // "Auto" is no key at all: the side a drag may still choose.
       if (out.stripSide === "auto") out = { ...out, stripSide: undefined };
+      // Opened all the way round, a spot is the ordinary pool again: no keys.
+      if ("glowWidth" in out && !(cssNumber(out.glowWidth, 360) < 360))
+        out = { ...out, glowWidth: undefined, glowDirection: undefined };
       // "Ripple" is the other half of #127's three-key spelling — same
       // expansion as the badge group's, with the badge mode read off the item.
       if (!("ripple" in out)) return out;
@@ -1865,7 +1980,7 @@ export function textForm(t: FloorText, areaScope?: AreaEntityScope): FormSpec {
       label: "Size",
       selector: { number: { min: 8, max: 200, mode: "slider", unit_of_measurement: "px" } },
     },
-    angleField()
+    angleField(true)
   );
   return {
     fields,
@@ -1932,6 +2047,18 @@ export function furnitureForm(
             },
           ]
         : []),
+      // A curtain gathers at one end when open (issue #196). The symbol is
+      // drawn from its left edge, so mirroring it gathers it at the right.
+      ...(findSymbol(catalog, f.type)?.extend?.axis === "w"
+        ? [
+            {
+              name: "hand",
+              label: "Gathers at",
+              helper: "Which end it bunches up at when open. Both ends: a pair that meets in the middle",
+              selector: dropdown(opt("right", "left"), opt("left", "right"), opt("center", "both ends")),
+            },
+          ]
+        : []),
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
       angleField(),
@@ -1941,7 +2068,14 @@ export function furnitureForm(
       {
         name: "entity",
         label: "Entity",
-        helper: areaScopeHelper(areaScope, "Optional — lets the drawing change color with a sensor"),
+        helper: areaScopeHelper(
+          areaScope,
+          // An awning or curtain is what the entity is for (issue #196).
+          findSymbol(catalog, f.type)?.extend
+            ? `The cover that moves it: drawn at its position, full size when fully ${
+                findSymbol(catalog, f.type)!.extend!.open === "extended" ? "open" : "closed"}`
+            : "Optional — lets the drawing change color with a sensor"
+        ),
         selector: areaScopedEntity(areaScope, f.entity),
       },
       // Clicking it changes floor (issue #121). Offered on any piece rather
@@ -1980,10 +2114,25 @@ export function furnitureForm(
         label: "Double-tap action",
         selector: { ui_action: { default_action: "none" } },
       },
+      // Whether those gestures get a visible icon (issue #362). Only asked
+      // once there is something for an icon to stand for: on decorative
+      // furniture the toggle would switch nothing.
+      ...(f.goToFloor || f.tap_action || f.hold_action || f.double_tap_action
+        ? [
+            {
+              name: "showIcon",
+              label: "Action icon",
+              helper: "Off: tap the furniture itself instead of the round icon",
+              selector: { boolean: {} },
+            },
+          ]
+        : []),
     ],
     data: {
       type: f.type,
-      ...(f.type === "sectional" ? { hand: f.hand ?? "right" } : {}),
+      ...(f.type === "sectional" || findSymbol(catalog, f.type)?.extend?.axis === "w"
+        ? { hand: f.hand ?? "right" }
+        : {}),
       w: f.w,
       h: f.h,
       angle: f.angle ?? 0,
@@ -1994,8 +2143,11 @@ export function furnitureForm(
       tap_action: f.tap_action,
       hold_action: f.hold_action,
       double_tap_action: f.double_tap_action,
+      showIcon: f.showIcon ?? true,
     },
-    toPatch: (p) => {
+    toPatch: (raw) => {
+      // On is the default, so only "off" is worth writing down.
+      const p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
       if (!("goToFloor" in p)) return p;
       const value = p.goToFloor;
       return {
@@ -2496,6 +2648,27 @@ export function projectSkinForm(c: FloorplanCardConfig): FormSpec {
 }
 
 /**
+ * Automatic room tints. A dropdown rather than a toggle because the stored
+ * value is `auto` — room for a second strategy later without a migration.
+ * Off is the absence of the key, so it stays out of the YAML.
+ */
+export function projectRoomTintsForm(c: FloorplanCardConfig): FormSpec {
+  return {
+    fields: [
+      {
+        name: "roomTints",
+        label: "Room tints",
+        helper: "Automatic gives each room without its own color a soft tint, different from its neighbors",
+        selector: dropdown(opt("off", "Off"), opt("auto", "Automatic")),
+      },
+    ],
+    data: { roomTints: roomTintsOf(c) },
+    toPatch: (p) =>
+      "roomTints" in p && p.roomTints !== "auto" ? { ...p, roomTints: undefined } : p,
+  };
+}
+
+/**
  * Display-only options, a separate form so the editor can render them as the
  * very last Project rows — set-once choices for how the card is shown (a wall
  * tablet's orientation, a dashboard tile's size), not day-to-day editing, so
@@ -2984,7 +3157,8 @@ export function floorImageForm(f: Floor): FormSpec {
     },
     { name: "image", label: "Bg image", helper: "/local/floorplan.png or URL", selector: { text: {} } },
   ];
-  if (f.image) {
+  // Fit and opacity apply to whichever image is drawn, the dark one included.
+  if (f.image || f.imageDark) {
     fields.push({
       name: "imageFit",
       label: "Image fit",
@@ -3001,6 +3175,24 @@ export function floorImageForm(f: Floor): FormSpec {
       selector: { number: { min: 0, max: 1, step: 0.05, mode: "slider" } },
     });
   }
+  // Dark mode (issue #366): a second image of your own, or the first inverted.
+  // The switch only means something without a dark image, so it goes then.
+  if (f.image || f.imageDark) {
+    fields.push({
+      name: "imageDark",
+      label: "Dark mode image",
+      helper: "Optional. Shown instead while Home Assistant is in dark mode",
+      selector: { text: {} },
+    });
+  }
+  if (f.image && !f.imageDark) {
+    fields.push({
+      name: "imageInvertDark",
+      label: "Invert in dark mode",
+      helper: "Dark lines on white become light lines on black",
+      selector: { boolean: {} },
+    });
+  }
   return {
     fields,
     data: {
@@ -3009,10 +3201,16 @@ export function floorImageForm(f: Floor): FormSpec {
       image: f.image ?? "",
       imageFit: f.imageFit ?? "stretch",
       imageOpacity: f.imageOpacity ?? 1,
+      imageDark: f.imageDark ?? "",
+      imageInvertDark: f.imageInvertDark ?? false,
     },
     toPatch: (p) => {
       const out = { ...p };
+      // "stretch" is the default, so keep it out of the YAML.
       if ("imageFit" in out && out.imageFit === "stretch") out.imageFit = undefined;
+      // Off and empty are the defaults too.
+      if ("imageInvertDark" in out && !out.imageInvertDark) out.imageInvertDark = undefined;
+      if ("imageDark" in out && !out.imageDark) out.imageDark = undefined;
       if ("isOutdoor" in out && !out.isOutdoor) out.isOutdoor = undefined;
       if ("level" in out) {
         if (out.level === "" || out.level === null || isNaN(Number(out.level))) {

@@ -172,8 +172,24 @@ Only furniture with a runnable action or a floor destination gets an icon.
 The icon shows a tap, hold or double-tap symbol according to the first gesture it
 supports, or an up/down staircase for floor navigation. Its tooltip lists all
 available gestures and names the entity or destination. The visible circle is its
-whole touch target: 34 screen pixels across, including after room zoom. It stays
-upright when the plan is rotated and sits on the raised furniture surface in 3D.
+whole touch target. It is sized like a device badge: 34 screen pixels across under
+`overlayScale: fixed`, or 34 canvas units under `overlayScale: plan`, so it shrinks
+with the drawing on a narrow card. Room zoom does not enlarge it. It stays upright
+when the plan is rotated and sits on the raised furniture surface in 3D.
+
+### Hiding the icon
+
+On a plan where many pieces carry an action, the icons can crowd it (issue #362). Set
+`showIcon: false` on a piece, or turn off **Action icon** under its **Behavior**, to
+drop the circle. The drawing itself then takes the piece's gestures, as furniture did
+before the icon existed: tapping it runs the action or changes floor, and only the room
+around it focuses the Area. Name, tooltip and keyboard tap carry over unchanged.
+
+```yaml
+furniture:
+  - { id: plant1, type: plant, 'x': 300, 'y': 220, w: 40, h: 40,
+      entity: sensor.plant_moisture, tap_action: { action: more-info }, showIcon: false }
+```
 
 `goToFloor` is to a piece what the zoom is to a room: the thing tapping its icon does
 when nothing else is configured. So the two compose rather than competing —
@@ -215,6 +231,25 @@ by the name its definition carries rather than its id — `cornerShowerCurved` i
 "curved corner shower", and a symbol your own config defines brings its own name with it.
 When gestures target different entities the tap wins, then the hold, then the double-tap,
 and a gesture that could not run never supplies the name.
+
+## Actions in YAML from the editor
+
+Some actions exist only in YAML — popup-card's `fire-dom-event`, for instance, carries
+keys HA's action dropdowns cannot show. In the editor, **Behavior → Show code editor**
+swaps the tap, hold and double-tap dropdowns for a YAML editor holding just those three
+actions, for the one device, opening, room or piece of furniture you have selected. There
+is no need to open the whole card's YAML:
+
+```yaml
+tap_action:
+  action: fire-dom-event
+  browser_mod:
+    service: browser_mod.popup
+    data: { title: Kitchen }
+```
+
+Any other key is refused with a message under the editor rather than half-applied.
+Deleting an action's lines clears it. **Show visual editor** switches back.
 
 ## Stairs that change floor
 

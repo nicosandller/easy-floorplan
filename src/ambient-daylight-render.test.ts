@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import type { Area } from "./types";
-import type { AmbientDaylightPatch } from "./ambient-daylight";
 import {
   DEFAULT_AMBIENT_DAYLIGHT_BLUR,
   DEFAULT_AMBIENT_DAYLIGHT_COLOR,
@@ -9,6 +8,7 @@ import {
   buildAmbientDaylightRenderModel,
   renderAmbientDaylight,
 } from "./ambient-daylight-render";
+import { ambientLateralFalloff, type AmbientDaylightPatch } from "./ambient-daylight";
 
 function room(): Area {
   return {
@@ -189,7 +189,7 @@ describe("ambient daylight SVG composition", () => {
 
   it("closes every tag it opens", () => {
     const svg = markup();
-    for (const tag of ["g", "defs", "clipPath", "filter", "linearGradient", "polygon"]) {
+    for (const tag of ["g", "defs", "clipPath", "filter", "linearGradient", "mask", "polygon"]) {
       const open = svg.match(new RegExp(`<${tag}[\\s>]`, "g"))?.length ?? 0;
       const close = svg.match(new RegExp(`</${tag}>`, "g"))?.length ?? 0;
       expect({ tag, open, close }).toEqual({ tag, open: close, close });
@@ -198,5 +198,61 @@ describe("ambient daylight SVG composition", () => {
 
   it("renders nothing at all for a room it cannot clip", () => {
     expect(serialize(renderAmbientDaylight({ id: "bedroom", points: [] }, [patch()]))).toBe("");
+  });
+});
+
+/**
+ * Issue #360: a flat fan ends in a hard side edge, and where two terrace doors'
+ * fans overlap behind a short pier the two edges drew a bright ray that seemed
+ * to come out of the pier. The drawn fan now fades to nothing at its sides
+ * through a mask of nested fans, following the point model's own falloff.
+ */
+describe("ambient daylight side fade", () => {
+  // Light the stacked mask leaves at a fraction of the half-width: every fan at
+  // least that wide covers the point, composited with ordinary alpha.
+  const coverage = (bands: { opacity: number; width: number }[], lateralT: number) => {
+    let dark = 1;
+    for (const band of bands) if (band.width >= lateralT) dark *= 1 - band.opacity;
+    return 1 - dark;
+  };
+  const fan = () => buildAmbientDaylightRenderModel(room(), [patch()])!.patches[0]!;
+  // The patch's near edge runs from x 150 to 250, so a fan's share of the
+  // half-width is the spread of its two near corners over 100.
+  const widths = () => fan().sideBands.map(band => {
+    const xs = band.points.split(" ").map(p => Number(p.split(",")[0]));
+    return { opacity: band.opacity, width: (xs[4]! - xs[1]!) / 100 };
+  });
+
+  it("keeps the centre of the fan at full light and fades to nothing at its sides", () => {
+    const bands = widths();
+    expect(coverage(bands, 0)).toBeCloseTo(1, 6);
+    expect(coverage(bands, 0.4)).toBeCloseTo(1, 6);
+    expect(coverage(bands, 0.99)).toBeLessThan(0.02);
+  });
+
+  it("follows the point model's falloff across the fan, with no step larger than one band", () => {
+    const bands = widths();
+    let previous = 1;
+    for (let t = 0; t <= 1; t += 0.01) {
+      const light = coverage(bands, t);
+      expect(Math.abs(light - ambientLateralFalloff(t))).toBeLessThan(0.1);
+      expect(light).toBeLessThanOrEqual(previous + 1e-9);
+      expect(previous - light).toBeLessThan(0.1);
+      previous = light;
+    }
+  });
+
+  it("draws the widest fan along the patch's own side edges", () => {
+    const widest = fan().sideBands[0]!.points.split(" ");
+    // back-left, near-left, far-left, far-right, near-right, back-right
+    expect(widest.slice(1, 5)).toEqual(["150,0", "-30,250", "430,250", "250,0"]);
+  });
+
+  it("masks the patch with its fade", () => {
+    const svg = serialize(renderAmbientDaylight(room(), [patch()], { idPrefix: "card-a" }));
+    const maskId = svg.match(/<mask id=([\w-]+)/)?.[1];
+    expect(maskId).toBeTruthy();
+    const patchTag = svg.slice(svg.indexOf("fp-ambient-daylight-patch"));
+    expect(patchTag.slice(0, patchTag.indexOf(">"))).toContain(`mask=url(#${maskId})`);
   });
 });
