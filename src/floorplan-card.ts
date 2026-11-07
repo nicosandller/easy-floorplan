@@ -1,3 +1,4 @@
+import { FurnitureModelCache } from "./furniture-model-cache";
 import { furnitureModelHeight } from "./symbol-model";
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
@@ -190,7 +191,6 @@ import {
   openingWallHeight,
   wallHeadroom,
   furnitureSolid,
-  furnitureModelSolids,
   furnitureSectionHeight,
   renderIsoSolids,
   FURNITURE_HEIGHT_FRACTION,
@@ -260,6 +260,7 @@ function floorMemoryKey(floors: readonly Floor[]): string {
 
 @customElement("easy-floorplan-card")
 export class FloorplanCard extends LitElement {
+  private readonly _furnitureModelCache = new FurnitureModelCache();
   private static _nextWallMaskId = 0;
   private static _nextGlowId = 0;
 
@@ -1167,10 +1168,16 @@ export class FloorplanCard extends LitElement {
     const furnitureHeight = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(furnitureHeight, rot);
     const catalog = symbolCatalog(c.symbols);
+    const modelEntries = active.furniture.flatMap(furniture => {
+      const model = c.furniture3d === true ? catalog[furniture.type]?.model3d : undefined;
+      return model ? [{ furniture, model, color: furnitureTone(furniture) }] : [];
+    });
+    const modelSolids = this._furnitureModelCache.project(modelEntries,
+      { width: c.width, height: c.height, rotation: rot, sectionHeight }, map);
     for (const f of active.furniture) {
-      const model = c.furniture3d === true ? catalog[f.type]?.model3d : undefined;
-      if (model) {
-        solids.push(...furnitureModelSolids(f, model, map, sectionHeight, furnitureTone(f)));
+      const cached = modelSolids.get(f);
+      if (cached) {
+        solids.push(...cached);
         continue;
       }
       solids.push(
