@@ -8,6 +8,9 @@ import {
 import { SKIN_ACCENT } from "./skins";
 import { GLASS_FRACTION, openingSill, type IsoSolid, type Pt } from "./projection";
 
+/** How far a tilted sash leans in the 3D view (issue #409), in radians. */
+export const TILT_VIEW_ANGLE = Math.PI / 8;
+
 export function openingSolids(
   o: Opening,
   style: OpeningStyle,
@@ -59,7 +62,26 @@ export function openingSolids(
   if (motion === "swing") {
     const two = openingSash(o) === "double";
     const width = two ? half : o.length * openingSashSpan(o);
-    swing(-half, two ? half : -half, width, amount, amount2);
+    const lean = o.type === "window" ? clamp(style.tilt) : 0;
+    if (lean > 0) {
+      // Tilted (issue #409): the first leaf stays hinged along its sill and
+      // its head leans in toward the side it would swing to. The angle is
+      // larger than a real tilt so it reads at plan scale.
+      const t = lean * TILT_VIEW_ANGLE;
+      const reach = (z1 - z0) * Math.sin(t);
+      const top = z0 + (z1 - z0) * Math.cos(t);
+      const a = at(-half, 0);
+      const b = at(-half + width, 0);
+      out.push({ kind: "panel", id: o.id, base: [a, b], z0, z1: top, color, glazed,
+        vertices: [{ ...a, z: z0 }, { ...b, z: z0 },
+          { ...at(-half + width, -reach), z: top }, { ...at(-half, -reach), z: top }] });
+      if (two) {
+        const rb = amount2 * Math.PI / 2;
+        pane(half, 0, half - width * Math.cos(rb), -width * Math.sin(rb), color2);
+      }
+    } else {
+      swing(-half, two ? half : -half, width, amount, amount2);
+    }
     if (!two && width < o.length) pane(-half + width, 0, half, 0, cssColor(style.color), z0, z1, true);
   } else if (motion === "fixed") {
     pane(-half, 0, half, 0, cssColor(style.color));
