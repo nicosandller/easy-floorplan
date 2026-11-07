@@ -438,6 +438,9 @@ export class FloorplanCard extends LitElement {
     this._watchedEntities = collectWatchedEntities(this._config);
     this._nameEntities = collectNamedEntities(this._config);
     this._configSerial++;
+    // A new config is a fresh start for the plan-fit fallback: the next update
+    // checks the stage again and only falls back if the plan still has no size.
+    this._resetPlanFit();
     this._summaryDiscoveryInputs = undefined;
     this._syncSummaryDiscovery();
     this._syncMoonClock();
@@ -738,6 +741,19 @@ export class FloorplanCard extends LitElement {
     this._fitResize.observe(stage);
   }
 
+  /**
+   * Drop the measured-height fallback and forget the watched stage, so the
+   * next `_watchPlanFit` decides afresh. Without this, a plan that read 0 wide
+   * once for some other reason (mid-layout on a first render, say) would stay
+   * on the fallback for the card's whole life.
+   */
+  private _resetPlanFit(): void {
+    if (this._fitTarget) this._fitResize?.unobserve(this._fitTarget);
+    this._fitTarget = undefined;
+    this.removeAttribute("fit-measured");
+    this.style.removeProperty("--fp-stage-h");
+  }
+
   /** A zoom-to-room transition has landed: measure again at its final scale. */
   private readonly _onZoomSettled = (e: TransitionEvent): void => {
     if (e.target !== e.currentTarget) return;
@@ -886,9 +902,9 @@ export class FloorplanCard extends LitElement {
     this._autoResize?.disconnect();
     this._autoResize = undefined;
     this._autoResizeTarget = undefined;
+    this._resetPlanFit();
     this._fitResize?.disconnect();
     this._fitResize = undefined;
-    this._fitTarget = undefined;
     // Not connected any more, so this stops it.
     this._syncMoonClock();
     super.disconnectedCallback();
