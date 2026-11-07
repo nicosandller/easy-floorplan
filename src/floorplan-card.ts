@@ -247,6 +247,13 @@ import {
 } from "./label-placement";
 import { ReplayControllerImpl } from "./replay-history/replay-controller";
 import { createReplayPanelProps, renderReplayPanel } from "./replay-history/replay-panel";
+import {
+  isFurnitureVisible,
+  collectConditionMediaQueries,
+  hasLocationConditions,
+  hasTimeConditions,
+  TIME_CONDITION_TICK_MS,
+} from "./furniture-visibility";
 
 /**
  * Which floor each plan was last viewed on, keyed by its floor-id set (issue
@@ -322,6 +329,9 @@ export class FloorplanCard extends LitElement {
   private _autoResize?: ResizeObserver;
   /** The `.plan` element `_autoResize` is watching. */
   private _autoResizeTarget?: HTMLElement;
+  /** Watches `.stage` for engines whose `100cqh` reads 0 (issue #406); see `_watchPlanFit`. */
+  private _fitResize?: ResizeObserver;
+  private _fitTarget?: Element;
   /**
    * Entities the floor summaries find through linked HA areas and floors
    * (issue #234), per floor id. Read from the HA registries, so recomputed
@@ -379,6 +389,7 @@ export class FloorplanCard extends LitElement {
   public connectedCallback(): void {
     super.connectedCallback();
     this._syncMoonClock();
+    this._syncTimeClock();
     // Subscribed unconditionally rather than only when an override is set:
     // the config can change under a live card, and a query that is listened
     // to but never read costs nothing.
@@ -395,6 +406,7 @@ export class FloorplanCard extends LitElement {
     this._unsubscribeMotion = subscribeOrientation(motion, (e) => {
       if (e.matches) this._rotation.finish();
     });
+    this._syncScreenMediaSubscriptions();
   }
 
   public setConfig(config: FloorplanCardConfig): void {
@@ -439,9 +451,13 @@ export class FloorplanCard extends LitElement {
     this._watchedEntities = collectWatchedEntities(this._config);
     this._nameEntities = collectNamedEntities(this._config);
     this._configSerial++;
+    // A new config is a fresh start for the plan-fit fallback: the next update
+    // checks the stage again and only falls back if the plan still has no size.
+    this._resetPlanFit();
     this._summaryDiscoveryInputs = undefined;
     this._syncSummaryDiscovery();
     this._syncMoonClock();
+    this._syncTimeClock();
     this._syncHistoryServiceContext();
     this._replayController.clearConfigColorCache();
     // HA calls setConfig on every keystroke in the config box. Clearing the
@@ -469,6 +485,20 @@ export class FloorplanCard extends LitElement {
       if (remembered && floors.some((f) => f.id === remembered)) {
         this._activeFloorId = remembered;
       }
+    }
+    this._syncScreenMediaSubscriptions();
+  }
+
+  private _screenMediaQueries: Array<() => void> = [];
+
+  private _syncScreenMediaSubscriptions(): void {
+    for (const unsub of this._screenMediaQueries) unsub();
+    this._screenMediaQueries = [];
+    if (typeof window === "undefined" || !window.matchMedia || !this._config) return;
+    const mqs = collectConditionMediaQueries(this._config);
+    for (const query of mqs) {
+      const mql = window.matchMedia(query);
+      this._screenMediaQueries.push(subscribeOrientation(mql, () => this.requestUpdate()));
     }
   }
 
@@ -525,19 +555,29 @@ export class FloorplanCard extends LitElement {
   private _syncSummaryDiscovery(): boolean {
     const c = this._config;
     const reg = this.hass as unknown as { entities?: unknown; devices?: unknown; areas?: unknown } | undefined;
-    const inputs = [c, reg?.entities, reg?.devices, reg?.areas];
+    const personKey = hasLocationConditions(c) && this.hass?.states
+      ? Object.keys(this.hass.states).filter((id) => id.startsWith("person.") || id.startsWith("zone.")).sort().join(",")
+      : "";
+    const inputs = [c, reg?.entities, reg?.devices, reg?.areas, personKey];
     const prev = this._summaryDiscoveryInputs;
     if (prev && inputs.every((v, i) => v === prev[i])) return false;
     this._summaryDiscoveryInputs = inputs;
     const perFloor = new Map<string, string[]>();
     const all = new Set<string>();
-    if (c && reg) {
-      for (const f of getFloors(c)) {
-        if (!floorSummaryShown(f, c.floorSummary)) continue;
-        const ids = floorHaEntityIds(f, reg);
-        if (!ids.length) continue;
-        perFloor.set(f.id, ids);
-        for (const id of ids) all.add(id);
+    if (c) {
+      if (hasLocationConditions(c) && this.hass?.states) {
+        for (const id of Object.keys(this.hass.states)) {
+          if (id.startsWith("person.") || id.startsWith("zone.")) all.add(id);
+        }
+      }
+      if (reg) {
+        for (const f of getFloors(c)) {
+          if (!floorSummaryShown(f, c.floorSummary)) continue;
+          const ids = floorHaEntityIds(f, reg);
+          if (!ids.length) continue;
+          perFloor.set(f.id, ids);
+          for (const id of ids) all.add(id);
+        }
       }
     }
     const before = this._renderEntities;
@@ -565,6 +605,7 @@ export class FloorplanCard extends LitElement {
 
   protected updated(changed: PropertyValues): void {
     super.updated(changed);
+    this._watchPlanFit();
     this._syncAutoLabels();
     if (changed.has("hass") || changed.has("_activeFloorId")) {
       this._syncHistoryServiceContext();
@@ -697,6 +738,58 @@ export class FloorplanCard extends LitElement {
     if (!changed) return;
     for (const [k, side] of sides) this._autoSides.set(k, side);
     this.requestUpdate();
+  }
+
+  /**
+   * The plan's width reads the stage's height as `100cqh`. Some engines report
+   * 0 for it while the stage itself is laid out correctly: Chrome 129's WebView
+   * does when the stage's height comes only from its aspect-ratio (issue #406),
+   * and the plan collapses to nothing. Engines without the unit at all are the
+   * stylesheet's `width: 100%` fallback (#339) and never get here.
+   *
+   * So the stage is watched, and once it has a size but the plan has none, the
+   * card switches to the stage's measured height (`fit-measured`, `--fp-stage-h`
+   * on the host, which nothing of ours re-renders). Every other browser keeps
+   * the container query and only pays for the observer. Called on every
+   * update, but reads layout only when the stage element is new.
+   */
+  private _watchPlanFit(): void {
+    const stage = this.renderRoot.querySelector(".stage");
+    if (stage === this._fitTarget || typeof ResizeObserver === "undefined") return;
+    const fit = (el: Element, width: number, height: number) => {
+      if (!this.hasAttribute("fit-measured")) {
+        const plan = el.querySelector(":scope > .plan");
+        if (!plan || !(width > 0 && height > 0) || plan.getBoundingClientRect().width > 0) return;
+        this.setAttribute("fit-measured", "");
+      }
+      this.style.setProperty("--fp-stage-h", `${height}px`);
+    };
+    this._fitResize ??= new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      fit(entry.target, entry.contentRect.width, entry.contentRect.height);
+    });
+    if (this._fitTarget) this._fitResize.unobserve(this._fitTarget);
+    this._fitTarget = stage ?? undefined;
+    if (!stage) return;
+    // Checked once now as well, so a new stage is right in its first frame
+    // rather than after the observer's first report. The used size, unrounded
+    // and untransformed, as the observer reports it.
+    const size = getComputedStyle(stage);
+    fit(stage, parseFloat(size.width), parseFloat(size.height));
+    this._fitResize.observe(stage);
+  }
+
+  /**
+   * Drop the measured-height fallback and forget the watched stage, so the
+   * next `_watchPlanFit` decides afresh. Without this, a plan that read 0 wide
+   * once for some other reason (mid-layout on a first render, say) would stay
+   * on the fallback for the card's whole life.
+   */
+  private _resetPlanFit(): void {
+    if (this._fitTarget) this._fitResize?.unobserve(this._fitTarget);
+    this._fitTarget = undefined;
+    this.removeAttribute("fit-measured");
+    this.style.removeProperty("--fp-stage-h");
   }
 
   /** A zoom-to-room transition has landed: measure again at its final scale. */
@@ -844,11 +937,17 @@ export class FloorplanCard extends LitElement {
     // replace this one — taking the replay loop's cleanup with it.
     this._unsubscribeOrientation?.();
     this._unsubscribeOrientation = undefined;
+    for (const unsub of this._screenMediaQueries) unsub();
+    this._screenMediaQueries = [];
     this._autoResize?.disconnect();
     this._autoResize = undefined;
     this._autoResizeTarget = undefined;
+    this._resetPlanFit();
+    this._fitResize?.disconnect();
+    this._fitResize = undefined;
     // Not connected any more, so this stops it.
     this._syncMoonClock();
+    this._syncTimeClock();
     super.disconnectedCallback();
   }
 
@@ -871,6 +970,23 @@ export class FloorplanCard extends LitElement {
     } else if (!wanted && this._moonClock !== undefined) {
       clearInterval(this._moonClock);
       this._moonClock = undefined;
+    }
+  }
+
+  /**
+   * Periodic clock for live time condition transitions (Issue #310).
+   * Automatically redraws the card when time conditions are present so pieces
+   * appear or disappear at their scheduled times without waiting for entity updates.
+   */
+  private _timeConditionClock?: ReturnType<typeof setInterval>;
+
+  private _syncTimeClock(): void {
+    const wanted = this.isConnected && !!this._config && hasTimeConditions(this._config);
+    if (wanted && this._timeConditionClock === undefined) {
+      this._timeConditionClock = setInterval(() => this.requestUpdate(), TIME_CONDITION_TICK_MS);
+    } else if (!wanted && this._timeConditionClock !== undefined) {
+      clearInterval(this._timeConditionClock);
+      this._timeConditionClock = undefined;
     }
   }
 
@@ -1299,13 +1415,15 @@ export class FloorplanCard extends LitElement {
     const furnitureHeight = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(furnitureHeight, rot);
     const catalog = symbolCatalog(c.symbols);
-    const modelEntries = active.furniture.flatMap(furniture => {
+    const effHass = this.hass && renderHass ? { ...this.hass, states: { ...this.hass.states, ...renderHass.states } } : (this.hass ?? (renderHass as unknown as HomeAssistant));
+    const visibleFurniture = active.furniture.filter(f => isFurnitureVisible(f, effHass));
+    const modelEntries = visibleFurniture.flatMap(furniture => {
       const model = c.furniture3d === true ? catalog[furniture.type]?.model3d : undefined;
       return model ? [{ furniture, model, color: furnitureTone(furniture) }] : [];
     });
     const modelSolids = this._furnitureModelCache.project(modelEntries,
       { width: c.width, height: c.height, rotation: rot, sectionHeight }, map);
-    for (const f of active.furniture) {
+    for (const f of visibleFurniture) {
       const cached = modelSolids.get(f);
       if (cached) {
         solids.push(...cached);
@@ -2062,19 +2180,21 @@ export class FloorplanCard extends LitElement {
     if (!standing) this._openingTween.stop();
     const projTransform = planProjectionTransform(frame);
     const dimPad = WALL_THICKNESS + (iso ? frame.wallHeight : 0);
+    const effHass = this.hass && renderHass ? { ...this.hass, states: { ...this.hass.states, ...renderHass.states } } : (this.hass ?? (renderHass as unknown as HomeAssistant));
+    const visibleFurniture = active.furniture.filter((f) => isFurnitureVisible(f, effHass));
     // One furniture glyph, flat. Drawn on the floor on the flat plan and on
     // top of its block under the isometric view — the same drawing either way.
     // Awnings and curtains at their cover's position (issue #196); every other
     // piece passes through untouched.
     // A center-closing curtain is two halves; it keeps one action, with its
     // icon on the left half so it never sits over the gap once both gather.
-    const pieces = active.furniture.map((f) =>
+    const pieces = visibleFurniture.map((f) =>
       shownPieces(f, f.entity ? renderHass?.states[f.entity] : undefined, symbolCatalog(c.symbols))
     );
     const furniture = pieces.flat();
     const actionFurniture = pieces.map((p, i) => (p.length === 1
       ? p[0]!
-      : { ...active.furniture[i]!, x: p[0]!.x, y: p[0]!.y }));
+      : { ...visibleFurniture[i]!, x: p[0]!.x, y: p[0]!.y }));
     // With its icon hidden (#362), each half of a centre curtain takes the tap.
     const drawFurniture = (f: Furniture): SVGTemplateResult => this._furnitureHit(f, renderFurniture(
       f,
@@ -2332,6 +2452,7 @@ export class FloorplanCard extends LitElement {
             style="aspect-ratio: ${dims.w} / ${dims.h};
                    width: min(100%, calc(100cqh * ${dims.w} / ${dims.h}));
                    --fp-plan-w: ${dims.w};
+                   --fp-plan-h: ${dims.h};
                    --fp-wall-opacity: ${lineArt ? 1 : normalizeWallOpacity(c.wallOpacity)};
                    ${minW === undefined ? "" : `--fp-min-w: ${minW}px;`}
                    background:${lineArt ? "#fff" : cssColorOr(c.background, SKIN_PAPER)};"
@@ -2444,7 +2565,7 @@ export class FloorplanCard extends LitElement {
                 `${this._glowIdBase}-mask`, symbolCatalog(c.symbols)
               )}
             <g class="fp-glows"
-               mask=${active.furniture.length ? `url(#${this._glowIdBase}-mask)` : nothing}>
+               mask=${furniture.length ? `url(#${this._glowIdBase}-mask)` : nothing}>
               ${active.items.map((it, i) => {
                 if (!it.glow) return nothing;
                 const paint = glowPaint(it, renderHass?.states[it.entity]);
@@ -2719,10 +2840,10 @@ export class FloorplanCard extends LitElement {
           setAppearance: (appearance) => { this._appearanceOverride = appearance === normalizeAppearance(this._config!.appearance) ? undefined : appearance; },
           rotate: (step) => this._rotation.turn(step, iso && this.isConnected && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches),
           reset: () => this._resetView(),
-          download: () => downloadLineArtSvg(c, active, targetRotation),
+          download: () => downloadLineArtSvg(c, active, targetRotation, effHass),
         }) : c.showExport ? html`<div class="export-bar">
           <button type="button" title=${`Download line art of ${active.name} as SVG`}
-            @click=${() => downloadLineArtSvg(c, active, targetRotation)}>Export SVG</button>
+            @click=${() => downloadLineArtSvg(c, active, targetRotation, effHass)}>Export SVG</button>
         </div>` : nothing}
         </div>
       </ha-card>
@@ -2875,6 +2996,11 @@ export class FloorplanCard extends LitElement {
          positioned children, auto width collapses the plan to zero (#339). */
       width: 100%;
       height: auto;
+    }
+    /* 100cqh read 0 on this engine (issue #406): the same fit, from the
+       stage's measured height. !important to beat the inline width. */
+    :host([fit-measured]) .plan {
+      width: min(100%, calc(var(--fp-stage-h) * var(--fp-plan-w) / var(--fp-plan-h))) !important;
     }
     /*
      * overlayScale: plan. The container is .plan, not .stage: since #115 the

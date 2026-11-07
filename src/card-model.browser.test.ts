@@ -80,3 +80,16 @@ it("scales the model before cutting so a shorter shelf retains all five levels",
   expect(tops.filter(p => p.getAttribute("points")!.split(" ").length === 5)).toHaveLength(5);
   for (const p of tops) expect(p.getAttribute("points")).not.toMatch(/NaN|Infinity/);
 });
+
+it("removes and restores cached 3D furniture when visibility changes", async () => {
+  const root = await mount({ furniture: [{ id: "shelf", type: "cornerShelf", x: 200, y: 200, w: 60, h: 60,
+    showIcon: false, tap_action: { action: "fire-dom-event" },
+    visibility: [{ condition: "state", entity: "input_boolean.show_shelf", state: "on" }] }] });
+  const card = root.host as FloorplanCard;
+  for (const state of ["on", "off", "on"]) {
+    card.hass = { states: { "input_boolean.show_shelf": { entity_id: "input_boolean.show_shelf", state, attributes: {} } }, entities: {} } as unknown as FloorplanCard["hass"];
+    await card.updateComplete;
+    expect(root.querySelectorAll('.fp-iso-furniture[data-id="shelf"]').length).toBe(state === "on" ? 6 : 0);
+    expect(root.querySelectorAll('.fp-furniture-hit[role="button"]').length).toBe(state === "on" ? 1 : 0);
+  }
+});

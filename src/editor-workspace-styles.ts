@@ -115,6 +115,7 @@ export const editorWorkspaceStyles = css`
   .canvas-wrap { width: 100%; box-sizing: border-box; min-width: 0; border-radius: 4px; border-color: var(--editor-line); flex: 1; height: auto; min-height: 0; resize: none; max-height: none; aspect-ratio: auto !important; background: var(--editor-ground); }
   .stage { box-shadow: 0 1px 6px #0000000a; }
   .grid { stroke-opacity: .11; }
+  .furn-hit.card-hidden { opacity: 0.35; }
   .zoom-overlay { right: 22px; bottom: 22px; gap: 0; padding: 3px; background: var(--editor-paper); border: 1px solid var(--editor-line); border-radius: 8px; box-shadow: 0 3px 10px #0000000d; }
   .zoom-overlay button { border: 0; min-height: 30px; gap: 4px; background: transparent; }
   .zoom-overlay button:hover { background: var(--editor-ground); }
