@@ -169,6 +169,32 @@ export function isValidRectilinearArea(points: readonly AreaPoint[]): boolean {
   );
 }
 
+/**
+ * Whether the zero-length edge starting at `index` sits between two edges
+ * that continue in the same direction, so the collapse only leaves a
+ * duplicate point on a straight side rather than a spike that doubles back.
+ */
+function collapsesIntoStraightRun(points: readonly AreaPoint[], index: number): boolean {
+  const n = points.length;
+  const edgeVector = (i: number) => {
+    const a = points[((i % n) + n) % n]!;
+    const b = points[(((i + 1) % n) + n) % n]!;
+    return { dx: b.x - a.x, dy: b.y - a.y };
+  };
+  const isZero = (v: { dx: number; dy: number }) => Math.hypot(v.dx, v.dy) <= RECT_AREA_EPSILON;
+  let before = index - 1;
+  while (before > index - n && isZero(edgeVector(before))) before--;
+  let after = index + 1;
+  while (after < index + n && isZero(edgeVector(after))) after++;
+  const prev = edgeVector(before);
+  const next = edgeVector(after);
+  if (isZero(prev) || isZero(next)) return false;
+  const cross = prev.dx * next.dy - prev.dy * next.dx;
+  const dot = prev.dx * next.dx + prev.dy * next.dy;
+  return Math.abs(cross) <= RECT_AREA_EPSILON * Math.hypot(prev.dx, prev.dy) * Math.hypot(next.dx, next.dy) &&
+    dot > 0;
+}
+
 /** A legal resize must stay rectilinear/simple and must not flip an arm past its neighbor. */
 export function isValidRectilinearAreaResize(
   before: readonly AreaPoint[],
@@ -184,7 +210,11 @@ export function isValidRectilinearAreaResize(
     const oldDy = oldEnd.y - oldStart.y;
     const newDx = newEnd.x - newStart.x;
     const newDy = newEnd.y - newStart.y;
-    if (Math.hypot(oldDx, oldDy) > RECT_AREA_EPSILON && Math.hypot(newDx, newDy) <= RECT_AREA_EPSILON) return false;
+    if (
+      Math.hypot(oldDx, oldDy) > RECT_AREA_EPSILON &&
+      Math.hypot(newDx, newDy) <= RECT_AREA_EPSILON &&
+      !collapsesIntoStraightRun(after, i)
+    ) return false;
     const reversedDirectionThreshold = -(RECT_AREA_EPSILON * RECT_AREA_EPSILON);
     if (oldDx * newDx < reversedDirectionThreshold || oldDy * newDy < reversedDirectionThreshold) return false;
   }

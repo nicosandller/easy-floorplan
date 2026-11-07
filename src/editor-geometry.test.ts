@@ -489,6 +489,26 @@ describe("isValidRectilinearAreaResize", () => {
     ];
     expect(isValidRectilinearAreaResize(before, after)).toBe(false);
   });
+
+  it("allows a step edge to collapse when the side either side of it runs straight on", () => {
+    const before = [
+      { x: 380, y: 300 },
+      { x: 540, y: 300 },
+      { x: 540, y: 320 },
+      { x: 700, y: 320 },
+      { x: 700, y: 440 },
+      { x: 380, y: 440 },
+    ];
+    const after = [
+      { x: 380, y: 300 },
+      { x: 540, y: 300 },
+      { x: 540, y: 300 },
+      { x: 700, y: 300 },
+      { x: 700, y: 440 },
+      { x: 380, y: 440 },
+    ];
+    expect(isValidRectilinearAreaResize(before, after)).toBe(true);
+  });
 });
 
 describe("rectilinearAreaVertexResize", () => {
