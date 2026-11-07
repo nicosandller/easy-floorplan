@@ -9,5 +9,14 @@
     { "line": [6, 18, 94, 18], "role": "detail" },
     { "circle": [50, 56, 30], "role": "line" },
     { "circle": [16, 9, 4.5], "role": "thin" }
-  ]
+  ],
+  "model3d": {
+    "version": 1,
+    "units": "cm",
+    "size": {"width": 60, "depth": 62, "height": 85},
+    "parts": [
+      {"box": [60.0, 62.0, 85], "position": [0.0, 0.0, 0]},
+      {"box": [55.2, 1.24, 73], "position": [2.4, 60.76, 8]}
+    ]
+  }
 }

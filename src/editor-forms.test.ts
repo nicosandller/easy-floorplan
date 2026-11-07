@@ -2341,7 +2341,7 @@ describe("every field lands in exactly one panel group", () => {
     ["tapTarget", "tap_action", "hold_action", "double_tap_action"],
   ];
   const FURNITURE_GROUPS = [
-    ["type", "hand", "w", "h", "angle"],
+    ["type", "hand", "w", "h", "height3d", "angle"],
     ["entity"],
     ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"],
   ];
@@ -2991,3 +2991,37 @@ describe("roofForm", () => {
   });
 });
 
+
+describe("3D furniture display controls", () => {
+  const base = { type: "custom:easy-floorplan-card", width: 400, height: 400 } as FloorplanCardConfig;
+  const names = (c: Partial<FloorplanCardConfig>) => projectDisplayForm({ ...base, ...c }).fields.map(f => f.name);
+  it("reveals the opt-in, separate cut and height progressively", () => {
+    expect(names({ view: "2d", furniture3d: true, furnitureSeparateSection: true })).not.toContain("furniture3d");
+    expect(names({ view: "3d" })).toContain("furniture3d");
+    expect(names({ view: "3d" })).not.toContain("furnitureSeparateSection");
+    expect(names({ view: "3d", furniture3d: true })).toContain("furnitureSeparateSection");
+    expect(names({ view: "3d", furniture3d: true })).not.toContain("furnitureSectionHeight");
+    expect(names({ view: "3d", furniture3d: true, furnitureSeparateSection: true })).toContain("furnitureSectionHeight");
+    expect(names({ projection: "iso" })).toContain("furniture3d");
+  });
+  it("starts disabled and retains the saved height when toggles change", () => {
+    const form = projectDisplayForm(base);
+    expect(form.data.furniture3d).toBe(false);
+    expect(form.data.furnitureSeparateSection).toBe(false);
+    expect(form.data.furnitureSectionHeight).toBe(180);
+    const configured = projectDisplayForm({ ...base, furniture3d: true, furnitureSeparateSection: true, furnitureSectionHeight: 150 });
+    expect(configured.toPatch({ furnitureSeparateSection: false })).toEqual({ furnitureSeparateSection: false });
+    expect(configured.toPatch({ furniture3d: false })).toEqual({ furniture3d: false });
+    expect(configured.toPatch({ furnitureSectionHeight: 220 })).toEqual({ furnitureSectionHeight: 220 });
+  });
+});
+
+it("edits and clears the optional furniture 3D height", () => {
+  const f = { id: "s", type: "cornerShelf", x: 0, y: 0, w: 60, h: 60, height3d: 100 };
+  const form = furnitureForm(f);
+  expect(form.fields.some(field => field.name === "height3d")).toBe(true);
+  expect(form.data.height3d).toBe(100);
+  expect(form.toPatch!({ height3d: 150 })).toMatchObject({ height3d: 150 });
+  expect(form.toPatch!({ height3d: "" })).toHaveProperty("height3d", undefined);
+  expect(form.toPatch!({ height3d: -1 })).toHaveProperty("height3d", undefined);
+});

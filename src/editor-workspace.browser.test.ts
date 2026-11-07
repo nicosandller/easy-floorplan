@@ -444,7 +444,7 @@ describe("responsive editor workspace", () => {
         seen.add(field.id);
       }
     }
-    expect(seen).toEqual(new Set(["field-type", "field-w", "field-h", "field-angle", "field-entity", "field-goToFloor"]));
+    expect(seen).toEqual(new Set(["field-type", "field-w", "field-h", "field-height3d", "field-angle", "field-entity", "field-goToFloor"]));
   });
 
   it("makes project settings reachable from the mobile plan", async () => {

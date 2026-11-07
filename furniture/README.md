@@ -140,3 +140,95 @@ If you create your own furniture, be careful which primitives you use for what. 
 Symbols that a lot of people would place. A fitted wardrobe, a kitchen island, a treadmill —
 things a floorplan needs. Keep it to one drawing per file, readable at 40 pixels wide, in the
 same flat line-art style as the rest, and give it keywords someone would actually search for.
+
+## Optional 3D models (version 1)
+
+`model3d` is an optional, declarative model used only in the standing isometric view
+when `furniture3d: true`. Existing plans retain the block rendering by default.
+The existing `parts`, `viewBox`, and `size.w/h` still define the 2D symbol, picker,
+footprint and glow mask. Missing, invalid or unsupported 3D models use the previous
+isometric block with the 2D glyph on top. Older readers ignore `model3d`.
+
+```json
+"model3d": {
+  "version": 1,
+  "units": "cm",
+  "size": { "width": 60, "depth": 60, "height": 180 },
+  "parts": [
+    { "box": [2, 30, 180], "position": [58, 0, 0] },
+    {
+      "repeat": 5,
+      "step": [0, 0, 42],
+      "part": {
+        "extrude": {
+          "polygon": [[0, 0], [60, 0], [60, 30], [30, 60], [0, 60]],
+          "height": 2
+        },
+        "position": [0, 0, 8]
+      }
+    }
+  ]
+}
+```
+
+Coordinates start at the footprint's top-left corner on the floor. X is width,
+Y is depth and Z points up. `position` defaults to `[0,0,0]` and locates the minimum
+corner of a box or cylinder; extrusion vertices are relative to that position.
+An optional `axes: {"up":"z"}` can make the convention explicit.
+
+Supported primitives:
+
+- `box: [width, depth, height]`.
+- `cylinder: {"radius": 10, "height": 30}`; twelve flat segments, centred at
+  `[radius, radius]` relative to its position.
+- `extrude: {"polygon": [[x,y], ...], "height": 2}`; a strictly convex footprint
+  with 3–24 vertices, without repeating the first vertex at the end.
+- `repeat`, `step` and `part` repeat one primitive. Nested repeats are rejected.
+
+Every part must fit inside the model size. All lengths are positive, coordinates
+are finite numbers, and a model expands to at most 64 solids. Concave, intersecting
+or degenerate polygons are rejected. Split concave furniture into convex parts.
+Materials inherit the furniture's resolved colour and skin. Optional
+`material: "glass"` gives a translucent approximation; other material names have
+no effect. No external textures, URLs, scripts or raw SVG are loaded.
+
+Horizontal dimensions follow the placed furniture's width and depth. Z uses the
+same scale as floor coordinates: heights are not compressed when resizing furniture.
+In **Project → Display**, select **3D isometric** to reveal the **3D furniture**
+switch. Enabling it reveals **Separate furniture cut height**; enabling that switch
+reveals the numeric **Furniture cut height** field (0–400 canvas units, default 180).
+
+```yaml
+view: 3d
+furniture3d: true
+furnitureSeparateSection: true
+furnitureSectionHeight: 180
+wallHeight: 60
+```
+
+Without a separate cut, the configured wall height remains the section plane.
+With a separate cut, only furniture uses `furnitureSectionHeight`; walls retain
+`wallHeight`. Parts above the plane are omitted, and crossing parts receive a flat
+top. A cut height of zero hides model geometry. Missing or invalid models continue
+to use the previous block at its usual wall-relative height. The canvas reserves
+space for visible models above low walls. Switching these options off preserves
+the saved cut height, and 2D rendering is unchanged.
+
+Beds have a 50 cm sleeping surface (the headboard may be taller); tables are 80 cm.
+Heights still use the plan coordinate scale directly; automatic vertical scaling
+when resizing a furniture footprint is not part of these controls.
+
+All parts join the existing wall/opening depth ordering. This is an SVG solid
+renderer, not a mesh engine: complex interpenetrating solids and layered transparency
+are approximate. The supplied models are stylised silhouettes; heights not specified
+by a manufacturer are illustrative defaults, not measured product specifications.
+
+### Placed 3D height
+
+Each furniture item can optionally set `height3d` (shown as **3D height** in the editor).
+It scales the model's vertical positions and thicknesses to that total height in canvas units,
+independently of `w` and `h`. Scaling happens before the furniture cut height is applied.
+For example, `height3d: 100` scales a 200-high shelf to half height, including shelf spacing.
+Leave the field empty to retain `model3d.size.height`. Only finite values greater than zero
+and at most 10000 are accepted. This does not change the 2D symbol or enable 3D rendering;
+symbols without a 3D model retain their existing fallback rendering.
