@@ -214,7 +214,8 @@ to use the previous block at its usual wall-relative height. The canvas reserves
 space for visible models above low walls. Switching these options off preserves
 the saved cut height, and 2D rendering is unchanged.
 
-Beds have a 50 cm sleeping surface (the headboard may be taller); tables are 80 cm.
+The initial models are `table`, `cornerShelf`, `bathtub`, and `stove`. Other symbols
+retain the block fallback. Additional models will follow separately. Tables are 80 cm.
 Heights still use the plan coordinate scale directly; automatic vertical scaling
 when resizing a furniture footprint is not part of these controls.
 

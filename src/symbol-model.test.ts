@@ -93,3 +93,8 @@ describe("placed 3D height", () => {
     }
   });
 });
+
+it("ships only the four initial 3D models", () => {
+  expect(Object.values(BUILTIN_SYMBOLS).filter(s => s.model3d).map(s => s.id).sort())
+    .toEqual(["bathtub", "cornerShelf", "stove", "table"]);
+});

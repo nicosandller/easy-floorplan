@@ -351,7 +351,7 @@ describe("the furniture action icon follows overlayScale (#362)", () => {
 
 it.each([false, true])("exposes one accessible control for a multipart 3D model (hold only: %s)", async holdOnly => {
   const card = await mount("3d", {
-    type: "bunkBed", showIcon: false,
+    type: "cornerShelf", showIcon: false,
     ...(holdOnly ? { hold_action: fire } : { tap_action: fire }),
   });
   const parts = Array.from(card.shadowRoot!.querySelectorAll<SVGGElement>(".fp-furniture-hit"));
