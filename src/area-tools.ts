@@ -468,7 +468,7 @@ export function mergeRectAreaSide(
 
   if (!valid) return undefined;
 
-  const mergedSideWalls = mergeOuterSideWalls(a, other, merged, clickedSide);
+  const mergedSideWalls = mergeOuterSideWalls(a, other, merged);
 
   return [
     ...areas.filter((candidate) => candidate.id !== a.id && candidate.id !== other.id),
@@ -476,21 +476,21 @@ export function mergeRectAreaSide(
   ];
 }
 
+/**
+ * Carry both rooms' wall and divider segments onto the merged outline. Each
+ * piece lands only on merged boundary that lies on the same line, so the span
+ * the two rooms shared (now inside the merged room) drops out while the rest
+ * of a partly shared side, which is still exterior, keeps its walls.
+ */
 function mergeOuterSideWalls(
   a: Area,
   b: Area,
-  mergedPoints: AreaPoint[],
-  sharedSide: RectAreaSide
+  mergedPoints: AreaPoint[]
 ): Area["sideWalls"] {
   const projected = new Map<RectAreaSide, RectAreaSideWallSegment[]>();
-  const sources = [
-    { area: a, omittedSide: sharedSide },
-    { area: b, omittedSide: rectAreaOppositeSide(sharedSide) },
-  ];
 
-  for (const { area, omittedSide } of sources) {
+  for (const area of [a, b]) {
     for (const side of RECT_AREA_SIDES) {
-      if (side === omittedSide) continue;
       const bounds = rectAreaSideBoundarySegments(side, area.points);
       const sourceLength = bounds.reduce((sum, piece) =>
         sum + (side === "top" || side === "bottom"
@@ -530,6 +530,9 @@ function mergeOuterSideWalls(
               : sourceBound.y1 + (sourceBound.y2 - sourceBound.y1) * sourceT1;
             let targetCursor = 0;
             for (const targetBound of targetBounds) {
+              const sameLine = horizontal
+                ? Math.abs(targetBound.y1 - sourceBound.y1) <= RECT_AREA_EPSILON
+                : Math.abs(targetBound.x1 - sourceBound.x1) <= RECT_AREA_EPSILON;
               const targetBoundLength = horizontal
                 ? Math.abs(targetBound.x2 - targetBound.x1)
                 : Math.abs(targetBound.y2 - targetBound.y1);
@@ -541,7 +544,7 @@ function mergeOuterSideWalls(
               const worldEnd = Math.max(coord0, coord1);
               const projectedStart = Math.max(worldStart, targetBoundStart);
               const projectedEnd = Math.min(worldEnd, targetBoundEnd);
-              if (projectedEnd > projectedStart + RECT_AREA_EPSILON) {
+              if (sameLine && projectedEnd > projectedStart + RECT_AREA_EPSILON) {
                 const start = (targetCursor + projectedStart - targetBoundStart) / targetLength;
                 const end = (targetCursor + projectedEnd - targetBoundStart) / targetLength;
                 const segments = projected.get(mergedSide) ?? [];

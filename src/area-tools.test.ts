@@ -316,9 +316,15 @@ describe("mergeRectAreaSide", () => {
 
     const merged = mergeRectAreaSide(a, 1, [a, b]);
     expect(merged).toHaveLength(1);
+    // Only the shared span (x=100, y 50–100) goes. A's divider above it
+    // (y 0–50) and B's wall below it (y 100–150) are still exterior.
     expect(merged![0]!.sideWalls).toEqual({
       top: [{ start: 0.5, end: 1, state: "wall" }],
-      right: [{ start: 1 / 3, end: 1, state: "wall" }],
+      right: [
+        { start: 0, end: 1 / 3, state: "divider" },
+        { start: 1 / 3, end: 1, state: "wall" },
+      ],
+      left: [{ start: 2 / 3, end: 1, state: "wall" }],
       bottom: [
         { start: 0, end: 0.5, state: "wall" },
         { start: 0.5, end: 1, state: "divider" },
