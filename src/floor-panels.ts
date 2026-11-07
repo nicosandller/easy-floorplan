@@ -153,9 +153,6 @@ export function resolvePanelAnchor(
     if (enclosing && enclosing.points?.length) {
       return areaLabelPoint(enclosing.points);
     }
-    if ((floor.roofs ?? []).length > 0 && floor.roofs![0].points?.length) {
-      return areaLabelPoint(floor.roofs![0].points);
-    }
   }
   if (panel.targetType === "area") {
     const room = nearestPanelArea(panel, floor);

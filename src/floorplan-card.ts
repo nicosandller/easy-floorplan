@@ -2066,14 +2066,14 @@ export class FloorplanCard extends LitElement {
         // Show it only when we render outside 3D house rendering and that roof is visible.
         if (!isOutside3D) continue;
         const targetRoof = (active.roofs ?? []).find((rf) => rf.id === p.targetId) ??
-          (active.roofs ?? []).find((rf) => pointInPolygon(rf.points, p.x, p.y)) ??
-          active.roofs?.[0];
+          (active.roofs ?? []).find((rf) => pointInPolygon(rf.points, p.x, p.y));
         if (!targetRoof || !this._isRoofVisible(targetRoof, zoomedArea)) continue;
       }
       if (this._isPanelVisible(p, iso, zoomedArea)) {
         let z = 0;
         if (iso && isRoof) {
-          const r = (active.roofs ?? []).find((rf) => rf.id === p.targetId) ?? active.roofs?.[0];
+          const r = (active.roofs ?? []).find((rf) => rf.id === p.targetId) ??
+            (active.roofs ?? []).find((rf) => pointInPolygon(rf.points, p.x, p.y));
           const baseWallHeight = normalizeWallHeight(c.wallHeight);
           z = baseWallHeight + (r?.height ?? 30) * 0.5;
         }
@@ -2098,8 +2098,7 @@ export class FloorplanCard extends LitElement {
           const isRoof = this._isRoofPanel(p, f);
           if (!isRoof) continue;
           const targetRoof = (f.roofs ?? []).find((rf) => rf.id === p.targetId) ??
-            (f.roofs ?? []).find((rf) => pointInPolygon(rf.points, p.x, p.y)) ??
-            f.roofs?.[0];
+            (f.roofs ?? []).find((rf) => pointInPolygon(rf.points, p.x, p.y));
           if (!targetRoof || !this._isRoofVisible(targetRoof, zoomedArea)) continue;
 
           if (this._isPanelVisible(p, iso, zoomedArea)) {

@@ -2650,6 +2650,7 @@ export function makeFloor(name: string, walls: Wall[] = []): Floor {
     trackers: [],
     areas: [],
     roofs: [],
+    panels: [],
   };
 }
 
@@ -2670,6 +2671,7 @@ function normalizeFloor(f: Floor): Floor {
     trackers: f.trackers ?? [],
     areas: f.areas ?? [],
     roofs: f.roofs ?? [],
+    panels: f.panels ?? [],
   };
 }
 
@@ -2760,6 +2762,7 @@ export function getFloors(c: FloorplanCardConfig): Floor[] {
       trackers: c.trackers ?? [],
       areas: c.areas ?? [],
       roofs: c.roofs ?? [],
+      panels: c.panels ?? [],
     },
   ];
 }

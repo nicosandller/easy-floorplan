@@ -1,6 +1,6 @@
 # Spatial Telemetry Callout Info-Panels
 
-Spatial telemetry callout info-panels ([GitHub Issue #234](https://github.com/nicosandller/easy-floorplan/issues/234)) bring floating HUD cards and multi-metric telemetry into `easy-floorplan` without cluttering your floorplan layout.
+Spatial telemetry callout info-panels ([GitHub Issue #398](https://github.com/nicosandller/easy-floorplan/issues/398)) bring floating HUD cards and multi-metric telemetry into `easy-floorplan` without cluttering your floorplan layout.
 
 Each panel is anchored to a room, furniture piece, roof, or fixed coordinate on your plan, connected by an orthogonal or angled SVG leader line in both 2D and 3D views.
 
@@ -113,7 +113,7 @@ Info-panels maintain high legibility across dark and light themes:
 | CSS Variable | Default | Description |
 | --- | --- | --- |
 | `--fp-panel-bg` | Chamfered dark navy / card background | Panel container background color |
-| `--fp-panel-text` | `#fff` | Primary text and reading value color |
+| `--fp-panel-text` | Primary theme text (`var(--primary-text-color)`) for `card`; `#fff` for `hud`/`minimal`/`pill` | Primary text and reading value color |
 | `--fp-panel-accent` | `#00e5ff` (or panel `color`) | Accent glow, borders, status dots, and leader lines |
 | `--fp-panel-border` | Translucent border | Card border styling |
 
@@ -123,6 +123,6 @@ In the `line-art` appearance mode, panels automatically adapt with ink-line bord
 
 1. **Add Panel**: Click **+ Add → Panel** in the editor toolbar to drop a panel onto the active floor. It automatically links to the room it sits within.
 2. **Move Panel**: Drag the panel card anywhere on the canvas.
-3. **Inspector**: Select the panel to configure title, style (`tech`, `minimal`, `pill`), accent color, target type, visibility flags, leader lines, and metric rows with live entity autocomplete and attribute selection.
+3. **Inspector**: Select the panel to configure title, style (`card`, `minimal`, `pill`, `hud`), accent color, target type, visibility flags, leader lines, and metric rows with live entity autocomplete and attribute selection.
 
 ![Configuring an Info-Panel in the Visual Editor Inspector](img/panel-configuration.png)

@@ -401,6 +401,16 @@ describe("resolvePanelAnchor", () => {
     expect(anchor?.y).toBe(50);
   });
 
+  it("returns undefined for a roof panel outside all roofs when no targetId exists", () => {
+    const panel: FloorInfoPanel = {
+      id: "p1",
+      x: 250,
+      y: 250,
+      targetType: "roof",
+    };
+    expect(resolvePanelAnchor(panel, floor)).toBeUndefined();
+  });
+
   it("returns undefined when no target or anchor exists", () => {
     const panel: FloorInfoPanel = {
       id: "p1",
@@ -491,6 +501,31 @@ describe("Callout Info-Panels & Leader Lines DOM Rendering", () => {
     expect(metric1Value).not.toContain("% %");
     expect(metric1Value).not.toContain("%%");
     expect(metricRows?.[1]?.querySelector(".fp-panel-metric-unit")?.textContent).toBe("%");
+  });
+
+  it("renders panels specified at top-level config on a single-floor plan", async () => {
+    const panel: FloorInfoPanel = {
+      id: "panel_single",
+      x: 300,
+      y: 150,
+      title: "Top-Level Panel",
+      style: "card",
+      metrics: [{ entity: "sensor.temp", label: "Temp" }],
+    };
+
+    const { root } = await mountCard(
+      {
+        panels: [panel],
+      },
+      {
+        "sensor.temp": { state: "21.5", attributes: { unit_of_measurement: "°C" } },
+      }
+    );
+
+    const panelEl = root.querySelector(".fp-info-panel");
+    expect(panelEl).not.toBeNull();
+    expect(panelEl?.querySelector(".fp-panel-title")?.textContent).toBe("Top-Level Panel");
+    expect(panelEl?.querySelector(".fp-panel-metric-value")?.textContent?.trim()).toBe("21.5°C");
   });
 
   it("renders card, minimal and pill styled panels properly and defaults to card", async () => {
