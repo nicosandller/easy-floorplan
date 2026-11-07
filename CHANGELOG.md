@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
+  Chromium browsers running some extensions, such as LanguageTool or Kaspersky
+  Protection (#401). The editor now measures the plan's width for the overlay instead
+  of using a container query.
 - Tilt-and-turn windows (#409): a hinged window takes a `tiltEntity`, an angle sensor or
   an on/off contact, and draws tilted (shut in its frame, head leaning in) apart from
   swung open, leaning in proportion to an angle sensor's reading up to `tiltFull`. A handle sensor reporting `tilted` works on its own. Tilted counts as a
