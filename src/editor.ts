@@ -5050,10 +5050,12 @@ export class FloorplanCardEditor extends LitElement {
         const baseId = rectAreaWallId(area.id, side);
         const generated = rectAreaSideWalls(area.id, area.points, { [side]: raw });
         for (const wall of generated) {
+          // rectAreaSideWalls keeps the bare id only for a full-span wall on a
+          // side drawn as one piece; a full wall on a side made of several
+          // pieces (an L-shaped room's stepped side) comes out as `-0-0`,
+          // `-0-1`, … so both forms have to resolve to segment 0.
           const segmentIndex = segments.findIndex((_, index) => {
-            if (segments.length === 1 && segments[0]!.start <= RECT_AREA_EPSILON && segments[0]!.end >= 1 - RECT_AREA_EPSILON) {
-              return wall.id === baseId;
-            }
+            if (index === 0 && wall.id === baseId) return true;
             const segmentId = `${baseId}-${index}`;
             return wall.id === segmentId || wall.id.startsWith(`${segmentId}-`);
           });

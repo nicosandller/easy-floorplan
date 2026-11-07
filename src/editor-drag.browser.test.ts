@@ -1685,6 +1685,49 @@ describe("editor drag", () => {
     document.body.innerHTML = "";
   });
 
+  it("registers every piece of a full wall on a multi-piece L-shape side", async () => {
+    const points = [
+      { x: 100, y: 100 },
+      { x: 300, y: 100 },
+      { x: 300, y: 200 },
+      { x: 200, y: 200 },
+      { x: 200, y: 300 },
+      { x: 100, y: 300 },
+    ];
+    const ed = await mountAreaEditor(points, { right: "wall" });
+    (ed as any)._areaEdgeModifier = "split";
+    await ed.updateComplete;
+
+    for (const [x, edgeIndex] of [[300, 1], [200, 3]] as const) {
+      const pieces = [...ed.shadowRoot!.querySelectorAll<SVGLineElement>(".wall-hit")]
+        .filter((line) => Math.abs(Number(line.getAttribute("x1")) - x) < 1e-6 &&
+          Math.abs(Number(line.getAttribute("x2")) - x) < 1e-6);
+      expect(pieces).toHaveLength(1);
+      const piece = pieces[0]!;
+      expect(piece.classList.contains("side-wall-edge")).toBe(true);
+      const toggle = piece.parentElement!.querySelector<SVGPathElement>(".area-wall-toggle");
+      expect(toggle).toBeTruthy();
+      expect(toggle!.classList.contains("wall")).toBe(true);
+      const at = center(piece);
+      piece.dispatchEvent(new MouseEvent("click", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        ctrlKey: true,
+        clientX: at.x,
+        clientY: at.y,
+      }));
+      await ed.updateComplete;
+      expect((ed as any)._selectedWallSegment).toEqual({
+        areaId: "room1",
+        side: "right",
+        edgeIndex,
+        segmentIndex: 0,
+      });
+    }
+    document.body.innerHTML = "";
+  });
+
   it("L-shape lower top edge can be toggled directly", async () => {
     const points = [
       { x: 380, y: 300 },
