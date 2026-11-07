@@ -2072,12 +2072,23 @@ export function furnitureForm(
           areaScope,
           // An awning or curtain is what the entity is for (issue #196).
           findSymbol(catalog, f.type)?.extend
-            ? `The cover that moves it: drawn at its position, full size when fully ${
-                findSymbol(catalog, f.type)!.extend!.open === "extended" ? "open" : "closed"}`
+            ? `The cover that moves it: drawn at its position, full size at ${
+                (findSymbol(catalog, f.type)!.extend!.open === "extended") !== (f.invert === true) ? "100" : "0"} %`
             : "Optional — lets the drawing change color with a sensor"
         ),
         selector: areaScopedEntity(areaScope, f.entity),
       },
+      // Some covers report 100 % where the awning is rolled in (issue #410).
+      ...(findSymbol(catalog, f.type)?.extend
+        ? [
+            {
+              name: "invert",
+              label: "Invert cover position",
+              helper: "For a cover that reports 100 % where this is fully retracted",
+              selector: { boolean: {} },
+            },
+          ]
+        : []),
       // Clicking it changes floor (issue #121). Offered on any piece rather
       // than only on the built-in `stairs`, because a plan can draw its own
       // staircase and a rule keyed on one symbol id would leave those out.
@@ -2137,6 +2148,7 @@ export function furnitureForm(
       h: f.h,
       angle: f.angle ?? 0,
       entity: f.entity ?? "",
+      ...(findSymbol(catalog, f.type)?.extend ? { invert: f.invert ?? false } : {}),
       goToFloor: namedFloor !== undefined
         ? `floor:${namedFloor}`
         : typeof f.goToFloor === "string" ? f.goToFloor : "",
@@ -2146,8 +2158,9 @@ export function furnitureForm(
       showIcon: f.showIcon ?? true,
     },
     toPatch: (raw) => {
-      // On is the default, so only "off" is worth writing down.
-      const p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
+      // On is the default, so only "off" is worth writing down; the reverse for invert.
+      let p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
+      if ("invert" in p) p = { ...p, invert: p.invert === true ? true : undefined };
       if (!("goToFloor" in p)) return p;
       const value = p.goToFloor;
       return {

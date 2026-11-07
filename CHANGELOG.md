@@ -6,6 +6,8 @@
   Chromium browsers running some extensions, such as LanguageTool or Kaspersky
   Protection (#401). The editor now measures the plan's width for the overlay instead
   of using a container query.
+- Awnings and curtains take `invert: true` for a cover that reports 100 % where the
+  piece is retracted (#410).
 - Awnings and curtains (#196): an `awning` or `curtain` bound to a `cover` is drawn at
   the cover's position, with `w × h` as its fully extended size. A curtain gathers at
   the end `hand` picks, or at both ends with `hand: center`. Symbols can opt in with

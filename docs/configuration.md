@@ -490,6 +490,9 @@ picks which end a curtain gathers at: the left by default (`hand: right`), the r
 `hand: left`. `hand: center`
 makes it a pair that meets in the middle and gathers at both ends, still one piece with
 one entity. If the cover drops out, an awning draws retracted and a curtain draws closed.
+A cover that reports 100 % where the piece is retracted (some awnings driven as blinds do)
+takes `invert: true`, **Invert cover position** in the editor; a dropout still draws it
+retracted.
 In 3D the awning hangs under the eaves rather than standing on the floor. Unbound, either
 piece is drawn at full size.
 
