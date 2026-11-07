@@ -8,6 +8,8 @@ import {
   ISO_CHUNK,
   SILL_FRACTION,
   GLASS_FRACTION,
+  MAX_SILL,
+  openingSill,
   normalizeProjection,
   normalizeWallHeight,
   normalizeWallOpacity,
@@ -273,6 +275,65 @@ describe("wallSolids", () => {
     // The full-height wall stops at the window.
     for (const s of solids.filter((s) => s.kind === "wall"))
       for (const p of s.base) expect(p.x <= 170 + 1e-9 || p.x >= 230 - 1e-9).toBe(true);
+  });
+
+  it("stands a floor-to-ceiling window on no sill, its glass from the floor", () => {
+    const win = { x: 200, y: 0, length: 60, angle: 0, type: "window" as const, sill: 0 };
+    const solids = wallSolids([wall], [win], H);
+    expect(solids.filter((s) => s.kind === "sill")).toHaveLength(0);
+    const glass = solids.filter((s) => s.kind === "glass");
+    expect(glass).toHaveLength(1);
+    expect(glass[0].z0).toBe(0);
+    expect(glass[0].z1).toBe(H * GLASS_FRACTION);
+    // Still a gap in the full-height wall, as any window is.
+    for (const s of solids.filter((s) => s.kind === "wall"))
+      for (const p of s.base) expect(p.x <= 170 + 1e-9 || p.x >= 230 - 1e-9).toBe(true);
+  });
+
+  it("raises a window to its own sill", () => {
+    const win = { x: 200, y: 0, length: 60, angle: 0, type: "window" as const, sill: 0.6 };
+    const solids = wallSolids([wall], [win], H);
+    const sills = solids.filter((s) => s.kind === "sill");
+    expect(sills.length).toBeGreaterThan(0);
+    expect(sills.every((s) => s.z1 === H * 0.6)).toBe(true);
+    expect(solids.find((s) => s.kind === "glass")!.z0).toBe(H * 0.6);
+  });
+
+  it.each([false, true])("keeps the highest sill when overlapping windows merge (reverse: %s)", (reverse) => {
+    const windows = [
+      { x: 180, y: 0, length: 60, angle: 0, type: "window" as const, sill: 0 },
+      { x: 220, y: 0, length: 60, angle: 0, type: "window" as const, sill: 0.6 },
+    ];
+    const solids = wallSolids([wall], reverse ? windows.reverse() : windows, H);
+    const sills = solids.filter((s) => s.kind === "sill");
+    expect(sills.length).toBeGreaterThan(0);
+    expect(sills.every((s) => s.z1 === H * 0.6)).toBe(true);
+    const glass = solids.filter((s) => s.kind === "glass");
+    expect(glass).toHaveLength(1);
+    expect(glass[0].z0).toBe(H * 0.6);
+    expect(glass[0].base).toEqual([{ x: 150, y: 0 }, { x: 250, y: 0 }]);
+  });
+
+  it("keeps different sills on adjacent, non-overlapping windows", () => {
+    const solids = wallSolids([wall], [
+      { x: 180, y: 0, length: 40, angle: 0, type: "window", sill: 0 },
+      { x: 220, y: 0, length: 40, angle: 0, type: "window", sill: 0.6 },
+    ], H);
+    expect(solids.filter((s) => s.kind === "glass").map((s) => s.z0)).toEqual([0, H * 0.6]);
+    for (const sill of solids.filter((s) => s.kind === "sill")) {
+      expect(sill.base.every((p) => p.x >= 200)).toBe(true);
+    }
+  });
+
+  it("reads a sill as a share of the wall height, clamped, 0.35 by default", () => {
+    expect(openingSill({})).toBe(SILL_FRACTION);
+    expect(openingSill({ sill: 0 })).toBe(0);
+    expect(openingSill({ sill: 0.5 })).toBe(0.5);
+    expect(openingSill({ sill: -1 })).toBe(0);
+    expect(openingSill({ sill: 2 })).toBe(MAX_SILL);
+    expect(openingSill({ sill: Number.NaN })).toBe(SILL_FRACTION);
+    // Always a band of glass left under the head.
+    expect(MAX_SILL).toBeLessThan(GLASS_FRACTION);
   });
 
   it("ignores an opening that is not on the wall", () => {

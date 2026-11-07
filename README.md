@@ -23,11 +23,14 @@ control lights, and view the plan in 3D.
 
 ## Features
 
+- **Trace a plan** — load a PDF or image in the editor, calibrate its scale and trace walls over it. See [Tracing over an existing plan](docs/editor.md#tracing-over-an-existing-plan).
+
 - **Visual editing** — draw walls, snap doors and windows into place, and arrange
   furniture, text and devices with undo/redo, copy/paste and position locking.
 - **Live devices** — control lights and switches, show sensor readings, and follow
-  doors, windows and shutters as they open and close.
-- **Lighting** — colored light from your lamps, day/night dimming, sunlight,
+  doors, windows, shutters, awnings and curtains as they open and close. Device
+  labels can sit on any side, or [pick the clearest one](docs/elements.md#devices) (`labelPosition: auto`).
+- **Lighting** — colored light from your lamps and spots, day/night dimming, sunlight,
   moonlight and ambient daylight.
 - **Rooms and presence** — zoom into rooms, link Home Assistant areas, show
   presence ripples and track positions from distance sensors.
@@ -37,6 +40,7 @@ control lights, and view the plan in 3D.
   action icon marks it, or set `showIcon: false` to make the drawing itself the
   button. See [actions on furniture](docs/behavior.md#actions-on-furniture).
 - **2D and 3D views** — display the same plan flat or with raised walls and furniture.
+- **Window sill height** — draw floor-to-ceiling or high windows in 3D with `sill`. See [Configuration](docs/configuration.md#opening-door--window--skylight--passage).
 - **Outdoor courtyard & 3D stacked house** — exterior view of the entire house stacking all levels at physical elevations, with ground slabs and 3D roofs.
 - **Appearance** — choose skins and named colors, add a background image to trace
   (inverted, or swapped for a dark version, in dark mode), and let the plan scale to your screen.

@@ -1240,3 +1240,76 @@ describe("LED strip ends (issue #298)", () => {
     expect(ed.shadowRoot!.querySelector("line.fp-strip")).toBeTruthy();
   });
 });
+
+describe("spot aiming handle (issue #388)", () => {
+  afterEach(() => {
+    document.body.innerHTML = "";
+  });
+
+  async function mountSpot(extra: Record<string, unknown> = {}) {
+    const host = document.createElement("div");
+    host.style.width = "900px";
+    document.body.appendChild(host);
+    const ed = document.createElement("easy-floorplan-card-editor") as FloorplanCardEditor;
+    ed.hass = { states: {}, entities: {} } as unknown as FloorplanCardEditor["hass"];
+    ed.setConfig({
+      ...config(),
+      floors: [
+        {
+          ...config().floors![0],
+          items: [
+            { id: "spot", kind: "light", entity: "light.spot", x: 500, y: 300, glow: true,
+              glowRadius: 200, glowWidth: 60, glowDirection: 0, ...extra },
+          ],
+        },
+      ],
+    });
+    host.appendChild(ed);
+    await ed.updateComplete;
+    (ed as any)._selection = [{ kind: "item", id: "spot" }];
+    await ed.updateComplete;
+    return ed;
+  }
+
+  async function aimAt(ed: FloorplanCardEditor, x: number, y: number) {
+    const aim = ed.shadowRoot!.querySelector<SVGCircleElement>("circle.spot-aim")!;
+    const from = center(aim);
+    const to = screenPoint(ed.shadowRoot!.querySelector("svg")!, x, y);
+    pointer(aim, "pointerdown", from.x, from.y);
+    pointer(aim, "pointermove", to.x, to.y);
+    await frame();
+    await ed.updateComplete;
+    pointer(aim, "pointerup", to.x, to.y);
+    await ed.updateComplete;
+    return (ed as any)._floor().items[0];
+  }
+
+  it("turns the cone to point at the pointer and leaves the spot where it is", async () => {
+    const ed = await mountSpot();
+    // Down and to the right of the spot at (500, 300): a bearing of 120°.
+    const it = await aimAt(ed, 500 + 200 * Math.sin((120 * Math.PI) / 180), 300 - 200 * Math.cos((120 * Math.PI) / 180));
+    expect(it.glowDirection).toBe(120);
+    expect(it.x).toBe(500);
+    expect(it.y).toBe(300);
+    expect(it.glowWidth).toBe(60);
+  });
+
+  it("settles on the nearest 45° when close to it", async () => {
+    const ed = await mountSpot();
+    const it = await aimAt(ed, 500 + 200 * Math.sin((92 * Math.PI) / 180), 300 - 200 * Math.cos((92 * Math.PI) / 180));
+    expect(it.glowDirection).toBe(90);
+  });
+
+  it("pulls the handle in along the beam when its tip is off the plan", async () => {
+    const ed = await mountSpot({ glowRadius: 600 });
+    const aim = ed.shadowRoot!.querySelector<SVGCircleElement>("circle.spot-aim")!;
+    expect(Number(aim.getAttribute("cx"))).toBeCloseTo(500, 1);
+    expect(Number(aim.getAttribute("cy"))).toBeCloseTo(12, 1);
+  });
+
+  it("offers no handle on a pool all round, or on a pinned spot", async () => {
+    expect((await mountSpot({ glowWidth: undefined })).shadowRoot!.querySelector("circle.spot-aim")).toBeNull();
+    document.body.innerHTML = "";
+    expect((await mountSpot({ locked: true })).shadowRoot!.querySelector("circle.spot-aim")).toBeNull();
+  });
+});

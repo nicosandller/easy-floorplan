@@ -40,6 +40,7 @@ import {
   DEFAULT_GLOW_RADIUS,
   DEFAULT_STRIP_LENGTH,
   MIN_STRIP_LENGTH,
+  MIN_SPOT_WIDTH,
   DEFAULT_TEXT_SIZE,
   DEFAULT_TRACKER_DOT_SIZE,
   DEFAULT_SUN_MIN,
@@ -56,6 +57,7 @@ import {
   domainIconAnimation,
   entitySupportsGlow,
   stripRun,
+  spotCone,
   isRippleEntity,
   normalizeOverlayScale,
   normalizeOverlayMinWidth,
@@ -88,10 +90,14 @@ import {
   normalizeWallHeight,
   furnitureSectionHeight,
   normalizeWallOpacity,
+  openingSill,
+  MAX_SILL,
   MAX_WALL_HEIGHT,
+  SILL_FRACTION,
   defaultRoofHeight,
 } from "./projection";
 import { defaultItemAction } from "./actions";
+import { cssNumber } from "./css-safe";
 import { DEFAULT_SKIN, SKINS, findSkin, MAX_SKIN_WALL_WIDTH } from "./skins";
 import { roomTintsOf } from "./room-tints";
 
@@ -101,6 +107,11 @@ export interface FormField {
   label: string;
   helper?: string;
   required?: boolean;
+  /**
+   * Angle only: a full turn stays 360 instead of wrapping to 0. On badges and
+   * text, 360 turns with a rotated display while 0 stays upright (issue #387).
+   */
+  keepFullTurn?: boolean;
   selector: Record<string, unknown>;
 }
 
@@ -125,7 +136,8 @@ export function diffFormValue(
 /**
  * Per-field cleanup between the form and the config: empty optional strings
  * become undefined; invalid required numbers are dropped (keep the old
- * value); numbers clamp to the selector range; angle wraps to 0..360.
+ * value); numbers clamp to the selector range; angle wraps to 0..360, with
+ * a full turn kept as 360 on keepFullTurn fields.
  */
 export function normalizeFormPatch(
   patch: Record<string, unknown>,
@@ -149,7 +161,11 @@ export function normalizeFormPatch(
         v = undefined;
       } else {
         const sel = field.selector.number as { min?: number; max?: number };
-        let num = field.name === "angle" ? ((n % 360) + 360) % 360 : n;
+        let num = n;
+        if (field.name === "angle") {
+          num = ((n % 360) + 360) % 360;
+          if (num === 0 && n !== 0 && field.keepFullTurn) num = 360;
+        }
         if (sel.min !== undefined && num < sel.min) num = sel.min;
         if (sel.max !== undefined && num > sel.max) num = sel.max;
         v = num;
@@ -260,9 +276,10 @@ export function actionYamlPatch(
   return { patch };
 }
 
-const angleField = (): FormField => ({
+const angleField = (keepFullTurn = false): FormField => ({
   name: "angle",
   label: "Angle",
+  ...(keepFullTurn ? { keepFullTurn } : {}),
   selector: { number: { min: 0, max: 360, step: 1, mode: "slider", unit_of_measurement: "°" } },
 });
 
@@ -379,6 +396,18 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       label: "Ceiling height",
       helper: "1 is an ordinary storey; higher throws the patch of sun further across the room",
       selector: { number: { min: 0.2, max: 4, step: 0.1, mode: "slider" } },
+    });
+  }
+  // How high the glass starts. Windows only: a door, a passage and a skylight
+  // have no sill. A slider rather than a box for the same reason as the
+  // skylight's ceiling height — the plan has no vertical unit, so this is a
+  // share of the wall height, and only the 3D view draws it.
+  if (o.type === "window") {
+    fields.push({
+      name: "sill",
+      label: "Sill height",
+      helper: "Share of the wall height under the glass, in the 3D view — 0 is floor-to-ceiling",
+      selector: { number: { min: 0, max: MAX_SILL, step: 0.05, mode: "slider" } },
     });
   }
   // Leaf count, for anything hinged. Offered on doors too: a double door is
@@ -740,6 +769,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       // canvas would be a box claiming the drawing has no width.
       width: skylightWidth(o),
       ceilingHeight: skylightCeilingHeight(o),
+      sill: openingSill(o),
       hinge: o.flipH ? "right" : "left",
       opens: o.flipV ? "other" : "this",
       slide: o.flipH ? "right" : "left",
@@ -853,6 +883,11 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
             sliderStyle: v === "slide" ? o.sliderStyle : undefined,
           } as Opening))
             out.secondaryEntity = undefined;
+        } else if (k === "sill") {
+          // The sill every window stood on before this field is the default,
+          // so it stays out of the YAML.
+          out.sill =
+            o.type === "window" && typeof v === "number" && v !== SILL_FRACTION ? v : undefined;
         } else if (k === "sashSpan") {
           // A full-width sash is what every opening drew before this field,
           // so it is the default and stays out of the YAML (issue #218).
@@ -894,6 +929,9 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         else if (k === "invert") out.invert = v || undefined;
         else if (k === "type") {
           out.type = v;
+          // Only a window stands on a sill; anything else would carry it as
+          // noise until it became a window again.
+          if (v !== "window" || o.type !== "window") out.sill = undefined;
           if (v === "skylight") {
             out.motion = undefined;
             out.sliderStyle = undefined;
@@ -1223,8 +1261,14 @@ export function itemLabelForm(it: FloorItem): FormSpec {
     {
       name: "labelPosition",
       label: "Label position",
-      helper: "Beside the badge instead of under it — a long reading then grows one way only",
-      selector: dropdown(opt("below", "Below"), opt("left", "Left"), opt("right", "Right")),
+      helper: "Beside the badge, a long reading grows one way only. Auto picks the side that stays clear of walls and other labels",
+      selector: dropdown(
+        opt("below", "Below"),
+        opt("above", "Above"),
+        opt("left", "Left"),
+        opt("right", "Right"),
+        opt("auto", "Auto")
+      ),
     },
     {
       name: "labelSize",
@@ -1339,7 +1383,7 @@ export function itemBadgeForm(it: FloorItem, badgeSource?: BadgeSourceInfo): For
       label: "Size",
       selector: { number: { min: 16, max: 160, step: 2, mode: "slider", unit_of_measurement: "px" } },
     },
-    angleField()
+    angleField(true)
   );
   return {
     fields,
@@ -1399,6 +1443,7 @@ export function itemEffectsForm(
   const casts = entitySupportsGlow(entity) || !!it.glow;
   if (!canRipple && !casts) return undefined;
   const strip = stripRun(it) !== undefined;
+  const spot = spotCone(it) !== undefined;
   const fields: FormField[] = [];
   if (canRipple) {
     fields.push({
@@ -1462,6 +1507,26 @@ export function itemEffectsForm(
           selector: { boolean: {} },
         }
       );
+      // A spot (issue #388): a cone of the same pool. A strip already has a
+      // direction of its own, so the two are offered one at a time.
+      if (!strip) {
+        fields.push({
+          name: "glowWidth",
+          label: "Beam width",
+          helper: "Under 360° lights a cone, for spots and wall washers; drag its tip on the plan to aim it",
+          selector: {
+            number: { min: MIN_SPOT_WIDTH, max: 360, step: 5, mode: "slider", unit_of_measurement: "°" },
+          },
+        });
+        if (spot)
+          fields.push({
+            name: "glowDirection",
+            label: "Beam direction",
+            selector: {
+              number: { min: 0, max: 360, step: 1, mode: "slider", unit_of_measurement: "°" },
+            },
+          });
+      }
       if (strip) {
         fields.push(
           {
@@ -1517,6 +1582,8 @@ export function itemEffectsForm(
       stripLength: it.stripLength ?? DEFAULT_STRIP_LENGTH,
       stripAngle: it.stripAngle ?? 0,
       stripSide: it.stripSide ?? "auto",
+      glowWidth: it.glowWidth ?? 360,
+      glowDirection: it.glowDirection ?? 0,
     },
     toPatch: (p) => {
       let out = p;
@@ -1531,6 +1598,9 @@ export function itemEffectsForm(
       }
       // "Auto" is no key at all: the side a drag may still choose.
       if (out.stripSide === "auto") out = { ...out, stripSide: undefined };
+      // Opened all the way round, a spot is the ordinary pool again: no keys.
+      if ("glowWidth" in out && !(cssNumber(out.glowWidth, 360) < 360))
+        out = { ...out, glowWidth: undefined, glowDirection: undefined };
       // "Ripple" is the other half of #127's three-key spelling — same
       // expansion as the badge group's, with the badge mode read off the item.
       if (!("ripple" in out)) return out;
@@ -1912,7 +1982,7 @@ export function textForm(t: FloorText, areaScope?: AreaEntityScope): FormSpec {
       label: "Size",
       selector: { number: { min: 8, max: 200, mode: "slider", unit_of_measurement: "px" } },
     },
-    angleField()
+    angleField(true)
   );
   return {
     fields,
@@ -1979,6 +2049,18 @@ export function furnitureForm(
             },
           ]
         : []),
+      // A curtain gathers at one end when open (issue #196). The symbol is
+      // drawn from its left edge, so mirroring it gathers it at the right.
+      ...(findSymbol(catalog, f.type)?.extend?.axis === "w"
+        ? [
+            {
+              name: "hand",
+              label: "Gathers at",
+              helper: "Which end it bunches up at when open. Both ends: a pair that meets in the middle",
+              selector: dropdown(opt("right", "left"), opt("left", "right"), opt("center", "both ends")),
+            },
+          ]
+        : []),
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "height3d", label: "3D height", helper: "Optional height in canvas units. Leave empty to use the model height. Applied before cutting.", selector: { number: { min: 0.1, max: 10000, step: 0.1, mode: "box" } } },
@@ -1989,7 +2071,14 @@ export function furnitureForm(
       {
         name: "entity",
         label: "Entity",
-        helper: areaScopeHelper(areaScope, "Optional — lets the drawing change color with a sensor"),
+        helper: areaScopeHelper(
+          areaScope,
+          // An awning or curtain is what the entity is for (issue #196).
+          findSymbol(catalog, f.type)?.extend
+            ? `The cover that moves it: drawn at its position, full size when fully ${
+                findSymbol(catalog, f.type)!.extend!.open === "extended" ? "open" : "closed"}`
+            : "Optional — lets the drawing change color with a sensor"
+        ),
         selector: areaScopedEntity(areaScope, f.entity),
       },
       // Clicking it changes floor (issue #121). Offered on any piece rather
@@ -2044,7 +2133,9 @@ export function furnitureForm(
     ],
     data: {
       type: f.type,
-      ...(f.type === "sectional" ? { hand: f.hand ?? "right" } : {}),
+      ...(f.type === "sectional" || findSymbol(catalog, f.type)?.extend?.axis === "w"
+        ? { hand: f.hand ?? "right" }
+        : {}),
       w: f.w,
       h: f.h,
       height3d: f.height3d,

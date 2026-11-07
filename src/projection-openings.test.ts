@@ -44,6 +44,20 @@ describe("standing openings", () => {
     expect(right.color).toBe("#ff0000");
   });
 
+  it.each([0, 0.6])("starts the visible window panes at sill %s", (sill) => {
+    const height = 100;
+    for (const motion of ["fixed", "swing"] as const) {
+      const visible = openingSolids({ ...door, type: "window", motion, sill },
+        { color: "#333", amount: 0 }, identity, height).filter((s) => s.kind === "panel");
+      expect(visible).toHaveLength(motion === "fixed" ? 1 : 2);
+      for (const pane of visible) {
+        expect(pane.z0).toBe(height * sill);
+        expect(pane.z1).toBe(height * 0.85);
+        expect(pane.glazed).toBe(true);
+      }
+    }
+  });
+
   it("keeps the fixed part of a narrow sash glazed and in its frame", () => {
     const [leaf, fixed] = panels({ sash: "single", sashSpan: 0.5 }, { amount: 1 });
     expect(leaf.base[1].y).toBeCloseTo(60);

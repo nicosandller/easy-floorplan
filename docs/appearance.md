@@ -658,6 +658,10 @@ rotationLandscape: 0   # desktop, wall tablet
 In the editor: **Project → Display**, under *Rotate display*.
 
 Icons and labels stay upright at every angle, so a rotated plan is still readable.
+A device or text given an **angle** of its own turns with the plan instead, since that
+angle lines it up with something in the drawing — an LED strip along a wall. Use `360`
+(the Angle slider's far end) rather than `0` for one that lies along a horizontal wall and should follow it too. Text
+that would end up upside down is flipped to read along the same line the right way up.
 
 A **bearing** is the exception, and has to be: a ripple's `rippleDirection` says which way
 a sensor looks *in the room*, so it turns with the drawing rather than staying put on
@@ -802,6 +806,8 @@ selecting a view in the editor removes the old alias.
   overridden on individual walls (`height`).
   Zero height lays the flat plan on an isometric floor: walls, furniture and opening
   symbols drawn exactly as the 2D view draws them.
+
+Windows support a configurable [sill height](configuration.md#opening-door--window--skylight--passage): `sill: 0` starts at the floor, while `sill: 0.6` makes a high window.
 
 Screenshots from the standalone preview with simulated entities and placeholder
 icons (`wallHeight: 60`, `wallOpacity: 0.65`):
