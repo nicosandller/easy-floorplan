@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
+  Chromium browsers running some extensions, such as LanguageTool or Kaspersky
+  Protection (#401). The editor now measures the plan's width for the overlay instead
+  of using a container query.
 - The plan no longer collapses to nothing on Chrome 129-era WebViews, such as the
   Sonoff NSPanel Pro's, where the container query the card fits the plan with reads
   a height of 0. The card notices and fits the plan from the stage's measured height
