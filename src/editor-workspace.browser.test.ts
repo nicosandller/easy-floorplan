@@ -593,7 +593,7 @@ describe("responsive editor workspace", () => {
     expect(t.root.querySelector("#field-entity")).not.toBeNull();
     t.el("#object-category-sensor").dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, composed: true }));
     await settle(t.editor);
-    expect(t.root.activeElement).toBe(t.el("#object-category-actions"));
+    expect(t.root.activeElement).toBe(t.el("#object-category-visibility"));
     expect(t.el("#selection-tab").getAttribute("aria-selected")).toBe("true");
   });
 

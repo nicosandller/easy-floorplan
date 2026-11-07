@@ -2,7 +2,7 @@
 import { describe, expect, it } from "vitest";
 import { createLineArtSvg } from "./line-art-export";
 import { LINE_INK } from "./line-art";
-import { emptyConfig, getFloors } from "./types";
+import { emptyConfig, getFloors, type HomeAssistant } from "./types";
 
 function fixture() {
   const config = emptyConfig("custom:easy-floorplan-card");
@@ -123,5 +123,29 @@ describe("standalone line art", () => {
     expect(doc.querySelector('line[stroke-dasharray="5 4"]')).not.toBeNull();
     expect(doc.querySelector(".fp-iso-railing")).not.toBeNull();
     expect(doc.querySelector(".fp-furniture-custom circle")).not.toBeNull();
+  });
+
+  it("filters out conditionally hidden furniture when hass is provided", () => {
+    const { config, floor } = fixture();
+    floor.furniture.push({
+      id: "car",
+      type: "car",
+      x: 300,
+      y: 200,
+      w: 80,
+      h: 160,
+      visibility: [{ condition: "state", entity: "binary_sensor.car_present", state: "on" }],
+    });
+    const hassOff = {
+      states: { "binary_sensor.car_present": { entity_id: "binary_sensor.car_present", state: "off", attributes: {} } },
+    } as unknown as HomeAssistant;
+    const docOff = parse(createLineArtSvg(config, floor, 0, hassOff).svg);
+    expect(docOff.querySelector(".fp-furniture-car")).toBeNull();
+
+    const hassOn = {
+      states: { "binary_sensor.car_present": { entity_id: "binary_sensor.car_present", state: "on", attributes: {} } },
+    } as unknown as HomeAssistant;
+    const docOn = parse(createLineArtSvg(config, floor, 0, hassOn).svg);
+    expect(docOn.querySelector(".fp-furniture-car")).not.toBeNull();
   });
 });
