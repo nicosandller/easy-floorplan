@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- In the narrow editor, such as Home Assistant's card dialog, selecting an object now
+  shows its name and **Edit properties** without scrolling (#427). The canvas is as
+  tall as the plan fitted to its width, up to its old height, instead of leaving blank
+  bands above and below the grid.
 - In the narrow editor, such as Home Assistant's card dialog, the plan no longer moves
   up and down when you switch drawing tools (#430). The canvas keeps its height when
   the tool's hint and options below it take more or fewer lines.

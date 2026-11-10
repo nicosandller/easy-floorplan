@@ -312,9 +312,11 @@ export const editorWorkspaceStyles = css`
     .keyboard-open:not(.fullscreen) .workspace { height: max(180px, calc(var(--editor-viewport-height, 100dvh) - 160px)); }
     /* In the dialog, the canvas gets its own height instead of what the tool's
        hint row leaves over, so a taller or shorter hint never moves the plan
-       (issue #430). 130px is the heading, padding and a one-line hint. */
+       (issue #430). It is as tall as the plan fitted to its width, so the
+       selection bar below stays in view (issue #427), up to the height it had
+       before; 130px is the heading, padding and a one-line hint. */
     .editor:not(.fullscreen):not(.show-inspector):not(.keyboard-open) .workspace { height: auto; }
-    .editor:not(.fullscreen):not(.show-inspector):not(.keyboard-open) .canvas-wrap { flex: none; height: calc(clamp(360px, calc(100dvh - 210px), 780px) - 130px); }
+    .editor:not(.fullscreen):not(.show-inspector):not(.keyboard-open) .canvas-wrap { flex: none; aspect-ratio: auto var(--plan-ratio) !important; min-height: 200px; max-height: calc(clamp(360px, calc(100dvh - 210px), 780px) - 130px); }
   }
   @media (max-height: 500px) {
     @container workspace (max-width: 759px) {

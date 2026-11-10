@@ -740,4 +740,22 @@ describe("responsive editor workspace", () => {
     }
   });
 
+  it("keeps the selection bar in view below a landscape plan in the narrow dialog", async () => {
+    const t = await mount(480);
+    t.editor.setConfig({ ...config(), height: 600 });
+    (t.editor as unknown as { _selection: unknown[] })._selection = [{ kind: "furniture", id: "sofa" }];
+    await settle(t.editor);
+    // The canvas is as tall as the plan fitted to its width, without blank bands.
+    expect(t.el(".zoom-val-btn").textContent?.trim()).toBe("100% width");
+    expect(t.el(".canvas-wrap").clientHeight - t.rect(".stage").height).toBeLessThanOrEqual(1);
+    // Home Assistant's card dialog shows about 691 px of the editor on a 1440x900 screen.
+    expect(t.rect(".inspector-jump").bottom - t.rect(".editor").top).toBeLessThan(600);
+    // Zooming scrolls inside the canvas rather than making it taller.
+    const height = t.rect(".canvas-wrap").height;
+    t.el('[aria-label="Zoom in"]').click();
+    await settle(t.editor);
+    expect(t.rect(".canvas-wrap").height).toBe(height);
+    expect(t.el(".canvas-wrap").scrollHeight).toBeGreaterThan(t.el(".canvas-wrap").clientHeight);
+  });
+
 });
