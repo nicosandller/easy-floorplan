@@ -216,7 +216,7 @@ openings:
 
 An **area** is a colored, named room polygon traced on top of your walls.
 
-Choose the **Area** tool and either press-drag to make a finished rectangle in one
+Choose the **Room** tool and either press-drag to make a finished rectangle in one
 gesture or click each corner for a custom polygon — points snap onto nearby wall corners
 and onto other areas' corners, so adjoining rooms share an exact boundary. After 3+
 points, click the **first** point to close the shape (**Backspace** drops the last point,

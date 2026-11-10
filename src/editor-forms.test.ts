@@ -1280,6 +1280,23 @@ describe("textForm / furnitureForm / trackerForm", () => {
     expect(form.toPatch({ zoneKind: "indoor" } as never)).toEqual({ zoneKind: undefined });
   });
 
+  it("areaForm names the object a room, keeping the zone kinds as its types (issue #432)", () => {
+    const field = areaForm({ id: "a", points: [] } as never).fields.find((x) => x.name === "zoneKind")!;
+    expect(field.label).toBe("Room type");
+    const opts = (field.selector as { select: { options: { value: string; label: string }[] } }).select.options;
+    expect(opts[0]).toEqual({ value: "indoor", label: "Indoor" });
+    expect(opts.map((o) => o.value)).toEqual(["indoor", "lawn", "patio", "pool", "terrace", "driveway", "garden", "courtyard"]);
+    const zoomed = itemGroup7aForm({ id: "i", kind: "sensor", x: 0, y: 0 } as FloorItem).fields
+      .find((x) => x.name === "showOnlyWhenZoomed")!;
+    expect(zoomed.label).toBe("Only show when zoomed into its room");
+    // Home Assistant's own area keeps its name; the switch lives on the room.
+    const scoped = itemEntityForm({ id: "i", kind: "sensor", x: 0, y: 0 } as FloorItem, {
+      name: "Kitchen",
+      entities: ["sensor.k"],
+    }).fields.find((x) => x.name === "entity")!;
+    expect(scoped.helper).toBe("Only entities in the Kitchen area — turn off “Filter entities” on the room to see all");
+  });
+
   it("floorImageForm exposes isOutdoor data and patches it", () => {
     const form = floorImageForm({ id: "f", name: "Courtyard", isOutdoor: true } as never);
     expect(form.data.isOutdoor).toBe(true);
@@ -1292,6 +1309,47 @@ describe("textForm / furnitureForm / trackerForm", () => {
     const form = furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10 } as never);
     expect(form.fields.map((x) => x.name)).not.toContain("hand");
     expect("hand" in form.data).toBe(false);
+  });
+});
+
+describe("field suffixes say what the value is measured in (issue #431)", () => {
+  const unit = (spec: { fields: FormField[] } | undefined, name: string) =>
+    (spec!.fields.find((x) => x.name === name)!.selector.number as { unit_of_measurement?: string })
+      .unit_of_measurement;
+  const wall = { id: "w", x1: 0, y1: 0, x2: 1, y2: 1 };
+  const item = { id: "i", kind: "sensor", x: 0, y: 0, entity: "sensor.t" } as FloorItem;
+  const motion = { id: "m", kind: "binary_sensor", x: 0, y: 0, entity: "binary_sensor.m", display: "iconRipple" } as FloorItem;
+  const text = { id: "t", x: 0, y: 0, text: "hi" } as FloorText;
+  const area = { id: "a", points: [] } as unknown as Area;
+  const plan = (overlayScale?: "plan" | "fixed") =>
+    ({ type: "t", width: 1000, height: 600, overlayScale }) as FloorplanCardConfig;
+
+  it("canvas measures always say units", () => {
+    expect(unit(wallForm(wall), "thickness")).toBe("units");
+    expect(unit(wallForm(wall), "height")).toBe("units");
+    expect(unit(trackerForm({ id: "t", x: 0, y: 0, w: 20, h: 20 } as Tracker), "dotSize")).toBe("units");
+  });
+
+  it("the minimum card width is screen pixels whatever the overlay scale", () => {
+    expect(unit(projectDisplayForm(plan("plan")), "overlayMinWidth")).toBe("px");
+  });
+
+  it("overlay measures say units under overlayScale: plan", () => {
+    expect(unit(itemLabelForm(item, "plan"), "labelSize")).toBe("units");
+    expect(unit(itemBadgeForm(item, undefined, "plan"), "size")).toBe("units");
+    expect(unit(itemEffectsForm(motion, "motion", undefined, "plan"), "rippleSize")).toBe("units");
+    expect(unit(textForm(text, undefined, "plan"), "size")).toBe("units");
+    expect(unit(areaForm(area, "plan"), "labelSize")).toBe("units");
+  });
+
+  it("overlay measures say px under overlayScale: fixed, and when it is absent", () => {
+    for (const scale of ["fixed", undefined] as const) {
+      expect(unit(itemLabelForm(item, scale), "labelSize")).toBe("px");
+      expect(unit(itemBadgeForm(item, undefined, scale), "size")).toBe("px");
+      expect(unit(itemEffectsForm(motion, "motion", undefined, scale), "rippleSize")).toBe("px");
+      expect(unit(textForm(text, undefined, scale), "size")).toBe("px");
+      expect(unit(areaForm(area, scale), "labelSize")).toBe("px");
+    }
   });
 });
 
@@ -2404,31 +2462,29 @@ describe("every field lands in exactly one panel group", () => {
   it("covers every project field — offlineStyle is sliced away from its form", () => {
     // projectDisplayForm still owns rotation / overlayScale / compactHeader /
     // offlineStyle as one form with one toPatch, but the panel renders the
-    // first three under "Display" and the last under "Devices". Miss it in
-    // both slices and the control silently disappears.
-    const DISPLAY = [
-      "view",
-      "appearance",
-      "showViewControls",
-      "showExport",
-      "rotation",
-      "rotationPortrait",
-      "rotationLandscape",
-      "overlayScale",
-      "overlayMinWidth",
-      "compactHeader",
-      "zoomedOverlayAuto",
-      "zoomedOverlayScale",
-      "roomFocusControls",
-      "roomFocusInterval",
-    ];
+    // first three under View → Rotation and Size (issue #433) and the last
+    // under "Devices". Miss it in every slice and the control silently
+    // disappears.
+    const VIEW = ["view", "appearance", "showViewControls", "showExport", "wallHeight", "wallOpacity"];
+    const ROTATION = ["rotation", "rotationPortrait", "rotationLandscape"];
+    const SIZE = ["overlayScale", "overlayMinWidth", "compactHeader"];
+    const ROOMS = ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"];
     const DEVICES = ["offlineStyle"];
-    // Canvas units, so the conditional overlayMinWidth field is produced too.
-    const cfg = { type: "t", width: 1000, height: 600, overlayScale: "plan" } as FloorplanCardConfig;
-    check(projectDisplayForm(cfg).fields, [DISPLAY, DEVICES], "project display");
-    // Both slices resolve, and neither can emit the other's key.
-    expect(formSlice(projectDisplayForm(cfg), DISPLAY).fields.map((f) => f.name)).toEqual(DISPLAY);
-    expect(formSlice(projectDisplayForm(cfg), DEVICES).fields.map((f) => f.name)).toEqual(DEVICES);
+    // Canvas units, so the conditional overlayMinWidth field is produced too,
+    // and 3D, so the wall fields are.
+    const cfg = { type: "t", width: 1000, height: 600, overlayScale: "plan", view: "3d" } as FloorplanCardConfig;
+    check(projectDisplayForm(cfg).fields, [VIEW, ROTATION, SIZE, ROOMS, DEVICES], "project display");
+    // Every slice resolves, and none can emit another's key.
+    for (const slice of [VIEW, ROTATION, SIZE, ROOMS, DEVICES]) {
+      expect(formSlice(projectDisplayForm(cfg), slice).fields.map((f) => f.name)).toEqual(slice);
+    }
+    // The slices together are the old single list, in the same order.
+    expect(projectDisplayForm(cfg).fields.map((f) => f.name).filter((n) => n !== "offlineStyle")).toEqual([
+      ...VIEW,
+      ...ROTATION,
+      ...SIZE,
+      ...ROOMS,
+    ]);
   });
 
   it("covers every furniture, tracker, area and roof field", () => {

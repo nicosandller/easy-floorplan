@@ -150,7 +150,7 @@ describe("Roof tool in editor", () => {
     await t.ed.updateComplete;
 
     const createBtn = [...t.root.querySelectorAll<HTMLButtonElement>("button")].find((btn) =>
-      btn.textContent?.includes("Create Roof from Room")
+      btn.textContent?.includes("Create roof from room")
     );
     expect(createBtn).toBeDefined();
     createBtn!.click();

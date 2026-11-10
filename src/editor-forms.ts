@@ -15,6 +15,7 @@ import type {
   FloorplanCardConfig,
   Furniture,
   Opening,
+  OverlayScale,
   Roof,
   SliderStyle,
   Tracker,
@@ -111,6 +112,24 @@ export interface FormField {
    */
   keepFullTurn?: boolean;
   selector: Record<string, unknown>;
+}
+
+/**
+ * The suffix on a field measured in canvas units: wall thickness and height,
+ * a tracker's dot. The header of a selected wall already says "units"
+ * (issue #431).
+ */
+export const CANVAS_UNITS = "units";
+
+/**
+ * The suffix on an overlay measure — a badge, its label, a room name, free
+ * text, a ripple. Those are canvas units under `overlayScale: plan` and screen
+ * pixels under `fixed` (see `overlayLength` in render.ts), so the suffix
+ * follows the plan's setting. An absent setting is `fixed`, as the card reads
+ * it.
+ */
+export function overlayUnit(scale: OverlayScale | undefined): string {
+  return normalizeOverlayScale(scale) === "plan" ? CANVAS_UNITS : "px";
 }
 
 /** Continuous controls (typing, sliders) — routed through the burst-history path. */
@@ -1065,7 +1084,7 @@ function areaScopedEntity(
 function areaScopeHelper(scope: AreaEntityScope | undefined, base?: string): string | undefined {
   if (!scope?.entities.length) return base;
   const where = scope.name ? `the ${scope.name} area` : "this area";
-  const note = `Only entities in ${where} — turn off “Filter entities” on the area to see all`;
+  const note = `Only entities in ${where} — turn off “Filter entities” on the room to see all`;
   return base ? `${base}. ${note}` : note;
 }
 
@@ -1254,7 +1273,7 @@ export function itemShowStateForm(it: FloorItem): FormSpec {
 }
 
 /** Group 3: where the label sits and how big it is. */
-export function itemLabelForm(it: FloorItem): FormSpec {
+export function itemLabelForm(it: FloorItem, overlayScale?: OverlayScale): FormSpec {
   const fields: FormField[] = [
     {
       name: "labelPosition",
@@ -1271,7 +1290,7 @@ export function itemLabelForm(it: FloorItem): FormSpec {
     {
       name: "labelSize",
       label: "Label size",
-      selector: { number: { min: 8, max: 40, step: 1, mode: "slider", unit_of_measurement: "px" } },
+      selector: { number: { min: 8, max: 40, step: 1, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) } },
     },
     {
       name: "disableLabelColor",
@@ -1331,7 +1350,11 @@ export function itemLabelForm(it: FloorItem): FormSpec {
  * here: what the badge is reading *right now*, so "Badge reads" can open on it
  * instead of on a guess. See {@link BadgeSourceInfo}.
  */
-export function itemBadgeForm(it: FloorItem, badgeSource?: BadgeSourceInfo): FormSpec {
+export function itemBadgeForm(
+  it: FloorItem,
+  badgeSource?: BadgeSourceInfo,
+  overlayScale?: OverlayScale,
+): FormSpec {
   const fields: FormField[] = [
     {
       name: "badgeMode",
@@ -1379,7 +1402,7 @@ export function itemBadgeForm(it: FloorItem, badgeSource?: BadgeSourceInfo): For
     {
       name: "size",
       label: "Size",
-      selector: { number: { min: 16, max: 160, step: 2, mode: "slider", unit_of_measurement: "px" } },
+      selector: { number: { min: 16, max: 160, step: 2, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) } },
     },
     angleField(true)
   );
@@ -1433,6 +1456,7 @@ export function itemEffectsForm(
   it: FloorItem,
   deviceClass?: string,
   entity?: { state?: string; attributes?: Record<string, unknown> } | null,
+  overlayScale?: OverlayScale,
 ): FormSpec | undefined {
   const ripple = itemHasRipple(it);
   const canRipple = isRippleEntity(it.entity, deviceClass);
@@ -1459,7 +1483,7 @@ export function itemEffectsForm(
         name: "rippleSize",
         label: "Ripple size",
         selector: {
-          number: { min: 40, max: 400, step: 4, mode: "slider", unit_of_measurement: "px" },
+          number: { min: 40, max: 400, step: 4, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) },
         },
       });
       fields.push({
@@ -1612,7 +1636,7 @@ export function itemGroup7aForm(it: FloorItem): FormSpec {
   const fields: FormField[] = [
     {
       name: "showOnlyWhenZoomed",
-      label: "Only show when zoomed into area",
+      label: "Only show when zoomed into its room",
       helper:
         "Hidden on the full plan, and shown once the room it sits in is zoomed into",
       selector: { boolean: {} },
@@ -1944,7 +1968,7 @@ export function itemBehaviourForm(it: FloorItem): FormSpec {
  * as it does for a device or a piece of furniture — a reading placed in the
  * kitchen is usually a kitchen entity.
  */
-export function textForm(t: FloorText, areaScope?: AreaEntityScope): FormSpec {
+export function textForm(t: FloorText, areaScope?: AreaEntityScope, overlayScale?: OverlayScale): FormSpec {
   const fields: FormField[] = [
     {
       name: "text",
@@ -1978,7 +2002,7 @@ export function textForm(t: FloorText, areaScope?: AreaEntityScope): FormSpec {
     {
       name: "size",
       label: "Size",
-      selector: { number: { min: 8, max: 200, mode: "slider", unit_of_measurement: "px" } },
+      selector: { number: { min: 8, max: 200, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) } },
     },
     angleField(true)
   );
@@ -2176,7 +2200,8 @@ export function trackerForm(tr: Tracker): FormSpec {
       {
         name: "dotSize",
         label: "Dot size",
-        selector: { number: { min: 6, max: 80, mode: "slider", unit_of_measurement: "px" } },
+        // Drawn in the SVG, so always canvas units.
+        selector: { number: { min: 6, max: 80, mode: "slider", unit_of_measurement: CANVAS_UNITS } },
       },
     ],
     data: {
@@ -2226,15 +2251,15 @@ export function areaNameForm(a: Area, haAreaNames: readonly string[] = []): Form
  * editor can slot the HA-link status line directly beneath the name it
  * describes; both halves still render through `ha-form`.
  */
-export function areaForm(a: Area): FormSpec {
+export function areaForm(a: Area, overlayScale?: OverlayScale): FormSpec {
   return {
     fields: [
       {
         name: "zoneKind",
-        label: "Zone type",
-        helper: "Categorizes room vs outdoor zones (lawn, patio, pool, driveway, terrace)",
+        label: "Room type",
+        helper: "Indoor, or an outdoor space (lawn, patio, pool, driveway, terrace)",
         selector: dropdown(
-          opt("indoor", "Indoor / Room"),
+          opt("indoor", "Indoor"),
           opt("lawn", "Lawn"),
           opt("patio", "Patio"),
           opt("pool", "Pool"),
@@ -2253,7 +2278,7 @@ export function areaForm(a: Area): FormSpec {
               name: "labelSize",
               label: "Name size",
               selector: {
-                number: { min: 8, max: 40, step: 1, mode: "slider" as const, unit_of_measurement: "px" },
+                number: { min: 8, max: 40, step: 1, mode: "slider" as const, unit_of_measurement: overlayUnit(overlayScale) },
               },
             },
           ]
@@ -2503,7 +2528,7 @@ export function wallForm(w: Wall): FormSpec {
         // doorway mask's cut is sized off the shared WALL_THICKNESS
         // constant, not per-wall — see render.ts's wallThickness).
         selector: {
-          number: { min: 2, max: MAX_SKIN_WALL_WIDTH, step: 1, mode: "slider", unit_of_measurement: "px" },
+          number: { min: 2, max: MAX_SKIN_WALL_WIDTH, step: 1, mode: "slider", unit_of_measurement: CANVAS_UNITS },
         },
       },
       {
@@ -2511,7 +2536,7 @@ export function wallForm(w: Wall): FormSpec {
         label: "Height",
         helper: "Override height for 3D view (leave empty to use default card wall height)",
         selector: {
-          number: { min: 0, max: MAX_WALL_HEIGHT, step: 1, mode: "slider", unit_of_measurement: "px" },
+          number: { min: 0, max: MAX_WALL_HEIGHT, step: 1, mode: "slider", unit_of_measurement: CANVAS_UNITS },
         },
       },
       // Issue #182. A dropdown rather than a switch: a railing is one kind of

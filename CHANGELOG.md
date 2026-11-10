@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- Project → View groups its fields under **View**, **Rotation**, **Size** and **Rooms**
+  instead of one list of fourteen, and Project → Plan gives "Outdoor courtyard floor"
+  and "Storey level" a **Storey** heading of their own above the background image
+  (#433).
+- The editor calls a room polygon "Room" throughout: the drawing tool, the inspector
+  header, "Room type" (was "Zone type") and **Create roof from room**. The YAML still
+  says `areas:`, and "Home Assistant area" still means Home Assistant's own areas
+  (#432).
+- The editor's size fields now say what they are measured in: "units" on wall
+  thickness, wall height and a tracker's dot, which are canvas units, and on badge,
+  label, name, text and ripple sizes when the plan uses `overlayScale: plan`; "px"
+  under `overlayScale: fixed` and on "Stop shrinking below" (#431).
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
   Chromium browsers running some extensions, such as LanguageTool or Kaspersky
   Protection (#401). The editor now measures the plan's width for the overlay instead

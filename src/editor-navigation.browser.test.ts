@@ -144,3 +144,74 @@ describe("direct inspector categories", () => {
       projectPressForm(c), floorImageForm(c.floors![0] as Floor)], true);
   });
 });
+
+describe("one name for a room (issue #432)", () => {
+  it("calls the drawing tool, its hint and the inspector header Room", async () => {
+    const c = config();
+    c.floors![0].areas = [{ id: "target", points: [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 400 }, { x: 0, y: 400 }] }];
+    const editor = await mount(c);
+    const root = editor.shadowRoot!;
+    expect(root.querySelector('button[title="Area"]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('button[title="Room"]')!.click();
+    await editor.updateComplete;
+    expect(root.querySelector(".ctx-hint")!.textContent).toContain("Click to start a room outline");
+
+    (editor as unknown as { _tool: string })._tool = "select";
+    (editor as unknown as { _selection: unknown[] })._selection = [{ kind: "area", id: "target" }];
+    editor.requestUpdate();
+    await editor.updateComplete;
+    expect(root.textContent).toContain("Room · 4-point");
+    expect(root.textContent).not.toContain("Area · ");
+    const create = [...root.querySelectorAll("button")].find((b) => b.textContent?.includes("roof from room"));
+    expect(create?.textContent?.trim()).toBe("Create roof from room");
+  });
+});
+
+describe("project headings (issue #433)", () => {
+  async function page(id: string, c = config()) {
+    const editor = await mount(c);
+    editor.shadowRoot!.querySelector<HTMLButtonElement>("#project-tab")!.click();
+    await editor.updateComplete;
+    editor.shadowRoot!.querySelector<HTMLButtonElement>(`#project-category-${id}`)!.click();
+    await editor.updateComplete;
+    return editor;
+  }
+  const layout = (editor: FloorplanCardEditor) =>
+    [...editor.shadowRoot!.querySelectorAll<HTMLElement>(".cfg-group")].map((group) => [
+      group.querySelector(".cfg-group-title")!.textContent,
+      [...group.querySelectorAll<HTMLElement>('[id^="field-"]')].map((field) => field.id.slice("field-".length)),
+    ]);
+
+  it("splits Project → View into View, Rotation, Size and Rooms, in the old order", async () => {
+    const c = config();
+    c.overlayScale = "plan";
+    expect(layout(await page("view", c))).toEqual([
+      ["View", ["view", "appearance", "showViewControls", "showExport"]],
+      ["Rotation", ["rotation", "rotationPortrait", "rotationLandscape"]],
+      ["Size", ["overlayScale", "overlayMinWidth", "compactHeader"]],
+      ["Rooms", ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"]],
+    ]);
+  });
+
+  it("writes the same config from a split group", async () => {
+    const editor = await page("view");
+    let saved: FloorplanCardConfig | undefined;
+    editor.addEventListener("config-changed", (ev) => {
+      saved = (ev as CustomEvent<{ config: FloorplanCardConfig }>).detail.config;
+    });
+    const select = editor.shadowRoot!.querySelector<HTMLSelectElement>("#field-rotationPortrait")!;
+    select.value = "90";
+    select.dispatchEvent(new Event("change", { bubbles: true }));
+    await editor.updateComplete;
+    expect(saved?.rotationPortrait).toBe(90);
+    expect(saved?.rotation).toBeUndefined();
+  });
+
+  it("gives the floor's own fields a Floor heading above its background", async () => {
+    const groups = layout(await page("plan"));
+    const titles = groups.map(([title]) => title);
+    expect(groups[titles.indexOf("Storey · Ground")]).toEqual(["Storey · Ground", ["isOutdoor", "level"]]);
+    expect(titles.indexOf("Storey · Ground")).toBe(titles.indexOf("Background · Ground") - 1);
+    expect(groups[titles.indexOf("Background · Ground")][1]).toEqual(["image"]);
+  });
+});
