@@ -758,4 +758,16 @@ describe("responsive editor workspace", () => {
     expect(t.el(".canvas-wrap").scrollHeight).toBeGreaterThan(t.el(".canvas-wrap").clientHeight);
   });
 
+  it("keeps the zoom control off a fitted plan in the narrow dialog", async () => {
+    const t = await mount(480);
+    t.editor.setConfig({ ...config(), height: 600 });
+    await settle(t.editor);
+    expect(t.el('[aria-label="Fit to view"]').getAttribute("aria-pressed")).toBe("true");
+    const zoom = t.rect(".zoom-overlay");
+    const stage = t.rect(".stage");
+    const overlaps = zoom.left < stage.right && zoom.right > stage.left
+      && zoom.top < stage.bottom && zoom.bottom > stage.top;
+    expect(overlaps).toBe(false);
+  });
+
 });

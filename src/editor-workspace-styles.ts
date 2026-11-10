@@ -317,6 +317,9 @@ export const editorWorkspaceStyles = css`
        before; 130px is the heading, padding and a one-line hint. */
     .editor:not(.fullscreen):not(.show-inspector):not(.keyboard-open) .workspace { height: auto; }
     .editor:not(.fullscreen):not(.show-inspector):not(.keyboard-open) .canvas-wrap { flex: none; aspect-ratio: auto var(--plan-ratio) !important; min-height: 200px; max-height: calc(clamp(360px, calc(100dvh - 210px), 780px) - 130px); }
+    /* With no blank band left in the canvas, the zoom control gets its own strip
+       below it rather than covering the plan's corner. */
+    .editor:not(.fullscreen):not(.show-inspector):not(.keyboard-open) .zoom-overlay { position: static; align-self: flex-end; margin-top: 4px; flex: none; box-shadow: none; }
   }
   @media (max-height: 500px) {
     @container workspace (max-width: 759px) {
