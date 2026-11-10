@@ -469,7 +469,7 @@ there reads `—`, the same as a device's label.
 
 ## Furniture
 
-`{ id, type, x, y, w, h, angle?, hand?, color?, entity?, activeColor?, stateColor?, goToFloor?, tap_action?, hold_action?, double_tap_action?, showIcon?, locked? }`
+`{ id, type, x, y, w, h, angle?, hand?, color?, entity?, activeColor?, stateColor?, goToFloor?, tap_action?, hold_action?, double_tap_action?, showIcon?, locked?, visibility? }`
 
 `type` names a **symbol** — one of the built-in symbols (`table`, `sofa`, `bed`,
 `fridge`, `stairs`, …; the full set is [`furniture/`](../furniture), a file each), or one you
@@ -517,6 +517,10 @@ double-tap stay free. An action with no `entity` of its own uses the piece's. Se
 **`showIcon: false`** hides the round action icon on a piece with an action or a floor
 destination. Tapping the drawing itself then runs it, instead of passing through to the
 room. Default `true`.
+
+**`visibility`** conditionally shows or hides furniture using Home Assistant dashboard
+card visibility rules (state, numeric_state, screen, user, time, location, and logical groups). See
+[Conditional furniture visibility](behavior.md#conditional-furniture-visibility).
 
 ```yaml
 { id: plant1, type: plant, 'x': 300, 'y': 220, w: 40, h: 40,

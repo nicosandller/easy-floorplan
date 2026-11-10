@@ -20,9 +20,15 @@ export const PROJECT_PAGES: readonly InspectorPage[] = [
 
 const properties: InspectorPage = { id: "properties", label: "Properties", groups: [] };
 const actions: InspectorPage = { id: "actions", label: "Actions", groups: ["Behavior"] };
+const visibility: InspectorPage = { id: "visibility", label: "Visibility", hint: "Show or hide by condition", groups: ["Visibility"] };
 
 export const SELECTION_PAGES: Record<SelKind, readonly InspectorPage[]> = {
-  furniture: [properties, { id: "sensor", label: "Sensors", hint: "Sensor and state colors", groups: ["What it reads", "Color"] }, actions],
+  furniture: [
+    properties,
+    { id: "sensor", label: "Sensors", hint: "Sensor and state colors", groups: ["What it reads", "Color"] },
+    actions,
+    visibility,
+  ],
   opening: [
     properties,
     { id: "sensors", label: "Sensors", hint: "Sensors and shutter", groups: ["What it reads", "Shutter"] },
@@ -34,7 +40,7 @@ export const SELECTION_PAGES: Record<SelKind, readonly InspectorPage[]> = {
     { id: "readings", label: "Readings", groups: ["What it reads"] },
     { id: "appearance", label: "Style", hint: "Labels, badges, colors and effects", groups: ["Label", "Badge", "Color", "Effects"] },
     actions,
-    { id: "visibility", label: "Visibility", groups: ["Visibility"] },
+    visibility,
   ],
   area: [properties, { id: "sensor", label: "Sensors", hint: "Sensors and room devices", groups: ["What it reads", "Color", "Home Assistant area"] }, actions],
   roof: [properties],
