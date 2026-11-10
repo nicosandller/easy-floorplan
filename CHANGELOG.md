@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The browser console banner of a release build reports the release's version, taken
+  from its tag, instead of 0.7.2 (#435).
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
   Chromium browsers running some extensions, such as LanguageTool or Kaspersky
   Protection (#401). The editor now measures the plan's width for the overlay instead
