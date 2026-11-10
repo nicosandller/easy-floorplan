@@ -212,7 +212,7 @@ describe("editor drag", () => {
 
   it("keeps a click on Area as a polygon vertex", async () => {
     const t = await mountEditor();
-    t.ed.shadowRoot!.querySelector<HTMLButtonElement>('button[title="Area"]')!.click();
+    t.ed.shadowRoot!.querySelector<HTMLButtonElement>('button[title="Room"]')!.click();
     await t.ed.updateComplete;
 
     const first = screenPoint(t.svg, 100, 100);
@@ -227,7 +227,7 @@ describe("editor drag", () => {
 
   it("shows the polygon edge from the last point to the moving cursor", async () => {
     const t = await mountEditor();
-    t.ed.shadowRoot!.querySelector<HTMLButtonElement>('button[title="Area"]')!.click();
+    t.ed.shadowRoot!.querySelector<HTMLButtonElement>('button[title="Room"]')!.click();
     await t.ed.updateComplete;
 
     const first = screenPoint(t.svg, 100, 100);
@@ -242,7 +242,7 @@ describe("editor drag", () => {
 
   it("stays in polygon mode when dragging after the first Area click", async () => {
     const t = await mountEditor();
-    t.ed.shadowRoot!.querySelector<HTMLButtonElement>('button[title="Area"]')!.click();
+    t.ed.shadowRoot!.querySelector<HTMLButtonElement>('button[title="Room"]')!.click();
     await t.ed.updateComplete;
 
     const first = screenPoint(t.svg, 100, 100);
@@ -262,7 +262,7 @@ describe("editor drag", () => {
 
   it("turns an Area press-drag into a rectangle instead of a polygon point", async () => {
     const t = await mountEditor();
-    t.ed.shadowRoot!.querySelector<HTMLButtonElement>('button[title="Area"]')!.click();
+    t.ed.shadowRoot!.querySelector<HTMLButtonElement>('button[title="Room"]')!.click();
     await t.ed.updateComplete;
 
     const start = screenPoint(t.svg, 100, 100);
@@ -297,7 +297,7 @@ describe("editor drag", () => {
 
   it("keeps a sub-slop jitter on Area a polygon vertex, not an (empty) rectangle", async () => {
     const t = await mountEditor();
-    t.ed.shadowRoot!.querySelector<HTMLButtonElement>('button[title="Area"]')!.click();
+    t.ed.shadowRoot!.querySelector<HTMLButtonElement>('button[title="Room"]')!.click();
     await t.ed.updateComplete;
 
     const start = screenPoint(t.svg, 100, 100);

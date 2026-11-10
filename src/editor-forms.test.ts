@@ -1280,6 +1280,23 @@ describe("textForm / furnitureForm / trackerForm", () => {
     expect(form.toPatch({ zoneKind: "indoor" } as never)).toEqual({ zoneKind: undefined });
   });
 
+  it("areaForm names the object a room, keeping the zone kinds as its types (issue #432)", () => {
+    const field = areaForm({ id: "a", points: [] } as never).fields.find((x) => x.name === "zoneKind")!;
+    expect(field.label).toBe("Room type");
+    const opts = (field.selector as { select: { options: { value: string; label: string }[] } }).select.options;
+    expect(opts[0]).toEqual({ value: "indoor", label: "Indoor" });
+    expect(opts.map((o) => o.value)).toEqual(["indoor", "lawn", "patio", "pool", "terrace", "driveway", "garden", "courtyard"]);
+    const zoomed = itemGroup7aForm({ id: "i", kind: "sensor", x: 0, y: 0 } as FloorItem).fields
+      .find((x) => x.name === "showOnlyWhenZoomed")!;
+    expect(zoomed.label).toBe("Only show when zoomed into its room");
+    // Home Assistant's own area keeps its name; the switch lives on the room.
+    const scoped = itemEntityForm({ id: "i", kind: "sensor", x: 0, y: 0 } as FloorItem, {
+      name: "Kitchen",
+      entities: ["sensor.k"],
+    }).fields.find((x) => x.name === "entity")!;
+    expect(scoped.helper).toBe("Only entities in the Kitchen area — turn off “Filter entities” on the room to see all");
+  });
+
   it("floorImageForm exposes isOutdoor data and patches it", () => {
     const form = floorImageForm({ id: "f", name: "Courtyard", isOutdoor: true } as never);
     expect(form.data.isOutdoor).toBe(true);

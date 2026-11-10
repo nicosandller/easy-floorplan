@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The editor calls a room polygon "Room" throughout: the drawing tool, the inspector
+  header, "Room type" (was "Zone type") and **Create roof from room**. The YAML still
+  says `areas:`, and "Home Assistant area" still means Home Assistant's own areas
+  (#432).
 - The editor's size fields now say what they are measured in: "units" on wall
   thickness, wall height and a tracker's dot, which are canvas units, and on badge,
   label, name, text and ripple sizes when the plan uses `overlayScale: plan`; "px"

@@ -1084,7 +1084,7 @@ function areaScopedEntity(
 function areaScopeHelper(scope: AreaEntityScope | undefined, base?: string): string | undefined {
   if (!scope?.entities.length) return base;
   const where = scope.name ? `the ${scope.name} area` : "this area";
-  const note = `Only entities in ${where} — turn off “Filter entities” on the area to see all`;
+  const note = `Only entities in ${where} — turn off “Filter entities” on the room to see all`;
   return base ? `${base}. ${note}` : note;
 }
 
@@ -1636,7 +1636,7 @@ export function itemGroup7aForm(it: FloorItem): FormSpec {
   const fields: FormField[] = [
     {
       name: "showOnlyWhenZoomed",
-      label: "Only show when zoomed into area",
+      label: "Only show when zoomed into its room",
       helper:
         "Hidden on the full plan, and shown once the room it sits in is zoomed into",
       selector: { boolean: {} },
@@ -2256,10 +2256,10 @@ export function areaForm(a: Area, overlayScale?: OverlayScale): FormSpec {
     fields: [
       {
         name: "zoneKind",
-        label: "Zone type",
-        helper: "Categorizes room vs outdoor zones (lawn, patio, pool, driveway, terrace)",
+        label: "Room type",
+        helper: "Indoor, or an outdoor space (lawn, patio, pool, driveway, terrace)",
         selector: dropdown(
-          opt("indoor", "Indoor / Room"),
+          opt("indoor", "Indoor"),
           opt("lawn", "Lawn"),
           opt("patio", "Patio"),
           opt("pool", "Pool"),

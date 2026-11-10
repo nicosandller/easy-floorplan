@@ -144,3 +144,25 @@ describe("direct inspector categories", () => {
       projectPressForm(c), floorImageForm(c.floors![0] as Floor)], true);
   });
 });
+
+describe("one name for a room (issue #432)", () => {
+  it("calls the drawing tool, its hint and the inspector header Room", async () => {
+    const c = config();
+    c.floors![0].areas = [{ id: "target", points: [{ x: 0, y: 0 }, { x: 400, y: 0 }, { x: 400, y: 400 }, { x: 0, y: 400 }] }];
+    const editor = await mount(c);
+    const root = editor.shadowRoot!;
+    expect(root.querySelector('button[title="Area"]')).toBeNull();
+    root.querySelector<HTMLButtonElement>('button[title="Room"]')!.click();
+    await editor.updateComplete;
+    expect(root.querySelector(".ctx-hint")!.textContent).toContain("Click to start a room outline");
+
+    (editor as unknown as { _tool: string })._tool = "select";
+    (editor as unknown as { _selection: unknown[] })._selection = [{ kind: "area", id: "target" }];
+    editor.requestUpdate();
+    await editor.updateComplete;
+    expect(root.textContent).toContain("Room · 4-point");
+    expect(root.textContent).not.toContain("Area · ");
+    const create = [...root.querySelectorAll("button")].find((b) => b.textContent?.includes("roof from room"));
+    expect(create?.textContent?.trim()).toBe("Create roof from room");
+  });
+});

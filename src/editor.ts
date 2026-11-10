@@ -324,7 +324,7 @@ const TOOL_META: Record<Tool, { icon: string; label: string }> = {
   // Skylight uses home-roof to distinguish from standard windows.
   skylight: { icon: "mdi:home-roof", label: "Skylight" },
   tracker: { icon: "mdi:crosshairs-gps", label: "Tracker" },
-  area: { icon: "mdi:vector-polygon", label: "Area" },
+  area: { icon: "mdi:vector-polygon", label: "Room" },
   roof: { icon: "mdi:home-outline", label: "Roof" },
 };
 
@@ -4137,8 +4137,8 @@ export class FloorplanCardEditor extends LitElement {
       }
       case "area": {
         const a = (f.areas ?? []).find((x) => x.id === sel.id);
-        if (!a) return "Area";
-        return `Area · ${a.name || `${a.points.length}-point`}`;
+        if (!a) return "Room";
+        return `Room · ${a.name || `${a.points.length}-point`}`;
       }
       case "roof": {
         const r = (f.roofs ?? []).find((x) => x.id === sel.id);
@@ -4756,7 +4756,7 @@ export class FloorplanCardEditor extends LitElement {
         >
       `;
     } else if (t === "area") {
-      label = "Area";
+      label = "Room";
       const n = this._draftArea?.points.length ?? 0;
       body = html`
         <span class="ctx-hint">
@@ -6556,7 +6556,7 @@ export class FloorplanCardEditor extends LitElement {
     const id = this._scopingAreaId();
     if (!id) return nothing;
     const area = (this._floor().areas ?? []).find((a) => a.id === id);
-    const name = area?.name ? area.name : "this area";
+    const name = area?.name ? area.name : "this room";
     // The switch lives on the Area element, which is a deselect-navigate-
     // reselect round trip from here — issue #94 was exactly someone reading
     // the old wording and finding no such control. Offer it inline instead.
@@ -6565,7 +6565,7 @@ export class FloorplanCardEditor extends LitElement {
       <span>Only entities in <strong>${name}</strong> are listed.</span>
       <button
         class="link-btn"
-        title="Turn off Filter entities for this area — every entity becomes selectable"
+        title="Turn off Filter entities for this room — every entity becomes selectable"
         @click=${() => this._updateArea(id, { filterEntities: false })}
       >
         Show all
@@ -8094,7 +8094,7 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderRoofChips(roofsOver, "Roofs above this room:")}
         <div class="row wide">
           <button class="secondary" @click=${() => this._createRoofFromArea(a)}>
-            <ha-icon icon="mdi:home-outline"></ha-icon> Create Roof from Room
+            <ha-icon icon="mdi:home-outline"></ha-icon> Create roof from room
           </button>
         </div>
       `;
@@ -8217,14 +8217,14 @@ export class FloorplanCardEditor extends LitElement {
                           (a) => html`
                             <button
                               class="chip-btn"
-                              title="Select this area"
+                              title="Select this room"
                               @click=${() => {
                                 this._selection = [{ kind: "area", id: a.id }];
                                 this._liveEditKey = null;
                               }}
                             >
                               <ha-icon icon="mdi:floor-plan"></ha-icon>
-                              ${a.name || "Area"}
+                              ${a.name || "Room"}
                             </button>
                           `
                         )}
