@@ -9693,14 +9693,6 @@ export class FloorplanCardEditor extends LitElement {
       border-radius: 8px;
       padding: 10px;
     }
-    .section-title {
-      margin: 0 0 8px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--secondary-text-color);
-    }
     /* Element header: kind icon + summary + the selection's actions.
        The actions are the fixed part and the summary is the elastic one: a
        device named after a long entity id used to push Duplicate and Delete
