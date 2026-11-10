@@ -841,7 +841,7 @@ label gets no Label group, and an opening with no shutter gets no Shutter group.
 | Furniture | Shape · What it reads · Behavior · Color |
 | Area | Identity · What it reads · Color · Behavior · Home Assistant area |
 | Tracker | Zone · Sensors · Marker |
-| Project | Project · Look · Floor image · Display · Sunlight · Night dimming · Devices · Symbols |
+| Project | Project · Look · Floor · Floor image · View · Rotation · Size · Rooms · Sunlight · Night dimming · Devices · Symbols |
 
 Walls and text keep a plain list: a wall is thickness and length, a text is its words, size
 and angle. A heading over one or two fields is chrome rather than structure.

@@ -2462,31 +2462,29 @@ describe("every field lands in exactly one panel group", () => {
   it("covers every project field — offlineStyle is sliced away from its form", () => {
     // projectDisplayForm still owns rotation / overlayScale / compactHeader /
     // offlineStyle as one form with one toPatch, but the panel renders the
-    // first three under "Display" and the last under "Devices". Miss it in
-    // both slices and the control silently disappears.
-    const DISPLAY = [
-      "view",
-      "appearance",
-      "showViewControls",
-      "showExport",
-      "rotation",
-      "rotationPortrait",
-      "rotationLandscape",
-      "overlayScale",
-      "overlayMinWidth",
-      "compactHeader",
-      "zoomedOverlayAuto",
-      "zoomedOverlayScale",
-      "roomFocusControls",
-      "roomFocusInterval",
-    ];
+    // first three under View → Rotation and Size (issue #433) and the last
+    // under "Devices". Miss it in every slice and the control silently
+    // disappears.
+    const VIEW = ["view", "appearance", "showViewControls", "showExport", "wallHeight", "wallOpacity"];
+    const ROTATION = ["rotation", "rotationPortrait", "rotationLandscape"];
+    const SIZE = ["overlayScale", "overlayMinWidth", "compactHeader"];
+    const ROOMS = ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"];
     const DEVICES = ["offlineStyle"];
-    // Canvas units, so the conditional overlayMinWidth field is produced too.
-    const cfg = { type: "t", width: 1000, height: 600, overlayScale: "plan" } as FloorplanCardConfig;
-    check(projectDisplayForm(cfg).fields, [DISPLAY, DEVICES], "project display");
-    // Both slices resolve, and neither can emit the other's key.
-    expect(formSlice(projectDisplayForm(cfg), DISPLAY).fields.map((f) => f.name)).toEqual(DISPLAY);
-    expect(formSlice(projectDisplayForm(cfg), DEVICES).fields.map((f) => f.name)).toEqual(DEVICES);
+    // Canvas units, so the conditional overlayMinWidth field is produced too,
+    // and 3D, so the wall fields are.
+    const cfg = { type: "t", width: 1000, height: 600, overlayScale: "plan", view: "3d" } as FloorplanCardConfig;
+    check(projectDisplayForm(cfg).fields, [VIEW, ROTATION, SIZE, ROOMS, DEVICES], "project display");
+    // Every slice resolves, and none can emit another's key.
+    for (const slice of [VIEW, ROTATION, SIZE, ROOMS, DEVICES]) {
+      expect(formSlice(projectDisplayForm(cfg), slice).fields.map((f) => f.name)).toEqual(slice);
+    }
+    // The slices together are the old single list, in the same order.
+    expect(projectDisplayForm(cfg).fields.map((f) => f.name).filter((n) => n !== "offlineStyle")).toEqual([
+      ...VIEW,
+      ...ROTATION,
+      ...SIZE,
+      ...ROOMS,
+    ]);
   });
 
   it("covers every furniture, tracker, area and roof field", () => {

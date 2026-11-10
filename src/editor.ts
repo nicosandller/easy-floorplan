@@ -3455,6 +3455,14 @@ export class FloorplanCardEditor extends LitElement {
     ["Behavior", ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"]],
   ] as const;
 
+  /** Project → View: one `projectDisplayForm`, in the order the fields render. */
+  private static readonly DISPLAY_GROUPS = [
+    ["View", ["view", "appearance", "showViewControls", "showExport", "wallHeight", "wallOpacity"]],
+    ["Rotation", ["rotation", "rotationPortrait", "rotationLandscape"]],
+    ["Size", ["overlayScale", "overlayMinWidth", "compactHeader"]],
+    ["Rooms", ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"]],
+  ] as const;
+
   private static readonly TRACKER_GROUPS = [
     ["Zone", ["w", "h", "x", "y", "angle"]],
     ["Marker", ["dotSize"]],
@@ -3467,7 +3475,8 @@ export class FloorplanCardEditor extends LitElement {
     if (!pages.find((page) => page.id === active)?.groups.includes(title)) return html`${nothing}`;
     const label = ({
       "What it reads": "Sensor readings", Behavior: "Tap, hold & double-tap",
-      Look: "Plan style", Project: "Canvas", Display: "View & scale", Color: "State colors",
+      Look: "Plan style", Project: "Canvas", Color: "State colors",
+      Floor: `Storey · ${this._floor().name}`,
       "Floor image": `Background · ${this._floor().name}`,
     } as Record<string, string>)[title] ?? title;
     const codeSwitch = title === "Behavior" && customElements.get("ha-yaml-editor")
@@ -7213,6 +7222,10 @@ export class FloorplanCardEditor extends LitElement {
     const patch = (p: Record<string, unknown>) =>
       this._patchConfig(p as Partial<FloorplanCardConfig>);
     const display = projectDisplayForm(c);
+    const floorPatch = (p: Record<string, unknown>, live: boolean) => {
+      if (live) this._patchFloorLive(p as Partial<Floor>);
+      else this._commitFloor(p as Partial<Floor>);
+    };
     return html`
       <div class="rows panel-body">
         ${this._renderGroup(
@@ -7259,13 +7272,25 @@ export class FloorplanCardEditor extends LitElement {
           this._renderSwitcherPlacement()
         )}
         ${this._renderGroup(
+          // What the floor is, rather than what is drawn under it (issue
+          // #433). Same form as the floor image, sliced in two.
+          "Floor",
+          this._renderForm(formSlice(floorImageForm(this._floor()), ["isOutdoor", "level"]), floorPatch)
+        )}
+        ${this._renderGroup(
           // Per floor, not per project — but it is the floor's paper, so it
           // belongs beside the plan's own.
           "Floor image",
-          this._renderForm(floorImageForm(this._floor()), (p, live) => {
-            if (live) this._patchFloorLive(p as Partial<Floor>);
-            else this._commitFloor(p as Partial<Floor>);
-          })
+          this._renderForm(
+            formSlice(floorImageForm(this._floor()), [
+              "image",
+              "imageFit",
+              "imageOpacity",
+              "imageDark",
+              "imageInvertDark",
+            ]),
+            floorPatch
+          )
         )}
         ${this._renderGroup(
           // Beside the floor image because it looks like one, but it is the
@@ -7273,32 +7298,15 @@ export class FloorplanCardEditor extends LitElement {
           "Trace template",
           this._renderTracePanel()
         )}
-        ${this._renderGroup(
+        ${
           // How the card is framed on the dashboard, as opposed to what is
           // drawn inside it. Set once for a surface and rarely touched again.
-          "Display",
-          this._renderForm(
-            formSlice(display, [
-              "view",
-              "appearance",
-              "showViewControls",
-              "showExport",
-              "wallHeight",
-              "wallOpacity",
-              "rotation",
-              "rotationPortrait",
-              "rotationLandscape",
-              "overlayScale",
-              "overlayMinWidth",
-              "compactHeader",
-              "zoomedOverlayAuto",
-              "zoomedOverlayScale",
-              "roomFocusControls",
-              "roomFocusInterval",
-            ]),
-            patch
-          )
-        )}
+          // One form, sliced into four headings (issue #433): fourteen fields
+          // in one run hid that the two "…on a screen" rotations qualify the
+          // one above them.
+          FloorplanCardEditor.DISPLAY_GROUPS.map(([title, names]) =>
+            this._renderGroup(title, this._renderForm(formSlice(display, names), patch)))
+        }
         ${this._renderGroup(
           // Light through the openings (issue #177) — where it comes from and
           // what it looks like where it lands.
