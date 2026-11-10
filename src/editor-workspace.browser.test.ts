@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { userEvent } from "@vitest/browser/context";
+import { page, userEvent } from "@vitest/browser/context";
 import "./editor";
 import type { FloorplanCardEditor } from "./editor";
 import type { FloorplanCardConfig } from "./types";
@@ -382,6 +382,30 @@ describe("responsive editor workspace", () => {
     expect(t.rect(".add-pop").right).toBeLessThanOrEqual(t.rect(".editor").right);
     expect(t.rect(".add-pop").height).toBeLessThanOrEqual(window.innerHeight - 100);
     expect(t.rect(".furn-cell svg").height).toBeGreaterThanOrEqual(30);
+  });
+
+  it("draws the insert menu above the inspector's sticky tabs in the expanded editor", async () => {
+    const before = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(1300, 800);
+    try {
+      const t = await mount(560);
+      t.el(".expand-toggle").click();
+      (t.editor as unknown as { _selection: unknown[] })._selection = [{ kind: "furniture", id: "sofa" }];
+      await settle(t.editor);
+      t.root.querySelector<HTMLButtonElement>('.toolbar button[aria-haspopup="true"]')!.click();
+      await settle(t.editor);
+      const tabs = t.rect(".settings-category");
+      const pop = t.rect(".add-pop");
+      // The menu drops over the docked inspector; without that overlap this would prove nothing.
+      expect(pop.right).toBeGreaterThan(tabs.left);
+      expect(pop.top).toBeLessThan(tabs.top);
+      expect(pop.bottom).toBeGreaterThan(tabs.bottom);
+      const x = Math.max(pop.left, tabs.left) + 20;
+      const y = tabs.top + tabs.height / 2;
+      expect(t.root.elementFromPoint(x, y)?.closest(".add-pop")).not.toBeNull();
+    } finally {
+      await page.viewport(before.width, before.height);
+    }
   });
 
   it("refits changed plan dimensions and can zoom out from below 50%", async () => {

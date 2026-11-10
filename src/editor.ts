@@ -8844,7 +8844,10 @@ export class FloorplanCardEditor extends LitElement {
       position: absolute;
       top: calc(100% + 6px);
       right: 0;
-      z-index: 20;
+      /* Above the inspector's sticky tabs (z-index 50 in
+         editor-workspace-styles.ts): in the expanded editor the Add menu
+         drops over the docked inspector, and the tabs painted through it. */
+      z-index: 60;
       min-width: 220px;
       padding: 8px;
       background: var(--card-background-color, #fff);
@@ -8859,7 +8862,7 @@ export class FloorplanCardEditor extends LitElement {
     .pop-backdrop {
       position: fixed;
       inset: 0;
-      z-index: 19;
+      z-index: 59;
     }
     .pop-row {
       display: flex;
