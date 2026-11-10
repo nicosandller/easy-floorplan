@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The view controls fit on one row on a phone-width card instead of two; on cards
+  narrower than 450px the buttons sit closer and are narrower, still 44px tall (#436).
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
   Chromium browsers running some extensions, such as LanguageTool or Kaspersky
   Protection (#401). The editor now measures the plan's width for the overlay instead

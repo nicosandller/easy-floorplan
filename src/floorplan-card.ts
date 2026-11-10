@@ -2920,6 +2920,8 @@ export class FloorplanCard extends LitElement {
       min-height: 0;
       overflow-y: auto;
       overflow-x: hidden;
+      /* Lets the view controls tighten on a narrow card (#436). */
+      container: fp-card / inline-size;
     }
     .card-shell.replay-visible {
       display: grid;

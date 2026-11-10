@@ -154,7 +154,8 @@ describe("live view controls", () => {
         expect(r.left).toBeGreaterThanOrEqual(toolbar.left);
         expect(r.right).toBeLessThanOrEqual(toolbar.right);
         expect(r.height).toBeGreaterThanOrEqual(44);
-        expect(r.width).toBeGreaterThanOrEqual(44);
+        // Phone-width cards trade button width for a single row (#436).
+        expect(r.width).toBeGreaterThanOrEqual(width >= 450 ? 44 : 32);
         const icon = button.querySelector("svg");
         if (icon) {
           const i = icon.getBoundingClientRect();
@@ -166,6 +167,20 @@ describe("live view controls", () => {
           expect(i.bottom).toBeLessThan(r.bottom);
         }
       }
+    }
+  });
+
+  it("fits every control on one row of a phone-width card (#436)", async () => {
+    const t = await mount();
+    const names = ["2D plan", "3D isometric", "Normal", "Line art", "Rotate left", "Rotate right", "Reset view"];
+    // A pressed label is bold, so check both appearances.
+    for (const appearance of ["Normal", "Line art"]) for (const width of [500, 375, 320]) {
+      t.card.style.width = `${width}px`;
+      if (t.button(appearance).getAttribute("aria-pressed") !== "true") await t.click(appearance);
+      const controls = [...names.map(t.button), t.root.querySelector(".view-controls output")!];
+      const middles = controls.map((el) => { const r = el.getBoundingClientRect(); return (r.top + r.bottom) / 2; });
+      for (const middle of middles) expect(middle, `${appearance}, ${width}px`).toBeCloseTo(middles[0], 0);
+      for (const name of names) expect(t.button(name).getBoundingClientRect().height).toBeGreaterThanOrEqual(44);
     }
   });
 });
