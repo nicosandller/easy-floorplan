@@ -222,7 +222,7 @@ import {
   type SelKind,
 } from "./editor-geometry";
 import { FrameCoalescer, rafScheduler } from "./frame-coalescer";
-import { applyCardConfig } from "./editor-save";
+import { applyCardConfig, isNewCard, APPLY_NEW_CARD } from "./editor-save";
 import type { AreaEntityScope } from "./editor-forms";
 import {
   furnitureChoices,
@@ -637,6 +637,12 @@ export class FloorplanCardEditor extends LitElement {
   @state() private _applyError = "";
   private _applyResetTimer: ReturnType<typeof setTimeout> | null = null;
   /**
+   * The card hasn't been saved yet (issue #429): Apply can only fail then, so
+   * it is disabled with the reason as its tooltip. Read from the dialog when
+   * the editor connects and on each config it is handed.
+   */
+  @state() private _cardIsNew = false;
+  /**
    * The opening tool whose last click found no wall in reach (issue #428), so
    * the context bar can say so. Cleared by the next placement or tool change.
    */
@@ -790,6 +796,7 @@ export class FloorplanCardEditor extends LitElement {
 
   public connectedCallback(): void {
     super.connectedCallback();
+    this._cardIsNew = isNewCard(this);
     if (this._canvasWrap) this._canvasResize?.observe(this._canvasWrap);
     // Capture phase so HA's dialog can't swallow the arrow keys before we see them.
     window.addEventListener("keydown", this._onKeyDown, true);
@@ -875,6 +882,7 @@ export class FloorplanCardEditor extends LitElement {
 
   public setConfig(config: FloorplanCardConfig): void {
     validateYCoordinates(config);
+    if (this.isConnected) this._cardIsNew = isNewCard(this);
     const base = { ...emptyConfig(config.type || "custom:easy-floorplan-card"), ...config };
     // Normalize to the floors model (migrating legacy single-floor configs) and
     // clear the legacy flat arrays so `floors` is the single source of truth.
@@ -5095,8 +5103,10 @@ export class FloorplanCardEditor extends LitElement {
                HA's footer, Save included. -->
           <button
             class="apply-btn"
-            ?disabled=${this._applyState === "saving"}
-            title="Save to the dashboard without closing the editor — the card behind updates"
+            ?disabled=${this._applyState === "saving" || this._cardIsNew}
+            title=${this._cardIsNew
+              ? APPLY_NEW_CARD
+              : "Save to the dashboard without closing the editor — the card behind updates"}
             @click=${this._apply}
           >
             <ha-icon

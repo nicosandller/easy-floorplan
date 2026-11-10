@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- **Apply** is disabled on a card that has not been saved yet, with the reason as its
+  tooltip, instead of failing with "Save this card once first" when pressed (#429).
 - A door, window or passage clicked out of reach of every wall is no longer created
   floating at angle 0. The editor places nothing, keeps the tool and says in the
   toolbar that there is no wall within reach (#428).
