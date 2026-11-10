@@ -222,7 +222,7 @@ import {
   type SelKind,
 } from "./editor-geometry";
 import { FrameCoalescer, rafScheduler } from "./frame-coalescer";
-import { applyCardConfig } from "./editor-save";
+import { applyCardConfig, isNewCard, APPLY_NEW_CARD } from "./editor-save";
 import type { AreaEntityScope } from "./editor-forms";
 import {
   furnitureChoices,
@@ -636,6 +636,17 @@ export class FloorplanCardEditor extends LitElement {
   /** Why the last Apply didn't go through, shown beside the button. */
   @state() private _applyError = "";
   private _applyResetTimer: ReturnType<typeof setTimeout> | null = null;
+  /**
+   * The card hasn't been saved yet (issue #429): Apply can only fail then, so
+   * it is disabled with the reason as its tooltip. Read from the dialog when
+   * the editor connects and on each config it is handed.
+   */
+  @state() private _cardIsNew = false;
+  /**
+   * The opening tool whose last click found no wall in reach (issue #428), so
+   * the context bar can say so. Cleared by the next placement or tool change.
+   */
+  @state() private _openingMiss: OpeningType | null = null;
 
   @query(".editor") private _editorEl?: HTMLElement;
   @query("svg") private _svg?: SVGSVGElement;
@@ -785,6 +796,7 @@ export class FloorplanCardEditor extends LitElement {
 
   public connectedCallback(): void {
     super.connectedCallback();
+    this._cardIsNew = isNewCard(this);
     if (this._canvasWrap) this._canvasResize?.observe(this._canvasWrap);
     // Capture phase so HA's dialog can't swallow the arrow keys before we see them.
     window.addEventListener("keydown", this._onKeyDown, true);
@@ -870,6 +882,7 @@ export class FloorplanCardEditor extends LitElement {
 
   public setConfig(config: FloorplanCardConfig): void {
     validateYCoordinates(config);
+    if (this.isConnected) this._cardIsNew = isNewCard(this);
     const base = { ...emptyConfig(config.type || "custom:easy-floorplan-card"), ...config };
     // Normalize to the floors model (migrating legacy single-floor configs) and
     // clear the legacy flat arrays so `floors` is the single source of truth.
@@ -1153,6 +1166,7 @@ export class FloorplanCardEditor extends LitElement {
   };
 
   protected willUpdate(changed: PropertyValues): void {
+    if (changed.has("_tool") && this._openingMiss !== this._tool) this._openingMiss = null;
     const previousConfig = changed.get("_config") as FloorplanCardConfig | undefined;
     if (previousConfig && this._fitToViewport &&
         (previousConfig.width !== this._config.width || previousConfig.height !== this._config.height)) {
@@ -2609,6 +2623,16 @@ export class FloorplanCardEditor extends LitElement {
     // the plan, and stays there. Every other opening still snaps.
     const skylight = type === "skylight";
     const snap = skylight ? undefined : snapToWall(x, y, f.walls, WALL_SNAP);
+    // A door, window or passage belongs in a wall (issue #428). A click out of
+    // reach of every wall used to leave one floating at angle 0, drawn in 3D
+    // as a free-standing leaf; now it places nothing, keeps the tool, and says
+    // why in the context bar. Openings already floating in a saved plan, or
+    // dragged off a wall, are untouched — this is only the click that creates.
+    if (!skylight && !snap) {
+      this._openingMiss = type;
+      return;
+    }
+    this._openingMiss = null;
     const o: Opening = {
       id: uid(type),
       type,
@@ -4848,7 +4872,11 @@ export class FloorplanCardEditor extends LitElement {
             }}
           />
         </label>
-        <span class="ctx-hint">Click on a wall to drop a ${t}; it snaps onto the wall.</span>
+        <span class="ctx-hint ${this._openingMiss === t ? "miss" : ""}" role="status"
+          >${this._openingMiss === t
+            ? `No wall within reach there — click on a wall to drop a ${t}.`
+            : `Click on a wall to drop a ${t}; it snaps onto the wall.`}</span
+        >
       `;
     } else {
       // Tool hints only — the per-element editor AND its actions (duplicate /
@@ -5075,8 +5103,10 @@ export class FloorplanCardEditor extends LitElement {
                HA's footer, Save included. -->
           <button
             class="apply-btn"
-            ?disabled=${this._applyState === "saving"}
-            title="Save to the dashboard without closing the editor — the card behind updates"
+            ?disabled=${this._applyState === "saving" || this._cardIsNew}
+            title=${this._cardIsNew
+              ? APPLY_NEW_CARD
+              : "Save to the dashboard without closing the editor — the card behind updates"}
             @click=${this._apply}
           >
             <ha-icon

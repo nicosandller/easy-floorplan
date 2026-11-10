@@ -80,6 +80,18 @@ export function findCardEditDialog(
 }
 
 /**
+ * Whether the card is still being added (issue #429), so Apply can be disabled
+ * before it is pressed rather than fail when it is. The same `isNew` test
+ * `applyCardConfig` makes on the click, which stays as the fallback.
+ *
+ * Readable as soon as the editor sits in the dialog; HA's Save closes the
+ * dialog, so the card is only ever seen as saved by the next editor it opens.
+ */
+export function isNewCard(start: AncestorNode | null | undefined): boolean {
+  return findCardEditDialog(start)?._params?.isNew === true;
+}
+
+/**
  * Save whatever the surrounding edit dialog currently holds, leaving it open.
  *
  * `start` is the editor element: the dialog is found by walking out through
