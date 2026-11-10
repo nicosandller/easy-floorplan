@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A door, window or passage clicked out of reach of every wall is no longer created
+  floating at angle 0. The editor places nothing, keeps the tool and says in the
+  toolbar that there is no wall within reach (#428).
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
   Chromium browsers running some extensions, such as LanguageTool or Kaspersky
   Protection (#401). The editor now measures the plan's width for the overlay instead
