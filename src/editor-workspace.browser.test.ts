@@ -724,4 +724,20 @@ describe("responsive editor workspace", () => {
     expect(emitted).toEqual([]);
   });
 
+  it.each([600, 1200])("keeps a %i-unit-tall plan still while the narrow dialog's tool changes", async (height) => {
+    const t = await mount(480);
+    t.editor.setConfig({ ...config(), height });
+    await settle(t.editor);
+    const picker = t.el(".tool-compact select") as HTMLSelectElement;
+    const plan = () => { const r = t.rect(".stage svg"); return { top: r.top, height: r.height }; };
+    const start = plan();
+    for (const option of picker.options) {
+      picker.value = option.value;
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+      await settle(t.editor);
+      // The hint and options row below the plan changes height with the tool.
+      expect({ tool: option.value, ...plan() }).toEqual({ tool: option.value, ...start });
+    }
+  });
+
 });

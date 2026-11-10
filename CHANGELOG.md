@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- In the narrow editor, such as Home Assistant's card dialog, the plan no longer moves
+  up and down when you switch drawing tools (#430). The canvas keeps its height when
+  the tool's hint and options below it take more or fewer lines.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
   Chromium browsers running some extensions, such as LanguageTool or Kaspersky
   Protection (#401). The editor now measures the plan's width for the overlay instead
