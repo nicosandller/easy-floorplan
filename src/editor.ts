@@ -7919,12 +7919,12 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderEssentialForm(itemEntityForm(it, areaEntities), ["entity"], apply)}
         ${this._renderEssentialForm(itemIdentityForm(it), ["name", "showName"], apply)}
         ${this._renderEssentialForm(itemShowStateForm(it), ["showState"], apply)}
-        ${this._renderEssentialForm(itemBadgeForm(it), ["size", "angle"], apply)}
+        ${this._renderEssentialForm(itemBadgeForm(it, undefined, this._config.overlayScale), ["size", "angle"], apply)}
         ${this._renderItemIconRow(it)}
         ${this._renderRoofChips(roofsOver)}
       `;
       const entityState = it.entity ? this.hass?.states[it.entity] : undefined;
-      const effects = itemEffectsForm(it, deviceClass, entityState);
+      const effects = itemEffectsForm(it, deviceClass, entityState, this._config.overlayScale);
       return html`
         ${this._renderGroup(
           "What it reads",
@@ -7936,7 +7936,7 @@ export class FloorplanCardEditor extends LitElement {
         ${itemHasLabel(it)
           ? this._renderGroup(
               "Label",
-              this._renderForm(itemLabelForm(it), apply),
+              this._renderForm(itemLabelForm(it, this._config.overlayScale), apply),
               it.disableLabelColor && it.useCustomLabelColor
                 ? this._renderColorRow({
                     label: "Custom color",
@@ -8016,7 +8016,7 @@ export class FloorplanCardEditor extends LitElement {
       const t = this._floor().texts.find((x) => x.id === sel.id);
       if (!t) return html`${nothing}`;
       return html`
-        ${this._renderEssentialForm(textForm(t, this._areaEntitiesAt(t.x, t.y)), ["text", "entity", "attribute", "size", "angle"], (patch, live) =>
+        ${this._renderEssentialForm(textForm(t, this._areaEntitiesAt(t.x, t.y), this._config.overlayScale), ["text", "entity", "attribute", "size", "angle"], (patch, live) =>
           this._applyElementPatch("text", t.id, patch, live)
         )}
         ${this._renderColorRow({
@@ -8077,7 +8077,7 @@ export class FloorplanCardEditor extends LitElement {
       if (!a) return html`${nothing}`;
       const haAreas = haAreasOf(this.hass);
       const pendingEntities = a.haArea ? this._pendingAreaEntities(a) : [];
-      const aSpec = areaForm(a);
+      const aSpec = areaForm(a, this._config.overlayScale);
       const aApply = (patch: Record<string, unknown>, live: boolean) =>
         this._applyElementPatch("area", a.id, patch, live);
       const roofsOver = this._roofsOverArea(a);

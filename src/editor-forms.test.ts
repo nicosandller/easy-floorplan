@@ -1295,6 +1295,47 @@ describe("textForm / furnitureForm / trackerForm", () => {
   });
 });
 
+describe("field suffixes say what the value is measured in (issue #431)", () => {
+  const unit = (spec: { fields: FormField[] } | undefined, name: string) =>
+    (spec!.fields.find((x) => x.name === name)!.selector.number as { unit_of_measurement?: string })
+      .unit_of_measurement;
+  const wall = { id: "w", x1: 0, y1: 0, x2: 1, y2: 1 };
+  const item = { id: "i", kind: "sensor", x: 0, y: 0, entity: "sensor.t" } as FloorItem;
+  const motion = { id: "m", kind: "binary_sensor", x: 0, y: 0, entity: "binary_sensor.m", display: "iconRipple" } as FloorItem;
+  const text = { id: "t", x: 0, y: 0, text: "hi" } as FloorText;
+  const area = { id: "a", points: [] } as unknown as Area;
+  const plan = (overlayScale?: "plan" | "fixed") =>
+    ({ type: "t", width: 1000, height: 600, overlayScale }) as FloorplanCardConfig;
+
+  it("canvas measures always say units", () => {
+    expect(unit(wallForm(wall), "thickness")).toBe("units");
+    expect(unit(wallForm(wall), "height")).toBe("units");
+    expect(unit(trackerForm({ id: "t", x: 0, y: 0, w: 20, h: 20 } as Tracker), "dotSize")).toBe("units");
+  });
+
+  it("the minimum card width is screen pixels whatever the overlay scale", () => {
+    expect(unit(projectDisplayForm(plan("plan")), "overlayMinWidth")).toBe("px");
+  });
+
+  it("overlay measures say units under overlayScale: plan", () => {
+    expect(unit(itemLabelForm(item, "plan"), "labelSize")).toBe("units");
+    expect(unit(itemBadgeForm(item, undefined, "plan"), "size")).toBe("units");
+    expect(unit(itemEffectsForm(motion, "motion", undefined, "plan"), "rippleSize")).toBe("units");
+    expect(unit(textForm(text, undefined, "plan"), "size")).toBe("units");
+    expect(unit(areaForm(area, "plan"), "labelSize")).toBe("units");
+  });
+
+  it("overlay measures say px under overlayScale: fixed, and when it is absent", () => {
+    for (const scale of ["fixed", undefined] as const) {
+      expect(unit(itemLabelForm(item, scale), "labelSize")).toBe("px");
+      expect(unit(itemBadgeForm(item, undefined, scale), "size")).toBe("px");
+      expect(unit(itemEffectsForm(motion, "motion", undefined, scale), "rippleSize")).toBe("px");
+      expect(unit(textForm(text, undefined, scale), "size")).toBe("px");
+      expect(unit(areaForm(area, scale), "labelSize")).toBe("px");
+    }
+  });
+});
+
 describe("wallForm / projectForm / floorImageForm", () => {
   it("wall exposes rounded coordinates", () => {
     const d = wallForm({ id: "w", x1: 1.4, y1: 2.6, x2: 3, y2: 4 }).data;

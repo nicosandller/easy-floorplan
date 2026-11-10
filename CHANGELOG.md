@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The editor's size fields now say what they are measured in: "units" on wall
+  thickness, wall height and a tracker's dot, which are canvas units, and on badge,
+  label, name, text and ripple sizes when the plan uses `overlayScale: plan`; "px"
+  under `overlayScale: fixed` and on "Stop shrinking below" (#431).
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
   Chromium browsers running some extensions, such as LanguageTool or Kaspersky
   Protection (#401). The editor now measures the plan's width for the overlay instead
