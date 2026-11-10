@@ -705,17 +705,6 @@ function toLocal(x: number, y: number, cx: number, cy: number, deg: number) {
   return { x: dx * Math.cos(rad) - dy * Math.sin(rad), y: dx * Math.sin(rad) + dy * Math.cos(rad) };
 }
 
-/** Distance from a point to a segment (used for wall hit tests). */
-function distToSegment(x: number, y: number, w: WallSegment): number {
-  const vx = w.x2 - w.x1;
-  const vy = w.y2 - w.y1;
-  const len2 = vx * vx + vy * vy;
-  if (len2 === 0) return Math.hypot(x - w.x1, y - w.y1);
-  let t = ((x - w.x1) * vx + (y - w.y1) * vy) / len2;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(x - (w.x1 + t * vx), y - (w.y1 + t * vy));
-}
-
 /**
  * Every element whose hit area contains (x, y), ordered by {@link PICK_ORDER}
  * — the candidate list the editor cycles through on repeated clicks at the
@@ -775,7 +764,7 @@ export function elementsAtPoint(
     if (Math.abs(p.x) <= fu.w / 2 && Math.abs(p.y) <= fu.h / 2) push("furniture", fu.id, i, fu.locked);
   });
   f.walls.forEach((w, i) => {
-    if (distToSegment(x, y, w) <= HIT.wall) push("wall", w.id, i, w.locked);
+    if (distToWall(x, y, w) <= HIT.wall) push("wall", w.id, i, w.locked);
   });
   (f.trackers ?? []).forEach((tr, i) => {
     const p = toLocal(x, y, tr.x + tr.w / 2, tr.y + tr.h / 2, tr.angle ?? 0);

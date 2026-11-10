@@ -215,6 +215,12 @@ describe("elementsAtPoint / cyclePick (issue #52)", () => {
     expect(elementsAtPoint(floor, 1000, 1000, opts)).toEqual([]);
   });
 
+  it("a zero-length wall is hit within reach of its single point (#437)", () => {
+    const dot = { ...floor, walls: [{ id: "w", x1: 500, y1: 500, x2: 500, y2: 500 }], trackers: [] } as Floor;
+    expect(elementsAtPoint(dot, 506, 508, opts)).toEqual([{ kind: "wall", id: "w" }]);
+    expect(elementsAtPoint(dot, 507, 509, opts)).toEqual([]);
+  });
+
   it("hit areas respect rotation", () => {
     const rotated = {
       ...floor,
