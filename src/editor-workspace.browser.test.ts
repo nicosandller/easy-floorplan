@@ -724,4 +724,50 @@ describe("responsive editor workspace", () => {
     expect(emitted).toEqual([]);
   });
 
+  it.each([600, 1200])("keeps a %i-unit-tall plan still while the narrow dialog's tool changes", async (height) => {
+    const t = await mount(480);
+    t.editor.setConfig({ ...config(), height });
+    await settle(t.editor);
+    const picker = t.el(".tool-compact select") as HTMLSelectElement;
+    const plan = () => { const r = t.rect(".stage svg"); return { top: r.top, height: r.height }; };
+    const start = plan();
+    for (const option of picker.options) {
+      picker.value = option.value;
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+      await settle(t.editor);
+      // The hint and options row below the plan changes height with the tool.
+      expect({ tool: option.value, ...plan() }).toEqual({ tool: option.value, ...start });
+    }
+  });
+
+  it("keeps the selection bar in view below a landscape plan in the narrow dialog", async () => {
+    const t = await mount(480);
+    t.editor.setConfig({ ...config(), height: 600 });
+    (t.editor as unknown as { _selection: unknown[] })._selection = [{ kind: "furniture", id: "sofa" }];
+    await settle(t.editor);
+    // The canvas is as tall as the plan fitted to its width, without blank bands.
+    expect(t.el(".zoom-val-btn").textContent?.trim()).toBe("100% width");
+    expect(t.el(".canvas-wrap").clientHeight - t.rect(".stage").height).toBeLessThanOrEqual(1);
+    // Home Assistant's card dialog shows about 691 px of the editor on a 1440x900 screen.
+    expect(t.rect(".inspector-jump").bottom - t.rect(".editor").top).toBeLessThan(600);
+    // Zooming scrolls inside the canvas rather than making it taller.
+    const height = t.rect(".canvas-wrap").height;
+    t.el('[aria-label="Zoom in"]').click();
+    await settle(t.editor);
+    expect(t.rect(".canvas-wrap").height).toBe(height);
+    expect(t.el(".canvas-wrap").scrollHeight).toBeGreaterThan(t.el(".canvas-wrap").clientHeight);
+  });
+
+  it("keeps the zoom control off a fitted plan in the narrow dialog", async () => {
+    const t = await mount(480);
+    t.editor.setConfig({ ...config(), height: 600 });
+    await settle(t.editor);
+    expect(t.el('[aria-label="Fit to view"]').getAttribute("aria-pressed")).toBe("true");
+    const zoom = t.rect(".zoom-overlay");
+    const stage = t.rect(".stage");
+    const overlaps = zoom.left < stage.right && zoom.right > stage.left
+      && zoom.top < stage.bottom && zoom.bottom > stage.top;
+    expect(overlaps).toBe(false);
+  });
+
 });

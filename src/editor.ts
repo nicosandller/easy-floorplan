@@ -5367,7 +5367,7 @@ export class FloorplanCardEditor extends LitElement {
           tabindex="0"
           style=${this._fullscreen
             ? nothing
-            : `aspect-ratio:${cssNumber(c.width, DEFAULT_WIDTH)} / ${cssNumber(c.height, DEFAULT_HEIGHT)};`}
+            : `aspect-ratio:${cssNumber(c.width, DEFAULT_WIDTH)} / ${cssNumber(c.height, DEFAULT_HEIGHT)};--plan-ratio:${cssNumber(c.width, DEFAULT_WIDTH)} / ${cssNumber(c.height, DEFAULT_HEIGHT)};`}
           @wheel=${this._onCanvasWheel}
           @scroll=${this._onCanvasScroll}
         >
