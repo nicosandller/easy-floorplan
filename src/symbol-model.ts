@@ -84,3 +84,14 @@ export function normalizeHeight3d(value: unknown): number | undefined {
 export function furnitureModelHeight(f: { height3d?: number }, model: SymbolModel): number {
   return normalizeHeight3d(f.height3d) ?? model.size.height;
 }
+
+/** Elevation uses the configured wall height, never the furniture cut plane. */
+export function furnitureModelBounds(
+  f: { height3d?: number }, model: SymbolModel, wallHeight: number,
+  elevation?: { from: number; to: number }
+): { bottom: number; top: number; height: number } {
+  const bottom = elevation ? wallHeight * elevation.from : 0;
+  const height = normalizeHeight3d(f.height3d) ?? (elevation
+    ? wallHeight * (elevation.to - elevation.from) : model.size.height);
+  return { bottom, height, top: bottom + height };
+}

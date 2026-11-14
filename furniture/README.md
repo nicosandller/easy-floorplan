@@ -234,6 +234,15 @@ Leave the field empty to retain `model3d.size.height`. Only finite values greate
 and at most 10000 are accepted. This does not change the 2D symbol or enable 3D rendering;
 symbols without a 3D model retain their existing fallback rendering.
 
-Detailed models currently start at floor level. The symbol-level `elevation`
-setting applies only to block rendering and is ignored when `model3d` is used.
-For elevated custom symbols, omit `model3d` to retain the elevated fallback.
+### Elevated 3D models
+
+`elevation` also applies to `model3d`. Its `from` and `to` values are fractions
+of the configured wall height (not the separate furniture cut height). The model
+is scaled into that vertical interval. A placed `height3d` overrides the interval
+height while retaining the bottom offset. Without `elevation`, models retain
+their authored height and stand on the floor.
+
+For example, `elevation: { from: 0.5, to: 0.8 }` with `wallHeight: 200` mounts
+a model from 100 to 160. With `height3d: 80`, it extends from 100 to 180.
+A separate cut of 130 clips either model at 130; a cut of 100 hides it completely.
+Changing the cut never moves the mounting position. The 2D drawing is unchanged.

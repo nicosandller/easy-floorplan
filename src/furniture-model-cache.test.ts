@@ -55,3 +55,14 @@ describe("furniture model geometry cache", () => {
     expect(cache.project([secondEntry], view, project).get(second)).not.toBe(first.get(second));
   });
 });
+
+it("invalidates elevated geometry when wall height or elevation changes independently of the cut", () => {
+  const cache = new FurnitureModelCache(), project = map();
+  const raised = { ...entry, elevation: { from: 0.5, to: 0.8 } };
+  const first = cache.project([raised], { ...view, wallHeight: 100 }, project).get(furniture)!;
+  const second = cache.project([raised], { ...view, wallHeight: 200 }, project).get(furniture)!;
+  expect(second).not.toBe(first);
+  expect(second[0]!.z0).toBeCloseTo(130);
+  const third = cache.project([{ ...raised, elevation: { from: 0.2, to: 0.8 } }], { ...view, wallHeight: 200 }, project).get(furniture)!;
+  expect(third[0]!.z0).toBeCloseTo(100);
+});

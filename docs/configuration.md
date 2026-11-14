@@ -486,8 +486,10 @@ than zero, at most 10000). It defaults to `model3d.size.height`, scales the mode
 vertically independently of `w` and `h`, and applies before section clipping.
 It does not enable 3D models or affect 2D/block rendering. For a half-scale plan,
 set it to half the authored model height as well as halving the footprint.
-Detailed models currently start at floor level: the symbol-author `elevation`
-setting applies only to the block fallback, not to `model3d`.
+For symbols with `elevation`, detailed models start at `from × wallHeight` and
+by default fill the interval up to `to × wallHeight`. An explicit `height3d`
+overrides that interval height while preserving the bottom position. The separate
+furniture cut is still measured from the floor and does not change the mounting height.
 
 The editor's **+ Add** picker draws every symbol at its real size and is searchable — type
 `couch` and you get the sofa and the sectional.

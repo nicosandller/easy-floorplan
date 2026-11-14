@@ -93,3 +93,27 @@ it("removes and restores cached 3D furniture when visibility changes", async () 
     expect(root.querySelectorAll('.fp-furniture-hit[role="button"]').length).toBe(state === "on" ? 1 : 0);
   }
 });
+
+it.each([0, 90, 180, 270] as const)("places elevated models within the frame and removes geometry and controls below the cut at %s", async rotation => {
+  const settings = { rotation, wallHeight: 60, furnitureSeparateSection: true, furnitureSectionHeight: 200,
+    furniture: [{ id: "tv", type: "raised", x: 200, y: 200, w: 100, h: 10, height3d: 120, showIcon: false, tap_action: { action: "fire-dom-event" } }],
+    symbols: { raised: { id: "raised", parts: [{ rect: [0, 0, 100, 100] }], elevation: { from: 0.5, to: 0.8 },
+      model3d: { version: 1, units: "cm", size: { width: 100, depth: 10, height: 70 }, parts: [{ box: [100, 10, 70] }] } } } };
+  const root = await mount(settings as Partial<FloorplanCardConfig>);
+  expect(root.querySelectorAll('.fp-iso-furniture')).toHaveLength(1);
+  expect(root.querySelectorAll('.fp-furniture-hit[role="button"]')).toHaveLength(1);
+  const bounds = root.querySelector('.plan')!.getBoundingClientRect();
+  for (const face of root.querySelectorAll<SVGPolygonElement>('.fp-iso-furniture polygon')) {
+    for (const p of Array.from(face.points)) {
+      const screen = new DOMPoint(p.x, p.y).matrixTransform(face.getScreenCTM()!);
+      expect(screen.y).toBeGreaterThanOrEqual(bounds.top - 1);
+      expect(screen.y).toBeLessThanOrEqual(bounds.bottom + 1);
+    }
+  }
+  const card = root.host as FloorplanCard;
+  card.setConfig({ type: "custom:easy-floorplan-card", width: 400, height: 400, view: "3d", furniture3d: true,
+    ...settings, furnitureSectionHeight: 30 } as FloorplanCardConfig);
+  await card.updateComplete;
+  expect(root.querySelectorAll('.fp-iso-furniture')).toHaveLength(0);
+  expect(root.querySelectorAll('.fp-furniture-hit[role="button"]')).toHaveLength(0);
+});

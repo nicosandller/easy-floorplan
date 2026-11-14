@@ -1,5 +1,5 @@
 import { FurnitureModelCache } from "./furniture-model-cache";
-import { furnitureModelHeight } from "./symbol-model";
+import { furnitureModelBounds } from "./symbol-model";
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -1086,7 +1086,7 @@ export class FloorplanCard extends LitElement {
       const catalog = symbolCatalog(c.symbols);
       for (const f of active?.furniture ?? []) {
         const model = catalog[f.type]?.model3d;
-        if (model) wallHeight = Math.max(wallHeight, Math.min(furnitureModelHeight(f, model), furnitureSectionHeight(c)));
+        if (model) wallHeight = Math.max(wallHeight, Math.min(furnitureModelBounds(f, model, baseWallHeight, catalog[f.type]?.elevation).top, furnitureSectionHeight(c)));
       }
     }
     return {
@@ -1421,10 +1421,10 @@ export class FloorplanCard extends LitElement {
     const visibleFurniture = active.furniture.filter(f => isFurnitureVisible(f, effHass));
     const modelEntries = visibleFurniture.flatMap(furniture => {
       const model = c.furniture3d === true ? catalog[furniture.type]?.model3d : undefined;
-      return model ? [{ furniture, model, color: furnitureTone(furniture) }] : [];
+      return model ? [{ furniture, model, color: furnitureTone(furniture), elevation: catalog[furniture.type]?.elevation }] : [];
     });
     const modelSolids = this._furnitureModelCache.project(modelEntries,
-      { width: c.width, height: c.height, rotation: rot, sectionHeight }, map);
+      { width: c.width, height: c.height, rotation: rot, sectionHeight, wallHeight: baseWallHeight }, map);
     for (const f of visibleFurniture) {
       const cached = modelSolids.get(f);
       if (cached) {
@@ -1474,7 +1474,7 @@ export class FloorplanCard extends LitElement {
         const keyboard = !modelHitIds.has(solid.id);
         modelHitIds.add(solid.id);
         const model = catalog[f.type]!.model3d!;
-        const height = Math.min(furnitureModelHeight(f, model), sectionHeight);
+        const height = Math.min(furnitureModelBounds(f, model, baseWallHeight, catalog[f.type]?.elevation).top, sectionHeight);
         const footprint = furnitureSolid(f, map, height, furnitureTone(f)).base;
         const xs = footprint.map(p => p.x - height), ys = footprint.map(p => p.y - height);
         const focus = svg`<rect class="fp-furniture-focus" aria-hidden="true"
@@ -1807,8 +1807,11 @@ export class FloorplanCard extends LitElement {
     // Floor-level coordinates would leave the control below the table in 3D.
     const frame = this._frame(c, rot);
     const at = rotatePlanPoint(f.x, f.y, c.width, c.height, rot);
-    const model = c.furniture3d === true ? symbolCatalog(c.symbols)[f.type]?.model3d : undefined;
-    const height = model ? Math.min(furnitureModelHeight(f, model), furnitureSectionHeight(c))
+    const symbol = symbolCatalog(c.symbols)[f.type];
+    const model = c.furniture3d === true ? symbol?.model3d : undefined;
+    const bounds = model ? furnitureModelBounds(f, model, normalizeWallHeight(c.wallHeight), symbol?.elevation) : undefined;
+    if (bounds && (bounds.height <= 0 || bounds.bottom >= furnitureSectionHeight(c))) return nothing;
+    const height = model ? Math.min(bounds!.top, furnitureSectionHeight(c))
       : normalizeWallHeight(c.wallHeight) * FURNITURE_HEIGHT_FRACTION;
     const p = projectPlanPoint(at.x, at.y, frame, height);
     const d = projectedCanvasSize(frame);

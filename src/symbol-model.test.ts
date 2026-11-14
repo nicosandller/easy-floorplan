@@ -98,3 +98,14 @@ it("ships only the four initial 3D models", () => {
   expect(Object.values(BUILTIN_SYMBOLS).filter(s => s.model3d).map(s => s.id).sort())
     .toEqual(["bathtub", "cornerShelf", "stove", "table"]);
 });
+
+it("positions elevated models in wall-relative bounds before applying the independent cut", () => {
+  const model = normalizeModel({ version: 1, units: "cm", size: { width: 60, depth: 10, height: 100 }, parts: [{ box: [60, 10, 100] }] })!;
+  const f = { x: 0, y: 0, w: 60, h: 10 };
+  const map = (x: number, y: number) => ({ x, y });
+  const placement = { wallHeight: 200, elevation: { from: 0.5, to: 0.8 } };
+  expect(furnitureModelSolids(f, model, map, 300, "gray", placement)[0]).toMatchObject({ z0: 100, z1: 160 });
+  expect(furnitureModelSolids(f, model, map, 130, "gray", placement)[0]).toMatchObject({ z0: 100, z1: 130 });
+  expect(furnitureModelSolids(f, model, map, 100, "gray", placement)).toEqual([]);
+  expect(furnitureModelSolids({ ...f, height3d: 80 }, model, map, 300, "gray", placement)[0]).toMatchObject({ z0: 100, z1: 180 });
+});
