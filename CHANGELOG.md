@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
+  when an object is selected; the tabs used to paint over the first row of furniture.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
   Chromium browsers running some extensions, such as LanguageTool or Kaspersky
   Protection (#401). The editor now measures the plan's width for the overlay instead
