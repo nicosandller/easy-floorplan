@@ -35,12 +35,22 @@ export interface HomeAssistant extends BaseHomeAssistant {
    * the user's per-entity icon override, which never appears in the state's
    * `attributes`.
    */
-  entities?: Record<string, { icon?: string } | undefined>;
+  entities?: Record<string, { entity_id?: string; area_id?: string | null; device_id?: string | null; labels?: string[]; icon?: string } | undefined>;
+  /** The device registry exposed by the frontend. */
+  devices?: Record<string, { id?: string; area_id?: string | null; labels?: string[] } | undefined>;
+  /** The area registry exposed by the frontend. */
+  areas?: Record<string, { area_id?: string; floor_id?: string | null; labels?: string[] } | undefined>;
+  /** The floor registry exposed by the frontend. */
+  floors?: Record<string, { floor_id?: string; labels?: string[] } | undefined>;
   /**
    * HA has carried `darkMode` on `themes` since 2021; `custom-card-helpers`
    * predates it. Read by `roomTints` to pick each tint's dark side.
    */
   themes: BaseHomeAssistant["themes"] & { darkMode?: boolean };
+  /**
+   * Lazily loads on-demand frontend translation fragments (e.g. "config").
+   */
+  loadFragmentTranslation?(fragment: string): Promise<unknown>;
 }
 
 /**
@@ -1172,6 +1182,102 @@ export type FurnitureType =
  */
 export type SectionalHand = "left" | "right";
 
+/** Base shape for Home Assistant dashboard card visibility conditions (Issue #310). */
+export type VisibilityCondition =
+  | StateVisibilityCondition
+  | NumericStateVisibilityCondition
+  | ScreenVisibilityCondition
+  | UserVisibilityCondition
+  | TimeCondition
+  | LocationCondition
+  | AndVisibilityCondition
+  | OrVisibilityCondition
+  | NotVisibilityCondition;
+
+export interface StateVisibilityCondition {
+  condition: "state";
+  entity?: string;
+  entity_id?: string;
+  target?: {
+    entity_id?: string;
+    [key: string]: unknown;
+  };
+  state?: string | string[];
+  state_not?: string | string[];
+  attribute?: string;
+}
+
+export interface NumericStateVisibilityCondition {
+  condition: "numeric_state";
+  entity?: string;
+  entity_id?: string;
+  target?: {
+    entity_id?: string;
+    [key: string]: unknown;
+  };
+  above?: number | string;
+  below?: number | string;
+  attribute?: string;
+}
+
+export interface ScreenVisibilityCondition {
+  condition: "screen";
+  media_query: string;
+}
+
+export interface UserVisibilityCondition {
+  condition: "user";
+  users: string[];
+}
+
+export interface TimeCondition {
+  condition: "time";
+  after?: string;
+  before?: string;
+  weekdays?: string[];
+}
+
+export interface LocationCondition {
+  condition: "location";
+  match_mode?: "active_zone" | "any_zone";
+  target?: {
+    entity_id?: string | string[];
+    device_id?: string | string[];
+    area_id?: string | string[];
+    floor_id?: string | string[];
+    label_id?: string | string[];
+    exclude?: {
+      entity_id?: string | string[];
+      device_id?: string | string[];
+      area_id?: string | string[];
+      floor_id?: string | string[];
+      label_id?: string | string[];
+    };
+    [key: string]: unknown;
+  };
+  locations?: string[];
+  away?: boolean;
+}
+
+export interface AndVisibilityCondition {
+  condition: "and";
+  conditions?: VisibilityCondition[];
+  and?: VisibilityCondition[];
+}
+
+export interface OrVisibilityCondition {
+  condition: "or";
+  conditions?: VisibilityCondition[];
+  or?: VisibilityCondition[];
+}
+
+export interface NotVisibilityCondition {
+  condition: "not";
+  conditions?: VisibilityCondition[];
+  not?: VisibilityCondition[];
+}
+
+
 /** A gray furniture/fixture diagram placed on the plan. */
 export interface Furniture {
   /** Physical 3D height in canvas units; defaults to the model height. */
@@ -1270,6 +1376,13 @@ export interface Furniture {
    * See {@link Wall.locked} for why it stays selectable.
    */
   locked?: boolean;
+  /**
+   * Visibility conditions for dynamic display (Issue #310).
+   * Follows native Home Assistant dashboard card visibility schema.
+   * If any condition evaluates to false, the furniture is hidden.
+   * When omitted or empty, the piece is always visible.
+   */
+  visibility?: VisibilityCondition[];
 }
 
 /**
@@ -1814,6 +1927,67 @@ export interface Floor {
   roofs?: Roof[];
   /** Summary metrics configuration for this floor (issue #234). */
   summary?: FloorSummaryConfig;
+  /** Info / telemetry callout panels on this floor. */
+  panels?: FloorInfoPanel[];
+}
+
+/**
+ * Metric row inside an info panel.
+ */
+export interface FloorInfoPanelMetric {
+  entity: string;
+  label?: string;
+  attribute?: string;
+  icon?: string;
+  unit?: string;
+  /** Whether to render the icon for this metric (default: true) */
+  showIcon?: boolean;
+}
+
+/**
+ * Callout Info-Panel / HUD card placed on the floor.
+ */
+export interface FloorInfoPanel {
+  id: string;
+  x: number;
+  y: number;
+  /** Target link type: unanchored floor card, specific area, furniture piece, roof, or free coordinate */
+  targetType?: "floor" | "area" | "furniture" | "roof" | "fixed";
+  /** ID of the linked Area, Furniture, or Roof item */
+  targetId?: string;
+  /** Anchor point coordinate on the plan (defaults to area/furniture center) */
+  anchor?: { x: number; y: number };
+  /** Panel display title (defaults to area/furniture/floor name) */
+  title?: string;
+  /** Whether to render the title header row (default: true) */
+  showTitle?: boolean;
+  /** Whether to render metric icons across the panel (default: true) */
+  showIcons?: boolean;
+  /** Whether to render metric labels / friendly names (default: true) */
+  showLabels?: boolean;
+  /** Theme accent color (e.g. "#00e5ff", "#ff9100", or CSS variable) */
+  color?: string;
+  /** Visual style: "card" (HA theme card, default), "minimal" (dark translucent), "pill" (single row), or "hud" (chamfered sci-fi) */
+  style?: "card" | "minimal" | "pill" | "hud";
+  /** Show connecting leader line from anchor to panel (default: true) */
+  showLeaderLine?: boolean;
+  /** Whether the panel renders in 2D top-down view (default: true) */
+  showIn2D?: boolean;
+  /** Whether the panel renders in 3D perspective / stacked view (default: true) */
+  showIn3D?: boolean;
+  /**
+   * Only show when the room this panel belongs to is zoomed into (issue #222).
+   * Keeps the full-plan view uncluttered while giving rich telemetry on room focus.
+   */
+  showOnlyWhenZoomed?: boolean;
+  /** Telemetry metrics / entity rows to display */
+  metrics?: FloorInfoPanelMetric[];
+}
+
+/** Return the callout panels defined on a floor. */
+export function floorPanels(f: Floor | undefined): FloorInfoPanel[] {
+  if (!f) return [];
+  return f.panels ?? [];
 }
 
 /** Card-level floor summary configuration (issue #234). */
@@ -2345,6 +2519,8 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
   roofs?: Roof[];
   /** Floor summary configuration (issue #234). */
   floorSummary?: FloorSummaryCardConfig;
+  /** Info / telemetry callout panels. */
+  panels?: FloorInfoPanel[];
   /**
    * Symbols this plan defines for itself (issue #90), keyed by id and merged
    * over the shipped `furniture/` library — so you can draw a piece nobody has
@@ -2596,6 +2772,7 @@ export function makeFloor(name: string, walls: Wall[] = []): Floor {
     trackers: [],
     areas: [],
     roofs: [],
+    panels: [],
   };
 }
 
@@ -2616,6 +2793,7 @@ function normalizeFloor(f: Floor): Floor {
     trackers: f.trackers ?? [],
     areas: f.areas ?? [],
     roofs: f.roofs ?? [],
+    panels: f.panels ?? [],
   };
 }
 
@@ -2706,6 +2884,7 @@ export function getFloors(c: FloorplanCardConfig): Floor[] {
       trackers: c.trackers ?? [],
       areas: c.areas ?? [],
       roofs: c.roofs ?? [],
+      panels: c.panels ?? [],
     },
   ];
 }
