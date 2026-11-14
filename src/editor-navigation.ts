@@ -10,7 +10,7 @@ export interface InspectorPage {
 // These are destinations, not disclosures. Each group belongs to one page;
 // the editor renders only that page, so changing category never adds nesting.
 export const PROJECT_PAGES: readonly InspectorPage[] = [
-  { id: "plan", label: "Plan", hint: "Canvas, floors and background image", groups: ["Project", "Floor image", "Floor switcher"] },
+  { id: "plan", label: "Plan", hint: "Canvas, floors, background and trace", groups: ["Project", "Floor image", "Trace template", "Floor switcher"] },
   { id: "colors", label: "Style", hint: "Colors, theme and named colors", groups: ["Look", "Named colors"] },
   { id: "view", label: "View", hint: "Display, scale and 3D", groups: ["Display"] },
   { id: "lighting", label: "Lighting", groups: ["Sunlight", "Night dimming"] },
@@ -20,9 +20,15 @@ export const PROJECT_PAGES: readonly InspectorPage[] = [
 
 const properties: InspectorPage = { id: "properties", label: "Properties", groups: [] };
 const actions: InspectorPage = { id: "actions", label: "Actions", groups: ["Behavior"] };
+const visibility: InspectorPage = { id: "visibility", label: "Visibility", hint: "Show or hide by condition", groups: ["Visibility"] };
 
 export const SELECTION_PAGES: Record<SelKind, readonly InspectorPage[]> = {
-  furniture: [properties, { id: "sensor", label: "Sensors", hint: "Sensor and state colors", groups: ["What it reads", "Color"] }, actions],
+  furniture: [
+    properties,
+    { id: "sensor", label: "Sensors", hint: "Sensor and state colors", groups: ["What it reads", "Color"] },
+    actions,
+    visibility,
+  ],
   opening: [
     properties,
     { id: "sensors", label: "Sensors", hint: "Sensors and shutter", groups: ["What it reads", "Shutter"] },
@@ -34,7 +40,7 @@ export const SELECTION_PAGES: Record<SelKind, readonly InspectorPage[]> = {
     { id: "readings", label: "Readings", groups: ["What it reads"] },
     { id: "appearance", label: "Style", hint: "Labels, badges, colors and effects", groups: ["Label", "Badge", "Color", "Effects"] },
     actions,
-    { id: "visibility", label: "Visibility", groups: ["Visibility"] },
+    visibility,
   ],
   area: [properties, { id: "sensor", label: "Sensors", hint: "Sensors and room devices", groups: ["What it reads", "Color", "Home Assistant area"] }, actions],
   roof: [properties],
@@ -44,5 +50,6 @@ export const SELECTION_PAGES: Record<SelKind, readonly InspectorPage[]> = {
     { id: "marker", label: "Marker", groups: ["Marker"] },
   ],
   text: [properties],
+  panel: [properties],
   wall: [properties],
 };

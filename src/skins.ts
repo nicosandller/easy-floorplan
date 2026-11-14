@@ -60,6 +60,12 @@ export interface Skin {
   description: string;
   /** Token overrides. Empty for the default skin, which is the absence of a skin. */
   vars: Partial<Record<SkinToken, string>>;
+  /**
+   * Set on a skin whose paper is always dark (or always light), whatever Home
+   * Assistant's own mode — so `roomTints` draws the side of each tint that
+   * reads on it. Unset follows Home Assistant. See `src/room-tints.ts`.
+   */
+  scheme?: "light" | "dark";
 }
 
 export const DEFAULT_SKIN = "default";
@@ -86,6 +92,7 @@ export const SKINS: readonly Skin[] = [
     id: "odnetnin",
     label: "Odnetnin",
     description: "Playful and chunky — thick outlines on warm paper",
+    scheme: "light",
     vars: {
       "--fp-skin-bg": "#fffdf7",
       "--fp-skin-card-bg": "#fffdf7",
@@ -115,6 +122,7 @@ export const SKINS: readonly Skin[] = [
     id: "pastel",
     label: "Pastel",
     description: "Soft and low-contrast — muted mauve on blush",
+    scheme: "light",
     vars: {
       "--fp-skin-bg": "#fdf7f9",
       "--fp-skin-card-bg": "#fdf7f9",
@@ -139,6 +147,7 @@ export const SKINS: readonly Skin[] = [
     id: "tron",
     label: "Tron",
     description: "Neon lines on near-black — thin walls that glow",
+    scheme: "dark",
     vars: {
       "--fp-skin-bg": "#05080c",
       "--fp-skin-card-bg": "#05080c",

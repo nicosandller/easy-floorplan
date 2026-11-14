@@ -1038,6 +1038,27 @@ describe("renderOpening — external shutter layer (issue #74)", () => {
     });
     expect(s).toContain("#ff0000"); // curtain wears the accent while the sash doesn't
   });
+
+  it("a fully raised roller still shows its accent on the track line (issue #375)", () => {
+    // Fully up, the curtain scales to nothing — the same trap the roll-up
+    // door fell into (#154) — so without a track the shutter's colour only
+    // ever showed part-way down.
+    const s = svgOf({ type: "door", motion: "slide" }, {
+      open: false,
+      accent: "#ff2600",
+      shutter: { amount: 1, active: true, accent: "#0433ff" },
+    });
+    expect(s).toContain("scaleY(0)");
+    expect(s).toContain('stroke=#0433ff stroke-width="0.75"');
+  });
+
+  it("a lowered roller draws no accent track: the band covers it in the closed tone", () => {
+    const s = svgOf({ type: "window" }, {
+      open: false,
+      shutter: { amount: 0, active: false, accent: "#0433ff" },
+    });
+    expect(s).not.toContain("#0433ff");
+  });
 });
 
 describe("renderOpening — hinged external shutter (issue #74)", () => {

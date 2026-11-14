@@ -20,6 +20,7 @@ import {
   projectDisplayForm,
   projectPressForm,
   projectSkinForm,
+  projectRoomTintsForm,
   projectSunForm,
   projectReliefForm,
   projectDeadSpaceForm,
@@ -107,6 +108,21 @@ describe("normalizeFormPatch", () => {
     expect(normalizeFormPatch({ angle: -30 }, fields).angle).toBe(330);
   });
 
+  it("keeps a full turn as 360 on badge and text angles (issue #387)", () => {
+    // 360 turns the badge or text with a rotated display; 0 keeps it upright,
+    // so the slider's end stop must not save as 0.
+    const item = { id: "i", entity: "light.a", kind: "light", x: 0, y: 0 } as FloorItem;
+    const text = { id: "t", x: 0, y: 0, text: "hi" } as FloorText;
+    for (const spec of [itemBadgeForm(item), textForm(text)]) {
+      expect(normalizeFormPatch({ angle: 360 }, spec.fields).angle).toBe(360);
+      expect(normalizeFormPatch({ angle: 0 }, spec.fields).angle).toBe(0);
+      expect(normalizeFormPatch({ angle: 370 }, spec.fields).angle).toBe(10);
+    }
+    // Elsewhere 360 and 0 look the same, so a full turn still wraps.
+    const door = { id: "o", type: "door", x: 0, y: 0, length: 90, angle: 0 } as Opening;
+    expect(normalizeFormPatch({ angle: 360 }, openingForm(door).fields).angle).toBe(0);
+  });
+
   it("parses numeric strings from plain-input fallbacks", () => {
     expect(normalizeFormPatch({ length: "42" }, fields).length).toBe(42);
   });
@@ -153,6 +169,40 @@ describe("openingForm", () => {
     // Sliders, roll-ups and a fixed pane have nothing that swings.
     expect(names({ ...win, motion: "slide" } as Opening)).not.toContain("sashSpan");
     expect(names({ ...win, motion: "fixed" } as Opening)).not.toContain("sashSpan");
+  });
+
+  it("asks for a sill on a window, and nowhere else", () => {
+    const names = (o: Opening) => openingForm(o).fields.map((x) => x.name);
+    expect(names({ ...door, type: "window" } as Opening)).toContain("sill");
+    expect(names(door)).not.toContain("sill");
+    expect(names({ ...door, type: "passage" } as Opening)).not.toContain("sill");
+    expect(names({ ...door, type: "skylight" } as Opening)).not.toContain("sill");
+  });
+
+  it("keeps the default sill out of the YAML and 0 in it", () => {
+    const form = openingForm({ ...door, type: "window" } as Opening);
+    expect(form.data.sill).toBe(0.35);
+    expect(form.toPatch({ sill: 0.35 })).toEqual({ sill: undefined });
+    expect(form.toPatch({ sill: 0 })).toEqual({ sill: 0 });
+    expect(form.toPatch({ sill: 0.6 })).toEqual({ sill: 0.6 });
+    expect(openingForm({ ...door, type: "window", sill: 0 } as Opening).data.sill).toBe(0);
+  });
+
+  it("drops the sill when a window becomes something that has none", () => {
+    const form = openingForm({ ...door, type: "window", sill: 0 } as Opening);
+    expect(form.toPatch({ type: "door" })).toMatchObject({ type: "door", sill: undefined });
+    expect(form.toPatch({ type: "skylight" })).toMatchObject({ sill: undefined });
+    expect(form.toPatch({ type: "passage" })).toMatchObject({ sill: undefined });
+  });
+
+  it.each(["door", "passage", "skylight"] as const)("drops a hand-written sill when a %s becomes a window", (type) => {
+    const form = openingForm({ ...door, type, sill: 0.6 } as Opening);
+    expect(form.toPatch({ type: "window" })).toMatchObject({ type: "window", sill: undefined });
+  });
+
+  it("keeps the sill when a window stays a window", () => {
+    const form = openingForm({ ...door, type: "window", sill: 0.6 } as Opening);
+    expect(form.toPatch({ type: "window" })).not.toHaveProperty("sill");
   });
 
   it("names the field for the opening it is on (review of #218)", () => {
@@ -522,6 +572,7 @@ describe("itemForm", () => {
       "glowRadius",
       "glowColor",
       "strip",
+      "glowWidth",
     ]);
     expect(itemEffectsForm({ ...item, kind: "sensor", entity: "sensor.t" } as FloorItem)).toBeUndefined();
     // …and the Label group is skipped entirely while nothing labels the device.
@@ -571,6 +622,26 @@ describe("itemForm", () => {
     ).toBeUndefined();
     // A pool already turned on stays editable after the entity drops out.
     expect(names(litSwitch)).toContain("glow");
+  });
+
+  it("narrows a cast light into a spot's cone and back (#388)", () => {
+    const lamp = { ...item, glow: true } as FloorItem;
+    const fields = (it: FloorItem) => itemEffectsForm(it)!.fields.map((f) => f.name);
+    // A pool all round offers the width; the direction waits until it narrows.
+    expect(fields(lamp)).toContain("glowWidth");
+    expect(fields(lamp)).not.toContain("glowDirection");
+    expect(itemEffectsForm(lamp)!.data).toMatchObject({ glowWidth: 360, glowDirection: 0 });
+    expect(itemEffectsForm(lamp)!.toPatch({ glowWidth: 60 })).toEqual({ glowWidth: 60 });
+
+    const spot = { ...lamp, glowWidth: 60, glowDirection: 135 } as FloorItem;
+    expect(fields(spot)).toEqual(expect.arrayContaining(["glowWidth", "glowDirection"]));
+    // Opened back to 360°, it is the ordinary pool again, with no keys left.
+    expect(itemEffectsForm(spot)!.toPatch({ glowWidth: 360 })).toEqual({
+      glowWidth: undefined,
+      glowDirection: undefined,
+    });
+    // A strip has a direction of its own, so it offers no cone.
+    expect(fields({ ...spot, stripLength: 200 } as FloorItem)).not.toContain("glowWidth");
   });
 
   it("turns a cast light into an LED strip and back (#298)", () => {
@@ -650,14 +721,14 @@ describe("itemForm", () => {
     expect(names(item)).not.toContain("labelPosition");
   });
 
-  it("offers the three label positions, keeping the default out of the YAML (#180)", () => {
+  it("offers the label positions, keeping the default out of the YAML (#180)", () => {
     const labelled = { ...item, showName: true } as FloorItem;
     const form = itemForm(labelled);
     const field = form.fields.find((x) => x.name === "labelPosition")!;
     const opts = (field.selector as { select: { options: { value: string }[] } }).select.options.map(
       (o) => o.value
     );
-    expect(opts).toEqual(["below", "left", "right"]);
+    expect(opts).toEqual(["below", "above", "left", "right", "auto"]);
     expect(form.data.labelPosition).toBe("below");
     expect(
       itemForm({ ...labelled, labelPosition: "left" } as FloorItem).data.labelPosition
@@ -665,9 +736,13 @@ describe("itemForm", () => {
     // Below is the default, so it is not worth writing down.
     expect(form.toPatch({ labelPosition: "below" }).labelPosition).toBeUndefined();
     expect(form.toPatch({ labelPosition: "right" }).labelPosition).toBe("right");
+    expect(form.toPatch({ labelPosition: "auto" }).labelPosition).toBe("auto");
+    expect(
+      itemForm({ ...labelled, labelPosition: "above" } as FloorItem).data.labelPosition
+    ).toBe("above");
     // A hand-edited junk value reads back as what it renders as.
     expect(
-      itemForm({ ...labelled, labelPosition: "above" } as unknown as FloorItem).data.labelPosition
+      itemForm({ ...labelled, labelPosition: "atop" } as unknown as FloorItem).data.labelPosition
     ).toBe("below");
   });
 
@@ -1169,6 +1244,35 @@ describe("textForm / furnitureForm / trackerForm", () => {
     expect(out.tap_action).toEqual({ action: "toggle" });
   });
 
+  it("furniture toPatch normalizes visibility array", () => {
+    const form = furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10 } as never);
+    expect(form.toPatch({ visibility: [] } as never).visibility).toBeUndefined();
+    expect(form.toPatch({ visibility: [{ condition: "state", entity: "car.1", state: "home" }] } as never).visibility)
+      .toEqual([{ condition: "state", entity: "car.1", state: "home" }]);
+  });
+
+  // Issue #362: the round action icon can be hidden.
+  it("furniture offers the action icon toggle only once there is an action to show", () => {
+    const names = (extra: Record<string, unknown>) =>
+      furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10, ...extra } as never)
+        .fields.map((x) => x.name);
+    expect(names({})).not.toContain("showIcon");
+    expect(names({ goToFloor: "up" })).toContain("showIcon");
+    expect(names({ tap_action: { action: "more-info" } })).toContain("showIcon");
+    expect(names({ hold_action: { action: "toggle" } })).toContain("showIcon");
+    expect(names({ double_tap_action: { action: "toggle" } })).toContain("showIcon");
+  });
+
+  it("furniture writes the action icon down only when it is switched off", () => {
+    const piece = { id: "f", type: "table", x: 0, y: 0, w: 10, h: 10, tap_action: { action: "toggle" } };
+    const form = furnitureForm(piece as never);
+    expect(form.data.showIcon).toBe(true);
+    expect(furnitureForm({ ...piece, showIcon: false } as never).data.showIcon).toBe(false);
+    expect(form.toPatch({ showIcon: false } as never)).toEqual({ showIcon: false });
+    // On is the default, so turning it back on clears the key.
+    expect(form.toPatch({ showIcon: true } as never)).toEqual({ showIcon: undefined });
+  });
+
   it("areaForm exposes zoneKind data and patches it", () => {
     const form = areaForm({ id: "a", points: [], zoneKind: "lawn" } as never);
     expect(form.data.zoneKind).toBe("lawn");
@@ -1449,6 +1553,18 @@ describe("wallForm / projectForm / floorImageForm", () => {
       pressEffect: "sparkle",
     } as never);
     expect(form.data.pressEffect).toBe(DEFAULT_PRESS_EFFECT);
+  });
+
+  it("room tints offers off and automatic, and keeps off out of the YAML", () => {
+    const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+    const form = projectRoomTintsForm(base);
+    expect(form.fields.map((x) => x.name)).toEqual(["roomTints"]);
+    const options = (form.fields[0].selector.select as { options: { value: string }[] }).options;
+    expect(options.map((o) => o.value)).toEqual(["off", "auto"]);
+    expect(form.data.roomTints).toBe("off");
+    expect(projectRoomTintsForm({ ...base, roomTints: "auto" }).data.roomTints).toBe("auto");
+    expect(form.toPatch({ roomTints: "auto" })).toEqual({ roomTints: "auto" });
+    expect(form.toPatch({ roomTints: "off" })).toEqual({ roomTints: undefined });
   });
 
   it("skin reads back a skin we don't ship as the default, matching what it renders as", () => {
@@ -2208,6 +2324,7 @@ describe("every field lands in exactly one panel group", () => {
       "length",
       "width",
       "ceilingHeight",
+      "sill",
       "sash",
       "sashSpan",
       "hinge",
@@ -2233,7 +2350,7 @@ describe("every field lands in exactly one panel group", () => {
   const FURNITURE_GROUPS = [
     ["type", "hand", "w", "h", "angle"],
     ["entity"],
-    ["goToFloor", "tap_action", "hold_action", "double_tap_action"],
+    ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"],
   ];
   const TRACKER_GROUPS = [["w", "h", "x", "y", "angle"], ["dotSize"]];
   const AREA_GROUPS = [
@@ -2265,6 +2382,7 @@ describe("every field lands in exactly one panel group", () => {
       { motion: "roll", entity: "cover.g" },
       { type: "window", motion: "fixed" },
       { type: "window", sash: "single", sashSpan: 0.4 },
+      { type: "window", sill: 0 },
       { shutterEntity: "binary_sensor.s", shutterStyle: "swing" },
       { shutterEntity: "cover.s", shutterStyle: "roll", entity: "binary_sensor.a" },
       { entity: "binary_sensor.a", showIcon: true },
@@ -2320,6 +2438,11 @@ describe("every field lands in exactly one panel group", () => {
       furnitureForm({ ...f, type: "sectional", entity: "sensor.a" } as Furniture).fields,
       FURNITURE_GROUPS,
       "furniture sectional"
+    );
+    check(
+      furnitureForm({ ...f, tap_action: { action: "toggle" } } as Furniture).fields,
+      FURNITURE_GROUPS,
+      "furniture with an action"
     );
     const tr = { id: "t", x: 0, y: 0, w: 10, h: 10 } as Tracker;
     check(trackerForm(tr).fields, TRACKER_GROUPS, "tracker");

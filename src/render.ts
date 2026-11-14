@@ -39,6 +39,7 @@ import type {
   StripSide,
 } from "./types";
 import {
+  floorPanels,
   FURNITURE_COLOR,
   DEFAULT_TRACKER_DOT_SIZE,
   DEFAULT_RIPPLE_SIZE,
@@ -54,6 +55,7 @@ import {
   DEFAULT_SUN_MAX,
   DEFAULT_GLOW_RADIUS,
   MIN_STRIP_LENGTH,
+  MIN_SPOT_WIDTH,
   DEFAULT_GLOW_COLOR,
   DEFAULT_ITEM_SIZE,
   GLOW_MIN_OPACITY,
@@ -82,6 +84,7 @@ import { projectPlanPoint, projectedCanvasSize, type DisplayFrame } from "./proj
 // site, which is what it is.
 import { openingIsPassage, openingIsSkylight } from "./types";
 import { moonIllumination, moonPosition } from "./moon";
+import { collectConditionEntities } from "./furniture-visibility";
 export { openingIsPassage, openingIsSkylight };
 
 export const WALL_THICKNESS = 8;
@@ -132,6 +135,9 @@ export function hassRenderInputsChanged(
   // Both formatters, because a plan can be built entirely out of attribute
   // readings and would otherwise be watching a function it never calls.
   if (prev.formatEntityAttributeValue !== next.formatEntityAttributeValue) return true;
+  // Dark mode picks the light or dark side of every room tint, and HA flips it
+  // on a live card (an auto theme at sunset) without any entity changing.
+  if (prev.themes?.darkMode !== next.themes?.darkMode) return true;
   for (const id of watchedEntities) {
     if (prev.states[id] !== next.states[id]) return true;
   }
@@ -215,11 +221,13 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
     for (const t of f.texts) {
       if (t.entity) ids.add(t.entity);
     }
-    // Entity-bound furniture (issue #82) — without this the card never
-    // re-renders when the soil sensor moves, and the plant stays its
-    // first-painted color forever.
+    // Entity-bound furniture (issue #82) and conditional visibility (issue #310) —
+    // without these the card never re-renders when the bound entity or condition sensor moves.
     for (const fu of f.furniture) {
       if (fu.entity) ids.add(fu.entity);
+      if (fu.visibility) {
+        for (const ent of collectConditionEntities(fu.visibility, fu.entity)) ids.add(ent);
+      }
     }
     // Entity-bound areas (issue #6) — same reasoning as furniture above: miss
     // these and a room's color is painted once and then frozen, because
@@ -233,6 +241,14 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
         if (s?.presence?.entity) ids.add(s.presence.entity);
       }
     }
+    for (const p of floorPanels(f)) {
+      for (const m of p.metrics ?? []) {
+        if (m.entity) ids.add(m.entity);
+      }
+    }
+    if (f.summary?.temperatureEntity) ids.add(f.summary.temperatureEntity);
+    if (f.summary?.humidityEntity) ids.add(f.summary.humidityEntity);
+    if (f.summary?.presenceEntity) ids.add(f.summary.presenceEntity);
   }
   return ids;
 }
@@ -1113,6 +1129,9 @@ export function renderGlow(
   // Walls block light (issue #108): clip the pool to what the lamp can see.
   const reach = walls?.length ? glowReach(item.x, item.y, r, walls) : undefined;
   const clipId = `${gradientId}-clip`;
+  // A spot (issue #388) lights a cone of the same pool.
+  const cone = spotCone(item);
+  const coneId = `${gradientId}-cone`;
   return svg`
     ${
       reach
@@ -1121,6 +1140,7 @@ export function renderGlow(
               </clipPath>`
         : nothing
     }
+    ${cone ? renderConeMask(coneId, item.x, item.y, r, cone) : nothing}
     <radialGradient id=${gradientId} gradientUnits="userSpaceOnUse"
                     cx=${item.x} cy=${item.y} r=${r}>
       <stop offset="0" stop-color=${paint.color} stop-opacity=${paint.opacity} />
@@ -1128,7 +1148,98 @@ export function renderGlow(
     </radialGradient>
     <circle class="fp-glow" cx=${item.x} cy=${item.y} r=${r}
             fill=${`url(#${gradientId})`}
-            clip-path=${reach ? `url(#${clipId})` : nothing} />`;
+            clip-path=${reach ? `url(#${clipId})` : nothing}
+            mask=${cone ? `url(#${coneId})` : nothing} />`;
+}
+
+/**
+ * A spot's cone (issue #388): which way it points, as a bearing on the plan
+ * (0° up, clockwise, like a ripple's), and how wide it opens. Undefined for
+ * the ordinary pool all round — no width, 360° or more — and for a strip,
+ * whose run already says which way it lights.
+ */
+export interface SpotCone {
+  bearing: number;
+  width: number;
+}
+
+export function spotCone(
+  item: Pick<FloorItem, "glowWidth" | "glowDirection" | "stripLength">,
+): SpotCone | undefined {
+  if (cssNumber(item.stripLength, 0) >= MIN_STRIP_LENGTH) return undefined;
+  const width = cssNumber(item.glowWidth, 360);
+  if (!(width < 360)) return undefined;
+  const bearing = cssNumber(item.glowDirection, 0);
+  return { bearing: ((bearing % 360) + 360) % 360, width: Math.max(MIN_SPOT_WIDTH, width) };
+}
+
+/**
+ * The points of a wedge from (cx, cy) out to radius `r`, centred on `bearing`
+ * and `half` degrees either side of it: the apex, then the arc. A half of 180
+ * or more is the whole disc.
+ */
+export function conePoints(
+  cx: number,
+  cy: number,
+  r: number,
+  bearing: number,
+  half: number,
+): Array<{ x: number; y: number }> {
+  const at = (deg: number) => {
+    const a = (deg * Math.PI) / 180;
+    return { x: round2(cx + Math.sin(a) * r), y: round2(cy - Math.cos(a) * r) };
+  };
+  if (half >= 180) {
+    return Array.from({ length: 36 }, (_, i) => at(i * 10));
+  }
+  // An arc point every 10° or so keeps the curve round at any width.
+  const steps = Math.max(2, Math.ceil((half * 2) / 10));
+  const arc = Array.from({ length: steps + 1 }, (_, i) => at(bearing - half + (2 * half * i) / steps));
+  return [{ x: round2(cx), y: round2(cy) }, ...arc];
+}
+
+/** Layers in a cone's soft edge: enough that the steps do not show. */
+const CONE_EDGE_LAYERS = 20;
+
+/**
+ * The `<mask>` that shapes a pool into a spot's cone (issue #388), with a soft
+ * edge rather than a hard cut. SVG has no conic gradient, so the edge is a
+ * stack of nested wedges, each a little narrower than the last. Opacities
+ * compound, so the widest gets 1/n, the next 1/(n-1), and so on to the
+ * narrowest at 1: a point inside the widest m of them is then exactly m/n
+ * opaque, an even fade across the edge and the whole light inside it.
+ * The light fades along the cone on its own, from the pool's radial falloff.
+ */
+export function renderConeMask(
+  id: string,
+  cx: number,
+  cy: number,
+  r: number,
+  cone: SpotCone,
+): SVGTemplateResult {
+  const half = cone.width / 2;
+  // The edge's spread scales with the cone, so a narrow beam stays narrow.
+  const feather = Math.max(2, Math.min(12, cone.width * 0.15));
+  // The fade is centred on the nominal edge, so the beam reads as the width
+  // it was given.
+  const inner = Math.max(0.5, half - feather);
+  const outer = half + feather;
+  const R = r * 1.02;
+  const n = CONE_EDGE_LAYERS;
+  const wedges = Array.from({ length: n }, (_, i) => {
+    // Widest first; i counts in from the outside.
+    const h = outer - ((outer - inner) * i) / (n - 1);
+    return {
+      points: conePoints(cx, cy, R, cone.bearing, h)
+        .map((p) => `${p.x},${p.y}`)
+        .join(" "),
+      opacity: round2(1 / (n - i)),
+    };
+  });
+  return svg`<mask id=${id} maskUnits="userSpaceOnUse"
+                   x=${round2(cx - R)} y=${round2(cy - R)} width=${round2(R * 2)} height=${round2(R * 2)}>
+    ${wedges.map((w) => svg`<polygon points=${w.points} fill="#fff" fill-opacity=${w.opacity} />`)}
+  </mask>`;
 }
 
 /**
@@ -1512,6 +1623,9 @@ export function renderSunDimMask(
           // stays stable when another lamp toggles (issue #119).
           const reach = walls?.length ? glowReach(it.x, it.y, r, walls) : undefined;
           const clipId = `${gid}-clip`;
+          // A spot clears the night only inside its cone (issue #388).
+          const cone = spotCone(it);
+          const coneId = `${gid}-cone`;
           return svg`
             ${
               reach
@@ -1520,13 +1634,15 @@ export function renderSunDimMask(
                       </clipPath>`
                 : nothing
             }
+            ${cone ? renderConeMask(coneId, it.x, it.y, r, cone) : nothing}
             <radialGradient id=${gid} gradientUnits="userSpaceOnUse"
                             cx=${it.x} cy=${it.y} r=${r}>
               <stop offset="0" stop-color="#000" stop-opacity=${strength} />
               <stop offset="1" stop-color="#000" stop-opacity="0" />
             </radialGradient>
             <circle cx=${it.x} cy=${it.y} r=${r} fill=${`url(#${gid})`}
-                    clip-path=${reach ? `url(#${clipId})` : nothing} />`;
+                    clip-path=${reach ? `url(#${clipId})` : nothing}
+                    mask=${cone ? `url(#${coneId})` : nothing} />`;
         })}
         ${extra}
       </mask>
@@ -1966,7 +2082,7 @@ export function itemHasLabel(item: {
  */
 export function labelPositionOf(item: { labelPosition?: LabelPosition }): LabelPosition {
   const v = item.labelPosition;
-  return v === "left" || v === "right" ? v : "below";
+  return v === "left" || v === "right" || v === "above" || v === "auto" ? v : "below";
 }
 
 /**
@@ -2759,6 +2875,34 @@ const DOMAIN_BADGE_READING: Record<string, { attribute: string; unit: string }> 
   humidifier: { attribute: "current_humidity", unit: "%" },
 };
 
+/**
+ * Attributes the badge cannot print as the number on the wire, keyed by the
+ * domain of the entity being read. A light's `brightness` is 0-255, and HA's
+ * own attribute formatter, the one a label reads through, words it as
+ * `Math.round((value / 255) * 100)` with a `%`. The badge deliberately skips
+ * that formatter ({@link badgeValue}: display precision and full units do not
+ * fit in a circle), so it has to apply the conversion itself: the same reading
+ * must not read "50%" in a label and "128" in a badge (issue #359).
+ *
+ * Entries are conversions HA itself defines for that domain's attribute,
+ * nothing invented here, but the table covers only what has been added so
+ * far, not every conversion HA defines. A `brightness` reading off any other
+ * domain stays raw.
+ */
+const DOMAIN_ATTRIBUTE_BADGE_TEXT: Record<string, Record<string, (n: number) => string>> = {
+  light: {
+    brightness: (n) => `${Math.round((n / 255) * 100)}%`,
+  },
+};
+
+/**
+ * One attribute's badge text under its own domain's conversion, or undefined
+ * when the attribute has none and the number is printed as it stands.
+ */
+function attributeBadgeText(entity: string, attribute: string, n: number): string | undefined {
+  return DOMAIN_ATTRIBUTE_BADGE_TEXT[entity.split(".")[0]]?.[attribute]?.(n);
+}
+
 /** A finite number from a state/attribute value, or undefined. Booleans and blanks are not readings. */
 function numericReading(raw: unknown): number | undefined {
   if (raw == null || typeof raw === "boolean") return undefined;
@@ -2899,14 +3043,20 @@ export function badgeReading(
   const primary = (): string | undefined => {
     const st = hass.states[item.entity as string];
     const attrs = st?.attributes as Record<string, unknown> | undefined;
-    const reading = DOMAIN_BADGE_READING[(item.entity as string).split(".")[0]];
+    const entity = item.entity as string;
+    const reading = DOMAIN_BADGE_READING[entity.split(".")[0]];
     if (item.attribute) {
       const n = numericReading(attrs?.[item.attribute]);
       // A unit only when we know it belongs to *this* attribute:
       // `unit_of_measurement` describes the state, not an arbitrary attribute,
       // so borrowing it here would label a battery percentage "°C".
-      if (n !== undefined)
+      if (n !== undefined) {
+        // A domain-worded attribute (a light's brightness) brings its own
+        // text, unit included; only the rest borrow a unit from the table.
+        const worded = attributeBadgeText(entity, item.attribute, n);
+        if (worded !== undefined) return worded;
         return compactNumber(n) + (item.attribute === reading?.attribute ? reading.unit : "");
+      }
     }
     if (reading) {
       const n = numericReading(attrs?.[reading.attribute]);
@@ -2926,7 +3076,10 @@ export function badgeReading(
     const attrs = st?.attributes as Record<string, unknown> | undefined;
     if (r.attribute) {
       const n = numericReading(attrs?.[r.attribute]);
-      return n === undefined ? undefined : compactNumber(n);
+      if (n === undefined) return undefined;
+      // Same domain wording as the configured attribute above, so a brightness
+      // reading in the pool (the issue's config) reads percent too.
+      return attributeBadgeText(entity, r.attribute, n) ?? compactNumber(n);
     }
     const n = numericReading(st?.state);
     return n === undefined ? undefined : formatReading(n, attrs?.unit_of_measurement);
@@ -4619,7 +4772,16 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
             shutterTone2,
             shutterAmt2
           )
-        : rollCurtain(o.length, shutterTone, shutterAmt)
+        : svg`${
+            // Up or moving, the track wears the shutter's accent (issue #375),
+            // as a roll-up door's does (#154): fully raised the curtain has
+            // scaled away, and without this line the colour only ever showed
+            // part-way down. Shut, the band covers the line, so none is drawn.
+            style.shutter.active
+              ? svg`<line x1=${-half} y1="0" x2=${half} y2="0"
+                    stroke=${shutterTone} stroke-width="0.75" />`
+              : nothing
+          }${rollCurtain(o.length, shutterTone, shutterAmt)}`
     }`;
   }
   const { sx, sy } = openingMirror(o);
@@ -4677,6 +4839,35 @@ export function resolvePlanRotation(
   // Read as a value it would normalize to 0 and *silently override* the base
   // rotation, which is the one thing an unset override must never do.
   return override == null ? base : normalizePlanRotation(override);
+}
+
+/**
+ * The angle a device badge or text is drawn at on a plan displayed at `rot`
+ * (issue #387).
+ *
+ * Unturned, a badge stays upright under rotation, so a rotated plan is still
+ * readable. A badge given an angle of its own was turned to line up with
+ * something in the drawing — an LED strip along a diagonal wall — and that
+ * line turns with the plan, so the badge has to turn with it. Any angle but 0
+ * counts, including 360: that is the way to have a badge drawn straight along
+ * a horizontal wall follow the plan too, since 0 cannot tell "upright" from
+ * "aligned with the x axis".
+ */
+export function overlayAngle(angle: number, rot: number): number {
+  return angle === 0 ? 0 : angle + rot;
+}
+
+/**
+ * {@link overlayAngle} for text, which also has to stay readable: turned with
+ * the plan, a label drawn along a wall can end up upside down, so it is
+ * flipped half a turn to read along the same line the right way up. Only on a
+ * rotated display — on the plan as drawn the angle is exactly what was set.
+ */
+export function textOverlayAngle(angle: number, rot: number): number {
+  const a = overlayAngle(angle, rot);
+  if (a === 0 || rot % 360 === 0) return a;
+  const r = (((a + 180) % 360) + 360) % 360 - 180; // -180 ≤ r < 180
+  return r > 90 ? r - 180 : r < -90 ? r + 180 : r;
 }
 
 /**
@@ -6323,6 +6514,32 @@ export function renderSunlight(
 }
 
 /**
+ * Whether Home Assistant is showing its dark theme. `themes.darkMode` is the
+ * resolved answer — "auto" already settled against the device — but it is
+ * newer than the helper library's types, hence the cast.
+ */
+export function hassDarkMode(hass: unknown): boolean {
+  return !!(hass as { themes?: { darkMode?: boolean } } | undefined)?.themes?.darkMode;
+}
+
+/**
+ * Which background image a floor shows, and how, in light or dark mode
+ * (issue #366). A dark image of its own wins; otherwise the light one, inverted
+ * if asked. A floor with only a dark image shows nothing in light mode.
+ */
+export function floorImage(
+  floor: Pick<Floor, "image" | "imageDark" | "imageInvertDark">,
+  dark: boolean
+): { href: string; filter?: string } | undefined {
+  if (dark && floor.imageDark) return { href: floor.imageDark };
+  if (!floor.image) return undefined;
+  // invert() alone would turn a red radiator cyan; turning the hue back round
+  // keeps colours roughly what they were while light and dark swap.
+  if (dark && floor.imageInvertDark) return { href: floor.image, filter: "invert(1) hue-rotate(180deg)" };
+  return { href: floor.image };
+}
+
+/**
  * Render direct sunlight & building wall shadows cast on outdoor floors (isOutdoor: true).
  */
 export function renderOutdoorSunlight(
@@ -6721,8 +6938,17 @@ export function outdoorZoneDefaultColor(kind?: OutdoorZoneKind): string | undefi
  * is a separate pass, drawn above the walls by {@link renderAreaBorder}.
  * `color`/`opacity` are config-supplied style values, so they go through the
  * same injection allowlist as every other color/number field (see css-safe.ts).
+ *
+ * `rest` is the automatic room tint (`roomTints: auto`, see room-tints.ts):
+ * what an uncoloured room rests at instead of the accent. It never applies to a
+ * room with its own `color` — the caller passes none for one — and a live fill
+ * still wins over it, so state colouring and `highlight` behave as before.
  */
-export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
+export function renderArea(
+  a: Area,
+  liveColor?: string,
+  rest?: { color: string; opacity: number }
+): SVGTemplateResult {
   const pts = a.points.map((p) => `${p.x},${p.y}`).join(" ");
   // `liveColor` has already been through the allowlist by areaColor(). When it
   // is present the area is "live" and `highlight` decides whether that color
@@ -6730,8 +6956,14 @@ export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
   const liveFill = liveColor !== undefined && (a.highlight ?? "fill") !== "border";
 
   // activeOpacity is a fill concern, so it only applies when the fill is live.
-  const opacity = liveFill ? a.activeOpacity ?? a.opacity : a.opacity;
-  const fallbackColor = outdoorZoneDefaultColor(a.zoneKind) ?? SKIN_ACCENT;
+  // A room's own colour always beats a tint, whatever the caller passed, and
+  // so does an outdoor zone's default colour: a lawn stays lawn green.
+  const zoneColor = outdoorZoneDefaultColor(a.zoneKind);
+  const tint = a.color || zoneColor ? undefined : rest;
+  const opacity = liveFill ? a.activeOpacity ?? a.opacity : tint ? tint.opacity : a.opacity;
+  // A tint is a library constant built by roomTintFill, not config, so it
+  // needs no allowlist pass; the room's own colour still goes through one.
+  const restFill = tint ? tint.color : cssColorOr(a.color, zoneColor ?? SKIN_ACCENT);
 
   // Stroke stays pinned off rather than omitted: this element is reused across
   // live/rest updates, and stating it keeps the fill pass unable to draw an
@@ -6739,7 +6971,7 @@ export function renderArea(a: Area, liveColor?: string): SVGTemplateResult {
   return svg`<polygon class="fp-area" data-id=${cssIdent(a.id) ?? nothing}
                        data-entity=${cssEntityId(a.entity) ?? nothing}
                        points=${pts}
-                       fill=${liveFill ? liveColor : cssColorOr(a.color, fallbackColor)}
+                       fill=${liveFill ? liveColor : restFill}
                        fill-opacity=${cssNumber(opacity, DEFAULT_AREA_OPACITY)}
                        stroke="none"
                        stroke-width="0" />`;
@@ -6854,6 +7086,72 @@ export function renderFurniture(
                 data-id=${cssIdent(f.id) ?? nothing}
                 data-entity=${cssEntityId(f.entity) ?? nothing}
                 transform="translate(${f.x} ${f.y}) rotate(${f.angle ?? 0})${mirror}">${parts}</g>`;
+}
+
+/**
+ * The piece as it stands right now (issue #196). A symbol with an `extend`
+ * — the awning, the curtain — is drawn at its config size only when fully
+ * extended; otherwise the moving side shrinks toward its start edge, down to
+ * the symbol's `min`, and the centre moves with it so that edge stays put on
+ * the wall. Every other piece, and one with no entity, comes back unchanged:
+ * an unbound awning draws extended, which is also how the editor shows it.
+ *
+ * The cover's position is read the way a shutter's is ({@link shutterAmount}),
+ * so a dropout reads as a closed cover rather than a guess: an awning draws
+ * retracted, and a curtain (`open: "retracted"`) draws fully across.
+ */
+export function shownFurniture(
+  f: Furniture,
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+  catalog: SymbolCatalog = BUILTIN_SYMBOLS,
+): Furniture {
+  const ext = findSymbol(catalog, f.type)?.extend;
+  if (!ext || !f.entity) return f;
+  const open = shutterAmount(state);
+  const out = ext.open === "extended" ? open : 1 - open;
+  const k = ext.min + (1 - ext.min) * out;
+  if (k >= 1) return f;
+  const full = ext.axis === "w" ? f.w : f.h;
+  const shift = (full * (1 - k)) / 2;
+  // In the piece's own frame: toward the far edge along the moving axis. A
+  // mirrored piece starts from the right, so a curtain can gather either way.
+  const lx = ext.axis === "w" ? (f.hand === "left" ? -shift : shift) : 0;
+  const ly = ext.axis === "h" ? shift : 0;
+  const rad = ((f.angle ?? 0) * Math.PI) / 180;
+  return {
+    ...f,
+    x: f.x - (lx * Math.cos(rad) - ly * Math.sin(rad)),
+    y: f.y - (lx * Math.sin(rad) + ly * Math.cos(rad)),
+    ...(ext.axis === "w" ? { w: full * k } : { h: full * k }),
+  };
+}
+
+/**
+ * The piece as it is drawn right now, as one or more parts. A curtain with
+ * `hand: center` is a pair that meets in the middle and gathers at both ends
+ * (issue #196): each half is the same curtain, half as wide, gathering at its
+ * own end. Everything else is the single piece {@link shownFurniture} gives.
+ * Both halves keep the piece's id, so they stay one thing to tap and to style.
+ */
+export function shownPieces(
+  f: Furniture,
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+  catalog: SymbolCatalog = BUILTIN_SYMBOLS,
+): Furniture[] {
+  if (f.hand !== "center" || findSymbol(catalog, f.type)?.extend?.axis !== "w") {
+    return [shownFurniture(f, state, catalog)];
+  }
+  const q = f.w / 4;
+  const rad = ((f.angle ?? 0) * Math.PI) / 180;
+  const half = (side: -1 | 1): Furniture => ({
+    ...f,
+    x: f.x + side * q * Math.cos(rad),
+    y: f.y + side * q * Math.sin(rad),
+    w: f.w / 2,
+    // The left half gathers at the left end, the right half mirrored at the right.
+    hand: side < 0 ? "right" : "left",
+  });
+  return [shownFurniture(half(-1), state, catalog), shownFurniture(half(1), state, catalog)];
 }
 
 /**

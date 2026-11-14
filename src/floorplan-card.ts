@@ -17,12 +17,26 @@ import type {
   Wall,
   Roof,
   AreaPoint,
+  FloorInfoPanel,
 } from "./types";
+import { floorPanels } from "./types";
+import {
+  nearestPanelArea,
+  resolvePanelAnchor,
+  computeLeaderLinePath,
+  resolvePanelMetrics,
+} from "./floor-panels";
+import {
+  computeFloorSummary,
+  floorHaEntityIds,
+  floorSummaryShown,
+} from "./floor-summary";
 import { buildRenderHass } from "./replay-history/render-state-service";
 import "./replay-history/history-timeline";
 import "./replay-history/replay-panel";
 import { cssColor, cssColorOr, cssNumber, cssIdent, cssEntityId, contrastText } from "./css-safe";
 import { paletteStyle, paletteKey, resolvePaletteColor } from "./palette";
+import { roomTintPaints, roomTintScheme, roomTintsOf } from "./room-tints";
 import {
   DEFAULT_WIDTH,
   DEFAULT_HEIGHT,
@@ -33,6 +47,8 @@ import {
   DEFAULT_RIPPLE_WIDTH,
   DEFAULT_AREA_LABEL_SIZE,
   MIN_TOUCH_TARGET,
+  FURNITURE_ICON_SIZE,
+  FURNITURE_ICON_GLYPH,
   DEFAULT_SUN_MIN,
   DEFAULT_SUN_MAX,
   PRESS_SCALE,
@@ -51,6 +67,8 @@ import {
   openingHitSize,
   renderWallMask,
   imageFitRatio,
+  floorImage,
+  hassDarkMode,
   sunBrightness,
   resolveOpeningAmount,
   openingIsActive,
@@ -77,6 +95,7 @@ import {
   entityStateText,
   renderRipple,
   renderFurniture,
+  shownPieces,
   furnitureColor,
   furnitureAccessibleName,
   furnitureActionForGesture,
@@ -149,6 +168,8 @@ import {
   resolveIconAnimation,
   itemIconSize,
   resolvePlanRotation,
+  overlayAngle,
+  textOverlayAngle,
   normalizePlanRotation,
   subscribeOrientation,
   rotatedCanvasSize,
@@ -196,7 +217,7 @@ import { AmountTween, OPENING_TWEEN_MS, rafTweenFrames } from "./opening-tween";
 import { RotationTween } from "./rotation";
 import { focusOrder, normalizeRoomFocus, stepFocus } from "./room-focus";
 import type { SVGTemplateResult } from "lit";
-import { symbolCatalog } from "./symbols";
+import { findSymbol, symbolCatalog } from "./symbols";
 import { deadSpacesCached } from "./dead-space";
 import type { Opening } from "./types";
 import {
@@ -222,8 +243,22 @@ import {
   isSameWallSegment,
   isAreaCoveredByUpper,
 } from "./editor-geometry";
+import {
+  autoLabelKey,
+  intersectBoxes,
+  measureLabelScene,
+  rectToBox,
+  type LabelSide,
+} from "./label-placement";
 import { ReplayControllerImpl } from "./replay-history/replay-controller";
 import { createReplayPanelProps, renderReplayPanel } from "./replay-history/replay-panel";
+import {
+  isFurnitureVisible,
+  collectConditionMediaQueries,
+  hasLocationConditions,
+  hasTimeConditions,
+  TIME_CONDITION_TICK_MS,
+} from "./furniture-visibility";
 
 /**
  * Which floor each plan was last viewed on, keyed by its floor-id set (issue
@@ -236,6 +271,9 @@ import { createReplayPanelProps, renderReplayPanel } from "./replay-history/repl
  * Deliberately not persisted: it is view state, never written to the config.
  */
 const lastViewedFloor = new Map<string, string>();
+
+/** Canvas units between a hidden-icon piece and its keyboard focus ring (#362). */
+const FURNITURE_FOCUS_PAD = 3;
 
 /** Content key for {@link lastViewedFloor} — the plan's floor ids, in order. */
 function floorMemoryKey(floors: readonly Floor[]): string {
@@ -277,6 +315,37 @@ export class FloorplanCard extends LitElement {
    * from `_watchedEntities` on purpose — see `collectNamedEntities`.
    */
   private _nameEntities: Set<string> = new Set();
+  /**
+   * The side each `labelPosition: auto` label was given (keyed by
+   * {@link autoLabelKey}), and what that choice was made from. Plain fields,
+   * not `@state`: a new choice asks for one render itself, and nothing else
+   * should invalidate one.
+   */
+  private _autoSides = new Map<string, LabelSide>();
+  /** Bumped by every setConfig — the cheap "the plan changed" half of the layout key. */
+  private _configSerial = 0;
+  /** This render's layout inputs, and the ones the current sides were measured from. */
+  private _autoLayoutBase = "";
+  private _autoLabelSig: string[] = [];
+  private _autoLayoutKey?: string;
+  /** Whether this render can place auto labels at all (not under the 3D view, not mid-turn). */
+  private _autoLabelsMeasurable = false;
+  private _autoResize?: ResizeObserver;
+  /** The `.plan` element `_autoResize` is watching. */
+  private _autoResizeTarget?: HTMLElement;
+  /** Watches `.stage` for engines whose `100cqh` reads 0 (issue #406); see `_watchPlanFit`. */
+  private _fitResize?: ResizeObserver;
+  private _fitTarget?: Element;
+  /**
+   * Entities the floor summaries find through linked HA areas and floors
+   * (issue #234), per floor id. Read from the HA registries, so recomputed
+   * when the config or a registry changes, not on every render.
+   */
+  private _summaryHaEntities = new Map<string, string[]>();
+  /** What {@link _summaryHaEntities} was computed from. */
+  private _summaryDiscoveryInputs?: readonly unknown[];
+  /** `_watchedEntities` plus every discovered summary entity: what a render reads. */
+  private _renderEntities: Set<string> = new Set();
   private readonly _replayController = new ReplayControllerImpl({
     getConfig: () => this._config,
     getHass: () => this.hass,
@@ -324,6 +393,7 @@ export class FloorplanCard extends LitElement {
   public connectedCallback(): void {
     super.connectedCallback();
     this._syncMoonClock();
+    this._syncTimeClock();
     // Subscribed unconditionally rather than only when an override is set:
     // the config can change under a live card, and a query that is listened
     // to but never read costs nothing.
@@ -340,6 +410,7 @@ export class FloorplanCard extends LitElement {
     this._unsubscribeMotion = subscribeOrientation(motion, (e) => {
       if (e.matches) this._rotation.finish();
     });
+    this._syncScreenMediaSubscriptions();
   }
 
   public setConfig(config: FloorplanCardConfig): void {
@@ -383,7 +454,14 @@ export class FloorplanCard extends LitElement {
     };
     this._watchedEntities = collectWatchedEntities(this._config);
     this._nameEntities = collectNamedEntities(this._config);
+    this._configSerial++;
+    // A new config is a fresh start for the plan-fit fallback: the next update
+    // checks the stage again and only falls back if the plan still has no size.
+    this._resetPlanFit();
+    this._summaryDiscoveryInputs = undefined;
+    this._syncSummaryDiscovery();
     this._syncMoonClock();
+    this._syncTimeClock();
     this._syncHistoryServiceContext();
     this._replayController.clearConfigColorCache();
     // HA calls setConfig on every keystroke in the config box. Clearing the
@@ -412,6 +490,20 @@ export class FloorplanCard extends LitElement {
         this._activeFloorId = remembered;
       }
     }
+    this._syncScreenMediaSubscriptions();
+  }
+
+  private _screenMediaQueries: Array<() => void> = [];
+
+  private _syncScreenMediaSubscriptions(): void {
+    for (const unsub of this._screenMediaQueries) unsub();
+    this._screenMediaQueries = [];
+    if (typeof window === "undefined" || !window.matchMedia || !this._config) return;
+    const mqs = collectConditionMediaQueries(this._config);
+    for (const query of mqs) {
+      const mql = window.matchMedia(query);
+      this._screenMediaQueries.push(subscribeOrientation(mql, () => this.requestUpdate()));
+    }
   }
 
   private _displayConfig(): FloorplanCardConfig {
@@ -439,11 +531,14 @@ export class FloorplanCard extends LitElement {
    * for most updates nothing on this plan moved. Skip those renders entirely.
    */
   protected shouldUpdate(changed: PropertyValues): boolean {
+    const discoveryChanged = this._syncSummaryDiscovery();
     // Anything but a pure hass tick (config change, floor switch, first render).
     if (!(changed.size === 1 && changed.has("hass"))) return true;
     const prev = changed.get("hass") as HomeAssistant | undefined;
-    if (!prev || !this.hass) return true;
-    if (hassRenderInputsChanged(prev, this.hass, this._watchedEntities)) return true;
+    if (!prev || !this.hass || discoveryChanged) return true;
+    if (hassRenderInputsChanged(prev, this.hass, this._renderEntities)) return true;
+    // The floor image can follow light/dark mode (issue #366).
+    if (hassDarkMode(prev) !== hassDarkMode(this.hass)) return true;
     // Entities that name a button but draw nothing. They have to invalidate a
     // render — a renamed entity, or one that did not exist at first paint,
     // otherwise leaves the label stuck at the name it first found — but they
@@ -453,6 +548,46 @@ export class FloorplanCard extends LitElement {
       if (prev.states[id] !== this.hass.states[id]) return true;
     }
     return false;
+  }
+
+  /**
+   * Find the entities each summarised floor gets from its linked HA areas and
+   * floor (issue #234), and watch them with the rest of the plan. Runs only
+   * when the config or one of the HA registries has changed. Returns whether
+   * the set of discovered entities changed.
+   */
+  private _syncSummaryDiscovery(): boolean {
+    const c = this._config;
+    const reg = this.hass as unknown as { entities?: unknown; devices?: unknown; areas?: unknown } | undefined;
+    const personKey = hasLocationConditions(c) && this.hass?.states
+      ? Object.keys(this.hass.states).filter((id) => id.startsWith("person.") || id.startsWith("zone.")).sort().join(",")
+      : "";
+    const inputs = [c, reg?.entities, reg?.devices, reg?.areas, personKey];
+    const prev = this._summaryDiscoveryInputs;
+    if (prev && inputs.every((v, i) => v === prev[i])) return false;
+    this._summaryDiscoveryInputs = inputs;
+    const perFloor = new Map<string, string[]>();
+    const all = new Set<string>();
+    if (c) {
+      if (hasLocationConditions(c) && this.hass?.states) {
+        for (const id of Object.keys(this.hass.states)) {
+          if (id.startsWith("person.") || id.startsWith("zone.")) all.add(id);
+        }
+      }
+      if (reg) {
+        for (const f of getFloors(c)) {
+          if (!floorSummaryShown(f, c.floorSummary)) continue;
+          const ids = floorHaEntityIds(f, reg);
+          if (!ids.length) continue;
+          perFloor.set(f.id, ids);
+          for (const id of ids) all.add(id);
+        }
+      }
+    }
+    const before = this._renderEntities;
+    this._summaryHaEntities = perFloor;
+    this._renderEntities = all.size ? new Set([...this._watchedEntities, ...all]) : this._watchedEntities;
+    return before.size !== this._renderEntities.size || [...this._renderEntities].some((id) => !before.has(id));
   }
 
   /**
@@ -474,6 +609,8 @@ export class FloorplanCard extends LitElement {
 
   protected updated(changed: PropertyValues): void {
     super.updated(changed);
+    this._watchPlanFit();
+    this._syncAutoLabels();
     if (changed.has("hass") || changed.has("_activeFloorId")) {
       this._syncHistoryServiceContext();
     }
@@ -515,6 +652,156 @@ export class FloorplanCard extends LitElement {
   public getGridOptions() {
     return { columns: 12, rows: 8, min_columns: 6, min_rows: 4 };
   }
+
+  /**
+   * Place the `labelPosition: auto` labels (see label-placement.ts), when —
+   * and only when — something they depend on has changed: the config, the
+   * floor, rotation, room zoom, the label texts' lengths, or the card's size
+   * (the ResizeObserver clears the key). A hass tick that leaves every auto
+   * label the same length reads no layout at all. Measured here, after Lit
+   * has written the DOM and before the browser paints, so a label that moves
+   * is never seen on its old side; a change asks for exactly one more render.
+   *
+   * Under the 3D view an auto label stays `below`: the walls stand up there,
+   * and the overlay's floor-plane anchors say nothing about where their faces
+   * are drawn.
+   */
+  private _syncAutoLabels(): void {
+    if (!this._autoLabelsMeasurable) {
+      this._autoLayoutKey = undefined;
+      return;
+    }
+    // No auto labels on screen: nothing to place, so no layout to read.
+    if (this._autoLabelSig.length === 0) {
+      this._autoLayoutKey = undefined;
+      this._autoSides.clear();
+      return;
+    }
+    const key = `${this._autoLayoutBase}|${this._autoLabelSig.join(",")}`;
+    if (key === this._autoLayoutKey) return;
+    const plan = this.renderRoot.querySelector<HTMLElement>(".plan");
+    const overlay = plan?.querySelector<HTMLElement>(".items");
+    if (!plan || !overlay || !this._config) return;
+    if (!this._autoResize && typeof ResizeObserver !== "undefined") {
+      this._autoResize = new ResizeObserver(() => {
+        this._autoLayoutKey = undefined;
+        this._syncAutoLabels();
+      });
+    }
+    // Observed once per .plan element: observe() always delivers a first
+    // notification, so re-observing the same element on every pass would
+    // never settle. A re-render that replaces .plan is observed afresh.
+    if (this._autoResize && plan !== this._autoResizeTarget) {
+      this._autoResize.disconnect();
+      this._autoResize.observe(plan);
+      this._autoResizeTarget = plan;
+    }
+    const r = overlay.getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) return;
+    this._autoLayoutKey = key;
+    const c = this._displayConfig();
+    const rot = resolvePlanRotation(c, this._portrait) + this._rotation.value;
+    const active = this._activeFloor(c);
+    // Walls in client pixels, through the same mapping every overlay anchor
+    // uses — so rotation and the zoom transform (already in `r`) apply to them
+    // exactly as they do to the badges.
+    const toClient = (x: number, y: number) => {
+      const { p, d } = this._display(x, y, c, rot);
+      return { x: r.left + (p.x / d.w) * r.width, y: r.top + (p.y / d.h) * r.height, px: r.width / d.w };
+    };
+    const generated = active.areas.flatMap((a) => rectAreaSideWalls(a.id, a.points, a.sideWalls ?? {}));
+    const walls = [...active.walls, ...generated].map((w) => {
+      const a = toClient(w.x1, w.y1);
+      const b = toClient(w.x2, w.y2);
+      return { x1: a.x, y1: a.y, x2: b.x, y2: b.y, half: (wallThickness(w.thickness) * a.px) / 2 };
+    });
+    const card = this.renderRoot.querySelector("ha-card");
+    const bounds = card
+      ? intersectBoxes(rectToBox(plan.getBoundingClientRect()), rectToBox(card.getBoundingClientRect()))
+      : rectToBox(plan.getBoundingClientRect());
+    const sides = measureLabelScene({
+      items: [...overlay.querySelectorAll<HTMLElement>(":scope > .item")],
+      autoKey: (el) => el.dataset.labelAuto,
+      solid: (el) => el.querySelector(":scope > span > .badge, :scope > .stack .badge, :scope > .badge-space"),
+      label: (el) => el.querySelector<HTMLElement>(":scope > .label"),
+      centredBelow: (el) => !!el.querySelector(":scope > .badge-space"),
+      current: this._autoSides,
+      marks: [...overlay.querySelectorAll(":scope > .shutter-mark")],
+      names: [...overlay.querySelectorAll(":scope > .area-label, :scope > .text")],
+      openings: [...plan.querySelectorAll("svg .fp-opening:not(.fp-opening-skylight)")],
+      walls,
+      bounds,
+      scalePlan: plan.classList.contains("scale-plan"),
+    });
+    let changed = false;
+    for (const [k, side] of sides) {
+      if (this._autoSides.get(k) !== side) changed = true;
+    }
+    // Forget the sides of labels no longer on the plan.
+    for (const k of [...this._autoSides.keys()]) if (!sides.has(k)) this._autoSides.delete(k);
+    if (!changed) return;
+    for (const [k, side] of sides) this._autoSides.set(k, side);
+    this.requestUpdate();
+  }
+
+  /**
+   * The plan's width reads the stage's height as `100cqh`. Some engines report
+   * 0 for it while the stage itself is laid out correctly: Chrome 129's WebView
+   * does when the stage's height comes only from its aspect-ratio (issue #406),
+   * and the plan collapses to nothing. Engines without the unit at all are the
+   * stylesheet's `width: 100%` fallback (#339) and never get here.
+   *
+   * So the stage is watched, and once it has a size but the plan has none, the
+   * card switches to the stage's measured height (`fit-measured`, `--fp-stage-h`
+   * on the host, which nothing of ours re-renders). Every other browser keeps
+   * the container query and only pays for the observer. Called on every
+   * update, but reads layout only when the stage element is new.
+   */
+  private _watchPlanFit(): void {
+    const stage = this.renderRoot.querySelector(".stage");
+    if (stage === this._fitTarget || typeof ResizeObserver === "undefined") return;
+    const fit = (el: Element, width: number, height: number) => {
+      if (!this.hasAttribute("fit-measured")) {
+        const plan = el.querySelector(":scope > .plan");
+        if (!plan || !(width > 0 && height > 0) || plan.getBoundingClientRect().width > 0) return;
+        this.setAttribute("fit-measured", "");
+      }
+      this.style.setProperty("--fp-stage-h", `${height}px`);
+    };
+    this._fitResize ??= new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      fit(entry.target, entry.contentRect.width, entry.contentRect.height);
+    });
+    if (this._fitTarget) this._fitResize.unobserve(this._fitTarget);
+    this._fitTarget = stage ?? undefined;
+    if (!stage) return;
+    // Checked once now as well, so a new stage is right in its first frame
+    // rather than after the observer's first report. The used size, unrounded
+    // and untransformed, as the observer reports it.
+    const size = getComputedStyle(stage);
+    fit(stage, parseFloat(size.width), parseFloat(size.height));
+    this._fitResize.observe(stage);
+  }
+
+  /**
+   * Drop the measured-height fallback and forget the watched stage, so the
+   * next `_watchPlanFit` decides afresh. Without this, a plan that read 0 wide
+   * once for some other reason (mid-layout on a first render, say) would stay
+   * on the fallback for the card's whole life.
+   */
+  private _resetPlanFit(): void {
+    if (this._fitTarget) this._fitResize?.unobserve(this._fitTarget);
+    this._fitTarget = undefined;
+    this.removeAttribute("fit-measured");
+    this.style.removeProperty("--fp-stage-h");
+  }
+
+  /** A zoom-to-room transition has landed: measure again at its final scale. */
+  private readonly _onZoomSettled = (e: TransitionEvent): void => {
+    if (e.target !== e.currentTarget) return;
+    this._autoLayoutKey = undefined;
+    this._syncAutoLabels();
+  };
 
   private _isOn(item: FloorItem, renderHass: RenderHass | undefined): boolean {
     // Domain-aware: locks say "unlocked", vacuums "cleaning" — never "on".
@@ -654,8 +941,17 @@ export class FloorplanCard extends LitElement {
     // replace this one — taking the replay loop's cleanup with it.
     this._unsubscribeOrientation?.();
     this._unsubscribeOrientation = undefined;
+    for (const unsub of this._screenMediaQueries) unsub();
+    this._screenMediaQueries = [];
+    this._autoResize?.disconnect();
+    this._autoResize = undefined;
+    this._autoResizeTarget = undefined;
+    this._resetPlanFit();
+    this._fitResize?.disconnect();
+    this._fitResize = undefined;
     // Not connected any more, so this stops it.
     this._syncMoonClock();
+    this._syncTimeClock();
     super.disconnectedCallback();
   }
 
@@ -678,6 +974,23 @@ export class FloorplanCard extends LitElement {
     } else if (!wanted && this._moonClock !== undefined) {
       clearInterval(this._moonClock);
       this._moonClock = undefined;
+    }
+  }
+
+  /**
+   * Periodic clock for live time condition transitions (Issue #310).
+   * Automatically redraws the card when time conditions are present so pieces
+   * appear or disappear at their scheduled times without waiting for entity updates.
+   */
+  private _timeConditionClock?: ReturnType<typeof setInterval>;
+
+  private _syncTimeClock(): void {
+    const wanted = this.isConnected && !!this._config && hasTimeConditions(this._config);
+    if (wanted && this._timeConditionClock === undefined) {
+      this._timeConditionClock = setInterval(() => this.requestUpdate(), TIME_CONDITION_TICK_MS);
+    } else if (!wanted && this._timeConditionClock !== undefined) {
+      clearInterval(this._timeConditionClock);
+      this._timeConditionClock = undefined;
     }
   }
 
@@ -786,11 +1099,12 @@ export class FloorplanCard extends LitElement {
     x: number,
     y: number,
     c: FloorplanCardConfig,
-    rot: number
+    rot: number,
+    z = 0
   ): { p: { x: number; y: number }; d: { w: number; h: number } } {
     const f = this._frame(c, rot);
     const r = rotatePlanPoint(x, y, c.width, c.height, rot);
-    return { p: projectPlanPoint(r.x, r.y, f), d: projectedCanvasSize(f) };
+    return { p: projectPlanPoint(r.x, r.y, f, z), d: projectedCanvasSize(f) };
   }
 
   /** A screen-space direction out of the rotated frame, turned by the projection as well. */
@@ -912,14 +1226,7 @@ export class FloorplanCard extends LitElement {
       const unzoomedRoofs = (roofs: readonly Roof[], allAreas: readonly Area[]) => {
         if (!this._zoomedAreaId) return roofs;
         const zoomedArea = allAreas.find((a) => a.id === this._zoomedAreaId);
-        return roofs.filter((r) => {
-          if (r.id === this._zoomedAreaId) return false;
-          if (zoomedArea && zoomedArea.points && zoomedArea.points.length >= 3) {
-            const c = polygonCentroid(zoomedArea.points);
-            if (c && pointInPolygon(r.points, c.x, c.y)) return false;
-          }
-          return true;
-        });
+        return roofs.filter((r) => this._isRoofVisible(r, zoomedArea));
       };
       const floors = getFloors(c);
       const hassSource = renderHass ?? this.hass;
@@ -1011,7 +1318,7 @@ export class FloorplanCard extends LitElement {
         });
         const mappedOpenings = lvlOpenings.map((o) => {
           const p = map(o.x, o.y);
-          return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
+          return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type, sill: o.sill };
         });
 
         const wSolids = wallSolids(mappedWalls, mappedOpenings, outdoorWallHeight, false, true);
@@ -1043,7 +1350,7 @@ export class FloorplanCard extends LitElement {
       const ownOpenings = active.openings;
       const mappedOwnOpenings = ownOpenings.map((o) => {
         const p = map(o.x, o.y);
-        return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
+        return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type, sill: o.sill };
       });
       solids.push(...wallSolids(mappedOwnWalls, mappedOwnOpenings, outdoorWallHeight, false, true));
       for (const o of ownOpenings) {
@@ -1086,7 +1393,7 @@ export class FloorplanCard extends LitElement {
       });
       const openings = effectiveOpenings.map((o) => {
         const p = map(o.x, o.y);
-        return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type };
+        return { x: p.x, y: p.y, length: o.length, angle: o.angle + rot, type: o.type, sill: o.sill };
       });
       solids.push(...wallSolids(walls, openings, baseWallHeight, false));
       for (const o of effectiveOpenings) {
@@ -1097,16 +1404,25 @@ export class FloorplanCard extends LitElement {
 
     const furnitureHeight = baseWallHeight * FURNITURE_HEIGHT_FRACTION;
     const lift = elevationShift(furnitureHeight, rot);
+    const catalog = symbolCatalog(c.symbols);
+    const effHass = this.hass && renderHass ? { ...this.hass, states: { ...this.hass.states, ...renderHass.states } } : (this.hass ?? (renderHass as unknown as HomeAssistant));
     for (const f of active.furniture) {
+      if (!isFurnitureVisible(f, effHass)) continue;
+      // A piece that hangs rather than stands — an awning under the eaves
+      // (issue #196) — is a sheet between its symbol's two heights.
+      const raised = findSymbol(catalog, f.type)?.elevation;
+      const top = raised ? baseWallHeight * raised.to : furnitureHeight;
+      const up = raised ? elevationShift(top, rot) : lift;
       solids.push(
         furnitureSolid(
           f,
           map,
-          furnitureHeight,
+          top,
           furnitureTone(f),
           svg`<g transform=${rotTransform || nothing}>
-                <g transform="translate(${lift.x} ${lift.y})">${drawFurniture(f)}</g>
-              </g>`
+                <g transform="translate(${up.x} ${up.y})">${drawFurniture(f)}</g>
+              </g>`,
+          raised ? baseWallHeight * raised.from : 0
         )
       );
     }
@@ -1343,14 +1659,20 @@ export class FloorplanCard extends LitElement {
     executeAction(this, this.hass, { entity: press.entity }, press.config);
   }
 
-  /** The visible control owns gestures; the furniture drawing always lets room taps through. */
-  private _renderFurnitureAction(
+  /**
+   * What a piece of furniture answers to, or `undefined` for an inert piece.
+   *
+   * Shared by the two places its gestures can live: the visible icon, and —
+   * with `showIcon: false` (issue #362) — the drawing itself. Both must agree
+   * on the name, the gestures and which timers to arm, or hiding the icon
+   * would quietly change what a tap does.
+   */
+  private _furnitureControl(
     f: Furniture,
     c: FloorplanCardConfig,
-    rot: number,
     floors: readonly Floor[],
     activeId: string,
-  ): TemplateResult | typeof nothing {
+  ) {
     const to = furnitureFloorTarget(f, floors, activeId, c.defaultFloor);
     const runs = (gesture: "tap" | "hold" | "double_tap"): boolean => {
       const press = furnitureActionForGesture(f, gesture);
@@ -1361,7 +1683,7 @@ export class FloorplanCard extends LitElement {
     const hasDoubleClick = runs("double_tap");
     // A configured tap, even `none` or an unusable action, suppresses navigation.
     const goesToFloor = !!to && !furnitureActionForGesture(f, "tap");
-    if (!goesToFloor && !hasTap && !hasHold && !hasDoubleClick) return nothing;
+    if (!goesToFloor && !hasTap && !hasHold && !hasDoubleClick) return undefined;
 
     const tappable = hasTap || goesToFloor;
     const floorName = floors.find((floor) => floor.id === to)?.name;
@@ -1374,39 +1696,101 @@ export class FloorplanCard extends LitElement {
       ? (floors.findIndex((floor) => floor.id === to) > floors.findIndex((floor) => floor.id === activeId)
         ? "mdi:stairs-up" : "mdi:stairs-down")
       : hasTap ? "mdi:gesture-tap" : hasHold ? "mdi:gesture-tap-hold" : "mdi:gesture-double-tap";
+    const onAction = (ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
+      this._onFurnitureAction(ev, f, floors, to);
+    const onKeydown = (ev: KeyboardEvent) => {
+      if (ev.key !== "Enter" && ev.key !== " ") return;
+      ev.preventDefault();
+      // Keyboard activation is always a tap, never the pointer's hold or
+      // double-tap recognizer. Register before actionHandler's listener.
+      ev.stopImmediatePropagation();
+      if (tappable && !ev.repeat) {
+        this._onFurnitureAction(new CustomEvent("action", { detail: { action: "tap" } }), f, floors, to);
+      }
+    };
+    return { tappable, hasHold, hasDoubleClick, name, gestures, icon, onAction, onKeydown };
+  }
+
+  /**
+   * The furniture drawing as its own hit target, for a piece whose icon is
+   * hidden (issue #362). A piece with an icon, or with nothing to do, is
+   * drawn as-is and passes taps through to the room (#323).
+   */
+  private _furnitureHit(
+    f: Furniture,
+    drawn: SVGTemplateResult,
+    c: FloorplanCardConfig,
+    floors: readonly Floor[],
+    activeId: string,
+  ): SVGTemplateResult {
+    if (f.showIcon !== false) return drawn;
+    const ctl = this._furnitureControl(f, c, floors, activeId);
+    if (!ctl) return drawn;
+    // An SVG tooltip is a <title> child; a title= attribute does nothing here.
+    return svg`<g class="fp-furniture-hit"
+        data-id=${cssIdent(f.id) ?? nothing}
+        role=${ctl.tappable ? "button" : "group"}
+        tabindex=${ctl.tappable ? "0" : nothing}
+        aria-label=${ctl.name}
+        aria-description=${`${ctl.gestures} actions`}
+        @action=${ctl.onAction}
+        @keydown=${ctl.onKeydown}
+        .actionHandler=${actionHandler({ hasHold: ctl.hasHold, hasDoubleClick: ctl.hasDoubleClick })}>
+      <title>${`${ctl.name} · ${ctl.gestures}`}</title>
+      ${drawn}
+      <rect class="fp-furniture-focus" aria-hidden="true"
+          x=${-f.w / 2 - FURNITURE_FOCUS_PAD} y=${-f.h / 2 - FURNITURE_FOCUS_PAD}
+          width=${f.w + FURNITURE_FOCUS_PAD * 2} height=${f.h + FURNITURE_FOCUS_PAD * 2}
+          rx=${FURNITURE_FOCUS_PAD}
+          transform="translate(${f.x} ${f.y}) rotate(${f.angle ?? 0})" />
+    </g>`;
+  }
+
+  /** The visible control owns gestures; the furniture drawing always lets room taps through. */
+  private _renderFurnitureAction(
+    f: Furniture,
+    c: FloorplanCardConfig,
+    rot: number,
+    scale: OverlayScale,
+    floors: readonly Floor[],
+    activeId: string,
+  ): TemplateResult | typeof nothing {
+    // Hidden (issue #362): the drawing takes the gestures instead.
+    if (f.showIcon === false) return nothing;
+    const ctl = this._furnitureControl(f, c, floors, activeId);
+    if (!ctl) return nothing;
     // Upright HTML, anchored to the same elevated centre as the SVG glyph.
     // Floor-level coordinates would leave the control below the table in 3D.
     const frame = this._frame(c, rot);
     const at = rotatePlanPoint(f.x, f.y, c.width, c.height, rot);
     const p = projectPlanPoint(at.x, at.y, frame, normalizeWallHeight(c.wallHeight) * FURNITURE_HEIGHT_FRACTION);
     const d = projectedCanvasSize(frame);
+    // Sized like every other badge (issue #362): screen pixels under
+    // `overlayScale: fixed`, canvas units under `plan` — otherwise a plan that
+    // shrinks its devices with the card leaves these circles towering over
+    // the furniture they sit on.
+    const box = overlayLength(FURNITURE_ICON_SIZE, scale);
     return html`<div
         class="fp-furniture-link"
         data-id=${cssIdent(f.id) ?? nothing}
-        style="left:${(p.x / d.w) * 100}%;top:${(p.y / d.h) * 100}%;"
-        title=${`${name} · ${gestures}`}
-        role=${tappable ? "button" : "group"}
-        tabindex=${tappable ? "0" : nothing}
-        aria-label=${name}
-        aria-description=${`${gestures} actions`}
-        @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) =>
-        this._onFurnitureAction(ev, f, floors, to)}
-        @keydown=${(ev: KeyboardEvent) => {
-        if (ev.key !== "Enter" && ev.key !== " ") return;
-        ev.preventDefault();
-        // Keyboard activation is always a tap, never the pointer's hold or
-        // double-tap recognizer. Register before actionHandler's listener.
-        ev.stopImmediatePropagation();
-        if (tappable && !ev.repeat) {
-          this._onFurnitureAction(new CustomEvent("action", { detail: { action: "tap" } }), f, floors, to);
-        }
-      }}
-        .actionHandler=${actionHandler({ hasHold, hasDoubleClick })}>
-      <ha-icon icon=${icon} aria-hidden="true"></ha-icon>
+        style="left:${(p.x / d.w) * 100}%;top:${(p.y / d.h) * 100}%;width:${box};height:${box};"
+        title=${`${ctl.name} · ${ctl.gestures}`}
+        role=${ctl.tappable ? "button" : "group"}
+        tabindex=${ctl.tappable ? "0" : nothing}
+        aria-label=${ctl.name}
+        aria-description=${`${ctl.gestures} actions`}
+        @action=${ctl.onAction}
+        @keydown=${ctl.onKeydown}
+        .actionHandler=${actionHandler({ hasHold: ctl.hasHold, hasDoubleClick: ctl.hasDoubleClick })}>
+      <ha-icon
+        icon=${ctl.icon}
+        aria-hidden="true"
+        style="--mdc-icon-size:${overlayLength(FURNITURE_ICON_GLYPH, scale)};"
+      ></ha-icon>
     </div>`;
   }
 
-  private _renderBadge(item: FloorItem, scale: OverlayScale, renderHass: RenderHass | undefined): TemplateResult {
+  private _renderBadge(item: FloorItem, rot: number, scale: OverlayScale, renderHass: RenderHass | undefined): TemplateResult {
     const size = cssNumber(item.size, DEFAULT_ITEM_SIZE);
     const box = overlayLength(size, scale);
     // Animation goes on the inner ha-icon, not the badge: the badge carries
@@ -1426,7 +1810,7 @@ export class FloorplanCard extends LitElement {
     return html`
       <div
         class="badge"
-        style="width:${box};height:${box};transform:rotate(${cssNumber(item.angle, 0)}deg);"
+        style="width:${box};height:${box};transform:rotate(${overlayAngle(cssNumber(item.angle, 0), rot)}deg);"
       >
         ${value
         ? html`<span
@@ -1480,6 +1864,15 @@ export class FloorplanCard extends LitElement {
     // Name/state composition lives in itemBadgeLabel, including #39's
     // no-entity guard (an unbound device gets no state line).
     const labelText = itemBadgeLabel(renderHass, item);
+    const position = labelPositionOf(item);
+    const autoKey = position === "auto" ? autoLabelKey(item) : undefined;
+    // An auto label renders `below` until it has been measured, and stays
+    // there wherever it cannot be (the 3D view).
+    const side: LabelSide =
+      autoKey === undefined
+        ? (position as LabelSide)
+        : (this._autoLabelsMeasurable && this._autoSides.get(autoKey)) || "below";
+    if (autoKey !== undefined && labelText) this._autoLabelSig.push(`${autoKey}:${labelText.length}`);
     // Threshold color (issue #68), judged on the displayed value (attribute
     // when set, else the state). cssColor gates the config string (#64).
     const st = item.entity ? renderHass?.states[item.entity] : undefined;
@@ -1566,6 +1959,8 @@ export class FloorplanCard extends LitElement {
     const hiddenStyle = isBadgeHidden ? "visibility: hidden; pointer-events: none;" : "";
 
     let visual: TemplateResult | typeof nothing = nothing;
+    // A label-only device beside an empty badge footprint (issue #308).
+    let spaceOnly = false;
     if (display === "ripple") {
       visual = html`<span style="${hiddenStyle}">
         ${renderRipple(on, rippleColor, rippleSize, rippleDirection, rippleWidth, 3, scale)}
@@ -1573,19 +1968,25 @@ export class FloorplanCard extends LitElement {
     } else if (display === "iconRipple") {
       visual = html`<div class="stack" style="${hiddenStyle}">
         ${renderRipple(on, rippleColor, rippleSize, rippleDirection, rippleWidth, 3, scale)}
-        ${showIcon ? html`<div class="stack-icon">${this._renderBadge(item, scale, renderHass)}</div>` : nothing}
+        ${showIcon ? html`<div class="stack-icon">${this._renderBadge(item, rot, scale, renderHass)}</div>` : nothing}
       </div>`;
     } else if (showIcon) {
       visual = html`<span style="${hiddenStyle}">
-        ${this._renderBadge(item, scale, renderHass)}
+        ${this._renderBadge(item, rot, scale, renderHass)}
       </span>`;
-    } else if (labelText && labelPositionOf(item) !== "below") {
+    } else if (labelText && (side !== "below" || position === "auto")) {
       // A label-only device with its label to one side keeps the badge's
       // footprint, empty (issue #308): "I would expect the label to keep its
       // position (and direction of growth), no matter if the badge is shown or
       // not". The side rules then hang it exactly where they would beside a
       // badge, which is also where the editor's ghost badge shows it. Below
       // stays in flow, centred on (x, y), as label-only devices always were.
+      //
+      // An auto one keeps the footprint on every side, `below` included, so
+      // the card measures the same badge box whichever side it settles on;
+      // its `below` label is then centred on that box (`.centred`), which is
+      // exactly where an in-flow label-only label has always sat.
+      spaceOnly = true;
       const box = overlayLength(cssNumber(item.size, DEFAULT_ITEM_SIZE), scale);
       visual = html`<span
         class="badge-space"
@@ -1616,6 +2017,7 @@ export class FloorplanCard extends LitElement {
         data-id=${cssIdent(item.id) ?? nothing}
         data-entity=${cssEntityId(item.entity) ?? nothing}
         data-kind=${cssIdent(item.kind) ?? nothing}
+        data-label-auto=${autoKey ?? nothing}
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${stateColor
         ? `--fp-state:${stateColor};`
         : ""}${activeColor
@@ -1645,7 +2047,7 @@ export class FloorplanCard extends LitElement {
         : nothing}
         ${labelText
         ? html`<span
-              class="label ${visual === nothing ? "inflow" : ""} label-${labelPositionOf(item)}"
+              class="label ${visual === nothing ? "inflow" : ""} label-${side} ${spaceOnly && side === "below" ? "centred" : ""}"
               style="font-size:${overlayLength(itemLabelSize(item.labelSize), scale)};${labelColor
             ? `color:${labelColor};`
             : ""}"
@@ -1694,9 +2096,309 @@ export class FloorplanCard extends LitElement {
         style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;
                font-size:${overlayLength(cssNumber(t.size, DEFAULT_TEXT_SIZE), scale)};
                color:${cssColorOr(t.color, SKIN_TEXT)};
-               transform:translate(-50%,-50%) scale(var(--fp-inv-zoom,1)) rotate(${cssNumber(t.angle, 0)}deg);"
+               transform:translate(-50%,-50%) scale(var(--fp-inv-zoom,1)) rotate(${textOverlayAngle(cssNumber(t.angle, 0), rot)}deg);"
       >
         ${textLabel(this.hass, t)}
+      </div>
+    `;
+  }
+
+  private _defaultPanelMetricIcon(entityId?: string, renderHass?: RenderHass): string {
+    if (!entityId) return "mdi:gauge";
+    const st = renderHass?.states[entityId];
+    const dc = st?.attributes?.device_class;
+    if (dc === "temperature") return "mdi:thermometer";
+    if (dc === "humidity") return "mdi:water-percent";
+    if (dc === "power" || dc === "energy") return "mdi:flash";
+    if (dc === "motion" || dc === "occupancy" || dc === "presence") return "mdi:motion-sensor";
+    if (dc === "door" || dc === "window" || dc === "garage_door") return "mdi:window-closed";
+    if (dc === "battery") return "mdi:battery";
+
+    const domain = entityId.split(".")[0];
+    if (domain === "climate") return "mdi:thermometer";
+    if (domain === "light") return "mdi:lightbulb";
+    if (domain === "switch") return "mdi:power";
+    if (domain === "cover") return "mdi:window-closed";
+    if (domain === "person") return "mdi:account";
+    return "mdi:gauge";
+  }
+
+  private _isPanelVisible(
+    panel: FloorInfoPanel,
+    iso: boolean,
+    zoomedArea: Area | undefined
+  ): boolean {
+    if (iso ? panel.showIn3D === false : panel.showIn2D === false) {
+      return false;
+    }
+    if (panel.showOnlyWhenZoomed) {
+      if (!zoomedArea) return false;
+      if (panel.targetId && panel.targetId === zoomedArea.id) return true;
+      return pointInPolygon(zoomedArea.points, panel.x, panel.y);
+    }
+    return true;
+  }
+
+  private _isRoofVisible(
+    roof: Roof,
+    zoomedArea: Area | undefined
+  ): boolean {
+    if (!zoomedArea) return true;
+    if (roof.id === zoomedArea.id) return false;
+    if (zoomedArea.points && zoomedArea.points.length >= 3) {
+      const c = polygonCentroid(zoomedArea.points);
+      if (c && pointInPolygon(roof.points, c.x, c.y)) return false;
+    }
+    return true;
+  }
+
+  private _isRoofPanel(panel: FloorInfoPanel, floor: Floor): boolean {
+    if (panel.targetType === "roof") return true;
+    if (panel.targetId && (floor.roofs ?? []).some((r) => r.id === panel.targetId)) return true;
+    return false;
+  }
+
+  private _visibleFloorPanels(
+    active: Floor,
+    c: FloorplanCardConfig,
+    iso: boolean,
+    zoomedArea: Area | undefined,
+    renderHass?: RenderHass
+  ): Array<{ panel: FloorInfoPanel; floor: Floor; z: number }> {
+    const result: Array<{ panel: FloorInfoPanel; floor: Floor; z: number }> = [];
+    // Called on every render: a plan with no panels anywhere returns before
+    // the floor and level lookups below. Read off the raw config, since
+    // getFloors itself normalises every floor.
+    const anyPanels = c.floors?.length
+      ? c.floors.some((f) => floorPanels(f).length > 0)
+      : (c.panels?.length ?? 0) > 0;
+    if (!anyPanels) return result;
+
+    const isOutside3D = !!(active.isOutdoor && iso);
+
+    // 1. Panels on the active floor
+    for (const p of floorPanels(active)) {
+      const isRoof = this._isRoofPanel(p, active);
+      if (isRoof) {
+        // A roof panel should not be visible in 2D or regular 3D rendering.
+        // Show it only when we render outside 3D house rendering and that roof is visible.
+        if (!isOutside3D) continue;
+        const targetRoof = (active.roofs ?? []).find((rf) => rf.id === p.targetId) ??
+          (active.roofs ?? []).find((rf) => pointInPolygon(rf.points, p.x, p.y));
+        if (!targetRoof || !this._isRoofVisible(targetRoof, zoomedArea)) continue;
+      }
+      if (this._isPanelVisible(p, iso, zoomedArea)) {
+        let z = 0;
+        if (iso && isRoof) {
+          const r = (active.roofs ?? []).find((rf) => rf.id === p.targetId) ??
+            (active.roofs ?? []).find((rf) => pointInPolygon(rf.points, p.x, p.y));
+          const baseWallHeight = normalizeWallHeight(c.wallHeight);
+          z = baseWallHeight + (r?.height ?? 30) * 0.5;
+        }
+        result.push({ panel: p, floor: active, z });
+      }
+    }
+
+    // 2. If active is outdoor and 3D view: include roof panels from stacked indoor floors!
+    if (isOutside3D) {
+      const floors = getFloors(c);
+      const hassSource = renderHass ?? this.hass;
+      const baseLevel = resolveFloorLevel(active, floors, hassSource);
+      const indoorFloors = floors.filter((f) => !f.isOutdoor);
+      const baseWallHeight = normalizeWallHeight(c.wallHeight);
+      const outdoorWallHeight = baseWallHeight * OUTDOOR_WALL_HEIGHT_MULTIPLIER;
+
+      for (const f of indoorFloors) {
+        const lvl = resolveFloorLevel(f, floors, hassSource);
+        const zOffset = (lvl - baseLevel) * outdoorWallHeight;
+
+        for (const p of floorPanels(f)) {
+          const isRoof = this._isRoofPanel(p, f);
+          if (!isRoof) continue;
+          const targetRoof = (f.roofs ?? []).find((rf) => rf.id === p.targetId) ??
+            (f.roofs ?? []).find((rf) => pointInPolygon(rf.points, p.x, p.y));
+          if (!targetRoof || !this._isRoofVisible(targetRoof, zoomedArea)) continue;
+
+          if (this._isPanelVisible(p, iso, zoomedArea)) {
+            const roofHeight = (targetRoof.height ?? 30) * OUTDOOR_WALL_HEIGHT_MULTIPLIER;
+            const z = zOffset + outdoorWallHeight + roofHeight * 0.5;
+            result.push({ panel: p, floor: f, z });
+          }
+        }
+      }
+    }
+
+    return result;
+  }
+
+  private _renderPanelLeaderLines(
+    list: Array<{ panel: FloorInfoPanel; floor: Floor; z: number }>
+  ): TemplateResult {
+    const withLines = list.filter((item) => item.panel.showLeaderLine !== false);
+    if (!withLines.length) return svg`${nothing}`;
+
+    return svg`
+      <g class="fp-panel-leader-lines">
+        ${withLines.map(({ panel: p, floor }) => {
+      const anchor = resolvePanelAnchor(p, floor);
+      if (!anchor) return nothing;
+      const color = cssColor(p.color) ?? "var(--fp-panel-accent, var(--fp-skin-accent, var(--primary-color, #03a9f4)))";
+      const d = computeLeaderLinePath(anchor, { x: p.x, y: p.y });
+      return svg`
+            <g class="fp-panel-leader" data-panel-id=${p.id}>
+              <circle cx=${anchor.x} cy=${anchor.y} r="3.5" class="fp-panel-anchor-ring" fill=${color} stroke=${color} stroke-width="1.2" fill-opacity="0.25" />
+              <circle cx=${anchor.x} cy=${anchor.y} r="1" class="fp-panel-anchor-dot" fill="#ffffff" />
+              <path d=${d} class="fp-panel-leader-line" stroke=${color} stroke-width="1.4" fill="none" />
+              <circle cx=${p.x} cy=${p.y} r="2.5" class="fp-panel-target-dot" fill=${color} />
+            </g>
+          `;
+    })}
+      </g>
+    `;
+  }
+
+  private _renderIsoPanelLeaderLines(
+    list: Array<{ panel: FloorInfoPanel; floor: Floor; z: number }>,
+    c: FloorplanCardConfig,
+    rot: number
+  ): TemplateResult {
+    const withLines = list.filter((item) => item.panel.showLeaderLine !== false);
+    if (!withLines.length) return svg`${nothing}`;
+
+    const frame = this._frame(c, rot);
+    const map = (x: number, y: number) => rotatePlanPoint(x, y, c.width, c.height, rot);
+
+    return svg`
+      <g class="fp-panel-leader-lines fp-iso-leader-lines">
+        ${withLines.map(({ panel: p, floor, z }) => {
+      const anchor = resolvePanelAnchor(p, floor);
+      if (!anchor) return nothing;
+      const rAnchor = map(anchor.x, anchor.y);
+      const rPanel = map(p.x, p.y);
+      const pAnchor = projectPlanPoint(rAnchor.x, rAnchor.y, frame, z);
+      const pPanel = projectPlanPoint(rPanel.x, rPanel.y, frame, z);
+      const color = cssColor(p.color) ?? "var(--fp-panel-accent, var(--fp-skin-accent, var(--primary-color, #03a9f4)))";
+      const d = computeLeaderLinePath(pAnchor, pPanel);
+      return svg`
+            <g class="fp-panel-leader" data-panel-id=${p.id}>
+              <circle cx=${pAnchor.x} cy=${pAnchor.y} r="3.5" class="fp-panel-anchor-ring" fill=${color} stroke=${color} stroke-width="1.2" fill-opacity="0.25" />
+              <circle cx=${pAnchor.x} cy=${pAnchor.y} r="1" class="fp-panel-anchor-dot" fill="#ffffff" />
+              <path d=${d} class="fp-panel-leader-line" stroke=${color} stroke-width="1.4" fill="none" />
+              <circle cx=${pPanel.x} cy=${pPanel.y} r="2.5" class="fp-panel-target-dot" fill=${color} />
+            </g>
+          `;
+    })}
+      </g>
+    `;
+  }
+
+  private _renderInfoPanel(
+    panel: FloorInfoPanel,
+    panelFloor: Floor,
+    c: FloorplanCardConfig,
+    rot: number,
+    _scale: OverlayScale,
+    renderHass: RenderHass | undefined,
+    z = 0
+  ): TemplateResult {
+    const { p, d } = this._display(panel.x, panel.y, c, rot, z);
+    const accent = cssColor(panel.color);
+    const style = panel.style ?? "card";
+    const metrics = resolvePanelMetrics(panel, renderHass);
+
+    let targetArea: Area | undefined;
+    if (panel.targetId) {
+      targetArea = (panelFloor.areas ?? []).find((a) => a.id === panel.targetId);
+      if (!targetArea) {
+        const roof = (panelFloor.roofs ?? []).find((r) => r.id === panel.targetId);
+        if (roof && roof.points && roof.points.length >= 3) {
+          const rc = polygonCentroid(roof.points);
+          if (rc) {
+            targetArea = (panelFloor.areas ?? []).find((a) => pointInPolygon(a.points, rc.x, rc.y));
+          }
+        }
+      }
+      if (!targetArea && panel.targetType === "furniture") {
+        const furn = (panelFloor.furniture ?? []).find((f) => f.id === panel.targetId);
+        if (furn) {
+          targetArea = (panelFloor.areas ?? []).find((a) => pointInPolygon(a.points, furn.x, furn.y));
+        }
+      }
+    }
+    if (!targetArea && panel.targetType === "area") {
+      targetArea = nearestPanelArea(panel, panelFloor);
+    }
+
+    const showTitle =
+      panel.showTitle !== false &&
+      panel.title !== "" &&
+      (panel.title as any) !== false;
+    const title =
+      panel.title !== undefined
+        ? panel.title
+        : (panel.targetType === "furniture" && panel.targetId
+          ? panelFloor.furniture.find((f) => f.id === panel.targetId)?.type
+          : undefined) ||
+          targetArea?.name ||
+          (panel.targetType === "roof" ? "Roof Telemetry" : undefined) ||
+          "Telemetry";
+
+    const tappable = !!targetArea;
+    const onAction = tappable ? () => this._onAreaClick(targetArea!) : undefined;
+    const onKeyDown = tappable
+      ? (e: KeyboardEvent) => {
+          if (e.key === "Enter" || e.key === " ") {
+            e.preventDefault();
+            this._onAreaClick(targetArea!);
+          }
+        }
+      : undefined;
+
+    const showIcons = panel.showIcons !== false;
+    const showLabels = panel.showLabels !== false;
+
+    return html`
+      <div
+        class="fp-info-panel ${style} ${tappable ? "clickable" : ""}"
+        data-panel-id=${panel.id}
+        role=${tappable ? "button" : nothing}
+        tabindex=${tappable ? "0" : nothing}
+        style="left:${(p.x / d.w) * 100}%; top:${(p.y / d.h) * 100}%;${accent ? `--fp-panel-accent:${accent};` : ""
+      }"
+        @click=${onAction ?? nothing}
+        @keydown=${onKeyDown ?? nothing}
+      >
+        ${showTitle
+          ? html`
+            <div class="fp-panel-header">
+              <span class="fp-panel-title" title=${title}>${title}</span>
+              <span class="fp-panel-status-dot"></span>
+            </div>`
+          : nothing}
+        <div class="fp-panel-metrics">
+          ${metrics.length
+        ? metrics.map((m) => {
+            const mShowIcon = showIcons && m.showIcon !== false;
+            const mIcon = mShowIcon ? (m.icon || this._defaultPanelMetricIcon(m.entity, renderHass)) : undefined;
+            const mShowLabel = showLabels && Boolean(m.label);
+            const hasLeft = Boolean(mIcon || mShowLabel);
+            return html`
+              <div class="fp-panel-metric-row ${!hasLeft ? "value-only" : ""}">
+                ${hasLeft
+                  ? html`
+                    <span class="fp-panel-metric-left">
+                      ${mIcon ? html`<ha-icon icon=${mIcon}></ha-icon>` : nothing}
+                      ${mShowLabel ? html`<span class="fp-panel-metric-label" title=${m.label}>${m.label}</span>` : nothing}
+                    </span>`
+                  : nothing}
+                <span class="fp-panel-metric-value ${m.unavailable ? "unavailable" : ""}">
+                  ${m.value}${m.unit ? html`<span class="fp-panel-metric-unit">${m.unit}</span>` : nothing}
+                </span>
+              </div>
+            `;
+          })
+        : html`<span style="font-size:10px;opacity:0.6;">No metrics</span>`}
+        </div>
       </div>
     `;
   }
@@ -1706,9 +2408,10 @@ export class FloorplanCard extends LitElement {
     const c = this._displayConfig();
     const lineArt = c.appearance === "line-art";
     const replayState = this._replayController.getRenderState();
-    const renderHass = buildRenderHass(this.hass, this._watchedEntities, this._replayController.historyService(), replayState.enabled, replayState.currentTime);
+    const renderHass = buildRenderHass(this.hass, this._renderEntities, this._replayController.historyService(), replayState.enabled, replayState.currentTime);
     const floors = getFloors(c);
     const active = this._activeFloor(c);
+    const bgImage = floorImage(active, hassDarkMode(this.hass));
     // Whole-plan display rotation (issue #33): the SVG rotates via one group
     // transform below; the HTML overlay remaps per point in _renderItem /
     // _renderText. Both must use the same mapping (rotatePlanPoint).
@@ -1723,6 +2426,8 @@ export class FloorplanCard extends LitElement {
     // instead of being drawn flat. The sun dimming has to reach the tops of
     // the walls too, which lie `wallHeight` outside the plan rectangle.
     const iso = frame.projection === "iso";
+    this._autoLabelsMeasurable = !iso && !this._rotation.running;
+    this._autoLabelSig = [];
     // Whether anything actually stands. At zero height the isometric floor
     // keeps the flat plan's own walls, furniture and opening symbols, and the
     // standing layer is skipped outright rather than drawn with no height.
@@ -1731,13 +2436,27 @@ export class FloorplanCard extends LitElement {
     if (!standing) this._openingTween.stop();
     const projTransform = planProjectionTransform(frame);
     const dimPad = WALL_THICKNESS + (iso ? frame.wallHeight : 0);
+    const effHass = this.hass && renderHass ? { ...this.hass, states: { ...this.hass.states, ...renderHass.states } } : (this.hass ?? (renderHass as unknown as HomeAssistant));
+    const visibleFurniture = active.furniture.filter((f) => isFurnitureVisible(f, effHass));
     // One furniture glyph, flat. Drawn on the floor on the flat plan and on
     // top of its block under the isometric view — the same drawing either way.
-    const drawFurniture = (f: Furniture): SVGTemplateResult => renderFurniture(
+    // Awnings and curtains at their cover's position (issue #196); every other
+    // piece passes through untouched.
+    // A center-closing curtain is two halves; it keeps one action, with its
+    // icon on the left half so it never sits over the gap once both gather.
+    const pieces = visibleFurniture.map((f) =>
+      shownPieces(f, f.entity ? renderHass?.states[f.entity] : undefined, symbolCatalog(c.symbols))
+    );
+    const furniture = pieces.flat();
+    const actionFurniture = pieces.map((p, i) => (p.length === 1
+      ? p[0]!
+      : { ...visibleFurniture[i]!, x: p[0]!.x, y: p[0]!.y }));
+    // With its icon hidden (#362), each half of a centre curtain takes the tap.
+    const drawFurniture = (f: Furniture): SVGTemplateResult => this._furnitureHit(f, renderFurniture(
       f,
       furnitureColor(f, f.entity ? renderHass?.states[f.entity]?.state : undefined) ?? (lineArt ? LINE_INK : undefined),
       symbolCatalog(c.symbols)
-    );
+    ), c, floors, active.id);
     // The block's colour: what the glyph is drawn in, through the same allowlist.
     const furnitureTone = (f: Furniture): string =>
       furnitureColor(f, f.entity ? renderHass?.states[f.entity]?.state : undefined) ??
@@ -1794,6 +2513,14 @@ export class FloorplanCard extends LitElement {
     const deadSpaceRings = c.showDeadSpaces
       ? deadSpacesCached(blockingWallSegments, effectiveOpenings)
       : [];
+    // Automatic room tints: the resting fill of every uncoloured room, aligned
+    // with active.areas. All undefined unless `roomTints: auto`, and never in
+    // line art, which paints every room white.
+    const roomTints = roomTintPaints(
+      active.areas,
+      lineArt ? "off" : roomTintsOf(c),
+      roomTintScheme(this.hass, c.skin)
+    );
     // Walls as light meets them (issue #143): open doors and windows are holes,
     // exactly as the plan draws them. Computed once here rather than inside
     // each pool — every lamp sweeps the same walls, and the sun-dimming
@@ -1906,7 +2633,11 @@ export class FloorplanCard extends LitElement {
     // controls, the arrow keys and the dwell all walk the same rooms.
     const roomFocus = normalizeRoomFocus(c.roomFocus);
     const focusRooms = focusOrder(active.areas, roomFocus);
-    const zoomedArea = active.areas?.find((a) => a.id === this._zoomedAreaId);
+    const zoomedArea = (active.isOutdoor ? floors.flatMap((f) => f.areas) : active.areas)?.find(
+      (a) => a.id === this._zoomedAreaId
+    );
+    this._autoLayoutBase = `${this._configSerial}|${active.id}|${rot}|${scale}|${this._zoomedAreaId ?? ""}`;
+    const visiblePanels = this._visibleFloorPanels(active, c, iso, zoomedArea, renderHass);
     const zoom = zoomedArea
       ? areaZoomTransform(
         zoomedArea.points,
@@ -1980,6 +2711,7 @@ export class FloorplanCard extends LitElement {
             style="aspect-ratio: ${dims.w} / ${dims.h};
                    width: min(100%, calc(100cqh * ${dims.w} / ${dims.h}));
                    --fp-plan-w: ${dims.w};
+                   --fp-plan-h: ${dims.h};
                    --fp-wall-opacity: ${lineArt ? 1 : normalizeWallOpacity(c.wallOpacity)};
                    ${minW === undefined ? "" : `--fp-min-w: ${minW}px;`}
                    background:${lineArt ? "#fff" : cssColorOr(c.background, SKIN_PAPER)};"
@@ -2004,6 +2736,7 @@ export class FloorplanCard extends LitElement {
                (which rebuilds that subtree) never disturbs this transform. -->
           <div
             class="plan-zoom"
+            @transitionend=${this._onZoomSettled}
             style="transform: translate(${zoom.txPercent}%, ${zoom.tyPercent}%) scale(${zoom.scale});"
           >
           <!-- Keyed on the skin (issue #122). A skin changes custom properties on
@@ -2024,12 +2757,13 @@ export class FloorplanCard extends LitElement {
           svg`<svg viewBox="0 0 ${dims.w} ${dims.h}" preserveAspectRatio="none">
             <g transform=${projTransform || nothing}>
             <g transform=${rotTransform || nothing}>
-            ${active.image
-              ? svg`<image class="fp-floor-image" href=${active.image} x="0" y="0" width=${c.width} height=${c.height}
+            ${bgImage
+              ? svg`<image class="fp-floor-image" href=${bgImage.href} x="0" y="0" width=${c.width} height=${c.height}
                           preserveAspectRatio=${imageFitRatio(active.imageFit)}
-                          opacity=${active.imageOpacity ?? 1} />`
+                          opacity=${active.imageOpacity ?? 1}
+                          style=${bgImage.filter ? `filter: ${bgImage.filter}` : nothing} />`
               : nothing}
-            ${active.areas?.map((a) => {
+            ${active.areas?.map((a, areaIndex) => {
                 // Rooms answer gestures now (issue #181). The hit target is
                 // unconditional, as it always was — every room zooms — so only
                 // the role and the tab stop are earned by having an action.
@@ -2050,7 +2784,8 @@ export class FloorplanCard extends LitElement {
                       ...a, color: "#fff", opacity: 1,
                       activeOpacity: a.activeOpacity ?? a.opacity ?? 0.25
                     } : a,
-                      areaColor(a, a.entity ? renderHass?.states[a.entity]?.state : undefined))}
+                      areaColor(a, a.entity ? renderHass?.states[a.entity]?.state : undefined),
+                      roomTints[areaIndex])}
                 </g>`;
               })}
             <!-- Diffuse sky light (PR #204). Reads its opening travel, shutter
@@ -2085,11 +2820,11 @@ export class FloorplanCard extends LitElement {
                  they meet) without screening against the plan beneath, which
                  would wash out on a light theme. -->
             ${renderGlowMask(
-                active.furniture, c.width, c.height,
+                furniture, c.width, c.height,
                 `${this._glowIdBase}-mask`, symbolCatalog(c.symbols)
               )}
             <g class="fp-glows"
-               mask=${active.furniture.length ? `url(#${this._glowIdBase}-mask)` : nothing}>
+               mask=${furniture.length ? `url(#${this._glowIdBase}-mask)` : nothing}>
               ${active.items.map((it, i) => {
                 if (!it.glow) return nothing;
                 const paint = glowPaint(it, renderHass?.states[it.entity]);
@@ -2099,7 +2834,7 @@ export class FloorplanCard extends LitElement {
                   : nothing;
               })}
             </g>
-            ${standing ? nothing : active.furniture.map(drawFurniture)}
+            ${standing ? nothing : furniture.map(drawFurniture)}
             <!-- Sunlight through the openings. Under the walls on purpose:
                  light lands on the floor, and the walls stay crisp lines over
                  it rather than being tinted by the patches they let in. The
@@ -2254,7 +2989,7 @@ export class FloorplanCard extends LitElement {
                  stops responding (the lesson from #108). -->
             </g>
             ${standing
-              ? this._renderIsoLayer(active, standingWallSegments, effectiveOpenings, c, rot, frame, rotTransform, drawFurniture, furnitureTone, renderHass,
+              ? this._renderIsoLayer({ ...active, furniture }, standingWallSegments, effectiveOpenings, c, rot, frame, rotTransform, drawFurniture, furnitureTone, renderHass,
                 // Scrubbing history jumps from state to state on purpose;
                 // easing between them would trail the scrubber.
                 !replayState.enabled)
@@ -2270,8 +3005,10 @@ export class FloorplanCard extends LitElement {
                             opacity=${1 - sunLevel} />`
               : nothing
             }
+            ${!iso ? this._renderPanelLeaderLines(visiblePanels) : nothing}
             </g>
             </g>
+            ${iso ? this._renderIsoPanelLeaderLines(visiblePanels, c, rot) : nothing}
           </svg>`
         )}
           <div
@@ -2293,10 +3030,10 @@ export class FloorplanCard extends LitElement {
           (o) => this._renderOpeningMark(o, c, rot, scale, renderHass)
         )}
             ${repeat(
-          active.furniture,
-          (f, i) => f.id || i,
-          (f) => this._renderFurnitureAction(f, c, rot, floors, active.id)
-        )}
+              actionFurniture,
+              (f, i) => f.id || i,
+              (f) => this._renderFurnitureAction(f, c, rot, scale, floors, active.id)
+            )}
             ${repeat(
           // No entity filter: devices that exist physically but have no HA
           // entity still deserve their badge (issue #39). Keyed by id so a
@@ -2314,6 +3051,11 @@ export class FloorplanCard extends LitElement {
           ),
           (it, i) => it.id || i,
           (it) => this._renderItem(it, c, rot, scale, renderHass)
+        )}
+            ${repeat(
+          visiblePanels,
+          (item, i) => item.panel.id || i,
+          (item) => this._renderInfoPanel(item.panel, item.floor, c, rot, scale, renderHass, item.z)
         )}
           </div>
           </div>
@@ -2351,8 +3093,8 @@ export class FloorplanCard extends LitElement {
                than one that overlaps the drawing for as long as a zoom lasts —
                and the position is chosen against the view people spend their
                time in, which is the unzoomed one. -->
-          ${floors.length > 1
-        ? this._renderFloorSwitcher(floors, active, c, rot)
+          ${floors.length > 1 || floors.some((f) => floorSummaryShown(f, c.floorSummary))
+        ? this._renderFloorSwitcher(floors, active, c, rot, renderHass)
         : nothing}
         </div>
         </div>
@@ -2364,10 +3106,10 @@ export class FloorplanCard extends LitElement {
           setAppearance: (appearance) => { this._appearanceOverride = appearance === normalizeAppearance(this._config!.appearance) ? undefined : appearance; },
           rotate: (step) => this._rotation.turn(step, iso && this.isConnected && !window.matchMedia?.("(prefers-reduced-motion: reduce)").matches),
           reset: () => this._resetView(),
-          download: () => downloadLineArtSvg(c, active, targetRotation),
+          download: () => downloadLineArtSvg(c, active, targetRotation, effHass),
         }) : c.showExport ? html`<div class="export-bar">
           <button type="button" title=${`Download line art of ${active.name} as SVG`}
-            @click=${() => downloadLineArtSvg(c, active, targetRotation)}>Export SVG</button>
+            @click=${() => downloadLineArtSvg(c, active, targetRotation, effHass)}>Export SVG</button>
         </div>` : nothing}
         </div>
       </ha-card>
@@ -2384,6 +3126,7 @@ export class FloorplanCard extends LitElement {
     active: Floor,
     c: FloorplanCardConfig,
     rot: number = 0,
+    renderHass?: RenderHass,
   ): TemplateResult {
     // Where the author put it (issue #281), mapped into the displayed frame
     // like every other anchor so a rotated card keeps it in the same corner of
@@ -2395,9 +3138,18 @@ export class FloorplanCard extends LitElement {
       ? rotatePlanPoint(at.x, at.y, cssNumber(c.width, DEFAULT_WIDTH), cssNumber(c.height, DEFAULT_HEIGHT), rot)
       : undefined;
     const dims = rotatedCanvasSize(cssNumber(c.width, DEFAULT_WIDTH), cssNumber(c.height, DEFAULT_HEIGHT), rot);
+    // The discovered HA-area entities come from the registries, which
+    // renderHass does not carry; their states are in it, because they are
+    // watched (`_syncSummaryDiscovery`).
+    const summaries = floors.map((f) => {
+      const s = floorSummaryShown(f, c.floorSummary)
+        ? computeFloorSummary(f, renderHass, c.floorSummary, this._summaryHaEntities.get(f.id) ?? [])
+        : undefined;
+      return s?.enabled && s.badgeText ? s : undefined;
+    });
     return html`
       <div
-        class="floor-switcher ${floorSwitcherClasses(c)} ${placed ? "placed" : ""}"
+        class="floor-switcher ${floorSwitcherClasses(c)} ${placed ? "placed" : ""} ${summaries.some(Boolean) ? "has-summaries" : ""}"
         part="floor-switcher"
         role="group"
         aria-label="Select floor"
@@ -2405,24 +3157,32 @@ export class FloorplanCard extends LitElement {
         ? `left:${(placed.x / dims.w) * 100}%; top:${(placed.y / dims.h) * 100}%;`
         : nothing}
       >
-        ${floors.map((f) => {
+        ${floors.map((f, i) => {
           // Per-floor accent (issue #67): applied only while active so the
           // resting buttons stay theme-neutral. cssColor gates the config
           // string; no custom color falls back to the theme primary.
           const accent = f.id === active.id ? cssColor(f.color) : undefined;
+          const summary = summaries[i];
+          const titleText = summary?.tooltip || f.name;
+
           return html`
             <button
               type="button"
-              class="floor-button ${f.id === active.id ? "active" : ""}"
+              class="floor-button ${f.id === active.id ? "active" : ""} ${summary ? "has-summary" : ""}"
               part=${f.id === active.id ? "floor-button floor-button-active" : "floor-button"}
               data-floor-id=${f.id}
-              title=${f.name}
-              aria-label=${f.name}
+              title=${titleText}
+              aria-label=${titleText}
               aria-pressed=${f.id === active.id ? "true" : "false"}
               style=${accent ? `--fp-floor-accent:${accent};` : nothing}
               @click=${() => this._goToFloor(floors, f.id)}
             >
-              ${f.short || f.name}
+              ${summary
+                ? html`
+                    <span class="floor-button-title">${f.short || f.name}</span>
+                    <span class="floor-button-summary">${summary.badgeText}</span>
+                  `
+                : f.short || f.name}
             </button>
           `;
         })}
@@ -2502,6 +3262,11 @@ export class FloorplanCard extends LitElement {
          positioned children, auto width collapses the plan to zero (#339). */
       width: 100%;
       height: auto;
+    }
+    /* 100cqh read 0 on this engine (issue #406): the same fit, from the
+       stage's measured height. !important to beat the inline width. */
+    :host([fit-measured]) .plan {
+      width: min(100%, calc(var(--fp-stage-h) * var(--fp-plan-w) / var(--fp-plan-h))) !important;
     }
     /*
      * overlayScale: plan. The container is .plan, not .stage: since #115 the
@@ -2586,6 +3351,13 @@ export class FloorplanCard extends LitElement {
     }
     .plan.scale-plan .item > .label.label-right {
       left: calc(100% + 0.33em);
+    }
+    .plan.scale-plan .item > .label.label-above {
+      top: auto;
+      bottom: calc(100% + 0.17em);
+    }
+    .plan.scale-plan .item > .label.label-below.centred {
+      top: 50%;
     }
     .floor-switcher {
       position: absolute;
@@ -2747,11 +3519,11 @@ export class FloorplanCard extends LitElement {
       display: flex;
       align-items: center;
       justify-content: center;
-      /* The visible circle is the whole hit target. It stays finger-sized,
-         independent of canvas scale, projection and room zoom. */
+      /* The visible circle is the whole hit target. Under overlayScale: fixed
+         it stays finger-sized, independent of canvas scale, projection and
+         room zoom; under plan it scales with the drawing like the badges. */
       box-sizing: border-box;
-      width: ${MIN_TOUCH_TARGET}px;
-      height: ${MIN_TOUCH_TARGET}px;
+      /* width, height and the glyph size are inline: they follow overlayScale. */
       border-radius: 50%;
       border: 1px solid var(--fp-skin-text, var(--primary-text-color, #212121));
       background: var(--fp-skin-paper, var(--card-background-color, #fff));
@@ -2767,9 +3539,23 @@ export class FloorplanCard extends LitElement {
     }
     .fp-furniture-link ha-icon {
       display: flex;
-      --mdc-icon-size: 20px;
       pointer-events: none;
     }
+    /* A piece whose icon is hidden (issue #362): the drawing is the target. */
+    .fp-furniture-hit { cursor: pointer; outline: none; }
+    .fp-furniture-hit .fp-furniture { pointer-events: auto; }
+    /* CSS outline on an SVG <g> is not painted reliably, so keyboard focus
+       draws a stroked box around the piece instead: 2 screen pixels at any
+       canvas scale. */
+    .fp-furniture-focus {
+      display: none;
+      fill: none;
+      stroke: var(--fp-skin-text, var(--primary-text-color, #212121));
+      stroke-width: 2;
+      vector-effect: non-scaling-stroke;
+      pointer-events: none;
+    }
+    .fp-furniture-hit:focus-visible .fp-furniture-focus { display: inline; }
     .fp-furniture-link:focus-visible {
       outline: 2px solid var(--fp-skin-text, var(--primary-text-color, #212121));
       outline-offset: 2px;
@@ -3249,6 +4035,18 @@ export class FloorplanCard extends LitElement {
     .item > .label.label-right {
       left: calc(100% + 4px);
     }
+    /* Over the badge (the fourth side), mirroring below. */
+    .item > .label.label-above {
+      top: auto;
+      bottom: calc(100% + 2px);
+    }
+    /* An auto label-only device's "below": centred on the empty badge
+       footprint, which is the device's point — where an in-flow label-only
+       label sits — so measuring it costs no change in what it looks like. */
+    .item > .label.label-below.centred {
+      top: 50%;
+      transform: translate(-50%, -50%);
+    }
     /* The badge's footprint with nothing in it: same box, border included, so
        a side label lands where it would beside a drawn badge. Not a tap
        target — it inherits the item's pointer-events: none. */
@@ -3564,6 +4362,258 @@ export class FloorplanCard extends LitElement {
         opacity: 0;
         stroke-width: 14;
       }
+    }
+    .fp-info-panel {
+      position: absolute;
+      display: flex;
+      flex-direction: column;
+      transform: translate(-50%, -50%) scale(var(--fp-inv-zoom, 1));
+      transition: transform 0.4s ease, opacity 0.2s ease, box-shadow 0.2s ease;
+      pointer-events: auto;
+      box-sizing: border-box;
+      user-select: none;
+      z-index: 10;
+      /* The panel backgrounds below are dark whatever the HA theme or skin,
+         so the text follows the panel, not the theme. Set both together. */
+      color: var(--fp-panel-text, #fff);
+      font-family: inherit;
+      width: max-content;
+      max-width: 280px;
+      height: auto;
+    }
+    .fp-info-panel.clickable {
+      cursor: pointer;
+    }
+    .fp-info-panel.clickable:hover {
+      filter: brightness(1.1);
+    }
+    .fp-info-panel.card {
+      background: var(--fp-panel-bg, var(--ha-card-background, var(--card-background-color, #fff)));
+      color: var(--fp-panel-text, var(--primary-text-color, #212121));
+      border: 1px solid var(--fp-panel-border, var(--ha-card-border-color, var(--divider-color, rgba(0, 0, 0, 0.12))));
+      border-radius: var(--ha-card-border-radius, 12px);
+      box-shadow: var(--ha-card-box-shadow, 0 2px 8px rgba(0, 0, 0, 0.12));
+      padding: 8px 12px;
+      min-width: 135px;
+    }
+    .fp-info-panel.minimal {
+      background: var(--fp-panel-bg, rgba(17, 24, 39, 0.88));
+      backdrop-filter: blur(8px);
+      border: 1px solid var(--fp-panel-border, rgba(255, 255, 255, 0.15));
+      border-radius: 8px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      padding: 8px 12px;
+      min-width: 130px;
+    }
+    .fp-info-panel.hud {
+      background: var(--fp-panel-bg, rgba(9, 23, 38, 0.94));
+      border: 1px solid var(--fp-panel-accent, #00e5ff);
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5), 0 0 12px rgba(0, 229, 255, 0.2);
+      clip-path: polygon(
+        0 8px,
+        8px 0,
+        calc(100% - 8px) 0,
+        100% 8px,
+        100% calc(100% - 8px),
+        calc(100% - 8px) 100%,
+        8px 100%,
+        0 calc(100% - 8px)
+      );
+      padding: 8px 12px;
+      min-width: 140px;
+    }
+    .fp-info-panel.pill {
+      display: inline-flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+      background: var(--fp-panel-bg, rgba(15, 23, 42, 0.9));
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border: 1px solid var(--fp-panel-border, var(--fp-panel-accent, rgba(255, 255, 255, 0.15)));
+      border-radius: 9999px;
+      padding: 5px 14px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+      white-space: nowrap;
+      min-width: 0;
+      width: max-content;
+      max-width: none;
+    }
+    .fp-info-panel.pill .fp-panel-header {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      padding-bottom: 0;
+      margin-bottom: 0;
+      border-bottom: none;
+      border-right: 1px solid var(--fp-panel-border, rgba(255, 255, 255, 0.15));
+      padding-right: 10px;
+      margin-right: 2px;
+      flex-shrink: 0;
+    }
+    .fp-info-panel.pill .fp-panel-title {
+      flex: initial;
+      min-width: 0;
+      max-width: none;
+    }
+    .fp-panel-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      padding-bottom: 4px;
+      margin-bottom: 4px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+      min-width: 0;
+    }
+    .fp-info-panel.card .fp-panel-header {
+      border-bottom: 1px solid var(--divider-color, rgba(0, 0, 0, 0.08));
+    }
+    .fp-info-panel.card .fp-panel-title {
+      color: var(--primary-text-color, inherit);
+    }
+    .fp-info-panel.card .fp-panel-metric-label {
+      color: var(--secondary-text-color, inherit);
+      opacity: 0.85;
+    }
+    .fp-info-panel.card .fp-panel-metric-value {
+      color: var(--primary-text-color, inherit);
+    }
+    .fp-info-panel.hud .fp-panel-header {
+      border-bottom: 1px solid var(--fp-panel-accent, rgba(0, 229, 255, 0.3));
+    }
+    .fp-panel-title {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+      min-width: 0;
+    }
+    @keyframes fp-panel-pulse {
+      0%, 100% {
+        transform: scale(1);
+        opacity: 0.95;
+      }
+      50% {
+        transform: scale(1.25);
+        opacity: 0.6;
+      }
+    }
+    .fp-panel-status-dot {
+      width: 6px;
+      height: 6px;
+      border-radius: 50%;
+      background: var(--fp-panel-accent, #00e5ff);
+      box-shadow: 0 0 6px var(--fp-panel-accent, #00e5ff);
+      animation: fp-panel-pulse 2.5s ease-in-out infinite;
+      flex-shrink: 0;
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .fp-panel-status-dot {
+        animation: none;
+      }
+    }
+    .fp-panel-metrics {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .fp-info-panel.pill .fp-panel-metrics {
+      display: inline-flex;
+      flex-direction: row;
+      align-items: center;
+      gap: 10px;
+      min-width: 0;
+      max-width: none;
+      flex-shrink: 0;
+    }
+    .fp-panel-metric-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      font-size: 11px;
+      min-width: 0;
+      max-width: 100%;
+    }
+    .fp-info-panel.pill .fp-panel-metric-row {
+      display: inline-flex;
+      align-items: center;
+      justify-content: flex-start;
+      gap: 6px;
+      min-width: 0;
+      max-width: none;
+      flex-shrink: 0;
+    }
+    .fp-info-panel.pill .fp-panel-metric-row:not(:last-child) {
+      padding-right: 10px;
+      border-right: 1px solid var(--fp-panel-border, rgba(255, 255, 255, 0.12));
+    }
+    .fp-info-panel.pill .fp-panel-metric-left {
+      flex-shrink: 0;
+      overflow: visible;
+    }
+    .fp-info-panel.pill .fp-panel-metric-label {
+      max-width: none;
+      overflow: visible;
+    }
+    .fp-info-panel.pill .fp-panel-metric-value {
+      max-width: none;
+      overflow: visible;
+      flex-shrink: 0;
+      margin-left: 0;
+    }
+    .fp-panel-metric-left {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      overflow: hidden;
+      min-width: 0;
+      flex-shrink: 1;
+    }
+    .fp-panel-metric-left ha-icon {
+      --mdc-icon-size: 13px;
+      color: var(--fp-panel-accent, currentColor);
+      flex-shrink: 0;
+    }
+    .fp-panel-metric-label {
+      font-size: 10px;
+      opacity: 0.8;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .fp-panel-metric-value {
+      font-weight: 600;
+      font-size: 12px;
+      font-feature-settings: "tnum";
+      white-space: nowrap;
+      margin-left: auto;
+      flex-shrink: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 65%;
+    }
+    .fp-panel-metric-value.unavailable {
+      font-weight: 500;
+      opacity: 0.65;
+      font-size: 11px;
+      text-transform: capitalize;
+    }
+    .fp-panel-metric-unit {
+      font-size: 9px;
+      font-weight: 500;
+      opacity: 0.85;
+      margin-left: 2px;
+      white-space: nowrap;
     }
   `,
     lineArtStyles,

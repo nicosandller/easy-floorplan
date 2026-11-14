@@ -131,6 +131,8 @@ import {
   itemIconSize,
   normalizePlanRotation,
   resolvePlanRotation,
+  overlayAngle,
+  textOverlayAngle,
   subscribeOrientation,
   rotatedCanvasSize,
   floorSwitcherAnchor,
@@ -1099,10 +1101,13 @@ describe("itemHasLabel / labelPositionOf (issue #180)", () => {
     expect(labelPositionOf({ labelPosition: "below" })).toBe("below");
     expect(labelPositionOf({ labelPosition: "left" })).toBe("left");
     expect(labelPositionOf({ labelPosition: "right" })).toBe("right");
+    expect(labelPositionOf({ labelPosition: "above" })).toBe("above");
+    expect(labelPositionOf({ labelPosition: "auto" })).toBe("auto");
   });
 
   it("falls back to below on a junk value — it becomes a class name", () => {
-    expect(labelPositionOf({ labelPosition: "above" as never })).toBe("below");
+    expect(labelPositionOf({ labelPosition: "abvoe" as never })).toBe("below");
+    expect(labelPositionOf({ labelPosition: "Auto" as never })).toBe("below");
     expect(labelPositionOf({ labelPosition: "" as never })).toBe("below");
     expect(labelPositionOf({ labelPosition: 3 as never })).toBe("below");
   });
@@ -2723,6 +2728,116 @@ describe("badgeValue (#106)", () => {
       ).toBe("44");
     });
   });
+
+  // Issue #359: the same brightness reading the label words as a percentage
+  // (HA's own attribute formatter) reached the badge as the raw 0-255 number.
+  describe("a light's brightness is a percentage, the way the label words it (#359)", () => {
+    const light = (brightness: number) =>
+      hass({ "light.office": { state: "on", attributes: { brightness } } });
+
+    // The exact config from the issue: a brightness reading in the pool,
+    // badgeEntity pointing at it, the label turned off.
+    const issueItem = {
+      entity: "light.office",
+      readings: [{ attribute: "brightness" }],
+      badgeEntity: 0,
+    };
+
+    it("shows the issue's config as a percentage, not 0-255", () => {
+      expect(badgeValue(light(128), issueItem)).toBe("50%");
+    });
+
+    it.each([
+      [255, "100%"],
+      [128, "50%"],
+      [26, "10%"],
+      [13, "5%"],
+      [1, "0%"],
+      [0, "0%"],
+    ])("brightness %s reads %s", (raw, expected) => {
+      expect(badgeValue(light(raw), issueItem)).toBe(expected);
+    });
+
+    it("rounds the same way HA does, not to a whole step", () => {
+      // HA's formula is Math.round((v / 255) * 100): 101/255 is 39.6, which
+      // rounds up to 40 where truncation would print 39.
+      expect(badgeValue(light(101), issueItem)).toBe("40%");
+    });
+
+    it("converts the configured attribute on the device's own entity too", () => {
+      expect(
+        badgeValue(light(128), { entity: "light.office", attribute: "brightness" }),
+      ).toBe("50%");
+    });
+
+    it("keeps converting through the fallback chain, with no badgeEntity chosen", () => {
+      // "on" is not a number, so the chain reaches the brightness reading on
+      // its own: the pre-#136 behaviour, still what an unconfigured badge does.
+      expect(
+        badgeValue(light(77), { entity: "light.office", readings: [{ attribute: "brightness" }] }),
+      ).toBe("30%");
+    });
+
+    it.each([{}, { brightness: null }])("shows the icon when an off light has no numeric brightness (%j)", (attributes) => {
+      // Off lights may omit brightness or report null; neither is a number.
+      const h = hass({ "light.office": { state: "off", attributes } });
+      expect(badgeValue(h, issueItem)).toBeUndefined();
+    });
+
+    it("shows the icon when the brightness attribute is not a number", () => {
+      const h = hass({
+        "light.office": { state: "on", attributes: { brightness: "unavailable" } },
+      });
+      expect(badgeValue(h, issueItem)).toBeUndefined();
+    });
+
+    it("does not convert a brightness reading off a non-light entity", () => {
+      // The percentage is a property of HA's light domain attribute, not of
+      // the number: a sensor that reports a 0-255 reading keeps its raw value.
+      const h = hass({
+        "light.office": { state: "on", attributes: { brightness: 128 } },
+        "sensor.raw": { state: "128", attributes: { unit_of_measurement: "lx" } },
+      });
+      expect(badgeValue(h, { entity: "light.office", readings: [{ entity: "sensor.raw" }] }))
+        .toBe("128lx");
+    });
+
+    it.each([
+      { entity: "sensor.raw", attribute: "brightness" },
+      { entity: "light.office", readings: [{ entity: "sensor.raw", attribute: "brightness" }], badgeEntity: 0 },
+    ])("keeps another domain's brightness attribute raw (%j)", (item) => {
+      const h = hass({
+        "light.office": { state: "on", attributes: { brightness: 255 } },
+        "sensor.raw": { state: "unavailable", attributes: { brightness: 128 } },
+      });
+      expect(badgeValue(h, item)).toBe("128");
+    });
+
+    it("uses the reading entity's light domain even when the device is a sensor", () => {
+      const h = hass({
+        "sensor.raw": { state: "unavailable", attributes: {} },
+        "light.office": { state: "on", attributes: { brightness: 128 } },
+      });
+      expect(badgeValue(h, {
+        entity: "sensor.raw",
+        readings: [{ entity: "light.office", attribute: "brightness" }],
+        badgeEntity: 0,
+      })).toBe("50%");
+    });
+
+    it("leaves a non-brightness badge reading alone", () => {
+      const h = hass({
+        "light.office": { state: "on", attributes: { brightness: 128, color_temp: 300 } },
+      });
+      expect(
+        badgeValue(h, { entity: "light.office", attribute: "color_temp" }),
+      ).toBe("300");
+    });
+
+    it("reports the percent as badgeReading's text, with its source", () => {
+      expect(badgeReading(light(128), issueItem)).toEqual({ text: "50%", source: 0 });
+    });
+  });
 });
 
 describe("badgeValueSize (#106)", () => {
@@ -3920,6 +4035,35 @@ describe("polygonCentroid", () => {
   });
 });
 
+describe("badge and text angles under a rotated plan (issue #387)", () => {
+  it("keeps an unturned badge upright at every rotation", () => {
+    for (const rot of [0, 90, 180, 270]) expect(overlayAngle(0, rot)).toBe(0);
+  });
+
+  it("turns a badge with an angle of its own along with the plan", () => {
+    expect(overlayAngle(45, 0)).toBe(45);
+    expect(overlayAngle(45, 270)).toBe(315);
+    expect(overlayAngle(-30, 90)).toBe(60);
+  });
+
+  it("lets 360 mean 'along the x axis of the drawing'", () => {
+    expect(overlayAngle(360, 0)).toBe(360);
+    expect(overlayAngle(360, 90)).toBe(450);
+  });
+
+  it("turns angled text with the plan but never leaves it upside down", () => {
+    expect(textOverlayAngle(-45, 270)).toBe(45); // 225° read the other way
+    expect(textOverlayAngle(30, 90)).toBe(-60); // 120° read the other way
+    expect(textOverlayAngle(30, 270)).toBe(-60);
+    expect(textOverlayAngle(0, 270)).toBe(0);
+  });
+
+  it("leaves text on the plan as drawn exactly as set", () => {
+    expect(textOverlayAngle(180, 0)).toBe(180);
+    expect(textOverlayAngle(-45, 0)).toBe(-45);
+  });
+});
+
 describe("rotation that follows the screen (issue #237)", () => {
   it("uses `rotation` for both orientations until an override says otherwise", () => {
     const c = { rotation: 270 } as FloorplanCardConfig;
@@ -4271,6 +4415,53 @@ describe("renderArea", () => {
   it("keeps the resting opacity when activeOpacity is unset (#6)", () => {
     const markup = flattenMarkup(renderArea({ id: "a", points: square, opacity: 0.2 }, "#4caf50"));
     expect(markup).toContain("fill-opacity=0.2");
+  });
+
+  describe("with a room tint (roomTints: auto)", () => {
+    const tint = { color: "var(--fp-room-tint-2, #3f86c4)", opacity: 0.18 };
+
+    it("rests at the tint instead of the accent", () => {
+      const markup = flattenMarkup(renderArea({ id: "a", points: square }, undefined, tint));
+      expect(markup).toContain(`fill=${tint.color}`);
+      expect(markup).toContain("fill-opacity=0.18");
+      expect(markup).not.toContain(SKIN_ACCENT);
+    });
+
+    it("never paints over a room's own colour, even if a caller passes one", () => {
+      const markup = flattenMarkup(
+        renderArea({ id: "a", points: square, color: "#ff0000", opacity: 0.6 }, undefined, tint)
+      );
+      expect(markup).toContain("fill=#ff0000");
+      expect(markup).toContain("fill-opacity=0.6");
+    });
+
+    it("keeps an outdoor zone's default colour, as it would an explicit one", () => {
+      const markup = flattenMarkup(
+        renderArea({ id: "a", points: square, zoneKind: "lawn" }, undefined, tint)
+      );
+      expect(markup).toContain("fill=#4CAF50");
+      expect(markup).not.toContain("fill-opacity=0.18");
+    });
+
+    it("still tints an indoor zone, which has no default colour", () => {
+      const markup = flattenMarkup(
+        renderArea({ id: "a", points: square, zoneKind: "indoor" }, undefined, tint)
+      );
+      expect(markup).toContain(`fill=${tint.color}`);
+    });
+
+    it("gives way to a live fill and its activeOpacity", () => {
+      const a = { id: "a", points: square, activeOpacity: 0.5 };
+      const markup = flattenMarkup(renderArea(a, "#4caf50", tint));
+      expect(markup).toContain("fill=#4caf50");
+      expect(markup).toContain("fill-opacity=0.5");
+    });
+
+    it("stays the fill under highlight: border, where the live colour goes to the outline", () => {
+      const a = { id: "a", points: square, highlight: "border" as const };
+      const markup = flattenMarkup(renderArea(a, "#4caf50", tint));
+      expect(markup).toContain(`fill=${tint.color}`);
+    });
   });
 
   it("never strokes — the outline is renderAreaBorder's pass, above the walls", () => {
@@ -6553,6 +6744,47 @@ describe("hide by condition, through the card's own entry points", () => {
       ],
     } as unknown as FloorplanCardConfig);
     for (const id of [RADIATOR, OUTSIDE, "sensor.a", "sensor.b"]) expect(ids.has(id)).toBe(true);
+  });
+
+  it("watches every entity a furniture visibility condition names (issue #310)", () => {
+    const ids = collectWatchedEntities({
+      floors: [
+        {
+          id: "f1",
+          name: "Main",
+          walls: [],
+          openings: [],
+          items: [],
+          texts: [],
+          trackers: [],
+          furniture: [
+            {
+              id: "car",
+              type: "car",
+              x: 0,
+              y: 0,
+              w: 90,
+              h: 180,
+              entity: "sensor.car_battery",
+              visibility: [
+                { condition: "state", entity: "device_tracker.car", state: "home" },
+                {
+                  condition: "and",
+                  conditions: [
+                    { condition: "numeric_state", entity: "sensor.fuel", above: 10 },
+                    { condition: "state", entity: "binary_sensor.garage", state: "closed" },
+                  ],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    } as unknown as FloorplanCardConfig);
+    expect(ids.has("sensor.car_battery")).toBe(true);
+    expect(ids.has("device_tracker.car")).toBe(true);
+    expect(ids.has("sensor.fuel")).toBe(true);
+    expect(ids.has("binary_sensor.garage")).toBe(true);
   });
 });
 

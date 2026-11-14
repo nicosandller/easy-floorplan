@@ -1,0 +1,15 @@
+{
+  "id": "awning",
+  "name": "awning",
+  "category": "other",
+  "keywords": ["sunscreen", "sunshade", "canopy", "patio cover", "cover"],
+  "size": { "w": 300, "h": 200 },
+  "extend": { "axis": "h", "min": 0.06, "open": "extended" },
+  "elevation": { "from": 0.74, "to": 0.78 },
+  "parts": [
+    { "rect": [0, 0, 100, 100], "role": "body", "fillOpacity": 0.18 },
+    { "repeat": 5, "step": [20, 0], "part": { "rect": [0, 0, 10, 100], "role": "solid", "opacity": 0.18 } },
+    { "rect": [0, 0, 100, 6], "role": "solid", "opacity": 0.55 },
+    { "line": [0, 94, 100, 94], "role": "thin" }
+  ]
+}
