@@ -1,7 +1,7 @@
 import type { FloorplanCardConfig, HomeAssistant } from "../types";
 import { getFloors } from "../types";
 import { cssColor } from "../css-safe";
-import { entityIsActive, kindFromEntity, resolveItemIcon } from "../render";
+import { entityIsActive } from "../render";
 import { resolveReplayEventColor, type HistoryEventInput } from "./history-service";
 import { ReplayScopeService } from "./replay-scope";
 
@@ -65,33 +65,6 @@ export function replaySpeedToSliderValue(speed: number): number {
 export function sliderValueToReplaySpeed(value: number): number {
   const clamped = Math.min(3, Math.max(-2, value));
   return Number((10 ** clamped).toPrecision(4));
-}
-
-export function formatReplaySpeed(speed: number): string {
-  if (speed >= 100) return `${Math.round(speed)}x`;
-  if (speed >= 10) return `${speed.toFixed(1)}x`;
-  if (speed >= 1) return `${speed.toFixed(2)}x`;
-  return `${speed.toFixed(3)}x`;
-}
-
-export function getReplayEventIcon(event: HistoryEventInput, hass?: HomeAssistant, _config?: FloorplanCardConfig): string {
-  const kind = kindFromEntity(event.entityId);
-  const liveState = hass?.states[event.entityId];
-  const replayState = {
-    state: event.newState,
-    attributes: {
-      ...(liveState?.attributes ?? {}),
-      ...(event.attributes ?? {}),
-    },
-  };
-  return resolveItemIcon(
-    {
-      entity: event.entityId,
-      kind,
-    },
-    replayState,
-    hass?.entities?.[event.entityId]?.icon,
-  );
 }
 
 export function findConfiguredReplayColor(

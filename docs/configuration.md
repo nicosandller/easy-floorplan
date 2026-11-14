@@ -82,11 +82,12 @@ quotes when saving while retaining the required quotes around `'y'`.
 | `furniture`  | Furniture[]| `[]`             | Gray furniture/fixture diagrams.             |
 | `trackers`   | Tracker[]| `[]`               | Live position trackers (see [Tracker](#tracker)).    |
 | `areas`      | Area[]   | `[]`               | Named room polygons (see [Area](#area)).          |
+| `panels`     | FloorInfoPanel[] | `[]`         | Floating callout HUD and telemetry panels (see [Callout panels](callout-panels.md)). |
 | `symbols`    | map      | —                  | Furniture symbols this plan defines for itself, merged over the shipped library. See [Drawing your own](#drawing-your-own). |
 | `historyReplay` | object | disabled | Optional history replay controls. Set `enabled: true` to show replay controls and load Home Assistant history for mapped entities only. |
 
 When `floors` is present each floor carries its own `walls`, `openings`, `items`, `texts`,
-`furniture`, `trackers` and `areas`. The top-level arrays describe a single implicit floor
+`furniture`, `trackers`, `areas` and `panels`. The top-level arrays describe a single implicit floor
 and remain valid for backward compatibility.
 
 ### Palette
@@ -151,13 +152,15 @@ every value it loaded either way; the cap only decides what gets a marker.
 
 ## Floor
 
-`{ id, name, short?, color?, haFloor?, image?, imageFit?, imageOpacity?, walls, openings, items, texts, furniture, trackers, areas }`
+`{ id, name, short?, color?, haFloor?, image?, imageFit?, imageOpacity?, walls, openings, items, texts, furniture, trackers, areas, panels }`
 — a named floor with its own elements. Add, rename, reorder, switch and delete floors from
 the editor's **floor** controls; the card shows a switcher when there is more than one.
 
 - **`short`** — abbreviation for the card's switcher button (`GF`, `1st`…), full name as
   its tooltip. **`color`** accents that button while its floor is active. The top-level
   **`defaultFloor`** picks which floor the card opens on.
+- **`panels`** — floating callout HUD panels and telemetry cards anchored to rooms, furniture,
+  roofs, or fixed coordinates. See [Callout info-panels](callout-panels.md).
 - **`haFloor`** — id of a linked Home Assistant floor, set from the floor gear popover.
   Today it auto-names the floor.
 - **`image`** — a background URL (e.g. `/local/floorplan.png`) drawn behind the elements,
