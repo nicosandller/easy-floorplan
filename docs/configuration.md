@@ -163,6 +163,11 @@ the editor's **floor** controls; the card shows a switcher when there is more th
   roofs, or fixed coordinates. See [Callout info-panels](callout-panels.md).
 - **`haFloor`** — id of a linked Home Assistant floor, set from the floor gear popover.
   Today it auto-names the floor.
+- **`sectionFacing`** — makes the floor a **vertical section** (issue #414): a cut through
+  the building with the sky at the top and the ground at the bottom, storeys stacked one
+  above the other. The value is the compass bearing you face when looking at the drawing
+  (0 = north, 90 = east). Set it from the floor gear popover's **Vertical section** switch.
+  See [Sunlight on a section](lighting.md#sunlight-on-a-section).
 - **`image`** — a background URL (e.g. `/local/floorplan.png`) drawn behind the elements,
   for tracing over a real plan. **`imageOpacity`** (0–1, default 1) fades it.
 - **`imageFit`** — how that image maps onto the canvas, per floor so scans of differing

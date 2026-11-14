@@ -5334,7 +5334,7 @@ export function moonNightFactor(sunElevation: unknown): number {
  * tangent of the light's angle whatever is shining.
  */
 export function moonlightOf(
-  c: Pick<FloorplanCardConfig, "north">,
+  c: Pick<FloorplanCardConfig, "north"> & { sectionFacing?: number },
   time: number,
   location: { latitude?: unknown; longitude?: unknown } | undefined,
   sunElevation: unknown,
@@ -5358,7 +5358,11 @@ export function moonlightOf(
     cloudFactor(cover, CLOUD_DIRECT_MIN);
   if (!(strength > 0)) return undefined;
   return {
-    dir: planDirection(moon.bearing + 180, c.north ?? 0),
+    // On a section the moon's height is its direction, as the sun's is.
+    dir:
+      sectionFacingOf(c) === undefined
+        ? planDirection(moon.bearing + 180, c.north ?? 0)
+        : sectionLightDirection(c.sectionFacing as number, moon.bearing, moon.altitude),
     strength,
     altitude: moon.altitude,
   };
@@ -5949,6 +5953,71 @@ export function sunLightDirection(
   azimuth?: unknown,
 ): { x: number; y: number } {
   return planDirection(sunBearingOf(cfg, azimuth) + 180, cfg.north ?? 0);
+}
+
+/**
+ * Which way the light travels on a **vertical section** (issue #414): a floor
+ * drawn as a cut through the building, sky at the top of the canvas and the
+ * ground at the bottom, seen looking toward the compass bearing `facing`.
+ *
+ * A plan only needs the sun's bearing, because its canvas is the ground: the
+ * height of the sun shows up as how far a patch carries, not which way it
+ * points. A section turns that round. Its canvas is upright, so the sun's
+ * height *is* the direction — a noon sun comes down steeply, an evening one
+ * nearly level — and its bearing only decides from which side, and how
+ * steeply the light looks once it is flattened onto the drawing. Treated as a
+ * plan, a section was lit as if the sun stood at the top of the page and
+ * swung left and right through the day.
+ *
+ * The light vector is the sun's direction reversed, projected onto the
+ * drawing: right is the bearing a quarter turn clockwise from `facing`, down
+ * is down. A sun straight behind or in front of the viewer has no sideways
+ * part left, so its light falls straight down the page.
+ */
+export function sectionLightDirection(
+  facing: number,
+  bearing: number,
+  elevation: number,
+): { x: number; y: number } {
+  const rad = (deg: number) => (deg * Math.PI) / 180;
+  // Clear of the horizon, where the light would run flat along the floor and
+  // never reach it, and of the zenith, where it would not matter which side.
+  const e = rad(Math.max(1, Math.min(89, elevation)));
+  const x = -Math.cos(e) * Math.sin(rad(bearing - facing));
+  const y = Math.sin(e);
+  const len = Math.hypot(x, y);
+  return { x: x / len, y: y / len };
+}
+
+/**
+ * The sun's light direction for a floor, plan or section, and whether its
+ * reach should still be shortened by the elevation.
+ *
+ * On a section the elevation is already in the angle (see
+ * {@link sectionLightDirection}), so the reach is left alone — scaling it too
+ * would count the sun's height twice. A pinned sun on a section keeps
+ * {@link SUN_REACH_REF} as its height, the same mid-morning sun the pinned
+ * reach already describes; a live one with no readable elevation does too.
+ */
+export function floorSunLight(
+  cfg: Pick<FloorplanCardConfig, "north" | "sunBearing">,
+  floor: Pick<Floor, "sectionFacing"> | undefined,
+  azimuth?: unknown,
+  elevation?: unknown,
+): { dir: { x: number; y: number }; scaleReach: boolean } {
+  const facing = sectionFacingOf(floor);
+  if (facing === undefined) return { dir: sunLightDirection(cfg, azimuth), scaleReach: true };
+  const height = sunIsPinned(cfg) ? SUN_REACH_REF : (liveSunAttribute(elevation) ?? SUN_REACH_REF);
+  return {
+    dir: sectionLightDirection(facing, sunBearingOf(cfg, azimuth), height),
+    scaleReach: false,
+  };
+}
+
+/** The bearing a section floor looks toward, or undefined for a plan. */
+export function sectionFacingOf(floor: Pick<Floor, "sectionFacing"> | undefined): number | undefined {
+  const f = floor?.sectionFacing;
+  return typeof f === "number" && Number.isFinite(f) ? f : undefined;
 }
 
 /** A segment swept along the light: the shape both a beam and a shadow are. */

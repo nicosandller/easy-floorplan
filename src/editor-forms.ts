@@ -3155,6 +3155,13 @@ export function floorImageForm(f: Floor): FormSpec {
       selector: { boolean: {} },
     },
     {
+      name: "isSection",
+      label: "Vertical section",
+      helper:
+        "This floor is a cut through the building, ground at the bottom, so the sun comes in at its real height",
+      selector: { boolean: {} },
+    },
+    {
       name: "level",
       label: "Storey level",
       helper: "Vertical level index for 3D stacking (0 for ground floor, 1 for 1st floor, -1 for basement)",
@@ -3162,6 +3169,17 @@ export function floorImageForm(f: Floor): FormSpec {
     },
     { name: "image", label: "Background image", helper: "/local/floorplan.png or URL", selector: { text: {} } },
   ];
+  // Only a section looks somewhere (issue #414).
+  if (typeof f.sectionFacing === "number") {
+    fields.splice(2, 0, {
+      name: "sectionFacing",
+      label: "Looking toward",
+      helper: "Compass bearing you face when looking at this section: 0 = north, 90 = east",
+      selector: {
+        number: { min: 0, max: 359, step: 5, mode: "slider", unit_of_measurement: "°" },
+      },
+    });
+  }
   // Fit and opacity apply to whichever image is drawn, the dark one included.
   if (f.image || f.imageDark) {
     fields.push({
@@ -3202,6 +3220,8 @@ export function floorImageForm(f: Floor): FormSpec {
     fields,
     data: {
       isOutdoor: f.isOutdoor ?? false,
+      isSection: typeof f.sectionFacing === "number",
+      sectionFacing: f.sectionFacing ?? 0,
       level: f.level !== undefined ? f.level : "",
       image: f.image ?? "",
       imageFit: f.imageFit ?? "stretch",
@@ -3217,6 +3237,17 @@ export function floorImageForm(f: Floor): FormSpec {
       if ("imageInvertDark" in out && !out.imageInvertDark) out.imageInvertDark = undefined;
       if ("imageDark" in out && !out.imageDark) out.imageDark = undefined;
       if ("isOutdoor" in out && !out.isOutdoor) out.isOutdoor = undefined;
+      // A section is the presence of a bearing; 0 (north) is a real one.
+      if ("isSection" in out) {
+        out.sectionFacing = out.isSection
+          ? (typeof f.sectionFacing === "number" ? f.sectionFacing : 0)
+          : undefined;
+        delete out.isSection;
+      }
+      if ("sectionFacing" in out && out.sectionFacing !== undefined) {
+        const n = Number(out.sectionFacing);
+        out.sectionFacing = Number.isFinite(n) ? ((n % 360) + 360) % 360 : 0;
+      }
       if ("level" in out) {
         if (out.level === "" || out.level === null || isNaN(Number(out.level))) {
           out.level = undefined;

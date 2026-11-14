@@ -154,7 +154,8 @@ import {
   MOON_LIGHT_COLOR,
   MOON_TICK_MS,
   type SunlightOptions,
-  sunLightDirection,
+  floorSunLight,
+  sectionFacingOf,
   sunlightStrengthOf,
   sunReachScale,
   sunIsPinned,
@@ -2584,7 +2585,7 @@ export class FloorplanCard extends LitElement {
     // the moon counts milliseconds, as Date.now() does.
     const moon = moonlightOn(c)
       ? moonlightOf(
-        c,
+        { north: c.north, sectionFacing: sectionFacingOf(active) },
         replayState.enabled ? replayState.currentTime * 1000 : Date.now(),
         this.hass?.config,
         renderHass?.states["sun.sun"]?.attributes?.elevation,
@@ -2601,7 +2602,10 @@ export class FloorplanCard extends LitElement {
         dir: moon.dir,
         strength: moon.strength,
         // Shortened as the moon climbs, exactly as the sun's is.
-        reach: cssNumber(c.sunReach, SUN_REACH) * sunReachScale(moon.altitude),
+        // A section has the height in the angle already (issue #414).
+        reach:
+          cssNumber(c.sunReach, SUN_REACH) *
+          (sectionFacingOf(active) === undefined ? sunReachScale(moon.altitude) : 1),
         light,
         // The night is the shade; a second one would darken it twice.
         shade: null,
@@ -2842,11 +2846,16 @@ export class FloorplanCard extends LitElement {
                  has the last word — at night there is nothing to let in. -->
             ${(() => {
               if (!c.sunlight) return nothing;
+              // A vertical section (issue #414) aims the light by the sun's
+              // height as well as its bearing; a plan by the bearing alone.
+              const sun = floorSunLight(
+                c,
+                active,
+                renderHass?.states["sun.sun"]?.attributes?.azimuth,
+                renderHass?.states["sun.sun"]?.attributes?.elevation
+              );
               const opts = {
-                dir: sunLightDirection(
-                  c,
-                  renderHass?.states["sun.sun"]?.attributes?.azimuth
-                ),
+                dir: sun.dir,
                 strength: sunlightStrengthOf(
                   c,
                   renderHass?.states["sun.sun"]?.attributes?.elevation
@@ -2867,7 +2876,7 @@ export class FloorplanCard extends LitElement {
                 // bounds live at the sink, in sunReachFraction.
                 reach:
                   cssNumber(c.sunReach, SUN_REACH) *
-                  (sunIsPinned(c)
+                  (sunIsPinned(c) || !sun.scaleReach
                     ? 1
                     : sunReachScale(renderHass?.states["sun.sun"]?.attributes?.elevation)),
                 ...openingLight,
