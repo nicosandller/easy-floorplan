@@ -1,3 +1,4 @@
+import { furnitureModelHeight } from "./symbol-model";
 /**
  * The isometric view (issue #261).
  *
@@ -32,6 +33,7 @@ import type { WallKind, Wall, OpeningType, Roof, RoofType, AreaPoint, RectAreaSi
 import { OPENING_ON_WALL_EPS } from "./dead-space";
 import { openingIsSkylight } from "./types";
 import { joinIsoWalls } from "./projection-joints";
+import type { SymbolModel } from "./symbol-model";
 import { sortIsoSolids } from "./projection-order";
 
 export type PlanProjection = "plan" | "iso";
@@ -73,6 +75,8 @@ export const ISO_CHUNK = 32;
 /** Shade laid over a face that looks along +x (right) and one that looks along +y (front). */
 export const SHADE_RIGHT = 0.18;
 export const SHADE_FRONT = 0.34;
+/** Opacity multiplier for translucent glass solids. */
+export const GLASS_OPACITY = 0.3;
 
 const ISO_COS = Math.sqrt(3) / 2;
 const ISO_SIN = 0.5;
@@ -257,6 +261,8 @@ export interface IsoSolid {
   /** Explicit raised corners for a tilted opening panel or 3D roof face. */
   vertices?: Array<Pt & { z: number }>;
   glazed?: boolean;
+  /** Translucent material for an optional furniture model part. */
+  glass?: boolean;
   /** Adjacent wall chunks share these faces; drawing them shows ribs through transparency. */
   hiddenEdges?: number[];
   sortDepth?: number;
@@ -524,6 +530,32 @@ export function furnitureSolid(
     ] as const
   ).map(([ox, oy]) => map(f.x + ox * c - oy * s, f.y + ox * s + oy * c));
   return { kind: "furniture", id: f.id, base, z0, z1: height, color, top };
+}
+
+/** A separate furniture cut is opt-in; otherwise retain the wall-height cut. */
+export function furnitureSectionHeight(c: {
+  wallHeight?: number; furnitureSeparateSection?: boolean; furnitureSectionHeight?: number;
+}): number {
+  return normalizeWallHeight(c.furnitureSeparateSection === true
+    ? (c.furnitureSectionHeight ?? 180) : c.wallHeight);
+}
+
+/** Preserve real heights; section furniture at the displayed wall height. */
+export function furnitureModelSolids(
+  f: { id?: string; x: number; y: number; w: number; h: number; angle?: number; height3d?: number },
+  model: SymbolModel, map: (x: number, y: number) => Pt, wallHeight: number, color: string
+): IsoSolid[] {
+  const angle = (f.angle ?? 0) * Math.PI / 180, c = Math.cos(angle), s = Math.sin(angle);
+  const scaleZ = furnitureModelHeight(f, model) / model.size.height;
+  return model.parts.filter(part => part.z0 * scaleZ < wallHeight).map(part => ({
+    kind: "furniture", id: f.id, color, glass: part.glass,
+    base: part.base.map(([x, y]) => {
+      const dx = (x / model.size.width - 0.5) * f.w;
+      const dy = (y / model.size.depth - 0.5) * f.h;
+      return map(f.x + dx * c - dy * s, f.y + dx * s + dy * c);
+    }),
+    z0: part.z0 * scaleZ, z1: Math.min(part.z1 * scaleZ, wallHeight),
+  }));
 }
 
 function offsetAreaPoints(pts: readonly AreaPoint[], overhang: number): Pt[] {
@@ -1132,7 +1164,7 @@ export function renderIsoSolid(s: IsoSolid): SVGTemplateResult {
 
       const styleParts: string[] = [];
       if (s.color) styleParts.push(`--fp-iso-color:${s.color}`);
-      if (s.opacity !== undefined) styleParts.push(`opacity:${s.opacity}`);
+      if (s.opacity !== undefined || s.glass) styleParts.push(`opacity:${(s.opacity ?? 1) * (s.glass ? GLASS_OPACITY : 1)}`);
       const style = styleParts.length > 0 ? styleParts.join(";") : nothing;
 
       return svg`<g class="fp-iso-solid fp-iso-roof" data-id=${id}
@@ -1171,7 +1203,7 @@ export function renderIsoSolid(s: IsoSolid): SVGTemplateResult {
   }
   const styleParts: string[] = [];
   if (s.color) styleParts.push(`--fp-iso-color:${s.color}`);
-  if (s.opacity !== undefined) styleParts.push(`opacity:${s.opacity}`);
+  if (s.opacity !== undefined || s.glass) styleParts.push(`opacity:${(s.opacity ?? 1) * (s.glass ? GLASS_OPACITY : 1)}`);
   const style = styleParts.length > 0 ? styleParts.join(";") : nothing;
 
   const top = points(s.base.map((p) => elevate(p, s.z1)));

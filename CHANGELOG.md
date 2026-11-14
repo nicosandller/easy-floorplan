@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- Add a five-shelf corner shelving symbol (`cornerShelf`) with a 60 × 60 footprint
+  and 30-deep sides, available in the 2D furniture picker.
+
+- Detailed 3D furniture is now opt-in under Project → Display. Isometric view
+  reveals the model switch, followed by an optional separate furniture cut and
+  its height field; existing plans keep their block furniture.
+- Furniture symbols can supply an optional `model3d` section for the isometric
+  view. The initial table, corner shelf, bathtub and stove models use simple volumes
+  with shelves, legs and open interiors. The 2D view is unchanged; symbols without a valid model retain the
+  previous block rendering. See [the symbol guide](furniture/README.md#optional-3d-models-version-1).
+
 - The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
   when an object is selected; the tabs used to paint over the first row of furniture.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
