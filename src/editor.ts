@@ -3416,7 +3416,7 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
-   * The device's default icon. State rules in Style & effects can override it.
+   * The device's default icon. State rules under Style can override it.
    *
    * Unlike the colour it stays on screen once rules exist, because rules do
    * *not* replace it: a rule with no icon of its own falls through to this
@@ -3425,7 +3425,7 @@ export class FloorplanCardEditor extends LitElement {
    * drawing.
    */
   private _renderItemIconRow(it: FloorItem): TemplateResult {
-    const title = "Icon for this device; state rules in Style & effects can override it";
+    const title = "Icon for this device; state rules under Style can override it";
     return html`
       <div class="row wide">
         <label title=${title}>Icon</label>
@@ -8087,7 +8087,7 @@ export class FloorplanCardEditor extends LitElement {
               </p>`
             : html`${this._renderColorRow({
                 label: "Active color",
-                title: "Badge color while this device is on (issue #79)",
+                title: "Badge color while this device is on",
                 value: it.activeColor,
                 swatch: "#fdd835",
                 placeholder: "(theme)",
@@ -8097,7 +8097,7 @@ export class FloorplanCardEditor extends LitElement {
               ${this._renderColorRow({
                 label: "Inactive color",
                 title:
-                  "Badge color while this device is off — closed, locked or docked, whichever this entity says (issue #228)",
+                  "Badge color while this device is off — closed, locked or docked, whichever this entity says",
                 value: it.inactiveColor,
                 swatch: "#c62828",
                 placeholder: "(theme)",
