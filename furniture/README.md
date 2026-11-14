@@ -214,7 +214,7 @@ to use the previous block at its usual wall-relative height. The canvas reserves
 space for visible models above low walls. Switching these options off preserves
 the saved cut height, and 2D rendering is unchanged.
 
-This follow-up adds 30 models to the initial table, corner shelf, bathtub and stove.
+This follow-up adds 31 models to the initial table, corner shelf, bathtub and stove.
 Symbols without a model retain the block fallback. Tables are 80 cm.
 Heights still use the plan coordinate scale directly; automatic vertical scaling
 when resizing a furniture footprint is not part of these controls.
