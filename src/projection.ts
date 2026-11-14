@@ -75,6 +75,8 @@ export const ISO_CHUNK = 32;
 /** Shade laid over a face that looks along +x (right) and one that looks along +y (front). */
 export const SHADE_RIGHT = 0.18;
 export const SHADE_FRONT = 0.34;
+/** Opacity multiplier for translucent glass solids. */
+export const GLASS_OPACITY = 0.3;
 
 const ISO_COS = Math.sqrt(3) / 2;
 const ISO_SIN = 0.5;
@@ -1162,7 +1164,7 @@ export function renderIsoSolid(s: IsoSolid): SVGTemplateResult {
 
       const styleParts: string[] = [];
       if (s.color) styleParts.push(`--fp-iso-color:${s.color}`);
-      if (s.opacity !== undefined || s.glass) styleParts.push(`opacity:${(s.opacity ?? 1) * (s.glass ? 0.3 : 1)}`);
+      if (s.opacity !== undefined || s.glass) styleParts.push(`opacity:${(s.opacity ?? 1) * (s.glass ? GLASS_OPACITY : 1)}`);
       const style = styleParts.length > 0 ? styleParts.join(";") : nothing;
 
       return svg`<g class="fp-iso-solid fp-iso-roof" data-id=${id}
@@ -1201,7 +1203,7 @@ export function renderIsoSolid(s: IsoSolid): SVGTemplateResult {
   }
   const styleParts: string[] = [];
   if (s.color) styleParts.push(`--fp-iso-color:${s.color}`);
-  if (s.opacity !== undefined || s.glass) styleParts.push(`opacity:${(s.opacity ?? 1) * (s.glass ? 0.3 : 1)}`);
+  if (s.opacity !== undefined || s.glass) styleParts.push(`opacity:${(s.opacity ?? 1) * (s.glass ? GLASS_OPACITY : 1)}`);
   const style = styleParts.length > 0 ? styleParts.join(";") : nothing;
 
   const top = points(s.base.map((p) => elevate(p, s.z1)));

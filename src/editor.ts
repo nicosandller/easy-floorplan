@@ -3416,7 +3416,7 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
-   * The device's default icon. State rules in Style & effects can override it.
+   * The device's default icon. State rules under Style can override it.
    *
    * Unlike the colour it stays on screen once rules exist, because rules do
    * *not* replace it: a rule with no icon of its own falls through to this
@@ -3425,7 +3425,7 @@ export class FloorplanCardEditor extends LitElement {
    * drawing.
    */
   private _renderItemIconRow(it: FloorItem): TemplateResult {
-    const title = "Icon for this device; state rules in Style & effects can override it";
+    const title = "Icon for this device; state rules under Style can override it";
     return html`
       <div class="row wide">
         <label title=${title}>Icon</label>
@@ -8090,7 +8090,7 @@ export class FloorplanCardEditor extends LitElement {
               </p>`
             : html`${this._renderColorRow({
                 label: "Active color",
-                title: "Badge color while this device is on (issue #79)",
+                title: "Badge color while this device is on",
                 value: it.activeColor,
                 swatch: "#fdd835",
                 placeholder: "(theme)",
@@ -8100,7 +8100,7 @@ export class FloorplanCardEditor extends LitElement {
               ${this._renderColorRow({
                 label: "Inactive color",
                 title:
-                  "Badge color while this device is off — closed, locked or docked, whichever this entity says (issue #228)",
+                  "Badge color while this device is off — closed, locked or docked, whichever this entity says",
                 value: it.inactiveColor,
                 swatch: "#c62828",
                 placeholder: "(theme)",
@@ -9325,7 +9325,10 @@ export class FloorplanCardEditor extends LitElement {
       position: absolute;
       top: calc(100% + 6px);
       right: 0;
-      z-index: 20;
+      /* Above the inspector's sticky tabs (z-index 50 in
+         editor-workspace-styles.ts): in the expanded editor the Add menu
+         drops over the docked inspector, and the tabs painted through it. */
+      z-index: 60;
       min-width: 220px;
       padding: 8px;
       background: var(--card-background-color, #fff);
@@ -9340,7 +9343,7 @@ export class FloorplanCardEditor extends LitElement {
     .pop-backdrop {
       position: fixed;
       inset: 0;
-      z-index: 19;
+      z-index: 59;
     }
     .pop-row {
       display: flex;
@@ -10195,14 +10198,6 @@ export class FloorplanCardEditor extends LitElement {
       border: 1px solid var(--divider-color, #ccc);
       border-radius: 8px;
       padding: 10px;
-    }
-    .section-title {
-      margin: 0 0 8px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--secondary-text-color);
     }
     /* Element header: kind icon + summary + the selection's actions.
        The actions are the fixed part and the summary is the elastic one: a

@@ -1464,12 +1464,13 @@ export class FloorplanCard extends LitElement {
         roofFloorById.set(r.id, fl);
       }
     }
+    const furnitureById = new Map(active.furniture.map(f => [f.id, f]));
     const modelHitIds = new Set<string>();
     const solidEdges = c.appearance === "line-art" ? solidEdgeRenderer(solids, LINE_INK) : undefined;
     return renderIsoSolids(solids, (solid, drawing) => {
       if (solidEdges) drawing = svg`${drawing}${solidEdges(solid)}`;
-      if (c.furniture3d === true && solid.kind === "furniture" && solid.id && catalog[active.furniture.find(f => f.id === solid.id)?.type ?? ""]?.model3d) {
-        const f = active.furniture.find(f => f.id === solid.id)!;
+      const f = solid.kind === "furniture" && solid.id ? furnitureById.get(solid.id) : undefined;
+      if (c.furniture3d === true && f && solid.id && catalog[f.type]?.model3d) {
         const keyboard = !modelHitIds.has(solid.id);
         modelHitIds.add(solid.id);
         const model = catalog[f.type]!.model3d!;
