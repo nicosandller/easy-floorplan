@@ -5302,14 +5302,24 @@ describe("editor drag", () => {
       document.body.innerHTML = "";
     });
 
-    it("stays stable after push-down, repeated zero-delta drags on the new bottom edge, then pull-up", async () => {
+    it("stays stable after push-down and repeated zero-delta drags, and refuses a pull-up that would collapse the kink", async () => {
       const ed = await setupLoggedDuplicatePair();
+      // Drags are issued in world units. The card scales its plan to fit the
+      // host, so convert each world delta through the SVG's screen CTM instead
+      // of passing it as raw pixels (otherwise a "20" push moves ~33 world units).
+      const svg = ed.shadowRoot!.querySelector("svg") as SVGSVGElement;
+      const ctm = svg.getScreenCTM()!;
+      const pxDy = (worldDy: number) => worldDy * ctm.d;
 
-      await dragAreaEdgeAt(ed, "area_pg3h1on", "top", { x: 680, y: 300 }, { dx: 0, dy: 20 });
+      await dragAreaEdgeAt(ed, "area_pg3h1on", "top", { x: 680, y: 300 }, { dx: 0, dy: pxDy(20) });
       for (let i = 0; i < 3; i++) {
         await dragAreaEdgeAt(ed, "area_pg3h1on", "top", { x: 680, y: 320 }, { dx: 0, dy: 0 });
       }
-      await dragAreaEdgeAt(ed, "area_pg3h1on", "top", { x: 680, y: 320 }, { dx: 0, dy: -20 });
+      // Pulling back up would collapse the 20-unit kink at x=540 to a
+      // zero-length arm, which isValidRectilinearAreaResize rejects by design
+      // (see editor-geometry.test.ts "rejects a resize that collapses a
+      // previously nonzero arm edge"). The move is refused, so the shape holds.
+      await dragAreaEdgeAt(ed, "area_pg3h1on", "top", { x: 680, y: 320 }, { dx: 0, dy: pxDy(-20) });
 
       const primary = (ed as any)._floor().areas.find((a: any) => a.id === "area_pg3h1on");
       const other = (ed as any)._floor().areas.find((a: any) => a.id === "area_k9ywq25");
@@ -5319,12 +5329,12 @@ describe("editor drag", () => {
       expectPointsClose(primary.points, [
         { x: 380, y: 300 },
         { x: 540, y: 300 },
-        { x: 540, y: 300 },
-        { x: 700, y: 300 },
+        { x: 540, y: 320 },
+        { x: 700, y: 320 },
         { x: 700, y: 440 },
         { x: 380, y: 440 },
       ]);
-      expect(other.points[5].y).toBeCloseTo(300, 3);
+      expect(other.points[5].y).toBeCloseTo(320, 3);
       document.body.innerHTML = "";
     });
   });
