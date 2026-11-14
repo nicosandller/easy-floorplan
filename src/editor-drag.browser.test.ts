@@ -1685,6 +1685,49 @@ describe("editor drag", () => {
     document.body.innerHTML = "";
   });
 
+  it("maps both pieces of a full wall on an L-shaped side back to its segment", async () => {
+    // A full-edge wall on a side spanning two edges is generated as
+    // `-0-0` / `-0-1`, not the bare id a single-piece side gets.
+    const ed = await mountAreaEditor([
+      { x: 100, y: 100 },
+      { x: 300, y: 100 },
+      { x: 300, y: 200 },
+      { x: 200, y: 200 },
+      { x: 200, y: 300 },
+      { x: 100, y: 300 },
+    ], { right: "wall" });
+    (ed as any)._areaEdgeModifier = "split";
+    await ed.updateComplete;
+
+    const pieceAt = (x: number): SVGLineElement => {
+      const found = [...ed.shadowRoot!.querySelectorAll<SVGLineElement>(".wall-hit")]
+        .filter((line) => Math.abs(Number(line.getAttribute("x1")) - x) < 1e-6 &&
+          Math.abs(Number(line.getAttribute("x2")) - x) < 1e-6);
+      expect(found).toHaveLength(1);
+      return found[0]!;
+    };
+    for (const [x, edgeIndex] of [[300, 1], [200, 3]] as const) {
+      const piece = pieceAt(x);
+      expect(piece.classList.contains("side-wall-edge")).toBe(true);
+      const toggle = piece.parentElement!.querySelector<SVGPathElement>(".area-wall-toggle");
+      expect(toggle).toBeTruthy();
+      expect(toggle!.classList.contains("wall")).toBe(true);
+
+      const at = center(piece);
+      piece.dispatchEvent(new MouseEvent("click", {
+        bubbles: true,
+        composed: true,
+        cancelable: true,
+        ctrlKey: true,
+        clientX: at.x,
+        clientY: at.y,
+      }));
+      await ed.updateComplete;
+      expect((ed as any)._selectedWallSegment).toEqual({ areaId: "room1", side: "right", edgeIndex, segmentIndex: 0 });
+    }
+    document.body.innerHTML = "";
+  });
+
   it("L-shape lower top edge can be toggled directly", async () => {
     const points = [
       { x: 380, y: 300 },

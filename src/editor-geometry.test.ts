@@ -1320,6 +1320,7 @@ describe("picking a skylight (issue #285)", () => {
     // narrowing it is as much a regression as widening it.
     expect(elementsAtPoint(withDoor, 200, 200, opts)[0]).toEqual({ kind: "opening", id: "d" });
     expect(elementsAtPoint(withDoor, 200, 206, opts)[0]).toEqual({ kind: "opening", id: "d" });
+    expect(elementsAtPoint(withDoor, 200, 210, opts).map((s) => s.kind)).not.toContain("opening");
     expect(elementsAtPoint(withDoor, 200, 220, opts).map((s) => s.kind)).not.toContain("opening");
   });
 });

@@ -2,9 +2,9 @@ import {
   WALL_THICKNESS, 
   pointInPolygon, 
   polygonCentroid, 
-  textLabel, 
+  textLabel,
+  skylightWidth,
   wallThickness,
-  openingHitSize 
 } from "./render";
 
 import { 
@@ -19,6 +19,7 @@ import {
   StripSide,
   RectAreaSideWallSegment,
   RectAreaSideWallValue,
+  openingIsSkylight,
   floorPanels,
 } from "./types";
 import { RECT_AREA_SIDES } from "./types";
@@ -1076,7 +1077,7 @@ export function elementsAtPoint(
     // drawn in, so the skylight could not be selected or dragged at all. The
     // same trap the text labels above hit in #225; `openingHitSize` is the
     // rectangle the editor overlay and the card already use.
-    const halfDepth = openingHitSize(o).height / 2;
+    const halfDepth = openingIsSkylight(o) ? skylightWidth(o) / 2 : opts.wallThickness / 2;
     const p = toLocal(x, y, o.x, o.y, o.angle ?? 0);
     if (Math.abs(p.x) <= o.length / 2 && Math.abs(p.y) <= halfDepth + HIT.pad) {
       push("opening", o.id, i, o.locked);

@@ -468,7 +468,7 @@ export function mergeRectAreaSide(
 
   if (!valid) return undefined;
 
-  const mergedSideWalls = mergeOuterSideWalls(a, other, merged, clickedSide);
+  const mergedSideWalls = mergeOuterSideWalls(a, other, merged);
 
   return [
     ...areas.filter((candidate) => candidate.id !== a.id && candidate.id !== other.id),
@@ -476,21 +476,18 @@ export function mergeRectAreaSide(
   ];
 }
 
+// Each source wall piece is carried onto the merged outline only where it lies
+// on a collinear merged edge of the same side. That keeps the exterior part of
+// a partially shared side and drops just the span that became interior.
 function mergeOuterSideWalls(
   a: Area,
   b: Area,
-  mergedPoints: AreaPoint[],
-  sharedSide: RectAreaSide
+  mergedPoints: AreaPoint[]
 ): Area["sideWalls"] {
   const projected = new Map<RectAreaSide, RectAreaSideWallSegment[]>();
-  const sources = [
-    { area: a, omittedSide: sharedSide },
-    { area: b, omittedSide: rectAreaOppositeSide(sharedSide) },
-  ];
 
-  for (const { area, omittedSide } of sources) {
+  for (const area of [a, b]) {
     for (const side of RECT_AREA_SIDES) {
-      if (side === omittedSide) continue;
       const bounds = rectAreaSideBoundarySegments(side, area.points);
       const sourceLength = bounds.reduce((sum, piece) =>
         sum + (side === "top" || side === "bottom"
@@ -533,6 +530,13 @@ function mergeOuterSideWalls(
               const targetBoundLength = horizontal
                 ? Math.abs(targetBound.x2 - targetBound.x1)
                 : Math.abs(targetBound.y2 - targetBound.y1);
+              const collinear = horizontal
+                ? Math.abs(targetBound.y1 - sourceBound.y1) <= RECT_AREA_EPSILON
+                : Math.abs(targetBound.x1 - sourceBound.x1) <= RECT_AREA_EPSILON;
+              if (!collinear) {
+                targetCursor += targetBoundLength;
+                continue;
+              }
               const targetBoundStart = horizontal
                 ? Math.min(targetBound.x1, targetBound.x2)
                 : Math.min(targetBound.y1, targetBound.y2);

@@ -302,7 +302,7 @@ describe("mergeRectAreaSide", () => {
     expect(mergeRectAreaSide(roomA, 1, [roomA, otherArea])).toBeUndefined();
   });
 
-  it("keeps exterior segments on partial-overlap L-shaped merges by side orientation", () => {
+  it("keeps exterior segments on partial-overlap L-shaped merges, dropping only the shared span", () => {
     const a: Area = {
       id: "a",
       points: [{ x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 100 }, { x: 0, y: 100 }],
@@ -316,13 +316,21 @@ describe("mergeRectAreaSide", () => {
 
     const merged = mergeRectAreaSide(a, 1, [a, b]);
     expect(merged).toHaveLength(1);
+    // Merged outline: (0,0)(100,0)(100,50)(200,50)(200,150)(100,150)(100,100)(0,100).
+    // Only x=100, y 50–100 is shared. A's divider keeps its exterior y 0–50
+    // (first 50 of the 150-long right side) and B's wall keeps y 100–150
+    // (last 50 of the 150-long left side).
     expect(merged![0]!.sideWalls).toEqual({
       top: [{ start: 0.5, end: 1, state: "wall" }],
-      right: [{ start: 1 / 3, end: 1, state: "wall" }],
+      right: [
+        { start: 0, end: 1 / 3, state: "divider" },
+        { start: 1 / 3, end: 1, state: "wall" },
+      ],
       bottom: [
         { start: 0, end: 0.5, state: "wall" },
         { start: 0.5, end: 1, state: "divider" },
       ],
+      left: [{ start: 2 / 3, end: 1, state: "wall" }],
     });
   });
 
