@@ -803,10 +803,11 @@ Each placed piece can set `height3d` (**3D height** in the editor) to scale its
 model vertically before clipping. It defaults to the authored model height and
 is independent of footprint resizing; use half the height for a half-scale plan.
 See [Furniture configuration](configuration.md#furniture) for the accepted range.
-Symbols with `elevation` mount their detailed models between `from × wallHeight`
-and `to × wallHeight`. Setting `height3d` overrides the model height, keeping its
-bottom at `from × wallHeight`. The cut remains an absolute height above the floor;
-models entirely above it are hidden together with their controls.
+For detailed models, `elevation.from` sets the bottom offset in canvas units.
+For example, `elevation: { from: 100 }` and a placed `height3d: 70` put a TV
+between 100 and 170. Without `height3d`, the authored model height is used.
+`elevation.to` is ignored for models. The cut remains an absolute height above
+the floor; models entirely above it are hidden together with their controls.
 See the [symbol author guide](../furniture/README.md#optional-3d-models-version-1)
 for the model format and limitations.
 

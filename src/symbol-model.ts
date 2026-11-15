@@ -85,13 +85,12 @@ export function furnitureModelHeight(f: { height3d?: number }, model: SymbolMode
   return normalizeHeight3d(f.height3d) ?? model.size.height;
 }
 
-/** Elevation uses the configured wall height, never the furniture cut plane. */
+/** Model elevation is an absolute bottom offset, independent of height and cut. */
 export function furnitureModelBounds(
-  f: { height3d?: number }, model: SymbolModel, wallHeight: number,
-  elevation?: { from: number; to: number }
+  f: { height3d?: number }, model: SymbolModel, _wallHeight: number,
+  elevation?: { from: number; to?: number }
 ): { bottom: number; top: number; height: number } {
-  const bottom = elevation ? wallHeight * elevation.from : 0;
-  const height = normalizeHeight3d(f.height3d) ?? (elevation
-    ? wallHeight * (elevation.to - elevation.from) : model.size.height);
+  const bottom = elevation?.from ?? 0;
+  const height = furnitureModelHeight(f, model);
   return { bottom, height, top: bottom + height };
 }

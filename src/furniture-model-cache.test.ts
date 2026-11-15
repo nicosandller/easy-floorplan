@@ -56,13 +56,13 @@ describe("furniture model geometry cache", () => {
   });
 });
 
-it("invalidates elevated geometry when wall height or elevation changes independently of the cut", () => {
+it("keeps elevation independent of wall height and rebuilds when the bottom changes", () => {
   const cache = new FurnitureModelCache(), project = map();
-  const raised = { ...entry, elevation: { from: 0.5, to: 0.8 } };
+  const raised = { ...entry, elevation: { from: 30 } };
   const first = cache.project([raised], { ...view, wallHeight: 100 }, project).get(furniture)!;
   const second = cache.project([raised], { ...view, wallHeight: 200 }, project).get(furniture)!;
-  expect(second).not.toBe(first);
+  expect(second).toBe(first);
   expect(second[0]!.z0).toBeCloseTo(130);
-  const third = cache.project([{ ...raised, elevation: { from: 0.2, to: 0.8 } }], { ...view, wallHeight: 200 }, project).get(furniture)!;
-  expect(third[0]!.z0).toBeCloseTo(100);
+  const third = cache.project([{ ...raised, elevation: { from: 10 } }], { ...view, wallHeight: 200 }, project).get(furniture)!;
+  expect(third[0]!.z0).toBeCloseTo(110);
 });

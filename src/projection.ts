@@ -544,7 +544,7 @@ export function furnitureSectionHeight(c: {
 export function furnitureModelSolids(
   f: { id?: string; x: number; y: number; w: number; h: number; angle?: number; height3d?: number },
   model: SymbolModel, map: (x: number, y: number) => Pt, sectionHeight: number, color: string,
-  placement?: { wallHeight: number; elevation?: { from: number; to: number } }
+  placement?: { wallHeight: number; elevation?: { from: number; to?: number } }
 ): IsoSolid[] {
   const angle = (f.angle ?? 0) * Math.PI / 180, c = Math.cos(angle), s = Math.sin(angle);
   const { bottom, height } = furnitureModelBounds(f, model, placement?.wallHeight ?? sectionHeight, placement?.elevation);

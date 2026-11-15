@@ -236,13 +236,18 @@ symbols without a 3D model retain their existing fallback rendering.
 
 ### Elevated 3D models
 
-`elevation` also applies to `model3d`. Its `from` and `to` values are fractions
-of the configured wall height (not the separate furniture cut height). The model
-is scaled into that vertical interval. A placed `height3d` overrides the interval
-height while retaining the bottom offset. Without `elevation`, models retain
-their authored height and stand on the floor.
+For `model3d`, `elevation.from` is the bottom offset in canvas units, independent
+of wall height. Use `elevation: { from: 100 }` to mount a model 100 units above
+the floor. Accepted offsets are finite numbers from 0 to 10000; omitted means 0.
+The model retains its authored height unless the placed furniture sets `height3d`.
+`elevation.to` is not used for detailed models.
 
-For example, `elevation: { from: 0.5, to: 0.8 }` with `wallHeight: 200` mounts
-a model from 100 to 160. With `height3d: 80`, it extends from 100 to 180.
-A separate cut of 130 clips either model at 130; a cut of 100 hides it completely.
-Changing the cut never moves the mounting position. The 2D drawing is unchanged.
+For example, a 70-high TV with `elevation: { from: 100 }` spans 100–170.
+Setting `height3d: 80` changes its top to 180 without moving its bottom.
+A separate cut at 130 clips it at 130; a cut at 100 hides it completely.
+Changing wall height or cut height never moves the mounting position.
+
+Symbols without a valid `model3d` retain the legacy wall-relative `from/to`
+interval for block rendering. A model's absolute `from` alone does not define
+that legacy interval; with detailed rendering off it uses the normal block
+fallback. The 2D drawing remains unchanged.

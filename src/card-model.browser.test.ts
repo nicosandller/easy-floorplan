@@ -97,7 +97,7 @@ it("removes and restores cached 3D furniture when visibility changes", async () 
 it.each([0, 90, 180, 270] as const)("places elevated models within the frame and removes geometry and controls below the cut at %s", async rotation => {
   const settings = { rotation, wallHeight: 60, furnitureSeparateSection: true, furnitureSectionHeight: 200,
     furniture: [{ id: "tv", type: "raised", x: 200, y: 200, w: 100, h: 10, height3d: 120, showIcon: false, tap_action: { action: "fire-dom-event" } }],
-    symbols: { raised: { id: "raised", parts: [{ rect: [0, 0, 100, 100] }], elevation: { from: 0.5, to: 0.8 },
+    symbols: { raised: { id: "raised", parts: [{ rect: [0, 0, 100, 100] }], elevation: { from: 30 },
       model3d: { version: 1, units: "cm", size: { width: 100, depth: 10, height: 70 }, parts: [{ box: [100, 10, 70] }] } } } };
   const root = await mount(settings as Partial<FloorplanCardConfig>);
   expect(root.querySelectorAll('.fp-iso-furniture')).toHaveLength(1);

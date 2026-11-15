@@ -1433,7 +1433,8 @@ export class FloorplanCard extends LitElement {
       }
       // A piece that hangs rather than stands — an awning under the eaves
       // (issue #196) — is a sheet between its symbol's two heights.
-      const raised = findSymbol(catalog, f.type)?.elevation;
+      const elevation = findSymbol(catalog, f.type)?.elevation;
+      const raised = elevation?.to !== undefined ? { from: elevation.from, to: elevation.to } : undefined;
       const top = raised ? baseWallHeight * raised.to : furnitureHeight;
       const up = raised ? elevationShift(top, rot) : lift;
       solids.push(

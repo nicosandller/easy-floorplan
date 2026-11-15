@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- Detailed 3D furniture now respects symbol `elevation`, including vertical scaling,
+- Detailed 3D furniture now uses `elevation.from` as an absolute bottom offset, with
   independent section clipping, focus bounds and action controls. `height3d` can
-  override the model height without moving its mounting point.
+  set the model height independently of its mounting point; `elevation.to` is unused.
 
 - Add a five-shelf corner shelving symbol (`cornerShelf`) with a 60 × 60 footprint
   and 30-deep sides, available in the 2D furniture picker.

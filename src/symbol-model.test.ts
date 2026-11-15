@@ -99,13 +99,20 @@ it("ships only the four initial 3D models", () => {
     .toEqual(["bathtub", "cornerShelf", "stove", "table"]);
 });
 
-it("positions elevated models in wall-relative bounds before applying the independent cut", () => {
+it("positions elevated models at an absolute bottom before applying the independent cut", () => {
   const model = normalizeModel({ version: 1, units: "cm", size: { width: 60, depth: 10, height: 100 }, parts: [{ box: [60, 10, 100] }] })!;
   const f = { x: 0, y: 0, w: 60, h: 10 };
   const map = (x: number, y: number) => ({ x, y });
-  const placement = { wallHeight: 200, elevation: { from: 0.5, to: 0.8 } };
-  expect(furnitureModelSolids(f, model, map, 300, "gray", placement)[0]).toMatchObject({ z0: 100, z1: 160 });
+  const placement = { wallHeight: 200, elevation: { from: 100 } };
+  expect(furnitureModelSolids(f, model, map, 300, "gray", placement)[0]).toMatchObject({ z0: 100, z1: 200 });
   expect(furnitureModelSolids(f, model, map, 130, "gray", placement)[0]).toMatchObject({ z0: 100, z1: 130 });
   expect(furnitureModelSolids(f, model, map, 100, "gray", placement)).toEqual([]);
   expect(furnitureModelSolids({ ...f, height3d: 80 }, model, map, 300, "gray", placement)[0]).toMatchObject({ z0: 100, z1: 180 });
+});
+
+it("normalizes a model bottom offset without requiring an elevation top", () => {
+  const model3d = { version: 1, units: "cm", size: { width: 10, depth: 10, height: 70 }, parts: [{ box: [10, 10, 70] }] };
+  const raw = { id: "tv", parts: [{ rect: [0, 0, 100, 100] }], model3d };
+  expect(normalizeSymbol({ ...raw, elevation: { from: 100 } })?.elevation).toEqual({ from: 100 });
+  for (const from of [-1, Infinity, NaN, 10001]) expect(normalizeSymbol({ ...raw, elevation: { from } })?.elevation).toBeUndefined();
 });

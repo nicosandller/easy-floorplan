@@ -2,7 +2,7 @@ import { furnitureModelSolids, type IsoSolid } from "./projection";
 import { furnitureModelHeight, type SymbolModel } from "./symbol-model";
 import type { Furniture } from "./types";
 
-type Entry = { furniture: Furniture; model: SymbolModel; color: string; elevation?: { from: number; to: number } };
+type Entry = { furniture: Furniture; model: SymbolModel; color: string; elevation?: { from: number; to?: number } };
 type View = { width: number; height: number; rotation: number; sectionHeight: number; wallHeight?: number };
 type Cached = { model: SymbolModel; key: unknown[]; solids: IsoSolid[] };
 
@@ -18,7 +18,7 @@ export class FurnitureModelCache {
       // Compare values, not furniture object identity: unrelated editor updates
       // can replace objects without changing the geometry.
       const key = [f.x, f.y, f.w, f.h, f.angle ?? 0, furnitureModelHeight(f, model),
-        view.width, view.height, view.rotation, view.sectionHeight, view.wallHeight, elevation?.from, elevation?.to, color];
+        view.width, view.height, view.rotation, view.sectionHeight, elevation?.from, color];
       const old = this.entries.get(f.id);
       const cached = old?.model === model && key.every((value, i) => Object.is(value, old.key[i]))
         ? old : { model, key, solids: furnitureModelSolids(f, model, map, view.sectionHeight, color,

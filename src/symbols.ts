@@ -88,7 +88,7 @@ export interface SymbolDef {
    * Where the piece sits in 3D, as fractions of the wall height, instead of
    * standing on the floor (issue #196): an awning is a sheet under the eaves.
    */
-  elevation?: { from: number; to: number };
+  elevation?: { from: number; to?: number };
 }
 
 export interface SymbolExtend {
@@ -405,7 +405,7 @@ export function normalizeSymbol(
     parts,
     ...(model3d ? { model3d } : {}),
     ...(extendOf(r.extend) ? { extend: extendOf(r.extend) } : {}),
-    ...(elevationOf(r.elevation) ? { elevation: elevationOf(r.elevation) } : {}),
+    ...(elevationOf(r.elevation, !!model3d) ? { elevation: elevationOf(r.elevation, !!model3d) } : {}),
   };
 }
 
@@ -422,11 +422,12 @@ function extendOf(raw: unknown): SymbolExtend | undefined {
   };
 }
 
-function elevationOf(raw: unknown): { from: number; to: number } | undefined {
+function elevationOf(raw: unknown, model = false): { from: number; to?: number } | undefined {
   if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
   const e = raw as Record<string, unknown>;
   const from = num(e.from);
   const to = num(e.to);
+  if (model && from !== null && from >= 0 && from <= 10000) return { from };
   if (from === null || to === null || from < 0 || to > 1 || to <= from) return undefined;
   return { from, to };
 }
