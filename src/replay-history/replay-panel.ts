@@ -493,16 +493,6 @@ export class ReplayPanel extends LitElement {
       white-space: nowrap;
       text-align: right;
     }
-    .replay-panel-hidden {
-      border: 1px dashed var(--divider-color, #ccc);
-      border-radius: 8px;
-      background: var(--card-background-color, #fff);
-      padding: 8px 10px;
-    }
-    .replay-toolbar-hidden {
-      justify-content: flex-end;
-      margin: 0;
-    }
     .replay-empty {
       font-size: 12px;
       color: var(--secondary-text-color, #666);
