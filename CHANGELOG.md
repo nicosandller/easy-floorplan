@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Vertical sections (#414): a floor with `sectionFacing` is drawn as a cut through the
+  building, and sunlight falls on it at the sun's real height. See
+  [Configuration](docs/configuration.md) and [Sunlight on a section](docs/lighting.md#sunlight-on-a-section).
 - The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
   when an object is selected; the tabs used to paint over the first row of furniture.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in

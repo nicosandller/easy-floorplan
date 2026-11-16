@@ -31,7 +31,8 @@ control lights, and view the plan in 3D.
   doors, windows, shutters, awnings and curtains as they open and close. Device
   labels can sit on any side, or [pick the clearest one](docs/elements.md#devices) (`labelPosition: auto`).
 - **Lighting** — colored light from your lamps and spots, day/night dimming, sunlight,
-  moonlight and ambient daylight.
+  moonlight and ambient daylight, with sunlight at the sun's real height on
+  [vertical sections](docs/lighting.md#sunlight-on-a-section).
 - **Rooms and presence** — zoom into rooms, link Home Assistant areas, show
   presence ripples and track positions from distance sensors.
 - **Multiple floors** — switch between floors or navigate with a staircase.
