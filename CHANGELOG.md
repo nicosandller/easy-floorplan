@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Plan check (#403): the editor flags wall ends that nearly meet and walls drawn on top
+  of each other, with one-click **Join**, **Remove duplicate** and **Trim overlap**. See
+  [Plan check](docs/editor.md#plan-check).
 - The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
   when an object is selected; the tabs used to paint over the first row of furniture.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
