@@ -778,8 +778,9 @@ rotation: 90     # optional: choose the viewing corner
 ### Detailed 3D furniture
 
 In **Project → Display**, choosing **3D isometric** reveals **3D furniture**.
-Enable it to use the initial `table`, `cornerShelf`, `bathtub` and `stove` models.
-Other symbols retain their block rendering, and 2D plans are unchanged.
+Enable it to use the 35 built-in detailed models, including beds, shelving,
+bathroom fittings, appliances and plants. `awning` and `curtain` retain block
+rendering, as do custom symbols without valid models. 2D plans are unchanged.
 
 Enabling models reveals **Separate furniture cut height**; enabling that option
 reveals **Furniture cut height** (0–400 canvas units, default 180).
@@ -814,6 +815,15 @@ at 100 canvas units (wall height remains 60):
 | Default blocks | Detailed models, cut 220 | Separate cut 100 |
 | --- | --- | --- |
 | ![Default block furniture](img/furniture-3d-off.png) | ![Four detailed furniture models](img/furniture-3d-full.png) | ![Models with a separate cut at 100](img/furniture-3d-cut.png) |
+
+The expanded catalog includes beds, a bunk bed, vanity and indoor palm:
+
+![Bed, bunk bed, vanity and indoor palm from two angles](img/furniture-3d-complex.png)
+
+Appliance panels, the rug border and water-heater fittings remain lightweight
+geometry. The stairs model is 220 cm high; use `height3d` for another height.
+
+![Air handler, rug, water heater and 220 cm stairs](img/furniture-3d-details.png)
 
 ### Isometric rendering
 

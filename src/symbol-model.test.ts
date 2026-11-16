@@ -103,3 +103,33 @@ it("keeps the indoor palm inside 40×40 with a 120 cm crown", () => {
   const leaves = m.parts.filter(p => Math.abs(p.z1 - p.z0 - 1.2) < 1e-6);
   expect(new Set(leaves.map(p => Math.round(p.z0 / 10))).size).toBeGreaterThanOrEqual(3);
 });
+
+it("ships the complete 35-model catalog, with awnings and curtains retaining the fallback", () => {
+  expect(Object.keys(BUILTIN_SYMBOLS).filter(id => BUILTIN_SYMBOLS[id].model3d).sort()).toEqual([
+    "airHandler", "bathtub", "bed", "bookcase", "bunkBed", "chair", "cornerShelf",
+    "cornerShowerCurved", "desk", "dishwasher", "dresser", "dryer", "fishTank", "fridge",
+    "hotTub", "indoorPalm", "ladderShelf", "piano", "plant", "quarterTub", "roundTable",
+    "rug", "sectional", "sink", "sofa", "stairs", "stove", "table", "tallDresser", "toilet",
+    "tv", "vanity", "wardrobe", "washer", "waterHeater",
+  ].sort());
+  expect(BUILTIN_SYMBOLS.awning.model3d).toBeUndefined();
+  expect(BUILTIN_SYMBOLS.curtain.model3d).toBeUndefined();
+});
+
+it("keeps stairs at 220 cm with ascending treads and clips without rescaling", () => {
+  const m = BUILTIN_SYMBOLS.stairs.model3d!;
+  expect(m.size.height).toBe(220);
+  expect(m.parts.map(p => p.z1)).toEqual([27.5, 55, 82.5, 110, 137.5, 165, 192.5, 220]);
+  const cut = furnitureModelSolids({ x: 0, y: 0, w: 90, h: 170 }, m, (x, y) => ({ x, y }), 100, "gray");
+  expect(cut.map(p => p.z1)).toEqual([27.5, 55, 82.5, 100, 100, 100, 100, 100]);
+});
+
+it.each(["airHandler", "rug", "waterHeater"])("keeps %s details within the authored dimensions", id => {
+  const m = BUILTIN_SYMBOLS[id].model3d!;
+  expect(m.parts.length).toBeGreaterThan(1);
+  expect(Math.max(...m.parts.map(p => p.z1))).toBe(m.size.height);
+  for (const p of m.parts) for (const [x, y] of p.base) {
+    expect(x).toBeGreaterThanOrEqual(0); expect(x).toBeLessThanOrEqual(m.size.width);
+    expect(y).toBeGreaterThanOrEqual(0); expect(y).toBeLessThanOrEqual(m.size.depth);
+  }
+});

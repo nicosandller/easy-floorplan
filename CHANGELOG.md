@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- Add 31 more detailed 3D models: air handler, bed, bookcase, bunk bed, chair,
+  curved corner shower, desk, dishwasher, low/wide dresser, dryer, fish tank,
+  fridge, hot tub, indoor palm, ladder shelf, piano, plant, corner hot tub,
+  round table, rug, sectional sofa, sink, sofa, stairs, tall/narrow dresser,
+  toilet, TV, vanity, wardrobe, washer and water heater. There are now 35 models;
+  awnings and curtains retain block rendering. Stairs default to 220 cm tall.
+
+
 - Add a five-shelf corner shelving symbol (`cornerShelf`) with a 60 × 60 footprint
   and 30-deep sides, available in the 2D furniture picker.
 

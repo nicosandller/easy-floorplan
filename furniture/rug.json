@@ -11,9 +11,36 @@
   "model3d": {
     "version": 1,
     "units": "cm",
-    "size": {"width": 180, "depth": 120, "height": 1},
+    "size": {
+      "width": 180,
+      "depth": 120,
+      "height": 1
+    },
     "parts": [
-      {"box": [180.0, 120.0, 1], "position": [0.0, 0.0, 0]}
+      {
+        "box": [
+          180,
+          120,
+          0.6
+        ],
+        "position": [
+          0,
+          0,
+          0
+        ]
+      },
+      {
+        "box": [
+          148,
+          88,
+          0.4
+        ],
+        "position": [
+          16,
+          16,
+          0.6
+        ]
+      }
     ]
   }
 }
