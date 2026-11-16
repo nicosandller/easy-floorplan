@@ -236,6 +236,23 @@ describe("getFloors", () => {
     expect(f.areas).toEqual(c.areas);
   });
 
+  it("wraps top-level panels into the implicit floor", () => {
+    const c = {
+      ...emptyConfig("x"),
+      panels: [
+        {
+          id: "p1",
+          x: 100,
+          y: 100,
+          targetType: "floor",
+          metrics: [{ entity: "sensor.temp" }],
+        },
+      ],
+    } as FloorplanCardConfig;
+    const [f] = getFloors(c);
+    expect(f.panels).toEqual(c.panels);
+  });
+
   it("treats an empty floors array as legacy (wraps flat arrays)", () => {
     const c = { ...emptyConfig("x"), floors: [] } as FloorplanCardConfig;
     expect(getFloors(c)).toHaveLength(1);
@@ -263,6 +280,8 @@ describe("getFloors", () => {
     expect(f.furniture).toEqual([]);
     expect(f.trackers).toEqual([]);
     expect(f.areas).toEqual([]);
+    expect(f.roofs).toEqual([]);
+    expect(f.panels).toEqual([]);
   });
 
   it("preserves extra floor fields (image, opacity) while backfilling", () => {

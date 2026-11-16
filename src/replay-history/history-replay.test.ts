@@ -6,7 +6,7 @@ import { HistoryStateProvider, LiveStateProvider } from "./state-provider";
 import { HistoryTimeline } from "./history-timeline";
 import { createReplayPanelProps } from "./replay-panel";
 import { FloorplanCard } from "../floorplan-card";
-import type { HomeAssistant, HassEntity } from "../types";
+import type { HomeAssistant, HassEntity, FloorplanCardConfig } from "../types";
 import {
   getReplaySpeedForRange,
   getReplayWatchedEntities,
@@ -1210,6 +1210,42 @@ describe("FloorplanCard replay", () => {
     (card as any)._goToFloor(floors, "floor-1");
     expect(startSpy).toHaveBeenCalledTimes(1);
     expect(getReplayWatchedEntities((card as any)._config, (card as any)._activeFloorId)).toEqual(["light.kitchen"]);
+  });
+
+  it("includes furniture visibility condition entities in replay scope", () => {
+    const config = {
+      type: "custom:easy-floorplan-card",
+      floors: [
+        {
+          id: "ground",
+          name: "Ground",
+          furniture: [
+            {
+              id: "car",
+              type: "car",
+              x: 0,
+              y: 0,
+              w: 50,
+              h: 100,
+              visibility: [
+                { condition: "state", entity: "device_tracker.car", state: "home" },
+                { condition: "numeric_state", entity: "sensor.battery", above: 20 },
+              ],
+            },
+          ],
+          walls: [],
+          openings: [],
+          items: [],
+          texts: [],
+          areas: [],
+          trackers: [],
+        },
+      ],
+    } as unknown as FloorplanCardConfig;
+
+    const entities = getReplayWatchedEntities(config, "ground");
+    expect(entities).toContain("device_tracker.car");
+    expect(entities).toContain("sensor.battery");
   });
 
   it("keeps badge as the default item display when display is unset", async () => {

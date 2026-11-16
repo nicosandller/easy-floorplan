@@ -64,3 +64,76 @@ describe("plan sizing with and without container query units (issue #339)", () =
     expect(box.height).toBeCloseTo(150, 0);
   });
 });
+
+describe("plan sizing where 100cqh reads 0 (issue #406)", () => {
+  const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+
+  /** Chrome 129's WebView accepts the unit but resolves it to 0; a 0 term in its place does the same here. */
+  function zeroCqh(plan: HTMLElement) {
+    expect(plan.style.width).toMatch(/[\d.]+cqh/);
+    plan.style.width = plan.style.width.replace(/[\d.]+cqh/, "0px");
+  }
+
+  it("falls back to the stage's measured height", async () => {
+    const { host, root, plan } = await mount({ overlayScale: "plan" });
+    const card = root.host as HTMLElement;
+    await frames();
+    expect(card.hasAttribute("fit-measured")).toBe(false);
+    zeroCqh(plan);
+    expect(plan.getBoundingClientRect().width).toBe(0);
+    // The plan's own size change is not what is observed; the stage's next one is.
+    host.style.width = "590px";
+    await frames();
+    expect(card.hasAttribute("fit-measured")).toBe(true);
+    expect(plan.getBoundingClientRect().width).toBeCloseTo(590, 0);
+    // A height-limited card still fits by height, as the container query does.
+    host.style.height = "150px";
+    await frames();
+    expect(plan.getBoundingClientRect().width).toBeCloseTo(300, 0);
+    expect(plan.getBoundingClientRect().height).toBeCloseTo(150, 0);
+  });
+
+  it("re-checks the fallback on a config change and drops it on disconnect", async () => {
+    const { host, root, plan } = await mount({ overlayScale: "plan" });
+    const card = root.host as FloorplanCard;
+    await frames();
+    const working = plan.style.width;
+    zeroCqh(plan);
+    host.style.width = "590px";
+    await frames();
+    expect(card.hasAttribute("fit-measured")).toBe(true);
+
+    // Still 0 after a config change: the fallback comes straight back.
+    card.setConfig((card as any)._config);
+    await card.updateComplete;
+    await frames();
+    expect(card.hasAttribute("fit-measured")).toBe(true);
+    expect(plan.getBoundingClientRect().width).toBeCloseTo(590, 0);
+
+    // The container query reads again: a config change clears the fallback
+    // instead of keeping it for the card's whole life.
+    plan.style.width = working;
+    card.setConfig((card as any)._config);
+    await card.updateComplete;
+    await frames();
+    expect(card.hasAttribute("fit-measured")).toBe(false);
+    expect(card.style.getPropertyValue("--fp-stage-h")).toBe("");
+    expect(plan.getBoundingClientRect().width).toBeCloseTo(590, 0);
+
+    zeroCqh(plan);
+    host.style.width = "600px";
+    await frames();
+    expect(card.hasAttribute("fit-measured")).toBe(true);
+    card.remove();
+    expect(card.hasAttribute("fit-measured")).toBe(false);
+    expect(card.style.getPropertyValue("--fp-stage-h")).toBe("");
+  });
+
+  it("leaves a working container query alone", async () => {
+    const { host, root, plan } = await mount();
+    host.style.height = "150px";
+    await frames();
+    expect((root.host as HTMLElement).hasAttribute("fit-measured")).toBe(false);
+    expect(plan.getBoundingClientRect().width).toBeCloseTo(300, 0);
+  });
+});
