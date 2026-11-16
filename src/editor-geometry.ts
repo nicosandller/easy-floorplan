@@ -19,7 +19,6 @@ import {
   StripSide,
   RectAreaSideWallSegment,
   RectAreaSideWallValue,
-  openingIsSkylight,
   floorPanels,
 } from "./types";
 import { RECT_AREA_SIDES } from "./types";
