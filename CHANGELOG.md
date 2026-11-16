@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Add meeting-edge profiles, hinges, paired inside/outside grips and a floor
+  drain to the curved corner shower 3D model.
+
 - Add 31 more detailed 3D models: air handler, bed, bookcase, bunk bed, chair,
   curved corner shower, desk, dishwasher, low/wide dresser, dryer, fish tank,
   fridge, hot tub, indoor palm, ladder shelf, piano, plant, corner hot tub,

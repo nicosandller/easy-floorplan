@@ -133,3 +133,20 @@ it.each(["airHandler", "rug", "waterHeater"])("keeps %s details within the autho
     expect(y).toBeGreaterThanOrEqual(0); expect(y).toBeLessThanOrEqual(m.size.depth);
   }
 });
+
+it("gives the corner shower two glass doors, four flared grips and a floor drain", () => {
+  const m = BUILTIN_SYMBOLS.cornerShowerCurved.model3d!;
+  expect(m.size).toEqual({ width: 100, depth: 100, height: 200 });
+  expect(m.parts.filter(p => p.glass)).toHaveLength(12);
+  const grips = m.parts.filter(p => p.z0 === 98 && p.z1 === 102);
+  expect(grips).toHaveLength(4);
+  // Each door has one grip inside and one outside its 97 cm glass radius.
+  const radii = grips.map(p => Math.hypot(
+    p.base.reduce((sum, v) => sum + v[0], 0) / p.base.length - 100,
+    p.base.reduce((sum, v) => sum + v[1], 0) / p.base.length - 2));
+  expect(radii.filter(r => r < 97)).toHaveLength(2);
+  expect(radii.filter(r => r > 97)).toHaveLength(2);
+  expect(m.parts.filter(p => p.z0 === 0 && p.z1 === 0.5)).toHaveLength(7);
+  const cut = furnitureModelSolids({ x: 0, y: 0, w: 100, h: 100 }, m, (x, y) => ({ x, y }), 100, "gray");
+  expect(cut.filter(p => p.z0 === 98).map(p => p.z1)).toEqual([100, 100, 100, 100]);
+});
