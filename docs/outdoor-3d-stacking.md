@@ -277,7 +277,7 @@ floors:
 
 ### 6.2 Real-World Implementation Example: 3-Level House with Basement & Courtyard
 
-A full production configuration demonstrating a 3-level stacked home with subterranean garage/basement, cross-gable roof intersections, courtyard perimeter fence, and gazebo is available in [`src/fixtures/3floorHouse.yaml`](file:///Users/andrei.prescornic/Personal/Casa/HomeAssystant/easy-floorplan/src/fixtures/3floorHouse.yaml).
+A full production configuration demonstrating a 3-level stacked home with subterranean garage/basement, cross-gable roof intersections, courtyard perimeter fence, and gazebo is available in [`src/fixtures/3floorHouse.yaml`](../src/fixtures/3floorHouse.yaml).
 
 **Highlights of this setup**:
 - **Level 2 (`2nd`)**: Primary cross-gable roofs (`HouseRoof` along X and `HouseSmallRoof` along Y) intersecting with automatic valley seams and gable pediments.
