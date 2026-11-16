@@ -45,6 +45,9 @@ quotes when saving while retaining the required quotes around `'y'`.
 | `showViewControls` | boolean | `false` (enabled for new plans) | Show 2D/3D, Normal/Line art, quarter-turn rotation and reset controls below the plan. Viewer choices stay local to this card. |
 | `showExport` | boolean | `false` | Offer an optional SVG download in the view controls, or an **Export SVG** button when those controls are hidden. Downloads static line art of the active floor in the current view and rotation. See [SVG export](appearance.md#svg-export). |
 | `wallHeight` | number | `60` | Standing wall height in canvas units, clamped to 0–400. Ignored in 2D. Can be overridden per wall via `height`. |
+| `furniture3d` | boolean | `false` | Opt in to detailed furniture models in the isometric view; missing models retain block rendering. See [3D furniture](appearance.md#detailed-3d-furniture). |
+| `furnitureSeparateSection` | boolean | `false` | With detailed models enabled, use a separate furniture cut instead of `wallHeight`. |
+| `furnitureSectionHeight` | number | `180` | Separate furniture cut height in canvas units, clamped to 0–400. Used only when both furniture options are enabled. |
 | `wallOpacity` | number | `1` | Standing wall opacity, clamped to 0–1. Furniture and opening panels keep their own paint. Ignored in 2D. |
 | `showDeadSpaces` | boolean | `false` | Hatch every space the walls seal off that no door or window reaches, worked out from the walls and openings themselves. See [Dead spaces](behavior.md#dead-spaces). |
 | `sunDimming` | boolean | `false` | Dim through dusk, brighten through dawn, from the HA instance's sun. See [Follow the sun](lighting.md#follow-the-sun). |
@@ -469,7 +472,7 @@ there reads `—`, the same as a device's label.
 
 ## Furniture
 
-`{ id, type, x, y, w, h, angle?, hand?, color?, entity?, activeColor?, stateColor?, goToFloor?, tap_action?, hold_action?, double_tap_action?, showIcon?, locked?, visibility? }`
+`{ id, type, x, y, w, h, height3d?, angle?, hand?, color?, entity?, activeColor?, stateColor?, goToFloor?, tap_action?, hold_action?, double_tap_action?, showIcon?, locked?, visibility? }`
 
 `type` names a **symbol** — one of the built-in symbols (`table`, `sofa`, `bed`,
 `fridge`, `stairs`, …; the full set is [`furniture/`](../furniture), a file each), or one you
@@ -477,6 +480,14 @@ supply yourself. `color` defaults to gray so furniture reads differently from wa
 (`left` / `right`) mirrors the symbol, and picks which end an L-shaped `sectional`'s chaise
 sits on. A curtain also takes `hand: center`, below. A `type` nothing answers to draws a
 plain box, so a missing symbol is a visible placeholder rather than a hole in the plan.
+
+`height3d` optionally sets the total detailed model height in canvas units (finite, greater
+than zero, at most 10000). It defaults to `model3d.size.height`, scales the model
+vertically independently of `w` and `h`, and applies before section clipping.
+It does not enable 3D models or affect 2D/block rendering. For a half-scale plan,
+set it to half the authored model height as well as halving the footprint.
+Detailed models currently start at floor level: the symbol-author `elevation`
+setting applies only to the block fallback, not to `model3d`.
 
 The editor's **+ Add** picker draws every symbol at its real size and is searchable — type
 `couch` and you get the sofa and the sectional.

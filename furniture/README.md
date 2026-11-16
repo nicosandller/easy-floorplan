@@ -233,3 +233,7 @@ For example, `height3d: 100` scales a 200-high shelf to half height, including s
 Leave the field empty to retain `model3d.size.height`. Only finite values greater than zero
 and at most 10000 are accepted. This does not change the 2D symbol or enable 3D rendering;
 symbols without a 3D model retain their existing fallback rendering.
+
+Detailed models currently start at floor level. The symbol-level `elevation`
+setting applies only to block rendering and is ignored when `model3d` is used.
+For elevated custom symbols, omit `model3d` to retain the elevated fallback.
