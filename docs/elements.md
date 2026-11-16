@@ -73,6 +73,27 @@ then pick the entity in the **Selection** inspector.
   sensor reads `1.2kW` without configuring anything — the switch says "on", not a number,
   so the badge falls through. Once you pick, only that entity is read; if it has nothing
   to show the badge falls back to its icon rather than quietly showing the other.
+- **Fill the icon by its reading** — a drop fills with the room's humidity, a battery
+  with its charge, a bolt with today's energy, so a level reads at a glance without a
+  number (issue #421). The icon is drawn dim, and filled from the bottom up to the
+  reading, in the same ink as the glyph, so state rules and the active colour carry it
+  too. Offered once the device's reading is a number and the badge shows an icon:
+
+  ```yaml
+  - id: bath_humidity
+    entity: sensor.bathroom_humidity
+    icon: mdi:water
+    fill: true                 # 0–100, for a percentage
+  - id: energy_today
+    entity: sensor.energy_today
+    icon: mdi:lightning-bolt
+    fill: { min: 0, max: 12 }  # full at 12 kWh
+  ```
+
+  The reading is the one state rules judge (the **attribute** when set), clamped to the
+  range; `min` above `max` fills as the reading falls. With no number — offline, or a word
+  like `on` — the plain icon is drawn, so a dead sensor never reads as empty. A **Value**
+  badge keeps its number, and a spinning icon holds still while it fills.
 - **Make it yours** — override the **icon** (autocomplete + live preview), the **name**,
   **size** and rotation. Without an override the icon follows the entity's **device
   class** (HA's *show as*), so a lock renders `mdi:lock` / `mdi:lock-open`.

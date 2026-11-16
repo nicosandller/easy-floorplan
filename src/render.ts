@@ -19,6 +19,7 @@ import type {
   StateColorRule,
   BadgeContent,
   BadgeEntity,
+  BadgeFill,
   ItemReading,
   LabelPosition,
   PressEffect,
@@ -2765,6 +2766,91 @@ export function badgeContentOf(item: {
   if (item.badgeContent === "icon" || item.badgeContent === "value" || item.badgeContent === "none")
     return item.badgeContent;
   return item.showIcon === false ? "none" : "icon";
+}
+
+/** The range a `fill: true` badge reads against (issue #421): a percentage. */
+export const DEFAULT_FILL_MIN = 0;
+export const DEFAULT_FILL_MAX = 100;
+
+/**
+ * The range an item's badge fills over, or `undefined` when it does not fill
+ * (issue #421). `true` is the percentage range; an object overrides either end.
+ * A non-finite end falls back to its default rather than poisoning the maths.
+ */
+export function badgeFillRange(fill: boolean | BadgeFill | undefined): { min: number; max: number } | undefined {
+  if (!fill) return undefined;
+  const o = fill === true ? {} : fill;
+  const min = typeof o.min === "number" && Number.isFinite(o.min) ? o.min : DEFAULT_FILL_MIN;
+  const max = typeof o.max === "number" && Number.isFinite(o.max) ? o.max : DEFAULT_FILL_MAX;
+  return { min, max };
+}
+
+/**
+ * How full a device's icon is drawn, 0 to 1, or `undefined` for the plain icon
+ * (issue #421). `raw` is {@link itemRawValue}, the reading the colour rules
+ * already judge, so a drop that turns red above 70 % is also 70 % full.
+ *
+ * Anything that is not a number answers `undefined`: an offline sensor must
+ * not be drawn as an empty one, which would say "0 %" where the truth is "no
+ * reading". A range given the wrong way round (`min` above `max`) fills as the
+ * reading falls, which is what a battery-style "remaining" sensor wants; equal
+ * ends fill completely at or past them and not at all below.
+ */
+export function badgeFillFraction(
+  item: { fill?: boolean | BadgeFill; badgeContent?: BadgeContent; showIcon?: boolean },
+  raw: unknown,
+): number | undefined {
+  const range = badgeFillRange(item.fill);
+  if (!range || badgeContentOf(item) !== "icon") return undefined;
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : NaN;
+  if (!Number.isFinite(n)) return undefined;
+  const { min, max } = range;
+  if (min === max) return n >= max ? 1 : 0;
+  return Math.min(1, Math.max(0, (n - min) / (max - min)));
+}
+
+/**
+ * How far down the icon box the fill's clip starts, as a percentage, for a
+ * fraction from {@link badgeFillFraction}. Material Design icons are drawn on a
+ * 24-unit grid inside a 2-unit margin, so the glyph spans 2–22 of the box, not
+ * all of it: mapping onto that span puts 50 % at the glyph's middle rather
+ * than a little low, and makes 0 % and 100 % look empty and full rather than
+ * nearly so.
+ */
+export function badgeFillClipTop(fraction: number): number {
+  const f = Math.min(1, Math.max(0, fraction));
+  return Math.round(((2 + 20 * (1 - f)) / 24) * 10000) / 100;
+}
+
+/**
+ * The glyph of a filling badge (issue #421), shared by the card and the editor
+ * canvas so the preview cannot disagree with the plan: the icon twice, a dim
+ * copy for the empty part and a full one clipped to the reading. Both take
+ * the badge's ink, so every rule that recolours a badge carries the fill too.
+ *
+ * Only a pulse is passed on. A spin would turn the clip with the glyph and
+ * pour the level round the badge, so a filling icon holds still instead.
+ */
+export function renderBadgeFill(
+  icon: string,
+  fraction: number,
+  iconSize: string,
+  anim: string | undefined,
+): TemplateResult {
+  const top = badgeFillClipTop(fraction);
+  const pct = Math.round(fraction * 100);
+  return html`<span
+    class="badge-fill ${anim === "pulse" ? "anim-pulse" : ""}"
+    data-fill=${pct}
+    style="position:relative;display:inline-flex;--mdc-icon-size:${iconSize};"
+  >
+    <ha-icon icon=${icon} style="opacity:0.35;"></ha-icon>
+    <ha-icon
+      class="badge-fill-level"
+      icon=${icon}
+      style="position:absolute;inset:0;clip-path:inset(${top}% 0 0 0);"
+    ></ha-icon>
+  </span>`;
 }
 
 /**

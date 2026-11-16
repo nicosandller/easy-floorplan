@@ -30,6 +30,8 @@ control lights, and view the plan in 3D.
 - **Live devices** — control lights and switches, show sensor readings, and follow
   doors, windows, shutters, awnings and curtains as they open and close. Device
   labels can sit on any side, or [pick the clearest one](docs/elements.md#devices) (`labelPosition: auto`).
+- **Fill-level icons** — a badge's icon fills with its reading, so a drop shows humidity
+  and a battery its charge. See [Devices](docs/elements.md#devices) (`fill`).
 - **Lighting** — colored light from your lamps and spots, day/night dimming, sunlight,
   moonlight and ambient daylight.
 - **Rooms and presence** — zoom into rooms, link Home Assistant areas, show

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Fill-level icons (#421): `fill: true` (or `fill: { min, max }`) fills a device's icon
+  from the bottom in proportion to its reading, a dim glyph with the full one clipped to
+  the level. The editor offers **Fill the icon by its reading** on a numeric device. See
+  [Configuration](docs/configuration.md) and [Devices](docs/elements.md#devices).
 - The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
   when an object is selected; the tabs used to paint over the first row of furniture.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in

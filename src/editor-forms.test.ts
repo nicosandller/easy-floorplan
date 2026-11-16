@@ -2998,3 +2998,30 @@ describe("roofForm", () => {
   });
 });
 
+
+describe("the icon fill controls (issue #421)", () => {
+  const sensor = { id: "h", kind: "sensor", entity: "sensor.h", x: 0, y: 0 } as FloorItem;
+  const names = (it: FloorItem, numeric?: boolean) => itemBadgeForm(it, undefined, numeric).fields.map((f) => f.name);
+
+  it("is offered on a numeric reading, with its range only once it is on", () => {
+    expect(names(sensor)).not.toContain("fill");
+    expect(names(sensor, true)).toContain("fill");
+    expect(names(sensor, true)).not.toContain("fillMin");
+    expect(names({ ...sensor, fill: true } as FloorItem)).toEqual(expect.arrayContaining(["fill", "fillMin", "fillMax"]));
+  });
+
+  it("is not offered on a value badge or a badge showing nothing", () => {
+    expect(names({ ...sensor, badgeContent: "value" } as FloorItem, true)).not.toContain("fill");
+    expect(names({ ...sensor, badgeContent: "none" } as FloorItem, true)).not.toContain("fill");
+  });
+
+  it("writes true for the percentage range and the range otherwise", () => {
+    expect(itemBadgeForm(sensor, undefined, true).toPatch({ fill: true }).fill).toBe(true);
+    const on = { ...sensor, fill: true } as FloorItem;
+    expect(itemBadgeForm(on).toPatch({ fillMax: 12 }).fill).toEqual({ min: 0, max: 12 });
+    expect(itemBadgeForm(on).toPatch({ fill: false }).fill).toBeUndefined();
+    const ranged = { ...sensor, fill: { min: 0, max: 12 } } as FloorItem;
+    expect(itemBadgeForm(ranged).data).toMatchObject({ fill: true, fillMin: 0, fillMax: 12 });
+    expect(itemBadgeForm(ranged).toPatch({ fillMax: 100 }).fill).toBe(true);
+  });
+});
