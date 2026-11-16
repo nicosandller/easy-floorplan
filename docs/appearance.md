@@ -555,7 +555,7 @@ where a px floor under the text is what keeps it readable from across the room.
 > default belongs in new configs, not in a changed reading of old ones.
 >
 > If you liked what 1.5 did, add `overlayScale: plan` and keep it — or pick **Canvas
-> units** under **Display** in the editor, which now writes your choice down instead of
+> units** under **Project → View → Size** in the editor, which now writes your choice down instead of
 > omitting it for being the default. Merely opening that panel changes nothing: a plan's
 > YAML gains the key when you choose a mode, not because you looked at the setting.
 
@@ -655,7 +655,7 @@ rotationLandscape: 0   # desktop, wall tablet
 - Editing is unaffected. The editor always shows the plan as drawn, as it does for plain
   `rotation`.
 
-In the editor: **Project → Display**, under *Rotate display*.
+In the editor: **Project → View**, under **Rotation**.
 
 Icons and labels stay upright at every angle, so a rotated plan is still readable.
 A device or text given an **angle** of its own turns with the plan instead, since that
