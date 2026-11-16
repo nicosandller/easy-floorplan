@@ -4,6 +4,7 @@ import { repeat } from "lit/directives/repeat.js";
 import { keyed } from "lit/directives/keyed.js";
 import { validateYCoordinates } from "./config-coordinates";
 import { floorSwitcherClasses, floorSwitcherStyles } from "./floor-switcher";
+import { isBlankPlan, isInCardPicker, pickerPreviewConfig, pickerPreviewHass } from "./picker-preview";
 import type {
   HomeAssistant,
   FloorplanCardConfig,
@@ -390,8 +391,22 @@ export class FloorplanCard extends LitElement {
     this._portrait = e.matches;
   };
 
+  /**
+   * True while this card is a tile in Home Assistant's card picker showing the
+   * sample plan (issue #434). Set once, on connecting there with a blank plan.
+   */
+  private _pickerPreview = false;
+
   public connectedCallback(): void {
     super.connectedCallback();
+    // The picker's tile draws a sample plan instead of an empty canvas. Only
+    // the drawing changes: the config the picker hands to a picked card is
+    // its own object, so a new card still starts empty.
+    if (!this._pickerPreview && isInCardPicker(this) && isBlankPlan(this._config)) {
+      this._pickerPreview = true;
+      this.setConfig(pickerPreviewConfig(this._config));
+      if (this.hass) this.hass = pickerPreviewHass(this.hass);
+    }
     this._syncMoonClock();
     this._syncTimeClock();
     // Subscribed unconditionally rather than only when an override is set:
@@ -598,6 +613,8 @@ export class FloorplanCard extends LitElement {
    * attribute on the element at all.
    */
   protected willUpdate(changed: PropertyValues): void {
+    // A later hass from the picker would drop the sample lamp's state.
+    if (this._pickerPreview && changed.has("hass") && this.hass) this.hass = pickerPreviewHass(this.hass);
     // Viewer appearance and Reset view can pause or restore moonlight without
     // changing the saved config. Keep its redraw clock on the same display.
     if (changed.has("_appearanceOverride")) this._syncMoonClock();

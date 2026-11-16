@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The card's tile in Home Assistant's **Add card** picker shows a small sample plan (one room
+  with a door, a window, a sofa and a lit lamp) instead of a line of text (#434). Picking it
+  still starts an empty plan. "Create your first plan" now says to open the **By card** tab,
+  which Home Assistant 2026.11 no longer opens on.
 - The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
   when an object is selected; the tabs used to paint over the first row of furniture.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
