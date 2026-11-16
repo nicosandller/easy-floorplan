@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- Rectangle rooms (#374): rooms snap to square corners, Shift-click joins two rooms along
+  a shared edge, and Ctrl/Cmd-click splits a side so walls can cover just part of it;
+  the pieces can be dragged, stretched and deleted. `sideWalls` values may now be a list
+  of `{ start, end, state }` segments. See [Configuration](docs/configuration.md) and
+  [Areas](docs/elements.md#areas).
 - The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
   when an object is selected; the tabs used to paint over the first row of furniture.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
