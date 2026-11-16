@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
+  when an object is selected; the tabs used to paint over the first row of furniture.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
   Chromium browsers running some extensions, such as LanguageTool or Kaspersky
   Protection (#401). The editor now measures the plan's width for the overlay instead
@@ -10,6 +12,10 @@
   an on/off contact, and draws tilted (shut in its frame, head leaning in) apart from
   swung open, leaning in proportion to an angle sensor's reading up to `tiltFull`. A handle sensor reporting `tilted` works on its own. Tilted counts as a
   little open for the light layers. See [Tilt-and-turn windows](docs/configuration.md#tilt-and-turn-windows).
+- The plan no longer collapses to nothing on Chrome 129-era WebViews, such as the
+  Sonoff NSPanel Pro's, where the container query the card fits the plan with reads
+  a height of 0. The card notices and fits the plan from the stage's measured height
+  instead (#406).
 - Awnings and curtains (#196): an `awning` or `curtain` bound to a `cover` is drawn at
   the cover's position, with `w × h` as its fully extended size. A curtain gathers at
   the end `hand` picks, or at both ends with `hand: center`. Symbols can opt in with
