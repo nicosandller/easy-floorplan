@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- The README overview video is re-recorded on the v3.2.0 release at a readable size. It
+  adds blending lights, follow-the-sun dimming and a 3D quarter turn, and ends on an
+  install card.
 - The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
   when an object is selected; the tabs used to paint over the first row of furniture.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
