@@ -105,4 +105,14 @@ describe("a filling badge on the rendered card (issue #421)", () => {
     expect(c.fill()).toBeNull();
     expect(c.card.shadowRoot!.querySelector(".badge .badge-value")).not.toBeNull();
   });
+
+  it("draws a filled icon at the same size as a plain one", async () => {
+    const plain = await mount({ size: 60 }, "60");
+    const size = plain.card.shadowRoot!.querySelector<HTMLElement>(".badge ha-icon")!.style.getPropertyValue("--mdc-icon-size");
+    document.body.innerHTML = "";
+    const filled = await mount({ size: 60, fill: true }, "60");
+    const icons = [...filled.card.shadowRoot!.querySelectorAll<HTMLElement>(".badge ha-icon")];
+    expect(size).not.toBe("");
+    for (const i of icons) expect(getComputedStyle(i).getPropertyValue("--mdc-icon-size").trim()).toBe(size);
+  });
 });

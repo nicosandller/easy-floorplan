@@ -2828,6 +2828,10 @@ export function badgeFillClipTop(fraction: number): number {
  * copy for the empty part and a full one clipped to the reading. Both take
  * the badge's ink, so every rule that recolours a badge carries the fill too.
  *
+ * The icon size is set on each copy, not the wrapper: both stylesheets give
+ * `ha-icon` its own `--mdc-icon-size`, which beats an inherited one. The
+ * wrapper is pinned to the icon box so the clip's percentages are of the box.
+ *
  * Only a pulse is passed on. A spin would turn the clip with the glyph and
  * pour the level round the badge, so a filling icon holds still instead.
  */
@@ -2842,13 +2846,13 @@ export function renderBadgeFill(
   return html`<span
     class="badge-fill ${anim === "pulse" ? "anim-pulse" : ""}"
     data-fill=${pct}
-    style="position:relative;display:inline-flex;--mdc-icon-size:${iconSize};"
+    style="position:relative;display:inline-flex;width:${iconSize};height:${iconSize};line-height:0;"
   >
-    <ha-icon icon=${icon} style="opacity:0.35;"></ha-icon>
+    <ha-icon icon=${icon} style="--mdc-icon-size:${iconSize};opacity:0.35;"></ha-icon>
     <ha-icon
       class="badge-fill-level"
       icon=${icon}
-      style="position:absolute;inset:0;clip-path:inset(${top}% 0 0 0);"
+      style="--mdc-icon-size:${iconSize};position:absolute;inset:0;clip-path:inset(${top}% 0 0 0);"
     ></ha-icon>
   </span>`;
 }
