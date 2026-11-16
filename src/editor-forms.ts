@@ -418,7 +418,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       label: door ? "Leaves" : "Sashes",
       helper: door
         ? "Double = two leaves meeting in the middle, hinged at each jamb"
-        : "Single = one full-width sash (issue #73)",
+        : "Single = one full-width sash",
       selector: door
         ? dropdown(opt("single", "Single (one leaf)"), opt("double", "Double (two leaves)"))
         : dropdown(opt("double", "Double (two leaves)"), opt("single", "Single sash")),
@@ -2144,10 +2144,15 @@ export function furnitureForm(
       hold_action: f.hold_action,
       double_tap_action: f.double_tap_action,
       showIcon: f.showIcon ?? true,
+      visibility: f.visibility,
     },
     toPatch: (raw) => {
       // On is the default, so only "off" is worth writing down.
-      const p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
+      let p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
+      if ("visibility" in p) {
+        const v = Array.isArray(p.visibility) && p.visibility.length > 0 ? p.visibility : undefined;
+        p = { ...p, visibility: v };
+      }
       if (!("goToFloor" in p)) return p;
       const value = p.goToFloor;
       return {
@@ -3155,7 +3160,7 @@ export function floorImageForm(f: Floor): FormSpec {
       helper: "Vertical level index for 3D stacking (0 for ground floor, 1 for 1st floor, -1 for basement)",
       selector: { number: { step: 1, mode: "box" } },
     },
-    { name: "image", label: "Bg image", helper: "/local/floorplan.png or URL", selector: { text: {} } },
+    { name: "image", label: "Background image", helper: "/local/floorplan.png or URL", selector: { text: {} } },
   ];
   // Fit and opacity apply to whichever image is drawn, the dark one included.
   if (f.image || f.imageDark) {

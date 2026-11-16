@@ -1,6 +1,7 @@
 import type { FloorplanCardConfig } from "../types";
 import { getFloors } from "../types";
 import { cloudCoverEntityOf, itemReadings, moonlightOn } from "../render";
+import { collectConditionEntities } from "../furniture-visibility";
 
 export class ReplayScopeService {
   public static currentFloorEntityIds(config: FloorplanCardConfig | undefined, activeFloorId?: string): string[] {
@@ -41,6 +42,11 @@ export class ReplayScopeService {
     }
     for (const furniture of activeFloor.furniture) {
       if (furniture.entity) ids.add(furniture.entity);
+      if (furniture.visibility) {
+        for (const ent of collectConditionEntities(furniture.visibility, furniture.entity)) {
+          ids.add(ent);
+        }
+      }
     }
     for (const area of activeFloor.areas) {
       if (area.entity) ids.add(area.entity);

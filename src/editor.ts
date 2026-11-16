@@ -29,7 +29,18 @@ import type {
   OverlayScale,
   PaletteColor,
   Roof,
+  FloorInfoPanel,
+  FloorInfoPanelMetric,
+  VisibilityCondition,
 } from "./types";
+import { isFurnitureVisible } from "./furniture-visibility";
+
+const EMPTY_VISIBILITY: VisibilityCondition[] = [];
+
+import {
+  resolvePanelAnchor,
+  computeLeaderLinePath,
+} from "./floor-panels";
 import {
   normalizeSymbol,
   symbolCatalog,
@@ -53,6 +64,7 @@ import {
   configsEqual,
   emptyConfig,
   getFloors,
+  floorPanels,
   gridPercentToSnap,
   makeFloor,
   haFloorsOf,
@@ -306,7 +318,7 @@ const formLabel = (s: FormField): string => s.label;
 const formHelper = (s: FormField): string | undefined => s.helper;
 
 type Tool = "select" | "wall" | "door" | "passage" | "window" | "skylight" | "tracker" | "area" | "roof";
-type OverlaySel = { kind: "item" | "text"; id: string };
+type OverlaySel = { kind: "item" | "text" | "panel"; id: string };
 
 /** Toolbar metadata per tool: mdi icon + label (icons make the modes scannable). */
 const TOOL_META: Record<Tool, { icon: string; label: string }> = {
@@ -373,6 +385,7 @@ const SEL_KIND_ICON: Record<SelKind, string> = {
   tracker: "mdi:crosshairs-gps",
   area: "mdi:floor-plan",
   roof: "mdi:home-outline",
+  panel: "mdi:card-text-outline",
 };
 
 interface Drag {
@@ -453,6 +466,7 @@ interface Clipboard {
   trackers: Tracker[];
   areas: Area[];
   roofs?: Roof[];
+  panels?: FloorInfoPanel[];
 }
 
 /** Snap distance (virtual units) for openings onto walls. */
@@ -603,6 +617,16 @@ export class FloorplanCardEditor extends LitElement {
    * change is its own echo, which would throw the cursor away mid-word.
    */
   private _actionYamlSeen = { key: "", json: "", gen: 0 };
+  /**
+   * Active conditions reference passed to `<ha-card-conditions-editor>`.
+   * HA's `<ha-card-conditions-editor>` re-initializes its child condition editors
+   * and collapses open `<ha-expansion-panel>` sections whenever its `.conditions`
+   * property is assigned a new array reference. We cache the exact array instance
+   * emitted by `value-changed` so that after `_updateFurniture` -> `config-changed` ->
+   * `setConfig` (which structuredClones), Lit's property dirty-check detects
+   * `oldVal === newVal` and avoids re-assigning `.conditions`.
+   */
+  private _activeConditionsRef?: { id: string; conditions: VisibilityCondition[] };
   @state() private _mobileInspector = false;
   @state() private _previewCollapsed = false;
   @state() private _keyboardOpen = false;
@@ -627,6 +651,9 @@ export class FloorplanCardEditor extends LitElement {
   @query("svg") private _svg?: SVGSVGElement;
   @query(".canvas-wrap") private _canvasWrap?: HTMLElement;
   private _canvasResize?: ResizeObserver;
+  /** Measures the stage for `overlayScale: plan`; see `_observeStage`. */
+  private _stageResize?: ResizeObserver;
+  private _observedStage?: Element;
   @state() private _fitToViewport = true;
   /** Last observed/editor-driven pan; viewport changes can clamp it without user input. */
   private _canvasScroll?: { left: number; top: number; width: number; height: number };
@@ -801,7 +828,10 @@ export class FloorplanCardEditor extends LitElement {
 
   public disconnectedCallback(): void {
     this._numberDraft = undefined;
+    this._activeConditionsRef = undefined;
     this._canvasResize?.disconnect();
+    this._stageResize?.disconnect();
+    this._observedStage = undefined;
     window.removeEventListener("keydown", this._onKeyDown, true);
     this.removeEventListener("keydown", this._onHostKeyDown);
     window.removeEventListener("focusin", this._onFocusIn);
@@ -888,6 +918,7 @@ export class FloorplanCardEditor extends LitElement {
       this._history = [];
       this._future = [];
       this._liveEditKey = null;
+      this._activeConditionsRef = undefined;
     }
     this._watchedEntities = collectWatchedEntities(this._config);
   }
@@ -1042,6 +1073,8 @@ export class FloorplanCardEditor extends LitElement {
     // defined later (by us or by another editor the user opened).
     for (const tag of [
       "ha-form",
+      "ha-selector",
+      "ha-card-conditions-editor",
       "ha-entity-picker",
       "ha-entity-attribute-picker",
       "ha-icon-picker",
@@ -1164,8 +1197,36 @@ export class FloorplanCardEditor extends LitElement {
    * hides the popover on its own. Browsers without the API keep the fixed
    * fallback, which is already correct on the mobile dialog (transform: none).
    */
+  /**
+   * `overlayScale: plan` needs the stage's width on screen. The card reads it
+   * with a container query; the editor measures it instead and hands it to the
+   * overlay as `--fp-sw`. A container here went blank in the expanded editor
+   * (issue #401): with the editor in the top layer, a document rule such as
+   * `[role=dialog] div[style*="height:"] > div` (LanguageTool and Kaspersky
+   * inject rules like it) left everything inside the container without layout
+   * boxes. Moving the container only moved the blank.
+   */
+  private _observeStage(): void {
+    const stage = this.renderRoot.querySelector(".stage");
+    if (stage === this._observedStage || typeof ResizeObserver === "undefined") return;
+    const setWidth = (el: Element, width: number) =>
+      el.querySelector<HTMLElement>(":scope > .items")?.style.setProperty("--fp-sw", `${width}px`);
+    this._stageResize ??= new ResizeObserver((entries) => {
+      const entry = entries[entries.length - 1];
+      setWidth(entry.target, entry.contentRect.width);
+    });
+    if (this._observedStage) this._stageResize.unobserve(this._observedStage);
+    this._observedStage = stage ?? undefined;
+    if (!stage) return;
+    // The observer reports after this render's layout; measure once now so the
+    // first frame already has the unit rather than the 1px fallback.
+    setWidth(stage, stage.getBoundingClientRect().width);
+    this._stageResize.observe(stage);
+  }
+
   protected updated(): void {
     this._syncAutoLabels();
+    this._observeStage();
     // Re-asserted on every render while fullscreen (not just the transition):
     // idempotent via :popover-open, and it self-heals if the browser
     // force-hid the popover, e.g. across a disconnect/reconnect.
@@ -1189,7 +1250,7 @@ export class FloorplanCardEditor extends LitElement {
    * lazy-loads its own picker after that.
    */
   private async _ensureHaComponents(): Promise<void> {
-    if (customElements.get("ha-form") && customElements.get("ha-entity-picker")) return;
+    if (customElements.get("ha-form") && customElements.get("ha-entity-picker") && customElements.get("ha-selector")) return;
     const helpers = await (window as unknown as { loadCardHelpers?: () => Promise<any> })
       .loadCardHelpers?.();
     if (!helpers) return;
@@ -1203,6 +1264,7 @@ export class FloorplanCardEditor extends LitElement {
     }
     this.requestUpdate();
   }
+
 
   private get grid(): number {
     return this._config.grid ?? DEFAULT_GRID;
@@ -1441,6 +1503,7 @@ export class FloorplanCardEditor extends LitElement {
 
   /** Keep property edits in context, but never retain an object removed by undo. */
   private _restoreHistory(config: FloorplanCardConfig): void {
+    this._activeConditionsRef = undefined;
     const floor = config.floors?.find((f) => f.id === this._activeFloorId);
     this._selection = floor ? this._selection.filter((s) => findElement(floor, s)) : [];
     this._emit(config);
@@ -1454,6 +1517,9 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _selectOne(sel: Sel): void {
+    if (this._selection.length !== 1 || this._selection[0].kind !== sel.kind || this._selection[0].id !== sel.id) {
+      this._activeConditionsRef = undefined;
+    }
     this._selection = [sel];
     // Selection changes end any live-edit burst: re-selecting the same
     // element later must start a new undo step, not extend the old one.
@@ -1461,6 +1527,7 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _toggleSel(sel: Sel): void {
+    this._activeConditionsRef = undefined;
     this._selection = this._isSel(sel.kind, sel.id)
       ? this._selection.filter((s) => !(s.kind === sel.kind && s.id === sel.id))
       : [...this._selection, sel];
@@ -1468,6 +1535,7 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   private _clearSel(): void {
+    this._activeConditionsRef = undefined;
     this._selection = [];
     this._liveEditKey = null;
   }
@@ -2135,6 +2203,9 @@ export class FloorplanCardEditor extends LitElement {
       } else if (s.kind === "roof") {
         const r = (f.roofs ?? []).find((x) => x.id === s.id);
         if (r) m.set(`roof:${r.id}`, { kind: "polygon", points: r.points.map((p) => ({ ...p })) });
+      } else if (s.kind === "panel") {
+        const p = floorPanels(f).find((x) => x.id === s.id);
+        if (p) m.set(`panel:${p.id}`, { kind: "pt", x: p.x, y: p.y });
       } else {
         // tracker — stored by top-left corner.
         const tr = (f.trackers ?? []).find((x) => x.id === s.id);
@@ -2712,6 +2783,27 @@ export class FloorplanCardEditor extends LitElement {
     this._tool = "select";
   }
 
+  private _addPanel(): void {
+    const f = this._floor();
+    const p: FloorInfoPanel = {
+      id: uid("panel"),
+      x: this._snap(this._config.width / 2),
+      y: this._snap(this._config.height / 2),
+      title: "Panel",
+      style: "card",
+      // Linked to the room it sits in (or the nearest one), so a new panel
+      // gets a leader line straight away.
+      targetType: "area",
+      showLeaderLine: true,
+      showIn2D: true,
+      showIn3D: true,
+      metrics: [],
+    };
+    this._commitFloor({ panels: [...floorPanels(f), p] });
+    this._selection = [{ kind: "panel", id: p.id }];
+    this._tool = "select";
+  }
+
   private _deleteSelected(): void {
     if (!this._selection.length) return;
     const f = this._floor();
@@ -2723,6 +2815,7 @@ export class FloorplanCardEditor extends LitElement {
     const trIds = this._idsOfKind("tracker");
     const aIds = this._idsOfKind("area");
     const rIds = this._idsOfKind("roof");
+    const pIds = this._idsOfKind("panel");
     this._commitFloor({
       walls: f.walls.filter((w) => !wIds.has(w.id)),
       openings: f.openings.filter((o) => !oIds.has(o.id)),
@@ -2732,6 +2825,7 @@ export class FloorplanCardEditor extends LitElement {
       trackers: (f.trackers ?? []).filter((tr) => !trIds.has(tr.id)),
       areas: (f.areas ?? []).filter((a) => !aIds.has(a.id)),
       roofs: (f.roofs ?? []).filter((r) => !rIds.has(r.id)),
+      panels: floorPanels(f).filter((p) => !pIds.has(p.id)),
     });
     this._clearSel();
   }
@@ -2749,6 +2843,7 @@ export class FloorplanCardEditor extends LitElement {
     const trIds = this._idsOfKind("tracker");
     const aIds = this._idsOfKind("area");
     const rIds = this._idsOfKind("roof");
+    const pIds = this._idsOfKind("panel");
     this._clipboard = structuredClone({
       walls: f.walls.filter((w) => wIds.has(w.id)),
       openings: f.openings.filter((o) => oIds.has(o.id)),
@@ -2758,6 +2853,7 @@ export class FloorplanCardEditor extends LitElement {
       trackers: (f.trackers ?? []).filter((tr) => trIds.has(tr.id)),
       areas: (f.areas ?? []).filter((a) => aIds.has(a.id)),
       roofs: (f.roofs ?? []).filter((r) => rIds.has(r.id)),
+      panels: floorPanels(f).filter((p) => pIds.has(p.id)),
     });
   }
 
@@ -2830,6 +2926,13 @@ export class FloorplanCardEditor extends LitElement {
       id: uid("roof"),
       points: r.points.map((p) => ({ x: p.x + off, y: p.y + off })),
     }));
+    const newPanels: FloorInfoPanel[] = (cb.panels ?? []).map((p: FloorInfoPanel) => ({
+      ...p,
+      ...loose,
+      id: uid("panel"),
+      x: p.x + off,
+      y: p.y + off,
+    }));
     this._commitFloor({
       walls: [...f.walls, ...newWalls],
       openings: [...f.openings, ...newOpenings],
@@ -2839,6 +2942,7 @@ export class FloorplanCardEditor extends LitElement {
       trackers: [...(f.trackers ?? []), ...newTrackers],
       areas: [...(f.areas ?? []), ...newAreas],
       roofs: [...(f.roofs ?? []), ...newRoofs],
+      panels: [...floorPanels(f), ...newPanels],
     });
     this._selection = [
       ...newWalls.map((w) => ({ kind: "wall" as const, id: w.id })),
@@ -2849,6 +2953,7 @@ export class FloorplanCardEditor extends LitElement {
       ...newTrackers.map((tr) => ({ kind: "tracker" as const, id: tr.id })),
       ...newAreas.map((a) => ({ kind: "area" as const, id: a.id })),
       ...newRoofs.map((r) => ({ kind: "roof" as const, id: r.id })),
+      ...newPanels.map((p) => ({ kind: "panel" as const, id: p.id })),
     ];
     this._tool = "select";
   }
@@ -3011,7 +3116,14 @@ export class FloorplanCardEditor extends LitElement {
 
   private _updateFurniture(id: string, partial: Partial<Furniture>): void {
     this._commitFloor({
-      furniture: this._floor().furniture.map((f) => (f.id === id ? { ...f, ...partial } : f)),
+      furniture: this._floor().furniture.map((f) => {
+        if (f.id !== id) return f;
+        const next = { ...f, ...partial };
+        if (partial.visibility === undefined && "visibility" in partial) {
+          delete next.visibility;
+        }
+        return next;
+      }),
     });
   }
 
@@ -3032,6 +3144,12 @@ export class FloorplanCardEditor extends LitElement {
   private _updateRoof(id: string, partial: Partial<Roof>): void {
     this._commitFloor({
       roofs: (this._floor().roofs ?? []).map((r) => (r.id === id ? { ...r, ...partial } : r)),
+    });
+  }
+
+  private _updatePanel(id: string, partial: Partial<FloorInfoPanel>): void {
+    this._commitFloor({
+      panels: floorPanels(this._floor()).map((p) => (p.id === id ? { ...p, ...partial } : p)),
     });
   }
 
@@ -3304,7 +3422,7 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
-   * The device's default icon. State rules in Style & effects can override it.
+   * The device's default icon. State rules under Style can override it.
    *
    * Unlike the colour it stays on screen once rules exist, because rules do
    * *not* replace it: a rule with no icon of its own falls through to this
@@ -3313,7 +3431,7 @@ export class FloorplanCardEditor extends LitElement {
    * drawing.
    */
   private _renderItemIconRow(it: FloorItem): TemplateResult {
-    const title = "Icon for this device; state rules in Style & effects can override it";
+    const title = "Icon for this device; state rules under Style can override it";
     return html`
       <div class="row wide">
         <label title=${title}>Icon</label>
@@ -3423,6 +3541,7 @@ export class FloorplanCardEditor extends LitElement {
   /** Tabs and in-panel shortcuts share draft, scroll and keyboard-focus handling. */
   private async _choosePage(id: string, project = false): Promise<void> {
     this._numberDraft = undefined;
+    this._activeConditionsRef = undefined;
     if (project) this._projectPage = id;
     else this._selectionPage = id;
     this.renderRoot.querySelector<HTMLElement>(".side")?.scrollTo({ top: 0 });
@@ -3689,6 +3808,66 @@ export class FloorplanCardEditor extends LitElement {
   }
 
   /**
+   * Dedicated visibility inspector group using Home Assistant's native card conditions editor
+   * (<ha-card-conditions-editor>) and real-time status indication (Issue #310).
+   */
+  private _renderFurnitureVisibility(f: Furniture): TemplateResult {
+    const hasConditions = Array.isArray(f.visibility) && f.visibility.length > 0;
+    const isVisible = isFurnitureVisible(f, this.hass);
+
+    let statusText: string;
+    let statusClass: string;
+    let statusIcon: string;
+
+    if (!hasConditions) {
+      statusText = "Always visible";
+      statusClass = "status-neutral";
+      statusIcon = "mdi:eye-outline";
+    } else if (isVisible) {
+      statusText = "Visible on floorplan (Conditions met)";
+      statusClass = "status-met";
+      statusIcon = "mdi:check-circle-outline";
+    } else {
+      statusText = "Hidden on floorplan (Condition not met)";
+      statusClass = "status-unmet";
+      statusIcon = "mdi:eye-off-outline";
+    }
+
+    const effectiveVisibility = f.visibility ?? EMPTY_VISIBILITY;
+    const conditions =
+      this._activeConditionsRef?.id === f.id &&
+      configsEqual(this._activeConditionsRef.conditions, effectiveVisibility)
+        ? this._activeConditionsRef.conditions
+        : effectiveVisibility;
+
+    return html`
+      <div class="visibility-group">
+        <div class="visibility-status-row">
+          <span class="visibility-status-badge ${statusClass}">
+            <ha-icon .icon=${statusIcon}></ha-icon>
+            <span>${statusText}</span>
+          </span>
+        </div>
+        <p class="hint">
+          Control when this piece appears on the floorplan. In the editor, hidden furniture is dimmed so it can still be moved or edited.
+        </p>
+        <ha-card-conditions-editor
+          .hass=${this.hass}
+          .conditions=${conditions}
+          @value-changed=${(e: CustomEvent<{ value: VisibilityCondition[] }>) => {
+            e.stopPropagation();
+            const val = e.detail?.value;
+            const visibility = Array.isArray(val) && val.length > 0 ? val : undefined;
+            this._activeConditionsRef = { id: f.id, conditions: val ?? EMPTY_VISIBILITY };
+            if (configsEqual(visibility, f.visibility)) return;
+            this._updateFurniture(f.id, { visibility });
+          }}
+        ></ha-card-conditions-editor>
+      </div>
+    `;
+  }
+
+  /**
    * Entity ids to scope a picker to for something sitting at (x, y), or
    * undefined for "offer everything".
    *
@@ -3832,7 +4011,14 @@ export class FloorplanCardEditor extends LitElement {
   private _updateFurnitureLive(id: string, partial: Partial<Furniture>): void {
     this._beginLive("furniture", id, partial);
     this._emitFloor({
-      furniture: this._floor().furniture.map((f) => (f.id === id ? { ...f, ...partial } : f)),
+      furniture: this._floor().furniture.map((f) => {
+        if (f.id !== id) return f;
+        const next = { ...f, ...partial };
+        if (partial.visibility === undefined && "visibility" in partial) {
+          delete next.visibility;
+        }
+        return next;
+      }),
     });
   }
 
@@ -3857,6 +4043,13 @@ export class FloorplanCardEditor extends LitElement {
     });
   }
 
+  private _updatePanelLive(id: string, partial: Partial<FloorInfoPanel>): void {
+    this._beginLive("panel", id, partial);
+    this._emitFloor({
+      panels: floorPanels(this._floor()).map((p) => (p.id === id ? { ...p, ...partial } : p)),
+    });
+  }
+
   private _patchConfigLive(partial: Partial<FloorplanCardConfig>): void {
     this._beginLive("config", "", partial);
     this._emit({ ...this._config, ...partial });
@@ -3876,7 +4069,7 @@ export class FloorplanCardEditor extends LitElement {
 
   /** Route a form patch to the right per-kind update helper (commit or burst). */
   private _applyElementPatch(
-    kind: "opening" | "item" | "text" | "furniture" | "tracker" | "wall" | "area" | "roof",
+    kind: "opening" | "item" | "text" | "furniture" | "tracker" | "wall" | "area" | "roof" | "panel",
     id: string,
     patch: Record<string, unknown>,
     live: boolean
@@ -3913,6 +4106,10 @@ export class FloorplanCardEditor extends LitElement {
       case "roof":
         if (live) this._updateRoofLive(id, patch);
         else this._updateRoof(id, patch);
+        break;
+      case "panel":
+        if (live) this._updatePanelLive(id, patch);
+        else this._updatePanel(id, patch);
         break;
     }
   }
@@ -4017,6 +4214,11 @@ export class FloorplanCardEditor extends LitElement {
         if (!r) return "Roof";
         const style = r.type ? r.type.charAt(0).toUpperCase() + r.type.slice(1) : "Roof";
         return `Roof · ${style} (${r.points.length}-pt)`;
+      }
+      case "panel": {
+        const p = floorPanels(f).find((x) => x.id === sel.id);
+        if (!p) return "Panel";
+        return `Panel · ${p.title || "Telemetry"}`;
       }
       default: {
         const tr = (f.trackers ?? []).find((x) => x.id === sel.id);
@@ -5243,6 +5445,7 @@ export class FloorplanCardEditor extends LitElement {
                         : nothing}
                     `;
                   })()}
+
                   <button
                     class="danger pop-action"
                     ?disabled=${floors.length <= 1}
@@ -5315,10 +5518,10 @@ export class FloorplanCardEditor extends LitElement {
           @scroll=${this._onCanvasScroll}
         >
           <!-- The stage doubles as the card's .plan box for overlay sizing: same
-               container query, same --fp-u, so a badge measured in canvas units
-               previews here at the size a card of this width would draw it
-               (issue #192). The editor never rotates the plan, so the canvas
-               width is what 100cqw measures against. -->
+               --fp-u, so a badge measured in canvas units previews here at the
+               size a card of this width would draw it (issue #192). The editor
+               never rotates the plan, so the stage's measured width is the
+               plan's. -->
           <div class="stage ${overlay === "plan" ? "scale-plan" : ""}"
                style="aspect-ratio: ${cssNumber(c.width, DEFAULT_WIDTH)} / ${cssNumber(
             c.height, DEFAULT_HEIGHT)}; width:${this._zoom * 100}%;
@@ -5461,6 +5664,7 @@ export class FloorplanCardEditor extends LitElement {
                 (tr, i) => tr.id || i,
                 (tr) => this._renderTrackerSel(tr)
               )}
+              ${floorPanels(floor).map((p) => this._renderPanelLeaderSel(p, floor))}
               ${
                 this._draftTracker
                   ? svg`<rect class="tracker-draft"
@@ -5505,6 +5709,7 @@ export class FloorplanCardEditor extends LitElement {
                 .filter((o) => hasOpeningMark(o))
                 .map((o) => this._renderOpeningMarkOverlay(o, c, overlay))}
               ${floor.items.map((it) => this._renderItemOverlay(it, c, overlay))}
+              ${floorPanels(floor).map((p) => this._renderPanelOverlay(p, c))}
             </div>
           </div>
         </div>
@@ -6091,6 +6296,15 @@ export class FloorplanCardEditor extends LitElement {
         >
           <ha-icon icon="mdi:format-text"></ha-icon> Text
         </button>
+        <button
+          class="add-entry"
+          @click=${() => {
+            this._addPanel();
+            close();
+          }}
+        >
+          <ha-icon icon="mdi:card-text-outline"></ha-icon> Panel
+        </button>
         </div>
         <div class="furn-search">
           <ha-icon icon="mdi:magnify"></ha-icon>
@@ -6427,6 +6641,22 @@ export class FloorplanCardEditor extends LitElement {
       </g>`;
   }
 
+  private _renderPanelLeaderSel(p: FloorInfoPanel, floor: Floor): TemplateResult | typeof nothing {
+    if (p.showLeaderLine === false) return nothing;
+    const anchor = resolvePanelAnchor(p, floor);
+    if (!anchor) return nothing;
+    const path = computeLeaderLinePath(anchor, p);
+    const selected = this._isSel("panel", p.id);
+    const color = cssColorOr(p.color, "#00e5ff");
+    return svg`
+      <g class="panel-leader-sel ${selected ? "selected" : ""}">
+        <circle cx=${anchor.x} cy=${anchor.y} r="3" fill=${color} opacity="0.8" />
+        <path d=${path} fill="none" stroke=${color} stroke-width="1.2" stroke-dasharray="3,3" opacity="0.6" />
+        <circle cx=${p.x} cy=${p.y} r="2.5" fill=${color} opacity="0.8" />
+      </g>
+    `;
+  }
+
   /**
    * Render a Tracker in the editor SVG with its zone outline visible (so the
    * user can grab/resize it) plus a hit overlay for drag-to-move and a dashed
@@ -6464,8 +6694,9 @@ export class FloorplanCardEditor extends LitElement {
 
   private _renderFurnitureSel(f: Furniture): TemplateResult {
     const selected = this._isSel("furniture", f.id);
+    const hidden = !isFurnitureVisible(f, this.hass);
     return svg`
-      <g class="furn-hit ${selected ? "selected" : ""}"
+      <g class="furn-hit ${selected ? "selected" : ""} ${hidden ? "card-hidden" : ""}"
          @pointerdown=${(e: PointerEvent) => this._startDrag(e, { kind: "furniture", id: f.id })}>
         ${
           // A center curtain previews as its pair, at full size: no cover
@@ -7123,6 +7354,33 @@ export class FloorplanCardEditor extends LitElement {
         @pointercancel=${this._onPointerCancel}
       >
         ${textLabel(this.hass, t) || "…"}
+      </div>
+    `;
+  }
+
+  private _renderPanelOverlay(
+    p: FloorInfoPanel,
+    c: FloorplanCardConfig
+  ): TemplateResult {
+    const selected = this._isSel("panel", p.id);
+    const metricCount = p.metrics?.length ?? 0;
+    const accent = cssColorOr(p.color, "#00e5ff");
+    return html`
+      <div
+        class="edit-panel ${selected ? "selected" : ""}"
+        style="left:${(p.x / c.width) * 100}%; top:${(p.y / c.height) * 100}%; --fp-panel-accent:${accent};"
+        @pointerdown=${(e: PointerEvent) => this._onOverlayDown(e, { kind: "panel", id: p.id })}
+        @pointermove=${this._onOverlayMove}
+        @pointerup=${this._onOverlayUp}
+        @pointercancel=${this._onPointerCancel}
+      >
+        <div class="edit-panel-header">
+          <ha-icon icon="mdi:card-text-outline" class="edit-panel-icon"></ha-icon>
+          <span>${p.title || "Telemetry"}</span>
+        </div>
+        <div class="edit-panel-preview">
+          ${metricCount} ${metricCount === 1 ? "metric" : "metrics"} · ${p.style ?? "card"}
+        </div>
       </div>
     `;
   }
@@ -7908,7 +8166,7 @@ export class FloorplanCardEditor extends LitElement {
               </p>`
             : html`${this._renderColorRow({
                 label: "Active color",
-                title: "Badge color while this device is on (issue #79)",
+                title: "Badge color while this device is on",
                 value: it.activeColor,
                 swatch: "#fdd835",
                 placeholder: "(theme)",
@@ -7918,7 +8176,7 @@ export class FloorplanCardEditor extends LitElement {
               ${this._renderColorRow({
                 label: "Inactive color",
                 title:
-                  "Badge color while this device is off — closed, locked or docked, whichever this entity says (issue #228)",
+                  "Badge color while this device is off — closed, locked or docked, whichever this entity says",
                 value: it.inactiveColor,
                 swatch: "#c62828",
                 placeholder: "(theme)",
@@ -7974,6 +8232,12 @@ export class FloorplanCardEditor extends LitElement {
       `;
     }
 
+    if (sel.kind === "panel") {
+      const p = floorPanels(this._floor()).find((x) => x.id === sel.id);
+      if (!p) return html`${nothing}`;
+      return this._renderPanelInspector(p);
+    }
+
     if (sel.kind === "furniture") {
       const f = this._floor().furniture.find((x) => x.id === sel.id);
       if (!f) return html`${nothing}`;
@@ -8012,6 +8276,7 @@ export class FloorplanCardEditor extends LitElement {
             )}
           `
         ) : nothing}
+        ${this._renderGroup("Visibility", this._renderFurnitureVisibility(f))}
       `;
     }
 
@@ -8326,6 +8591,355 @@ export class FloorplanCardEditor extends LitElement {
     }
 
     return html`${nothing}`;
+  }
+
+  private _renderPanelInspector(p: FloorInfoPanel): TemplateResult {
+    const f = this._floor();
+    const metrics = p.metrics ?? [];
+    const commitMetrics = (next: FloorInfoPanelMetric[]) =>
+      this._updatePanel(p.id, { metrics: next.length ? next : undefined });
+    const patchMetric = (i: number, part: Partial<FloorInfoPanelMetric>) =>
+      commitMetrics(metrics.map((m, j) => (j === i ? { ...m, ...part } : m)));
+
+    return html`
+      <div class="row">
+        <label>Title</label>
+        <input
+          type="text"
+          placeholder="e.g. Living Room, Climate"
+          .value=${p.title ?? ""}
+          @change=${(e: Event) =>
+            this._updatePanel(p.id, { title: (e.target as HTMLInputElement).value || undefined })}
+        />
+      </div>
+
+      <div class="row">
+        <label>Style</label>
+        <select
+          .value=${p.style ?? "card"}
+          @change=${(e: Event) =>
+            this._updatePanel(p.id, {
+              style: ((e.target as HTMLSelectElement).value || "card") as FloorInfoPanel["style"],
+            })}
+        >
+          <option value="card">Card (Home Assistant theme)</option>
+          <option value="minimal">Minimal (Dark translucent)</option>
+          <option value="pill">Pill (Single row)</option>
+          <option value="hud">HUD (Sci-Fi chamfered)</option>
+        </select>
+      </div>
+
+      <div class="row wide">
+        <label>
+          <input
+            type="checkbox"
+            .checked=${p.showTitle !== false}
+            @change=${(e: Event) =>
+              this._updatePanel(p.id, {
+                showTitle: (e.target as HTMLInputElement).checked ? undefined : false,
+              })}
+          />
+          Show title header
+        </label>
+      </div>
+
+      <div class="row wide">
+        <label>
+          <input
+            type="checkbox"
+            .checked=${p.showIcons !== false}
+            @change=${(e: Event) =>
+              this._updatePanel(p.id, {
+                showIcons: (e.target as HTMLInputElement).checked ? undefined : false,
+              })}
+          />
+          Show metric icons
+        </label>
+      </div>
+
+      <div class="row wide">
+        <label>
+          <input
+            type="checkbox"
+            .checked=${p.showLabels !== false}
+            @change=${(e: Event) =>
+              this._updatePanel(p.id, {
+                showLabels: (e.target as HTMLInputElement).checked ? undefined : false,
+              })}
+          />
+          Show metric labels
+        </label>
+      </div>
+
+      ${this._renderColorRow({
+        label: "Accent",
+        value: p.color,
+        swatch: "#00e5ff",
+        placeholder: "#00e5ff",
+        onLive: (color) => this._updatePanelLive(p.id, { color }),
+        onCommit: (color) => this._updatePanel(p.id, { color }),
+      })}
+
+      <div class="row">
+        <label>Target</label>
+        <select
+          .value=${p.targetType ?? "floor"}
+          @change=${(e: Event) => {
+            const tt = (e.target as HTMLSelectElement).value as FloorInfoPanel["targetType"];
+            const updates: Partial<FloorInfoPanel> = { targetType: tt, targetId: undefined };
+            if (tt === "roof") {
+              updates.showIn2D = false;
+              updates.showIn3D = true;
+            }
+            if (tt === "fixed" && !p.anchor) {
+              updates.anchor = { x: Math.round(p.x), y: Math.round(p.y) };
+            }
+            this._updatePanel(p.id, updates);
+          }}
+        >
+          <option value="floor">Floor (Unanchored)</option>
+          <option value="area">Area / Room</option>
+          <option value="furniture">Furniture</option>
+          <option value="roof">Roof</option>
+          <option value="fixed">Fixed coordinate</option>
+        </select>
+      </div>
+
+      ${p.targetType === "fixed"
+        ? html`
+            <div class="row">
+              <label>Anchor X, Y</label>
+              <input
+                class="num"
+                type="number"
+                title="Anchor X coordinate"
+                .value=${String(p.anchor?.x ?? Math.round(p.x))}
+                @change=${(e: Event) => {
+                  const input = e.target as HTMLInputElement;
+                  const n = Number(input.value);
+                  if (input.value !== "" && Number.isFinite(n)) {
+                    this._updatePanel(p.id, {
+                      anchor: { x: Math.round(n), y: p.anchor?.y ?? Math.round(p.y) },
+                    });
+                  }
+                }}
+              />
+              <input
+                class="num"
+                type="number"
+                title="Anchor Y coordinate"
+                .value=${String(p.anchor?.y ?? Math.round(p.y))}
+                @change=${(e: Event) => {
+                  const input = e.target as HTMLInputElement;
+                  const n = Number(input.value);
+                  if (input.value !== "" && Number.isFinite(n)) {
+                    this._updatePanel(p.id, {
+                      anchor: { x: p.anchor?.x ?? Math.round(p.x), y: Math.round(n) },
+                    });
+                  }
+                }}
+              />
+            </div>
+          `
+        : nothing}
+
+      ${p.targetType === "roof"
+        ? html`
+            <div class="row">
+              <label>Roof</label>
+              <select
+                .value=${p.targetId ?? ""}
+                @change=${(e: Event) =>
+                  this._updatePanel(p.id, {
+                    targetId: (e.target as HTMLSelectElement).value || undefined,
+                  })}
+              >
+                <option value="" ?selected=${!p.targetId}>(None / first roof)</option>
+                ${(f.roofs ?? []).map(
+                  (r, idx) =>
+                    html`<option value=${r.id} ?selected=${p.targetId === r.id}>
+                      ${r.id || `Roof ${idx + 1}`} (${r.type})
+                    </option>`
+                )}
+              </select>
+            </div>
+          `
+        : nothing}
+
+      ${p.targetType === "area"
+        ? html`
+            <div class="row">
+              <label>Room</label>
+              <select
+                .value=${p.targetId ?? ""}
+                @change=${(e: Event) =>
+                  this._updatePanel(p.id, {
+                    targetId: (e.target as HTMLSelectElement).value || undefined,
+                  })}
+              >
+                <option value="" ?selected=${!p.targetId}>(None / nearest)</option>
+                ${(f.areas ?? []).map(
+                  (a) => html`<option value=${a.id} ?selected=${p.targetId === a.id}>${a.name || a.id}</option>`
+                )}
+              </select>
+            </div>
+          `
+        : nothing}
+
+      ${p.targetType === "furniture"
+        ? html`
+            <div class="row">
+              <label>Item</label>
+              <select
+                .value=${p.targetId ?? ""}
+                @change=${(e: Event) =>
+                  this._updatePanel(p.id, {
+                    targetId: (e.target as HTMLSelectElement).value || undefined,
+                  })}
+              >
+                <option value="" ?selected=${!p.targetId}>(None)</option>
+                ${f.furniture.map(
+                  (fu) =>
+                    html`<option value=${fu.id} ?selected=${p.targetId === fu.id}>
+                      ${furnitureLabel(fu.type, this._symbols())} (${Math.round(fu.x)}, ${Math.round(fu.y)})
+                    </option>`
+                )}
+              </select>
+            </div>
+          `
+        : nothing}
+
+      <div class="row wide">
+        <label>
+          <input
+            type="checkbox"
+            .checked=${p.showLeaderLine !== false}
+            @change=${(e: Event) =>
+              this._updatePanel(p.id, {
+                showLeaderLine: (e.target as HTMLInputElement).checked ? undefined : false,
+              })}
+          />
+          Show connecting leader line to anchor
+        </label>
+      </div>
+
+      ${p.targetType === "roof"
+        ? html`
+            <div class="row wide hint">
+              Roof panels appear exclusively in the outside 3D house view when the roof is visible.
+            </div>
+          `
+        : html`
+            <div class="row wide">
+              <label>
+                <input
+                  type="checkbox"
+                  .checked=${p.showIn2D !== false}
+                  @change=${(e: Event) =>
+                    this._updatePanel(p.id, {
+                      showIn2D: (e.target as HTMLInputElement).checked ? undefined : false,
+                    })}
+                />
+                Visible in 2D top-down view
+              </label>
+            </div>
+
+            <div class="row wide">
+              <label>
+                <input
+                  type="checkbox"
+                  .checked=${p.showIn3D !== false}
+                  @change=${(e: Event) =>
+                    this._updatePanel(p.id, {
+                      showIn3D: (e.target as HTMLInputElement).checked ? undefined : false,
+                    })}
+                />
+                Visible in 3D perspective / stacked view
+              </label>
+            </div>
+          `}
+
+      <div class="row wide">
+        <label>
+          <input
+            type="checkbox"
+            .checked=${p.showOnlyWhenZoomed === true}
+            @change=${(e: Event) =>
+              this._updatePanel(p.id, {
+                showOnlyWhenZoomed: (e.target as HTMLInputElement).checked ? true : undefined,
+              })}
+          />
+          Only show when room is zoomed into (uncluttered view)
+        </label>
+      </div>
+
+      <div class="row wide panel-metric-head">
+        <label>Metrics</label>
+        <button
+          @click=${() =>
+            commitMetrics([
+              ...metrics,
+              { entity: "" },
+            ])}
+        >
+          <ha-icon icon="mdi:plus"></ha-icon> Add metric
+        </button>
+      </div>
+
+      ${metrics.map(
+        (m, i) => html`
+          <div class="row wide item-reading">
+            ${this._renderEntityPicker(
+              m.entity ?? "",
+              (entity) => patchMetric(i, { entity: entity || undefined })
+            )}
+            ${this._renderAttributePicker(
+              m.entity,
+              m.attribute ?? "",
+              (attribute) => patchMetric(i, { attribute: attribute || undefined }),
+              "Attribute to display"
+            )}
+            <button
+              class="rule-remove"
+              aria-label="Remove metric"
+              title="Remove metric"
+              @click=${() => commitMetrics(metrics.filter((_, j) => j !== i))}
+            >
+              <ha-icon icon="mdi:close"></ha-icon>
+            </button>
+          </div>
+          <div class="row wide panel-metric-fields">
+            <input
+              class="panel-metric-field"
+              type="text"
+              placeholder="Label"
+              title="Metric label"
+              .value=${m.label ?? ""}
+              @change=${(e: Event) =>
+                patchMetric(i, { label: (e.target as HTMLInputElement).value || undefined })}
+            />
+            <input
+              class="panel-metric-unit"
+              type="text"
+              placeholder="Unit"
+              title="Unit (e.g. °C, %, W)"
+              .value=${m.unit ?? ""}
+              @change=${(e: Event) =>
+                patchMetric(i, { unit: (e.target as HTMLInputElement).value || undefined })}
+            />
+            <input
+              class="panel-metric-field"
+              type="text"
+              placeholder="mdi:icon"
+              title="Icon override (e.g. mdi:thermometer)"
+              .value=${m.icon ?? ""}
+              @change=${(e: Event) =>
+                patchMetric(i, { icon: (e.target as HTMLInputElement).value || undefined })}
+            />
+          </div>
+        `
+      )}
+    `;
   }
 
   /**
@@ -8753,6 +9367,12 @@ export class FloorplanCardEditor extends LitElement {
     .furn-hit {
       cursor: move;
     }
+    .furn-hit.card-hidden {
+      opacity: 0.35;
+    }
+    .furn-hit.card-hidden.selected {
+      opacity: 0.65;
+    }
     .furn-outline {
       fill: none;
       stroke: var(--primary-color, #03a9f4);
@@ -8781,7 +9401,10 @@ export class FloorplanCardEditor extends LitElement {
       position: absolute;
       top: calc(100% + 6px);
       right: 0;
-      z-index: 20;
+      /* Above the inspector's sticky tabs (z-index 50 in
+         editor-workspace-styles.ts): in the expanded editor the Add menu
+         drops over the docked inspector, and the tabs painted through it. */
+      z-index: 60;
       min-width: 220px;
       padding: 8px;
       background: var(--card-background-color, #fff);
@@ -8796,7 +9419,7 @@ export class FloorplanCardEditor extends LitElement {
     .pop-backdrop {
       position: fixed;
       inset: 0;
-      z-index: 19;
+      z-index: 59;
     }
     .pop-row {
       display: flex;
@@ -9045,53 +9668,25 @@ export class FloorplanCardEditor extends LitElement {
       pointer-events: none;
     }
     /*
-     * overlayScale: plan, previewed (issue #192). The same two lines the card
-     * uses, on the box that plays the same part: the stage carries the canvas
-     * ratio, so 100cqw is the plan's own width on screen and --fp-u is one
-     * canvas unit. Declared on .items rather than .stage for the reason the
-     * card documents — an unregistered custom property substitutes as a token
-     * stream, so the cqw resolves where it is used, which stays correct if
-     * --fp-u is ever registered with @property.
+     * overlayScale: plan, previewed (issue #192). The same unit the card uses,
+     * on the box that plays the same part: the stage carries the canvas ratio,
+     * so its width is the plan's own width on screen and --fp-u is one canvas
+     * unit. The card reads that width with a container query; the editor
+     * measures it (--fp-sw, set by _observeStage) because a container inside
+     * the expanded editor can lose its layout (issue #401).
      *
      * Zoom falls out of it rather than needing a term of its own: the stage's
-     * width is a percentage of the zoom, so zooming in widens the container and
+     * width is a percentage of the zoom, so zooming in widens the stage and
      * every canvas-unit measure grows with the drawing — which is the mode.
-     */
-    .stage.scale-plan {
-      container-type: inline-size;
-    }
-    /*
-     * The unit itself, declared twice on purpose.
      *
-     * The fallback in var(--fp-u, 1px) is not the safety net it looks like: it
-     * fires when the property is *unset*, never when its value fails to
-     * resolve. A browser with no container queries parses the calc quite
-     * happily -- a custom property takes almost any token stream -- and then
-     * every property using it is invalid at computed-value time, so each falls
-     * back to its own initial value. Width becomes auto, and a badge collapses
-     * to its borders: about 3px, with its label landing on top of it because
-     * the item's box collapsed with it.
-     *
-     * So the plain value is declared first, and the container-query one only
-     * where it can actually be computed. One pixel per canvas unit is exactly
-     * what overlayScale fixed draws, which is the right thing to degrade to: a
-     * plan that looks like it did before canvas units existed, rather than one
-     * with 3px badges.
-     *
-     * The guard tests the unit as well as the property, because they are two
-     * features and only one of them is what the declaration is made of. A
-     * browser with container-type but no cqw would pass a check for the
-     * property and then fail on the value, which is the exact collapse this is
-     * here to stop. Test what is actually used; it costs one more clause.
+     * Until the first measurement, --fp-sw falls back to the plan's own width
+     * in pixels, so a unit is 1px: exactly what overlayScale fixed draws.
+     * overlayMinWidth clamps the unit exactly as the card does.
      */
     .stage.scale-plan .items {
-      --fp-u: 1px;
-    }
-    @supports (container-type: inline-size) and (width: 1cqw) {
-      .stage.scale-plan .items {
-        /* overlayMinWidth clamps the unit exactly as the card does. */
-        --fp-u: calc(max(100cqw, var(--fp-min-w, 0px)) / var(--fp-plan-w));
-      }
+      --fp-u: calc(
+        max(var(--fp-sw, calc(var(--fp-plan-w) * 1px)), var(--fp-min-w, 0px)) / var(--fp-plan-w)
+      );
     }
     /* Label padding and offsets go to em so they track the text with the plan,
        exactly as the card's own scale-plan rules do. Hairlines stay px on
@@ -9650,6 +10245,28 @@ export class FloorplanCardEditor extends LitElement {
       gap: 6px;
       cursor: pointer;
     }
+    .panel-metric-head {
+      margin-top: 10px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .panel-metric-head label {
+      font-weight: 600;
+    }
+    .panel-metric-fields {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+    .panel-metric-field {
+      flex: 1 1 0;
+      min-width: 0;
+    }
+    .panel-metric-unit {
+      flex: 0 0 54px;
+      min-width: 0;
+    }
     /* The panel ("Project" config) and the new element-edit area share the
        same boxed look so the two sections below the canvas read as siblings. */
     .panel,
@@ -9657,14 +10274,6 @@ export class FloorplanCardEditor extends LitElement {
       border: 1px solid var(--divider-color, #ccc);
       border-radius: 8px;
       padding: 10px;
-    }
-    .section-title {
-      margin: 0 0 8px;
-      font-size: 11px;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.06em;
-      color: var(--secondary-text-color);
     }
     /* Element header: kind icon + summary + the selection's actions.
        The actions are the fixed part and the summary is the elastic one: a
@@ -10092,6 +10701,43 @@ export class FloorplanCardEditor extends LitElement {
     }
     .chip-btn ha-icon {
       --mdc-icon-size: 16px;
+    }
+    .visibility-group {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .visibility-status-row {
+      display: flex;
+      align-items: center;
+    }
+    .visibility-status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 500;
+      line-height: 1;
+    }
+    .visibility-status-badge ha-icon {
+      --mdc-icon-size: 16px;
+    }
+    .visibility-status-badge.status-neutral {
+      background: var(--secondary-background-color, #eceff1);
+      color: var(--secondary-text-color, #757575);
+      border: 1px solid var(--divider-color, #e0e0e0);
+    }
+    .visibility-status-badge.status-met {
+      background: rgba(76, 175, 80, 0.15);
+      color: var(--success-color, #4caf50);
+      border: 1px solid rgba(76, 175, 80, 0.3);
+    }
+    .visibility-status-badge.status-unmet {
+      background: rgba(255, 152, 0, 0.15);
+      color: var(--warning-color, #ff9800);
+      border: 1px solid rgba(255, 152, 0, 0.3);
     }
   `,
     floorSwitcherStyles,

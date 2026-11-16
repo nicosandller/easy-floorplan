@@ -17,13 +17,14 @@ import {
   Floor, 
   RenderHass, 
   StripSide,
-  openingIsSkylight 
+  openingIsSkylight,
+  floorPanels,
 } from "./types";
 
 export const RECT_AREA_EPSILON = 0.001;
 
 /** Element kinds addressable by the editor's selection model. */
-export type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker" | "area" | "roof";
+export type SelKind = "wall" | "opening" | "item" | "text" | "furniture" | "tracker" | "area" | "roof" | "panel";
 
 export interface Sel {
   kind: SelKind;
@@ -664,6 +665,10 @@ export function applyDelta(f: Floor, dx: number, dy: number, orig: Map<string, O
         ? { ...el, points: o.points.map((p) => ({ x: p.x + dx, y: p.y + dy })) }
         : el;
     }),
+    panels: floorPanels(f).map((el) => {
+      const o = orig.get(`panel:${el.id}`);
+      return o && o.kind === "pt" ? { ...el, x: o.x + dx, y: o.y + dy } : el;
+    }),
   };
 }
 
@@ -678,6 +683,7 @@ export function applyDelta(f: Floor, dx: number, dy: number, orig: Map<string, O
 const PICK_ORDER: SelKind[] = [
   "item",
   "text",
+  "panel",
   "opening",
   "furniture",
   "wall",
@@ -703,17 +709,6 @@ function toLocal(x: number, y: number, cx: number, cy: number, deg: number) {
   const dx = x - cx;
   const dy = y - cy;
   return { x: dx * Math.cos(rad) - dy * Math.sin(rad), y: dx * Math.sin(rad) + dy * Math.cos(rad) };
-}
-
-/** Distance from a point to a segment (used for wall hit tests). */
-function distToSegment(x: number, y: number, w: WallSegment): number {
-  const vx = w.x2 - w.x1;
-  const vy = w.y2 - w.y1;
-  const len2 = vx * vx + vy * vy;
-  if (len2 === 0) return Math.hypot(x - w.x1, y - w.y1);
-  let t = ((x - w.x1) * vx + (y - w.y1) * vy) / len2;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(x - (w.x1 + t * vx), y - (w.y1 + t * vy));
 }
 
 /**
@@ -775,7 +770,7 @@ export function elementsAtPoint(
     if (Math.abs(p.x) <= fu.w / 2 && Math.abs(p.y) <= fu.h / 2) push("furniture", fu.id, i, fu.locked);
   });
   f.walls.forEach((w, i) => {
-    if (distToSegment(x, y, w) <= HIT.wall) push("wall", w.id, i, w.locked);
+    if (distToWall(x, y, w) <= HIT.wall) push("wall", w.id, i, w.locked);
   });
   (f.trackers ?? []).forEach((tr, i) => {
     const p = toLocal(x, y, tr.x + tr.w / 2, tr.y + tr.h / 2, tr.angle ?? 0);
@@ -786,6 +781,10 @@ export function elementsAtPoint(
   });
   (f.areas ?? []).forEach((a, i) => {
     if (pointInPolygon(a.points, x, y)) push("area", a.id, i, a.locked);
+  });
+  floorPanels(f).forEach((p, i) => {
+    const r = 24 + HIT.pad;
+    if (Math.abs(x - p.x) <= r && Math.abs(y - p.y) <= r) push("panel", p.id, i, false);
   });
 
   // Locked elements yield (issue #191): anything unlocked under the pointer is
@@ -826,6 +825,8 @@ export function findElement(f: Floor, sel: Sel): { id: string; locked?: boolean 
       return (f.areas ?? []).find((x) => x.id === sel.id);
     case "roof":
       return (f.roofs ?? []).find((x) => x.id === sel.id);
+    case "panel":
+      return floorPanels(f).find((x) => x.id === sel.id);
   }
 }
 

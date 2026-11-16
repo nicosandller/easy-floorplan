@@ -39,6 +39,7 @@ import type {
   StripSide,
 } from "./types";
 import {
+  floorPanels,
   FURNITURE_COLOR,
   DEFAULT_TRACKER_DOT_SIZE,
   DEFAULT_RIPPLE_SIZE,
@@ -83,6 +84,7 @@ import { projectPlanPoint, projectedCanvasSize, type DisplayFrame } from "./proj
 // site, which is what it is.
 import { openingIsPassage, openingIsSkylight } from "./types";
 import { moonIllumination, moonPosition } from "./moon";
+import { collectConditionEntities } from "./furniture-visibility";
 export { openingIsPassage, openingIsSkylight };
 
 export const WALL_THICKNESS = 8;
@@ -219,11 +221,13 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
     for (const t of f.texts) {
       if (t.entity) ids.add(t.entity);
     }
-    // Entity-bound furniture (issue #82) — without this the card never
-    // re-renders when the soil sensor moves, and the plant stays its
-    // first-painted color forever.
+    // Entity-bound furniture (issue #82) and conditional visibility (issue #310) —
+    // without these the card never re-renders when the bound entity or condition sensor moves.
     for (const fu of f.furniture) {
       if (fu.entity) ids.add(fu.entity);
+      if (fu.visibility) {
+        for (const ent of collectConditionEntities(fu.visibility, fu.entity)) ids.add(ent);
+      }
     }
     // Entity-bound areas (issue #6) — same reasoning as furniture above: miss
     // these and a room's color is painted once and then frozen, because
@@ -235,6 +239,11 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
       for (const s of [tr.xSensor, tr.ySensor]) {
         if (s?.entity) ids.add(s.entity);
         if (s?.presence?.entity) ids.add(s.presence.entity);
+      }
+    }
+    for (const p of floorPanels(f)) {
+      for (const m of p.metrics ?? []) {
+        if (m.entity) ids.add(m.entity);
       }
     }
     if (f.summary?.temperatureEntity) ids.add(f.summary.temperatureEntity);
