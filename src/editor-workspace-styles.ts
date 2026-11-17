@@ -124,6 +124,8 @@ export const editorWorkspaceStyles = css`
   .context-bar { margin: 0; padding: 7px 12px; gap: 8px; background: var(--editor-paper); border: 0; border-top: 1px solid var(--editor-line); border-radius: 0; }
   .context-bar .ctx-label { border: 0; padding: 0; text-transform: none; letter-spacing: 0; font-size: 12px; }
   .context-bar .ctx-hint { font-size: 12px; line-height: 1.5; }
+  /* A door, window or passage click that found no wall in reach (issue #428). */
+  .context-bar .ctx-hint.miss { color: var(--error-color, #c62828); }
   .context-bar > .snap-hint { flex: 1 1 100%; text-align: right; }
   .context-bar .ctx-divider { margin-left: auto; }
   .context-bar button { font-size: 12px; min-height: 32px; padding: 4px 8px; }
@@ -330,6 +332,16 @@ export const editorWorkspaceStyles = css`
     .show-inspector.preview-collapsed .canvas-column, .show-inspector.keyboard-open .canvas-column { display: none; }
     .keyboard-open .preview-toggle { display: none; }
     .keyboard-open:not(.fullscreen) .workspace { height: max(180px, calc(var(--editor-viewport-height, 100dvh) - 160px)); }
+    /* In the dialog, the canvas gets its own height instead of what the tool's
+       hint row leaves over, so a taller or shorter hint never moves the plan
+       (issue #430). It is as tall as the plan fitted to its width, so the
+       selection bar below stays in view (issue #427), up to the height it had
+       before; 130px is the heading, padding and a one-line hint. */
+    .editor:not(.fullscreen):not(.show-inspector):not(.keyboard-open) .workspace { height: auto; }
+    .editor:not(.fullscreen):not(.show-inspector):not(.keyboard-open) .canvas-wrap { flex: none; aspect-ratio: auto var(--plan-ratio) !important; min-height: 200px; max-height: calc(clamp(360px, calc(100dvh - 210px), 780px) - 130px); }
+    /* With no blank band left in the canvas, the zoom control gets its own strip
+       below it rather than covering the plan's corner. */
+    .editor:not(.fullscreen):not(.show-inspector):not(.keyboard-open) .zoom-overlay { position: static; align-self: flex-end; margin-top: 4px; flex: none; box-shadow: none; }
   }
   @media (max-height: 500px) {
     @container workspace (max-width: 759px) {
