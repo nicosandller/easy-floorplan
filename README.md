@@ -29,6 +29,7 @@ control lights, and view the plan in 3D.
   furniture, text and devices with undo/redo, copy/paste and position locking.
   Room edges can mix wall, divider and open segments, and adjoining rooms can be
   joined with a Shift-click. See [Areas](docs/elements.md#areas).
+- **Plan check** — the editor flags wall ends that nearly meet and walls drawn on top of each other, with one-click Join / Remove / Trim. See [Plan check](docs/editor.md#plan-check).
 - **Live devices** — control lights and switches, show sensor readings, and follow
   doors, windows, shutters, awnings and curtains as they open and close. Device
   labels can sit on any side, or [pick the clearest one](docs/elements.md#devices) (`labelPosition: auto`).
