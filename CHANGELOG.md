@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Apply** is disabled on a card that has not been saved yet, with the reason as its
+  tooltip, instead of failing with "Save this card once first" when pressed (#429).
+- A door, window or passage clicked out of reach of every wall is no longer created
+  floating at angle 0. The editor places nothing, keeps the tool and says in the
+  toolbar that there is no wall within reach (#428).
 - The view controls fit on one row on a phone-width card instead of two; on cards
   narrower than 450px the buttons sit closer and are narrower, still 44px tall (#436).
 - The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
