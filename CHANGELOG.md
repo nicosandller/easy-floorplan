@@ -2,16 +2,16 @@
 
 ## Unreleased
 
+- The view controls fit on one row on a phone-width card instead of two; on cards
+  narrower than 450px the buttons sit closer and are narrower, still 44px tall (#436).
 - The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
   when an object is selected; the tabs used to paint over the first row of furniture.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
   Chromium browsers running some extensions, such as LanguageTool or Kaspersky
   Protection (#401). The editor now measures the plan's width for the overlay instead
   of using a container query.
-- Tilt-and-turn windows (#409): a hinged window takes a `tiltEntity`, an angle sensor or
-  an on/off contact, and draws tilted (shut in its frame, head leaning in) apart from
-  swung open, leaning in proportion to an angle sensor's reading up to `tiltFull`. A handle sensor reporting `tilted` works on its own. Tilted counts as a
-  little open for the light layers. See [Tilt-and-turn windows](docs/configuration.md#tilt-and-turn-windows).
+- Awnings and curtains take `invert: true` for a cover that reports 100 % where the
+  piece is retracted (#410).
 - The plan no longer collapses to nothing on Chrome 129-era WebViews, such as the
   Sonoff NSPanel Pro's, where the container query the card fits the plan with reads
   a height of 0. The card notices and fits the plan from the stage's measured height
