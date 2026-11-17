@@ -360,6 +360,32 @@ export interface Opening {
   secondaryEntity?: string;
   /** Flip the open/closed interpretation of `entity` (for inverted sensors). */
   invert?: boolean;
+  /**
+   * Tilt-and-turn windows (issue #409): a sensor that tells a tilted sash from
+   * one swung fully open. Either an angle in degrees — a Shelly BLU
+   * Door/Window's rotation reads 0 shut, about 5 tilted and 0 again swung open
+   * — or an on/off contact. While `entity` reads open and this reads tilted,
+   * the sash is drawn leaning in from its head instead of swung; when
+   * `entity` reads shut, the window is shut whatever this says.
+   *
+   * A window handle sensor needs none: an `entity` whose state is `tilted`
+   * draws tilted on its own. Hinged windows only, and on a double the tilt is
+   * the first leaf's, the one `entity` drives. See {@link resolveOpeningTilted}.
+   */
+  tiltEntity?: string;
+  /**
+   * Degrees at or above which a numeric {@link tiltEntity} reads tilted
+   * (issue #409). Default {@link DEFAULT_TILT_THRESHOLD}. Ignored for an
+   * on/off sensor.
+   */
+  tiltThreshold?: number;
+  /**
+   * Degrees at which a numeric {@link tiltEntity} reads fully tilted (issue
+   * #409); between {@link tiltThreshold} and this the sash is drawn leaning
+   * in proportion. Default {@link DEFAULT_TILT_FULL}. Ignored for an on/off
+   * sensor, which is all or nothing.
+   */
+  tiltFull?: number;
   /** Color of the leaf/sash and swing arc while actively open. Falls back to the primary color. */
   activeColor?: string;
   /**
@@ -1380,6 +1406,13 @@ export interface Furniture {
    */
   entity?: string;
   /**
+   * Awning or curtain (issue #410): read the cover's position the other way
+   * round, for a cover that reports 100 % where the piece is retracted. Only
+   * pieces whose symbol has an `extend` read it. A dropout still draws the
+   * piece as a closed cover would, inverted or not.
+   */
+  invert?: boolean;
+  /**
    * Threshold/state colors for the drawing, in the same shape as
    * {@link FloorItem.stateColor}. Evaluated against `entity`'s state; takes
    * precedence over {@link activeColor} and {@link color}.
@@ -1496,12 +1529,28 @@ export type RectAreaSide = (typeof RECT_AREA_SIDES)[number];
 export type RectAreaSideWallState = "none" | "wall" | "divider";
 
 /**
+ * A wall/divider fragment along one edge of a rectangle room. The `start` and
+ * `end` values are normalized to the open interval [0, 1] along the edge, so a
+ * segment can cover the full edge or a subset of it while keeping the rest of
+ * that edge untouched.
+ */
+export interface RectAreaSideWallSegment {
+  start: number;
+  end: number;
+  state: RectAreaSideWallState;
+}
+
+export type RectAreaSideWallValue = RectAreaSideWallState | RectAreaSideWallSegment[];
+
+/**
  * Rectangle room side walls: each side can be left alone, turned into a wall,
  * or drawn as a divider line (toggled by double-clicking the edge in the
  * editor). The object is optional so polygon room areas and older YAML
- * remain unchanged.
+ * remain unchanged. A side may also carry multiple adjacent segments, which
+ * allows a single edge to hold a wall segment, a divider segment, and an open
+ * segment in any combination.
  */
-export type RectAreaSideWalls = Partial<Record<RectAreaSide, RectAreaSideWallState>>;
+export type RectAreaSideWalls = Partial<Record<RectAreaSide, RectAreaSideWallValue>>;
 
 /**
  * Architectural style of a roof structure.
