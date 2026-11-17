@@ -210,8 +210,18 @@ describe("project headings (issue #433)", () => {
   it("gives the floor's own fields a Floor heading above its background", async () => {
     const groups = layout(await page("plan"));
     const titles = groups.map(([title]) => title);
-    expect(groups[titles.indexOf("Storey · Ground")]).toEqual(["Storey · Ground", ["isOutdoor", "level"]]);
+    expect(groups[titles.indexOf("Storey · Ground")]).toEqual(["Storey · Ground", ["isOutdoor", "isSection", "level"]]);
     expect(titles.indexOf("Storey · Ground")).toBe(titles.indexOf("Background · Ground") - 1);
     expect(groups[titles.indexOf("Background · Ground")][1]).toEqual(["image"]);
+  });
+
+  it("keeps a section's bearing under the same heading", async () => {
+    const c = config();
+    c.floors![0].sectionFacing = 90;
+    const groups = layout(await page("plan", c));
+    expect(groups.find(([title]) => title === "Storey · Ground")).toEqual([
+      "Storey · Ground",
+      ["isOutdoor", "isSection", "sectionFacing", "level"],
+    ]);
   });
 });

@@ -27,7 +27,8 @@ function traceRegions(walls: readonly Wall[]): { rooms: Area[]; shells: Area[] }
     ambientPointInArea(b, a.points[0].x, a.points[0].y))) };
 }
 
-function wallPoint(point: AreaPoint, wall: Wall): AreaPoint {
+/** The point of `wall` nearest `point`. Shared with the editor's plan check. */
+export function wallPoint(point: AreaPoint, wall: Wall): AreaPoint {
   const dx = wall.x2 - wall.x1, dy = wall.y2 - wall.y1;
   const length2 = dx * dx + dy * dy;
   const t = length2 ? Math.max(0, Math.min(1,
@@ -35,7 +36,9 @@ function wallPoint(point: AreaPoint, wall: Wall): AreaPoint {
   return { x: wall.x1 + t * dx, y: wall.y1 + t * dy };
 }
 
-function nearestWall(point: AreaPoint, walls: readonly Wall[]) {
+/** The wall nearest `point`, ignoring zero-length walls. Shared with the
+ * editor's plan check (wall-check.ts), so it flags the ends joined here. */
+export function nearestWall(point: AreaPoint, walls: readonly Wall[]) {
   let best: { wall: Wall; point: AreaPoint; distance: number } | undefined;
   for (const wall of walls) {
     if (wall.x1 === wall.x2 && wall.y1 === wall.y2) continue;

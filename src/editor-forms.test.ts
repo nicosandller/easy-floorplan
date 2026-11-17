@@ -2406,8 +2406,8 @@ describe("every field lands in exactly one panel group", () => {
     ["tapTarget", "tap_action", "hold_action", "double_tap_action"],
   ];
   const FURNITURE_GROUPS = [
-    ["type", "hand", "w", "h", "angle"],
-    ["entity"],
+    ["type", "hand", "w", "h", "height3d", "angle"],
+    ["entity", "invert"],
     ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"],
   ];
   const TRACKER_GROUPS = [["w", "h", "x", "y", "angle"], ["dotSize"]];
@@ -2465,14 +2465,33 @@ describe("every field lands in exactly one panel group", () => {
     // first three under View → Rotation and Size (issue #433) and the last
     // under "Devices". Miss it in every slice and the control silently
     // disappears.
-    const VIEW = ["view", "appearance", "showViewControls", "showExport", "wallHeight", "wallOpacity"];
+    const VIEW = [
+      "view",
+      "appearance",
+      "showViewControls",
+      "showExport",
+      "furniture3d",
+      "furnitureSeparateSection",
+      "furnitureSectionHeight",
+      "wallHeight",
+      "wallOpacity",
+    ];
     const ROTATION = ["rotation", "rotationPortrait", "rotationLandscape"];
     const SIZE = ["overlayScale", "overlayMinWidth", "compactHeader"];
     const ROOMS = ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"];
     const DEVICES = ["offlineStyle"];
     // Canvas units, so the conditional overlayMinWidth field is produced too,
-    // and 3D, so the wall fields are.
-    const cfg = { type: "t", width: 1000, height: 600, overlayScale: "plan", view: "3d" } as FloorplanCardConfig;
+    // and 3D with detailed furniture cut separately, so the wall fields and
+    // all three furniture fields are.
+    const cfg = {
+      type: "t",
+      width: 1000,
+      height: 600,
+      overlayScale: "plan",
+      view: "3d",
+      furniture3d: true,
+      furnitureSeparateSection: true,
+    } as FloorplanCardConfig;
     check(projectDisplayForm(cfg).fields, [VIEW, ROTATION, SIZE, ROOMS, DEVICES], "project display");
     // Every slice resolves, and none can emit another's key.
     for (const slice of [VIEW, ROTATION, SIZE, ROOMS, DEVICES]) {
@@ -3054,3 +3073,45 @@ describe("roofForm", () => {
   });
 });
 
+
+describe("3D furniture display controls", () => {
+  const base = { type: "custom:easy-floorplan-card", width: 400, height: 400 } as FloorplanCardConfig;
+  const names = (c: Partial<FloorplanCardConfig>) => projectDisplayForm({ ...base, ...c }).fields.map(f => f.name);
+  it("reveals the opt-in, separate cut and height progressively", () => {
+    expect(names({ view: "2d", furniture3d: true, furnitureSeparateSection: true })).not.toContain("furniture3d");
+    expect(names({ view: "3d" })).toContain("furniture3d");
+    expect(names({ view: "3d" })).not.toContain("furnitureSeparateSection");
+    expect(names({ view: "3d", furniture3d: true })).toContain("furnitureSeparateSection");
+    expect(names({ view: "3d", furniture3d: true })).not.toContain("furnitureSectionHeight");
+    expect(names({ view: "3d", furniture3d: true, furnitureSeparateSection: true })).toContain("furnitureSectionHeight");
+    expect(names({ projection: "iso" })).toContain("furniture3d");
+  });
+  it("starts disabled and retains the saved height when toggles change", () => {
+    const form = projectDisplayForm(base);
+    expect(form.data.furniture3d).toBe(false);
+    expect(form.data.furnitureSeparateSection).toBe(false);
+    expect(form.data.furnitureSectionHeight).toBe(180);
+    const configured = projectDisplayForm({ ...base, furniture3d: true, furnitureSeparateSection: true, furnitureSectionHeight: 150 });
+    expect(configured.toPatch({ furnitureSeparateSection: false })).toEqual({ furnitureSeparateSection: false });
+    expect(configured.toPatch({ furniture3d: false })).toEqual({ furniture3d: false });
+    expect(configured.toPatch({ furnitureSectionHeight: 220 })).toEqual({ furnitureSectionHeight: 220 });
+  });
+});
+
+it("edits and clears the optional furniture 3D height", () => {
+  const f = { id: "s", type: "cornerShelf", x: 0, y: 0, w: 60, h: 60, height3d: 100 };
+  const form = furnitureForm(f, undefined, undefined, [], true);
+  expect(form.fields.some(field => field.name === "height3d")).toBe(true);
+  expect(form.data.height3d).toBe(100);
+  expect(form.toPatch!({ height3d: 150 })).toMatchObject({ height3d: 150 });
+  expect(form.toPatch!({ height3d: "" })).toHaveProperty("height3d", undefined);
+  expect(form.toPatch!({ height3d: -1 })).toHaveProperty("height3d", undefined);
+});
+
+it("only offers 3D height for an enabled valid model without clearing saved heights", () => {
+  for (const [type, enabled, visible] of [["table", true, true], ["table", false, false], ["awning", true, false], ["unknown", true, false]] as const) {
+    const form = furnitureForm({ id: "x", type, x: 0, y: 0, w: 60, h: 60, height3d: 75 }, undefined, undefined, [], enabled);
+    expect(form.fields.some(f => f.name === "height3d")).toBe(visible);
+    expect(form.data.height3d).toBe(75);
+  }
+});
