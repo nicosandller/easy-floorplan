@@ -2391,7 +2391,7 @@ describe("every field lands in exactly one panel group", () => {
       "style",
       "angle",
     ],
-    ["entity", "secondaryEntity", "invert"],
+    ["entity", "secondaryEntity", "tiltEntity", "tiltThreshold", "tiltFull", "invert"],
     ["glazed", "sunlight"],
     [
       "shutterEntity",

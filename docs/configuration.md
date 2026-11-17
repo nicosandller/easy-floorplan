@@ -243,6 +243,9 @@ See [Skylights](lighting.md#skylights) for what the sun does with one and
 | `angle`       | number                      | Rotation in degrees.                                   |
 | `entity`      | string                      | Contact `binary_sensor`, `cover` or `lock` driving open/closed (a `cover`'s `current_position` gives partial travel). A **lock** reads `unlocked` as open and `locked` as closed — see [Doors on locks](behavior.md#doors-on-locks). |
 | `secondaryEntity` | string                  | Anything with **two leaves**: a second contact / `cover` for the other leaf, so each moves on its own state. That means the two-panel sliders (`biparting`, `biparting-bypass`, `converging`) and any hinged double — a casement window, or a `sash: double` door. `entity` drives the leaf at the −x jamb, so `flipH` swaps which sensor draws which. Unset = both follow `entity`; ignored where there is only one leaf. |
+| `tiltEntity`  | string                      | Hinged windows only: a tilt-and-turn window's tilt sensor, an angle in degrees (a Shelly BLU Door/Window's `rotation`) or an on/off contact. While `entity` reads open and this reads tilted, the sash is drawn shut in its frame with its head leaning in (a dashed V in plan, leaning in 3D), and the light layers count it as only a little open. When `entity` reads shut the window is shut, whatever this says. A handle sensor whose `entity` state is `tilted` needs none. On a double sash the tilt is the first leaf's. See [Tilt-and-turn windows](#tilt-and-turn-windows). |
+| `tiltThreshold` | number (°)                | The angle at or above which a numeric `tiltEntity` reads tilted. Default `2`. Ignored for an on/off sensor. |
+| `tiltFull`    | number (°)                  | The angle a numeric `tiltEntity` reads fully tilted, against the tilt stop. Between `tiltThreshold` and this the sash leans in proportion. Default `5`. Ignored for an on/off sensor, which tilts all or nothing. |
 | `invert`      | boolean                     | Flip the open/closed interpretation.                   |
 | `activeColor` | string                      | Leaf/arc color while actively open (default primary). On a roll-up it colours the curtain and the track it leaves behind, so a fully raised shutter still reads as open. |
 | `inactiveColor` | string                    | Leaf/arc color while **closed** (default: the wall color). The moving parts only — the jambs and frame stay the wall's color either way, so the symbol still reads as a hole in a wall. A shutter that is down follows it, as one that is up follows `activeColor`. An [offline](behavior.md#offline-devices) contact falls back to the wall color rather than drawing a confident "shut". See [Colors for on and off](behavior.md#colors-for-on-and-off). |
@@ -257,6 +260,36 @@ See [Skylights](lighting.md#skylights) for what the sun does with one and
 | `hold_action` / `double_tap_action` | ActionConfig | With both entities bound, hold opens the shutter's more-info by default — a tap is never retargeted at the shutter motor. Double-tap does nothing unless configured. |
 | `sliderStyle` | `single` \| `bypass` \| `biparting` \| `biparting-bypass` \| `converging` | With `motion: slide`: one panel (default), two stacking, two centre-parting into the walls, two centre-parting over a fixed panel at each jamb, or two running together to stack in the middle. |
 | `locked`      | boolean                     | Pinned in place in the editor: it still selects, edits and deletes, but never moves, and it yields the click to anything unlocked on top of it. The editor writes it; the rendered card ignores it. See [Locking elements in place](editor.md#locking-elements-in-place). |
+
+### Tilt-and-turn windows
+
+A tilt-and-turn window opens two ways: tilted, leaning in from its head, or swung open
+like a casement. Most contact sensors read open for both, so bind the sensor that tells
+them apart as `tiltEntity`:
+
+```yaml
+- id: living_window
+  type: window
+  sash: single
+  'x': 300
+  'y': 40
+  length: 90
+  angle: 0
+  entity: binary_sensor.living_window          # on when tilted or open
+  tiltEntity: sensor.living_window_rotation    # 0° shut or swung, about 5° tilted
+```
+
+A Shelly BLU Door/Window reports its rotation as 0° shut, about 5° tilted and 0° again
+swung open, so the default `tiltThreshold` of 2° separates them. Raise it if a sensor
+drifts. The angle also sets how far the sash leans: fully at `tiltFull` (5° by default),
+and in proportion below it, so a window part way to its tilt stop draws part tilted. Set
+`tiltFull` to what your sensor reads with the window tilted fully. In the editor, these
+are under **What it reads** as **Tilt sensor**, **Tilted from** and **Fully tilted at**.
+
+How far a window is *swung* open comes from `entity`, as for any window: a contact is
+shut or open, and a `cover` with a `current_position` draws part open. An accelerometer
+like the Shelly's reads the lean against gravity, so it measures the tilt and not the
+swing.
 
 ## Item (device)
 
@@ -493,6 +526,9 @@ picks which end a curtain gathers at: the left by default (`hand: right`), the r
 `hand: left`. `hand: center`
 makes it a pair that meets in the middle and gathers at both ends, still one piece with
 one entity. If the cover drops out, an awning draws retracted and a curtain draws closed.
+A cover that reports 100 % where the piece is retracted (some awnings driven as blinds do)
+takes `invert: true`, **Invert cover position** in the editor; a dropout still draws it
+retracted.
 In 3D the awning hangs under the eaves rather than standing on the floor. Unbound, either
 piece is drawn at full size.
 
@@ -593,9 +629,19 @@ animated inside a rectangular tracked area:
 - `color` / `opacity` — the room's fill; theme primary and `0.25` by default, or a soft
   tint under [`roomTints: auto`](appearance.md#room-tints).
 - `haArea` — id of a linked Home Assistant area, set by the editor when `name` matches one.
-- `sideWalls` — rectangle-room edge overrides: keys `top`, `right`, `bottom`, `left` and
-  values `wall`, `divider` or `none`. Double-click a room edge in the editor to cycle it;
-  a `divider` draws a dashed line instead of a full wall.
+- `sideWalls` — rectangle-room edge overrides: keys `top`, `right`, `bottom`, `left`.
+  Each value is either a plain state — `wall`, `divider` or `none` — for the whole
+  edge, or an array of segments `{ start, end, state }` (`start`/`end` fractions
+  `0`–`1` along the edge) so one edge can mix a wall section, a divider section and
+  an open gap. In the editor: double-click an edge (or a segment) to cycle it
+  through **wall → divider → none**; Ctrl/Cmd-click splits the clicked point into
+  its own segment and selects it; Shift-click an open section of the actual shared
+  edge joins two adjoining rectangle rooms. If either room is linked to a Home
+  Assistant area, both must be linked to the same area; two unlinked rooms may
+  also join. Shift-click an existing wall/divider splits it into a segment. A
+  selected segment's midpoint handle drags the whole segment along the edge, its
+  endpoint handles stretch just that end, and **Delete** removes it. A `divider`
+  draws a dashed line instead of a full wall.
 - `filterEntities` — with `haArea` set, scopes the entity picker for devices inside this
   polygon to that HA area's entities. Default `true`.
 - `entity` — makes the room live, driving `stateColor` and `activeColor` the same way
