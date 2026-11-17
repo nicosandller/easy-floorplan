@@ -120,8 +120,7 @@ editor and locking finished elements in place.
 | [Furniture symbols](furniture/README.md) | Creating and contributing your own symbols. |
 | [Video walkthrough](https://youtu.be/M-b7xK-4Bpw) | A community setup guide in Italian. |
 
-See the [release notes][release-url] for published changes and the
-[changelog](CHANGELOG.md) for documented unreleased changes.
+See the [release notes][release-url] for published changes.
 
 ## Development
 
