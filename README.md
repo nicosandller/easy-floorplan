@@ -29,11 +29,13 @@ control lights, and view the plan in 3D.
   furniture, text and devices with undo/redo, copy/paste and position locking.
   Room edges can mix wall, divider and open segments, and adjoining rooms can be
   joined with a Shift-click. See [Areas](docs/elements.md#areas).
+- **Plan check** — the editor flags wall ends that nearly meet and walls drawn on top of each other, with one-click Join / Remove / Trim. See [Plan check](docs/editor.md#plan-check).
 - **Live devices** — control lights and switches, show sensor readings, and follow
   doors, windows, shutters, awnings and curtains as they open and close. Device
   labels can sit on any side, or [pick the clearest one](docs/elements.md#devices) (`labelPosition: auto`).
 - **Lighting** — colored light from your lamps and spots, day/night dimming, sunlight,
-  moonlight and ambient daylight.
+  moonlight and ambient daylight, with sunlight at the sun's real height on
+  [vertical sections](docs/lighting.md#sunlight-on-a-section).
 - **Rooms and presence** — zoom into rooms, link Home Assistant areas, show
   presence ripples and track positions from distance sensors.
 - **Multiple floors** — switch between floors or navigate with a staircase.
