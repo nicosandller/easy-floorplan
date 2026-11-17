@@ -108,7 +108,8 @@ then pick the entity in the **Selection** inspector.
 ## Doors, windows, skylights & passages
 
 Drop a **door**, **passage** or **window** from the toolbar and it snaps onto the nearest
-wall. A **passage** is a doorway with no door in it — the card draws only the gap, and it
+wall. Click on or close to a wall: a click with no wall in reach places nothing, and the
+toolbar says so. A **passage** is a doorway with no door in it — the card draws only the gap, and it
 is always open. A
 **skylight** is the exception: it is a hole in the ceiling, so it snaps to nothing —
 click anywhere inside a room and it stays where you put it. It is also the one opening

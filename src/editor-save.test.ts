@@ -2,6 +2,7 @@ import { describe, it, expect, vi } from "vitest";
 import {
   applyCardConfig,
   findCardEditDialog,
+  isNewCard,
   APPLY_NEW_CARD,
   APPLY_UNAVAILABLE,
   type AncestorNode,
@@ -70,6 +71,24 @@ describe("findCardEditDialog", () => {
     a.parentNode = b;
     b.parentNode = a;
     expect(findCardEditDialog(a)).toBeNull();
+  });
+});
+
+describe("isNewCard", () => {
+  it("is true while the dialog is still adding the card", () => {
+    const dialog = makeDialog({ _params: { saveCardConfig: () => {}, isNew: true } });
+    expect(isNewCard(chain({}, { host: null }, dialog))).toBe(true);
+  });
+
+  it("is false for a card already on the dashboard", () => {
+    expect(isNewCard(chain({}, { host: null }, makeDialog()))).toBe(false);
+    const saved = makeDialog({ _params: { saveCardConfig: () => {}, isNew: false } });
+    expect(isNewCard(chain({}, saved))).toBe(false);
+  });
+
+  it("is false with no dialog to ask, leaving the click to explain", () => {
+    expect(isNewCard({})).toBe(false);
+    expect(isNewCard(null)).toBe(false);
   });
 });
 
