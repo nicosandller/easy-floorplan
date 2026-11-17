@@ -2333,7 +2333,7 @@ describe("every field lands in exactly one panel group", () => {
       "style",
       "angle",
     ],
-    ["entity", "secondaryEntity", "invert"],
+    ["entity", "secondaryEntity", "tiltEntity", "tiltThreshold", "tiltFull", "invert"],
     ["glazed", "sunlight"],
     [
       "shutterEntity",
@@ -2349,7 +2349,7 @@ describe("every field lands in exactly one panel group", () => {
   ];
   const FURNITURE_GROUPS = [
     ["type", "hand", "w", "h", "height3d", "angle"],
-    ["entity"],
+    ["entity", "invert"],
     ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"],
   ];
   const TRACKER_GROUPS = [["w", "h", "x", "y", "angle"], ["dotSize"]];
@@ -3025,10 +3025,18 @@ describe("3D furniture display controls", () => {
 
 it("edits and clears the optional furniture 3D height", () => {
   const f = { id: "s", type: "cornerShelf", x: 0, y: 0, w: 60, h: 60, height3d: 100 };
-  const form = furnitureForm(f);
+  const form = furnitureForm(f, undefined, undefined, [], true);
   expect(form.fields.some(field => field.name === "height3d")).toBe(true);
   expect(form.data.height3d).toBe(100);
   expect(form.toPatch!({ height3d: 150 })).toMatchObject({ height3d: 150 });
   expect(form.toPatch!({ height3d: "" })).toHaveProperty("height3d", undefined);
   expect(form.toPatch!({ height3d: -1 })).toHaveProperty("height3d", undefined);
+});
+
+it("only offers 3D height for an enabled valid model without clearing saved heights", () => {
+  for (const [type, enabled, visible] of [["table", true, true], ["table", false, false], ["awning", true, false], ["unknown", true, false]] as const) {
+    const form = furnitureForm({ id: "x", type, x: 0, y: 0, w: 60, h: 60, height3d: 75 }, undefined, undefined, [], enabled);
+    expect(form.fields.some(f => f.name === "height3d")).toBe(visible);
+    expect(form.data.height3d).toBe(75);
+  }
 });
