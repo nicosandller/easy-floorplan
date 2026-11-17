@@ -42,6 +42,7 @@ control lights, and view the plan in 3D.
   button. See [actions on furniture](docs/behavior.md#actions-on-furniture).
 - **2D and 3D views** — display the same plan flat or with raised walls and furniture.
 - **Window sill height** — draw floor-to-ceiling or high windows in 3D with `sill`. See [Configuration](docs/configuration.md#opening-door--window--skylight--passage).
+- **Tilt-and-turn windows** — tell tilted from swung open with a second sensor (`tiltEntity`). See [Tilt-and-turn windows](docs/configuration.md#tilt-and-turn-windows).
 - **Outdoor courtyard & 3D stacked house** — exterior view of the entire house stacking all levels at physical elevations, with ground slabs and 3D roofs.
 - **Appearance** — choose skins and named colors, add a background image to trace
   (inverted, or swapped for a dark version, in dark mode), and let the plan scale to your screen.

@@ -123,6 +123,8 @@ export const editorWorkspaceStyles = css`
   .context-bar { margin: 0; padding: 7px 12px; gap: 8px; background: var(--editor-paper); border: 0; border-top: 1px solid var(--editor-line); border-radius: 0; }
   .context-bar .ctx-label { border: 0; padding: 0; text-transform: none; letter-spacing: 0; font-size: 12px; }
   .context-bar .ctx-hint { font-size: 12px; line-height: 1.5; }
+  /* A door, window or passage click that found no wall in reach (issue #428). */
+  .context-bar .ctx-hint.miss { color: var(--error-color, #c62828); }
   .context-bar > .snap-hint { flex: 1 1 100%; text-align: right; }
   .context-bar .ctx-divider { margin-left: auto; }
   .context-bar button { font-size: 12px; min-height: 32px; padding: 4px 8px; }
