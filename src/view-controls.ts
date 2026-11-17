@@ -133,4 +133,15 @@ export const viewControlStyles = css`
     stroke-linecap: round;
     stroke-linejoin: round;
   }
+  /* A phone-width card fits the bar on one row (#436): tighter spacing and
+     narrower buttons, still 44px tall. The card shell is the container. */
+  @container fp-card (max-width: 449px) {
+    .view-controls { column-gap: 4px; padding-inline: 4px; }
+    .view-choices { gap: 4px; }
+    .view-actions { gap: 2px; }
+    .view-segment { padding: 1px; gap: 0; }
+    .view-controls button { min-width: 32px; padding-inline: 4px; }
+    .view-segment button { font-size: 12px; }
+    .view-rotation output { width: 28px; }
+  }
 `;

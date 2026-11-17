@@ -360,6 +360,32 @@ export interface Opening {
   secondaryEntity?: string;
   /** Flip the open/closed interpretation of `entity` (for inverted sensors). */
   invert?: boolean;
+  /**
+   * Tilt-and-turn windows (issue #409): a sensor that tells a tilted sash from
+   * one swung fully open. Either an angle in degrees — a Shelly BLU
+   * Door/Window's rotation reads 0 shut, about 5 tilted and 0 again swung open
+   * — or an on/off contact. While `entity` reads open and this reads tilted,
+   * the sash is drawn leaning in from its head instead of swung; when
+   * `entity` reads shut, the window is shut whatever this says.
+   *
+   * A window handle sensor needs none: an `entity` whose state is `tilted`
+   * draws tilted on its own. Hinged windows only, and on a double the tilt is
+   * the first leaf's, the one `entity` drives. See {@link resolveOpeningTilted}.
+   */
+  tiltEntity?: string;
+  /**
+   * Degrees at or above which a numeric {@link tiltEntity} reads tilted
+   * (issue #409). Default {@link DEFAULT_TILT_THRESHOLD}. Ignored for an
+   * on/off sensor.
+   */
+  tiltThreshold?: number;
+  /**
+   * Degrees at which a numeric {@link tiltEntity} reads fully tilted (issue
+   * #409); between {@link tiltThreshold} and this the sash is drawn leaning
+   * in proportion. Default {@link DEFAULT_TILT_FULL}. Ignored for an on/off
+   * sensor, which is all or nothing.
+   */
+  tiltFull?: number;
   /** Color of the leaf/sash and swing arc while actively open. Falls back to the primary color. */
   activeColor?: string;
   /**
@@ -1359,6 +1385,13 @@ export interface Furniture {
    * as the target for any action that names none of its own (issue #284).
    */
   entity?: string;
+  /**
+   * Awning or curtain (issue #410): read the cover's position the other way
+   * round, for a cover that reports 100 % where the piece is retracted. Only
+   * pieces whose symbol has an `extend` read it. A dropout still draws the
+   * piece as a closed cover would, inverted or not.
+   */
+  invert?: boolean;
   /**
    * Threshold/state colors for the drawing, in the same shape as
    * {@link FloorItem.stateColor}. Evaluated against `entity`'s state; takes

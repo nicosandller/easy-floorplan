@@ -3500,7 +3500,7 @@ export class FloorplanCardEditor extends LitElement {
       "angle",
     ]],
     // Which contacts drive it — the opening's own, before the shutter's.
-    ["What it reads", ["entity", "secondaryEntity", "invert"]],
+    ["What it reads", ["entity", "secondaryEntity", "tiltEntity", "tiltThreshold", "tiltFull", "invert"]],
     // How it behaves toward the sun (issue #177), which is neither shape nor
     // state but gets asked about as its own thing.
     ["Sunlight", ["glazed", "sunlight"]],
@@ -3526,7 +3526,7 @@ export class FloorplanCardEditor extends LitElement {
 
   private static readonly FURNITURE_GROUPS = [
     ["Shape", ["type", "hand", "w", "h", "angle"]],
-    ["What it reads", ["entity"]],
+    ["What it reads", ["entity", "invert"]],
     // What clicking it does — a staircase that changes floor (issue #121).
     ["Behavior", ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"]],
   ] as const;
