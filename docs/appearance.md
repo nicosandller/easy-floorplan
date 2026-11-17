@@ -825,6 +825,11 @@ geometry. The stairs model is 220 cm high; use `height3d` for another height.
 
 ![Air handler, rug, water heater and 220 cm stairs](img/furniture-3d-details.png)
 
+The curved corner shower has two glass doors with a central gap, hinges, slim
+profiles, flared handles on both sides of each door, and a drain grille.
+
+![Detailed corner shower from two angles](img/furniture-3d-corner-shower.png)
+
 ### Isometric rendering
 
 The prototype's `projection: iso` still works. An explicit `view` takes precedence;

@@ -93,3 +93,11 @@ it("removes and restores cached 3D furniture when visibility changes", async () 
     expect(root.querySelectorAll('.fp-furniture-hit[role="button"]').length).toBe(state === "on" ? 1 : 0);
   }
 });
+
+it("emits one focus rectangle for the keyboard part of a multipart model", async () => {
+  const root = await mount({ furniture: [{ id: "shelf", type: "cornerShelf", x: 200, y: 200, w: 60, h: 60,
+    showIcon: false, tap_action: { action: "fire-dom-event" } }] });
+  expect(root.querySelectorAll('.fp-furniture-hit').length).toBeGreaterThan(1);
+  expect(root.querySelectorAll('.fp-furniture-hit .fp-furniture-focus')).toHaveLength(1);
+  expect(root.querySelectorAll('.fp-furniture-hit[tabindex="0"] .fp-furniture-focus')).toHaveLength(1);
+});

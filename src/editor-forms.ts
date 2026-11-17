@@ -69,6 +69,9 @@ import {
   skylightCeilingHeight,
   MIN_SASH_SPAN,
   openingHasTwoLeaves,
+  openingCanTilt,
+  DEFAULT_TILT_THRESHOLD,
+  DEFAULT_TILT_FULL,
   sliderStyleHasTwoLeaves,
   pressEffectOf,
   labelPositionOf,
@@ -560,6 +563,30 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: { entity: { filter: [{ domain: OPENING_ENTITY_DOMAINS }] } },
     });
   }
+  // Tilt-and-turn (issue #409): a hinged window only. The threshold is asked
+  // only of an angle sensor; a contact is tilted or it is not.
+  if (openingCanTilt(o)) {
+    fields.push({
+      name: "tiltEntity",
+      label: "Tilt sensor",
+      helper: "Tilt-and-turn: an angle sensor or a contact that reads tilted. A handle sensor that reports tilted needs none",
+      selector: { entity: { filter: [{ domain: ["sensor", "binary_sensor"] }] } },
+    });
+    if (o.tiltEntity?.startsWith("sensor.")) {
+      fields.push({
+        name: "tiltThreshold",
+        label: "Tilted from",
+        helper: "The angle at which the sash counts as tilted",
+        selector: { number: { min: 0.5, max: 45, step: 0.5, mode: "box", unit_of_measurement: "°" } },
+      });
+      fields.push({
+        name: "tiltFull",
+        label: "Fully tilted at",
+        helper: "The angle the sensor reads against the tilt stop. Smaller angles lean it in proportion",
+        selector: { number: { min: 0.5, max: 90, step: 0.5, mode: "box", unit_of_measurement: "°" } },
+      });
+    }
+  }
   // Offered on doors too: French doors and patio doors get shutters as well.
   // A hinged shutter usually reports through a contact sensor, so binary
   // sensors belong in the picker next to covers (issue #74).
@@ -777,6 +804,9 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       sash: openingSash(o),
       entity: o.entity ?? "",
       secondaryEntity: o.secondaryEntity ?? "",
+      tiltEntity: o.tiltEntity ?? "",
+      tiltThreshold: o.tiltThreshold ?? DEFAULT_TILT_THRESHOLD,
+      tiltFull: o.tiltFull ?? DEFAULT_TILT_FULL,
       glazed: openingIsGlazed(o),
       sunlight: o.sunlight ?? true,
       shutterEntity: o.shutterEntity ?? "",
@@ -927,6 +957,18 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           if (!sliderStyleHasTwoLeaves(v as SliderStyle)) out.secondaryEntity = undefined;
         }
         else if (k === "invert") out.invert = v || undefined;
+        else if (k === "tiltEntity") {
+          out.tiltEntity = v || undefined;
+          // A contact has no angle to compare.
+          if (typeof v !== "string" || !v.startsWith("sensor.")) {
+            out.tiltThreshold = undefined;
+            out.tiltFull = undefined;
+          }
+        } else if (k === "tiltThreshold") {
+          out.tiltThreshold = typeof v === "number" && v > 0 && v !== DEFAULT_TILT_THRESHOLD ? v : undefined;
+        } else if (k === "tiltFull") {
+          out.tiltFull = typeof v === "number" && v > 0 && v !== DEFAULT_TILT_FULL ? v : undefined;
+        }
         else if (k === "type") {
           out.type = v;
           // Only a window stands on a sill; anything else would carry it as
@@ -1006,6 +1048,16 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       // override would silently reapply the next time it was switched on. That
       // covers the switch turned off and, since the default moves with the
       // entity, a contact cleared from under a badge that was only on by default.
+      // Only a hinged window tilts (issue #409): a type or motion change that
+      // makes it anything else takes the tilt sensor with it.
+      if (("type" in out || "motion" in out) && !openingCanTilt({
+        type: ("type" in out ? out.type : o.type) as Opening["type"],
+        motion: ("motion" in out ? out.motion : o.motion) as Opening["motion"],
+      })) {
+        out.tiltEntity = undefined;
+        out.tiltThreshold = undefined;
+        out.tiltFull = undefined;
+      }
       if (!("shutterEntity" in patch && !patch.shutterEntity)) {
         const after = { entity: "entity" in out ? (out.entity as string | undefined) : o.entity };
         const byDefault = shutterMarkDefault(after);
@@ -2012,6 +2064,7 @@ export function furnitureForm(
   areaScope?: AreaEntityScope,
   catalog: SymbolCatalog = BUILTIN_SYMBOLS,
   floors: readonly Pick<Floor, "id" | "name">[] = [],
+  detailedModels = false,
 ): FormSpec {
   const choices = furnitureChoices(catalog);
   // A piece whose symbol this install doesn't have keeps its own id in the
@@ -2063,7 +2116,9 @@ export function furnitureForm(
         : []),
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
-      { name: "height3d", label: "3D height", helper: "Optional height in canvas units. Leave empty to use the model height. Applied before cutting.", selector: { number: { min: 0.1, max: 10000, step: 0.1, mode: "box" } } },
+      ...(detailedModels && catalog[f.type]?.model3d ? [
+        { name: "height3d", label: "3D height", helper: "Optional height in canvas units. Leave empty to use the model height. Applied before cutting.", selector: { number: { min: 0.1, max: 10000, step: 0.1, mode: "box" } } },
+      ] : []),
       angleField(),
       // Optional entity that makes the drawing live (issue #82) — a soil
       // sensor on a plant, a contact sensor on a cabinet. Last, because most
@@ -2075,12 +2130,23 @@ export function furnitureForm(
           areaScope,
           // An awning or curtain is what the entity is for (issue #196).
           findSymbol(catalog, f.type)?.extend
-            ? `The cover that moves it: drawn at its position, full size when fully ${
-                findSymbol(catalog, f.type)!.extend!.open === "extended" ? "open" : "closed"}`
+            ? `The cover that moves it: drawn at its position, full size at ${
+                (findSymbol(catalog, f.type)!.extend!.open === "extended") !== (f.invert === true) ? "100" : "0"} %`
             : "Optional — lets the drawing change color with a sensor"
         ),
         selector: areaScopedEntity(areaScope, f.entity),
       },
+      // Some covers report 100 % where the awning is rolled in (issue #410).
+      ...(findSymbol(catalog, f.type)?.extend
+        ? [
+            {
+              name: "invert",
+              label: "Invert cover position",
+              helper: "For a cover that reports 100 % where this is fully retracted",
+              selector: { boolean: {} },
+            },
+          ]
+        : []),
       // Clicking it changes floor (issue #121). Offered on any piece rather
       // than only on the built-in `stairs`, because a plan can draw its own
       // staircase and a rule keyed on one symbol id would leave those out.
@@ -2141,6 +2207,7 @@ export function furnitureForm(
       height3d: f.height3d,
       angle: f.angle ?? 0,
       entity: f.entity ?? "",
+      ...(findSymbol(catalog, f.type)?.extend ? { invert: f.invert ?? false } : {}),
       goToFloor: namedFloor !== undefined
         ? `floor:${namedFloor}`
         : typeof f.goToFloor === "string" ? f.goToFloor : "",
@@ -2152,8 +2219,9 @@ export function furnitureForm(
     },
     toPatch: (raw) => {
       if ("height3d" in raw) raw = { ...raw, height3d: normalizeHeight3d(raw.height3d) };
-      // On is the default, so only "off" is worth writing down.
+      // On is the default, so only "off" is worth writing down; the reverse for invert.
       let p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
+      if ("invert" in p) p = { ...p, invert: p.invert === true ? true : undefined };
       if ("visibility" in p) {
         const v = Array.isArray(p.visibility) && p.visibility.length > 0 ? p.visibility : undefined;
         p = { ...p, visibility: v };

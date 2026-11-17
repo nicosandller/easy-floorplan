@@ -41,6 +41,11 @@ export class FrameCoalescer<T> {
     return this._hasPending;
   }
 
+  /** The most recent queued value, if one is awaiting delivery. */
+  get last(): T | null {
+    return this._hasPending ? (this._pending as T) : null;
+  }
+
   /** Queue a value, replacing any still waiting for this frame. */
   push(value: T): void {
     this._pending = value;
