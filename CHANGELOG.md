@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- The browser console banner of a release build reports the release's version, taken
+  from its tag, instead of 0.7.2 (#435).
 - In the narrow editor, such as Home Assistant's card dialog, selecting an object now
   shows its name and **Edit properties** without scrolling (#427). The canvas is as
   tall as the plan fitted to its width, up to its old height, instead of leaving blank
