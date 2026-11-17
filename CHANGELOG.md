@@ -10,6 +10,8 @@
   Chromium browsers running some extensions, such as LanguageTool or Kaspersky
   Protection (#401). The editor now measures the plan's width for the overlay instead
   of using a container query.
+- Awnings and curtains take `invert: true` for a cover that reports 100 % where the
+  piece is retracted (#410).
 - The plan no longer collapses to nothing on Chrome 129-era WebViews, such as the
   Sonoff NSPanel Pro's, where the container query the card fits the plan with reads
   a height of 0. The card notices and fits the plan from the stage's measured height
