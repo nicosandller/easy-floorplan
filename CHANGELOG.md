@@ -7,6 +7,8 @@
   the pieces can be dragged, stretched and deleted. `sideWalls` values may now be a list
   of `{ start, end, state }` segments. See [Configuration](docs/configuration.md) and
   [Areas](docs/elements.md#areas).
+- The view controls fit on one row on a phone-width card instead of two; on cards
+  narrower than 450px the buttons sit closer and are narrower, still 44px tall (#436).
 - The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
   when an object is selected; the tabs used to paint over the first row of furniture.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
