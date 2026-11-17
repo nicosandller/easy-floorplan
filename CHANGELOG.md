@@ -4,12 +4,16 @@
 
 - The browser console banner of a release build reports the release's version, taken
   from its tag, instead of 0.7.2 (#435).
+- The view controls fit on one row on a phone-width card instead of two; on cards
+  narrower than 450px the buttons sit closer and are narrower, still 44px tall (#436).
 - The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
   when an object is selected; the tabs used to paint over the first row of furniture.
 - The expanded editor no longer opens to a blank canvas with `overlayScale: plan` in
   Chromium browsers running some extensions, such as LanguageTool or Kaspersky
   Protection (#401). The editor now measures the plan's width for the overlay instead
   of using a container query.
+- Awnings and curtains take `invert: true` for a cover that reports 100 % where the
+  piece is retracted (#410).
 - The plan no longer collapses to nothing on Chrome 129-era WebViews, such as the
   Sonoff NSPanel Pro's, where the container query the card fits the plan with reads
   a height of 0. The card notices and fits the plan from the stage's measured height
