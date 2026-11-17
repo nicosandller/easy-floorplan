@@ -13,7 +13,8 @@ elements. You can also use a [background image](configuration.md#floor) as a tra
 **Apply** saves the plan to the dashboard without closing the editor, so you can judge
 a change on the real card in a second tab or by collapsing the editor, then keep editing.
 It needs Home Assistant 2025.3 or newer; on older versions the button explains this and
-**Save** still works. Use **Save** when you are ready to close the card editor.
+**Save** still works. Use **Save** when you are ready to close the card editor. On a card
+you are still adding, Apply stays disabled until you have saved the card once.
 
 ## Locking elements in place
 

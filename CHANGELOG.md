@@ -4,6 +4,18 @@
 
 - The browser console banner of a release build reports the release's version, taken
   from its tag, instead of 0.7.2 (#435).
+- In the narrow editor, such as Home Assistant's card dialog, selecting an object now
+  shows its name and **Edit properties** without scrolling (#427). The canvas is as
+  tall as the plan fitted to its width, up to its old height, instead of leaving blank
+  bands above and below the grid, and the zoom control sits in a strip below it.
+- In the narrow editor, such as Home Assistant's card dialog, the plan no longer moves
+  up and down when you switch drawing tools (#430). The canvas keeps its height when
+  the tool's hint and options below it take more or fewer lines.
+- **Apply** is disabled on a card that has not been saved yet, with the reason as its
+  tooltip, instead of failing with "Save this card once first" when pressed (#429).
+- A door, window or passage clicked out of reach of every wall is no longer created
+  floating at angle 0. The editor places nothing, keeps the tool and says in the
+  toolbar that there is no wall within reach (#428).
 - The view controls fit on one row on a phone-width card instead of two; on cards
   narrower than 450px the buttons sit closer and are narrower, still 44px tall (#436).
 - The expanded editor's **+ Add** menu is no longer covered by the inspector's tab bar
