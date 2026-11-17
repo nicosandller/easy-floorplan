@@ -27,6 +27,8 @@ control lights, follow the sun from day to night, and view the plan in 3D.
 
 - **Visual editing** — draw walls, snap doors and windows into place, and arrange
   furniture, text and devices with undo/redo, copy/paste and position locking.
+  Room edges can mix wall, divider and open segments, and adjoining rooms can be
+  joined with a Shift-click. See [Areas](docs/elements.md#areas).
 - **Live devices** — control lights and switches, show sensor readings, and follow
   doors, windows, shutters, awnings and curtains as they open and close. Device
   labels can sit on any side, or [pick the clearest one](docs/elements.md#devices) (`labelPosition: auto`).
@@ -42,6 +44,7 @@ control lights, follow the sun from day to night, and view the plan in 3D.
   button. See [actions on furniture](docs/behavior.md#actions-on-furniture).
 - **2D and 3D views** — display the same plan flat or with raised walls and furniture.
 - **Window sill height** — draw floor-to-ceiling or high windows in 3D with `sill`. See [Configuration](docs/configuration.md#opening-door--window--skylight--passage).
+- **Tilt-and-turn windows** — tell tilted from swung open with a second sensor (`tiltEntity`). See [Tilt-and-turn windows](docs/configuration.md#tilt-and-turn-windows).
 - **Outdoor courtyard & 3D stacked house** — exterior view of the entire house stacking all levels at physical elevations, with ground slabs and 3D roofs.
 - **Appearance** — choose skins and named colors, add a background image to trace
   (inverted, or swapped for a dark version, in dark mode), and let the plan scale to your screen.
@@ -117,8 +120,7 @@ editor and locking finished elements in place.
 | [Furniture symbols](furniture/README.md) | Creating and contributing your own symbols. |
 | [Video walkthrough](https://youtu.be/M-b7xK-4Bpw) | A community setup guide in Italian. |
 
-See the [release notes][release-url] for published changes and the
-[changelog](CHANGELOG.md) for documented unreleased changes.
+See the [release notes][release-url] for published changes.
 
 ## Development
 
