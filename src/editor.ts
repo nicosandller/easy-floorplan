@@ -3735,7 +3735,7 @@ export class FloorplanCardEditor extends LitElement {
   ] as const;
 
   private static readonly FURNITURE_GROUPS = [
-    ["Shape", ["type", "hand", "w", "h", "angle"]],
+    ["Shape", ["type", "hand", "w", "h", "height3d", "angle"]],
     ["What it reads", ["entity", "invert"]],
     // What clicking it does — a staircase that changes floor (issue #121).
     ["Behavior", ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"]],
@@ -8003,6 +8003,9 @@ export class FloorplanCardEditor extends LitElement {
               "appearance",
               "showViewControls",
               "showExport",
+              "furniture3d",
+              "furnitureSeparateSection",
+              "furnitureSectionHeight",
               "wallHeight",
               "wallOpacity",
               "rotation",
@@ -8759,12 +8762,13 @@ export class FloorplanCardEditor extends LitElement {
     if (sel.kind === "furniture") {
       const f = this._floor().furniture.find((x) => x.id === sel.id);
       if (!f) return html`${nothing}`;
-      const fSpec = furnitureForm(f, this._areaEntitiesAt(f.x, f.y), this._symbols(), getFloors(this._config));
+      const fSpec = furnitureForm(f, this._areaEntitiesAt(f.x, f.y), this._symbols(), getFloors(this._config),
+        this._config.furniture3d === true);
       const fApply = (patch: Record<string, unknown>, live: boolean) =>
         this._applyElementPatch("furniture", f.id, patch, live);
       const roofsOver = this._roofsOverPoint(f.x, f.y);
       if (this._selectionPage === "properties") return html`
-        ${this._renderEssentialForm(fSpec, ["w", "h", "angle", ...(f.type === "stairs" ? ["goToFloor"] : []), "hand"], fApply)}
+        ${this._renderEssentialForm(fSpec, ["w", "h", "height3d", "angle", ...(f.type === "stairs" ? ["goToFloor"] : []), "hand"], fApply)}
         ${this._renderColorRow({
           label: "Color", value: f.color, swatch: "#9e9e9e", placeholder: "Default",
           onLive: (color) => this._updateFurnitureLive(f.id, { color }),

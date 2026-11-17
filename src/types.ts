@@ -1174,6 +1174,7 @@ export type FurnitureType =
   | "dresser"
   | "tallDresser"
   | "ladderShelf"
+  | "cornerShelf"
   | "bookcase"
   | "rug"
   | "plant"
@@ -1305,6 +1306,8 @@ export interface NotVisibilityCondition {
 
 /** A gray furniture/fixture diagram placed on the plan. */
 export interface Furniture {
+  /** Physical 3D height in canvas units; defaults to the model height. */
+  height3d?: number;
   id: string;
   /**
    * Which symbol to draw — a built-in {@link FurnitureType}, a symbol
@@ -2205,6 +2208,12 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * survey. Ignored on the flat plan.
    */
   wallHeight?: number;
+  /** Opt in to detailed models in the isometric view. */
+  furniture3d?: boolean;
+  /** Use a furniture section plane independent of wall height. */
+  furnitureSeparateSection?: boolean;
+  /** Furniture section height in canvas units; defaults to 180 when enabled. */
+  furnitureSectionHeight?: number;
   /**
    * Built-in skin id (issue #122), e.g. `odnetnin`, `pastel`, `tron`. Restyles
    * the whole plan at once — paper, walls, badges, accents — by supplying the

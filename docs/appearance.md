@@ -775,6 +775,48 @@ wallOpacity: 0.65 # 0 = invisible, 1 = solid (default)
 rotation: 90     # optional: choose the viewing corner
 ```
 
+### Detailed 3D furniture
+
+In **Project → Display**, choosing **3D isometric** reveals **3D furniture**.
+Enable it to use the initial `table`, `cornerShelf`, `bathtub` and `stove` models.
+Other symbols retain their block rendering, and 2D plans are unchanged.
+
+Enabling models reveals **Separate furniture cut height**; enabling that option
+reveals **Furniture cut height** (0–400 canvas units, default 180).
+
+```yaml
+view: 3d
+wallHeight: 60
+furniture3d: true
+furnitureSeparateSection: true
+furnitureSectionHeight: 180
+```
+
+`furniture3d` and `furnitureSeparateSection` both default to `false`. Without a
+separate cut, models are clipped at `wallHeight`. With it, walls keep their height
+while furniture uses `furnitureSectionHeight`: parts above the plane disappear,
+and intersecting parts receive a flat top. Zero hides model geometry. Turning
+the options off retains the saved cut height. Models without a valid definition
+keep their usual block rendering, including its wall-relative height.
+
+Each placed piece can set `height3d` (**3D height** in the editor) to scale its
+model vertically before clipping. It defaults to the authored model height and
+is independent of footprint resizing; use half the height for a half-scale plan.
+See [Furniture configuration](configuration.md#furniture) for the accepted range.
+Detailed models currently stand on the floor: symbol `elevation` is supported
+only by the block fallback, so elevated custom symbols should omit `model3d`.
+See the [symbol author guide](../furniture/README.md#optional-3d-models-version-1)
+for the model format and limitations.
+
+The same four pieces with detailed models off, enabled at full height, and cut
+at 100 canvas units (wall height remains 60):
+
+| Default blocks | Detailed models, cut 220 | Separate cut 100 |
+| --- | --- | --- |
+| ![Default block furniture](img/furniture-3d-off.png) | ![Four detailed furniture models](img/furniture-3d-full.png) | ![Models with a separate cut at 100](img/furniture-3d-cut.png) |
+
+### Isometric rendering
+
 The prototype's `projection: iso` still works. An explicit `view` takes precedence;
 selecting a view in the editor removes the old alias.
 
@@ -790,7 +832,8 @@ selecting a view in the editor removes the old alias.
   rectangle it is, and tilts up out of the roof from its hinge as the sash opens.
   Its blind is drawn flat under the glass, as far down as the cover reports. It
   cuts no wall, in this view as in the flat one.
-- Furniture stands as a block with its usual glyph on top. Furniture actions and
+- Furniture defaults to a block with its usual glyph on top; opt-in detailed models
+  use the settings above. Furniture actions and
   staircase navigation continue to work.
 - Rooms, light pools, direct sunlight, ambient daylight and background images stay
   on the floor. Lighting reads the same opening/shutter state in both views,

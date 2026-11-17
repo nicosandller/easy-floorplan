@@ -15,6 +15,7 @@
  * cannot smuggle a `url()` into a paint attribute.
  */
 import { nothing, svg, type SVGTemplateResult } from "lit";
+import { normalizeModel, type SymbolModel } from "./symbol-model";
 import { cssIdent } from "./css-safe";
 
 /** How a part is painted. Never a color — the renderer supplies that. */
@@ -72,6 +73,7 @@ export interface SymbolDef {
    */
   footprint: "rect" | "ellipse";
   parts: SymbolPart[];
+  model3d?: SymbolModel;
   /**
    * A piece that grows and shrinks with a cover's position (issue #196) — an
    * awning reaching out from the wall, a curtain drawn across a window. The
@@ -385,6 +387,7 @@ export function normalizeSymbol(
   const h = num(size.h);
   const vb = nums(r.viewBox, 4);
 
+  const model3d = normalizeModel(r.model3d);
   return {
     id,
     name: typeof r.name === "string" && r.name.trim() ? r.name.trim().slice(0, 60) : id,
@@ -400,6 +403,7 @@ export function normalizeSymbol(
     viewBox: vb && vb[2]! > 0 && vb[3]! > 0 ? (vb as [number, number, number, number]) : DEFAULT_VIEW_BOX,
     footprint: r.footprint === "ellipse" ? "ellipse" : "rect",
     parts,
+    ...(model3d ? { model3d } : {}),
     ...(extendOf(r.extend) ? { extend: extendOf(r.extend) } : {}),
     ...(elevationOf(r.elevation) ? { elevation: elevationOf(r.elevation) } : {}),
   };
