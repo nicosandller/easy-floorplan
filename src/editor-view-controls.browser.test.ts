@@ -8,7 +8,7 @@ import { emptyConfig, getFloors, type FloorplanCardConfig } from "./types";
 
 afterEach(() => document.body.replaceChildren());
 
-it("saves live appearance and optional controls from Project → Display and restores them on reload", async () => {
+it("saves live appearance and optional controls from Project → View and restores them on reload", async () => {
   const original = emptyConfig("custom:easy-floorplan-card");
   original.floors = getFloors(original);
   original.floors[0].walls = [{ id: "wall", x1: 50, y1: 50, x2: 400, y2: 50 }];

@@ -589,7 +589,7 @@ The rule of thumb: `plan` is what a plan wants, and the size numbers are yours t
 
 ### Minimum overlay size
 
-Under **Project → Display → Stop shrinking below**, choose the displayed plan width
+Under **Project → View → Size → Stop shrinking below**, choose the displayed plan width
 (in pixels) below which badges and labels should stop shrinking. This setting appears
 only with **Canvas units** selected. Zero turns it off.
 
@@ -674,7 +674,7 @@ was rotated (issue #280).
 
 ## Live appearance and view controls
 
-Choose **Project → Display → Appearance → Line art** for a live architectural
+Choose **Project → View → View → Appearance → Line art** for a live architectural
 drawing of your existing plan. Enable **Show view controls** in the same group
 to give viewers these controls directly on the card:
 
@@ -732,7 +732,7 @@ with simulated lights, doors and both themes.
 
 ## SVG export
 
-Enable **Project → Display → Allow SVG download**, or add `showExport: true`, for
+Enable **Project → View → View → Allow SVG download**, or add `showExport: true`, for
 an optional download button at the end of the view controls. Without view controls,
 it appears as **Export SVG** below the plan. Select a floor, then download it.
 The download uses the current 2D or 3D view and the selected destination rotation
@@ -765,7 +765,7 @@ views and floors and download the example drawing.
 
 ## 3D view
 
-Choose **Project → Display → View → 3D isometric** to see the plan from a corner.
+Choose **Project → View → View → View: 3D isometric** to see the plan from a corner.
 The editor stays flat; all stored coordinates and entity bindings stay the same.
 
 ```yaml

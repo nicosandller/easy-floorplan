@@ -51,7 +51,7 @@
   editor — laid onto a wall, it lights the room it came from. See [LED strips](docs/configuration.md#led-strips).
 - Add a live Line art appearance and optional controls for 2D/3D, appearance,
   quarter-turn rotation and reset. Device states, opening actions and room zoom
-  stay interactive. Configure them under Project → Display; new plans include
+  stay interactive. Configure them under Project → View; new plans include
   the controls, while existing plans can opt in. An optional SVG download exports
   a static drawing of the active floor. See the [appearance guide](docs/appearance.md#live-appearance-and-view-controls).
 - Ambient daylight (`ambientDaylight: true`) now follows solid wall outlines and
