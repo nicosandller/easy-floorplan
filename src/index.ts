@@ -12,7 +12,7 @@ w.customCards.push({
   name: "Easy Floorplan",
   description:
     "Draw a floorplan with walls, doors, windows, furniture and text, then place device/light controls with a visual editor.",
-  preview: false,
+  preview: true,
   documentationURL: "https://github.com/nicosandller/easy-floorplan",
 });
 
