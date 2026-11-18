@@ -38,6 +38,8 @@ control lights, and view the plan in 3D.
   [vertical sections](docs/lighting.md#sunlight-on-a-section).
 - **Rooms and presence** — zoom into rooms, link Home Assistant areas, show
   presence ripples and track positions from distance sensors.
+- **Profile pictures** — show a person's Home Assistant picture in their badge
+  (`badgeContent: picture`), clipped to the badge shape. See [Profile pictures](docs/elements.md#profile-pictures).
 - **Multiple floors** — switch between floors or navigate with a staircase.
 - **Floor summaries** — aggregated floor badges (temp, humidity, presence, lights, windows) directly in the switcher.
 - **Spatial telemetry callouts** — floating HUD info-panels with SVG leader lines anchored to rooms, furniture, roofs or coordinates in 2D and 3D.
