@@ -186,6 +186,7 @@ import {
   resolveAreaZoom,
   zoomedOverlayScale,
   IDENTITY_ZOOM,
+  type AreaZoomTransform,
   wallThickness,
   RAILING_WEIGHT,
   polygonCentroid,
@@ -222,6 +223,7 @@ import { renderViewControls, viewControlStyles } from "./view-controls";
 import { AmountTween, OPENING_TWEEN_MS, rafTweenFrames } from "./opening-tween";
 import { RotationTween } from "./rotation";
 import { focusOrder, normalizeRoomFocus, stepFocus } from "./room-focus";
+import { isWholePlan, MAX_PLAN_ZOOM, panBy, pastPanThreshold, stepZoom, wheelZoomFactor, zoomAt } from "./plan-zoom";
 import type { SVGTemplateResult } from "lit";
 import { findSymbol, symbolCatalog } from "./symbols";
 import { deadSpacesCached } from "./dead-space";
@@ -298,6 +300,35 @@ export class FloorplanCard extends LitElement {
   @state() private _activeFloorId?: string;
   /** View-state: which area (if any) the plan is zoomed in to. Never persisted. */
   @state() private _zoomedAreaId?: string;
+  /**
+   * View-state: a free zoom and pan (issue #446, `zoomControls`), overriding
+   * the room framing while set. Started from whatever is on screen — the whole
+   * plan or a room — so "+" steps on from a room rather than jumping. Cleared
+   * whenever the room or the floor changes; never persisted.
+   */
+  @state() private _viewZoom?: AreaZoomTransform;
+  /** A drag or a wheel zoom is in progress: the zoom transition is off so the plan tracks the pointer. */
+  @state() private _panning = false;
+  /** The transform this render applied — what "+", a drag or the wheel start from. */
+  private _shownZoom: AreaZoomTransform = IDENTITY_ZOOM;
+  /** The press that may become a pan, from pointerdown until it lifts. */
+  private _pan?: {
+    id: number;
+    x: number;
+    y: number;
+    from: AreaZoomTransform;
+    w: number;
+    h: number;
+    plan: HTMLElement;
+    dragging: boolean;
+    view?: AreaZoomTransform;
+  };
+  private _panFrame?: number;
+  /** Set as a drag ends, so the click the browser sends after it reaches nothing underneath. */
+  private _swallowClick = false;
+  private _wheelView?: AreaZoomTransform;
+  private _wheelFrame?: number;
+  private _wheelIdle?: ReturnType<typeof setTimeout>;
   /** Viewer choices stay local to this card; the editor owns saved defaults. */
   @state() private _viewOverride?: "2d" | "3d";
   @state() private _appearanceOverride?: PlanAppearance;
@@ -444,6 +475,7 @@ export class FloorplanCard extends LitElement {
     if (previous?.appearance !== config.appearance) this._appearanceOverride = undefined;
     if (["rotation", "rotationPortrait", "rotationLandscape"].some((key) =>
       previous?.[key] !== config[key])) this._rotation.jump(0);
+    if (!config.zoomControls) this._viewZoom = undefined;
     if (!config.showViewControls) {
       this._viewOverride = undefined;
       this._appearanceOverride = undefined;
@@ -531,6 +563,7 @@ export class FloorplanCard extends LitElement {
     this._appearanceOverride = undefined;
     this._rotation.jump(0);
     this._zoomedAreaId = undefined;
+    this._viewZoom = undefined;
   }
 
   /**
@@ -608,6 +641,11 @@ export class FloorplanCard extends LitElement {
     // Viewer appearance and Reset view can pause or restore moonlight without
     // changing the saved config. Keep its redraw clock on the same display.
     if (changed.has("_appearanceOverride")) this._syncMoonClock();
+    // A free view belongs to the room and floor it was made on (issue #446):
+    // tapping another room, stepping the focus or changing floor frames afresh,
+    // exactly as it did before there was a free view to carry over.
+    if ((changed.has("_zoomedAreaId") || changed.has("_activeFloorId")) && !changed.has("_viewZoom"))
+      this._viewZoom = undefined;
     if (!changed.has("_config")) return;
     const skin = skinAttribute(this._config?.skin);
     if (skin) this.setAttribute("data-skin", skin);
@@ -941,6 +979,7 @@ export class FloorplanCard extends LitElement {
 
   /** Arrow keys walk the rooms; Escape is the way back out to the whole plan. */
   private readonly _onPlanKey = (ev: KeyboardEvent): void => {
+    if (this._onZoomKey(ev)) return;
     if (ev.key === "ArrowRight" || ev.key === "ArrowDown") {
       ev.preventDefault();
       this._stepFocus(1);
@@ -952,6 +991,157 @@ export class FloorplanCard extends LitElement {
       this._zoomedAreaId = undefined;
       this._restartFocusTimer();
     }
+  };
+
+  /**
+   * The keys `zoomControls` adds (issue #446): Escape back to the whole plan,
+   * whatever zoomed it, and +/− for the buttons. Returns whether it took the
+   * key, so the room arrows above never see one twice.
+   */
+  private readonly _onZoomKey = (ev: KeyboardEvent): boolean => {
+    if (!this._config?.zoomControls) return false;
+    if (ev.key === "Escape" && (this._viewZoom || this._zoomedAreaId !== undefined)) {
+      ev.preventDefault();
+      this._showWholePlan();
+      this._restartFocusTimer();
+      return true;
+    }
+    const dir = ev.key === "+" || ev.key === "=" ? 1 : ev.key === "-" ? -1 : 0;
+    if (!dir || ev.ctrlKey || ev.metaKey || ev.altKey) return false;
+    ev.preventDefault();
+    this._zoomStep(dir);
+    return true;
+  };
+
+  /** The zoom-out button and Escape: everything off, pan included. */
+  private _showWholePlan(): void {
+    this._viewZoom = undefined;
+    this._zoomedAreaId = undefined;
+  }
+
+  /** Commit a free view; a view that is back at the whole plan is the whole plan, room and all. */
+  private _setViewZoom(v: AreaZoomTransform): void {
+    if (isWholePlan(v)) this._showWholePlan();
+    else this._viewZoom = v;
+  }
+
+  /** "+" (1) or "−" (-1), about the centre of what is on screen. */
+  private _zoomStep(dir: 1 | -1): void {
+    this._setViewZoom(stepZoom(this._shownZoom, dir));
+  }
+
+  /**
+   * A press on the zoomed plan (issue #446). Nothing is claimed yet: until the
+   * pointer moves {@link pastPanThreshold} it is a tap, and every handler
+   * underneath sees it exactly as it would on an unzoomed plan. No
+   * preventDefault (the action handler's mousedown would never come) and no
+   * pointer capture (Chromium would retarget the click to the plan).
+   */
+  private readonly _onPanDown = (ev: PointerEvent): void => {
+    this._swallowClick = false;
+    if (!this._config?.zoomControls || isWholePlan(this._shownZoom) || this._pan) return;
+    if (!ev.isPrimary || (ev.pointerType === "mouse" && ev.button !== 0)) return;
+    const plan = ev.currentTarget as HTMLElement;
+    const r = plan.getBoundingClientRect();
+    this._pan = {
+      id: ev.pointerId, x: ev.clientX, y: ev.clientY, from: this._shownZoom,
+      w: r.width, h: r.height, plan, dragging: false,
+    };
+  };
+
+  private readonly _onPanMove = (ev: PointerEvent): void => {
+    const p = this._pan;
+    if (!p || ev.pointerId !== p.id) return;
+    const dx = ev.clientX - p.x;
+    const dy = ev.clientY - p.y;
+    if (!p.dragging) {
+      if (!pastPanThreshold(dx, dy)) return;
+      // Now it is a pan. Capture so the drag keeps going off the plan, and
+      // so the click at the end lands on the plan rather than on a device.
+      p.dragging = true;
+      this._panning = true;
+      try {
+        p.plan.setPointerCapture(ev.pointerId);
+      } catch {
+        // A synthetic or already-released pointer: the drag still works.
+      }
+    }
+    p.view = panBy(p.from, dx, dy, p.w, p.h);
+    // Written straight to the wrapper, once a frame: a full card render per
+    // pointermove would not keep up on a phone. Committed on release.
+    this._panFrame ??= requestAnimationFrame(() => {
+      this._panFrame = undefined;
+      const v = this._pan?.view;
+      const wrap = this._pan?.plan.querySelector<HTMLElement>(":scope > .plan-zoom");
+      if (v && wrap) wrap.style.transform = `translate(${v.txPercent}%, ${v.tyPercent}%) scale(${v.scale})`;
+    });
+  };
+
+  private readonly _onPanEnd = (ev: PointerEvent): void => {
+    const p = this._pan;
+    if (!p || ev.pointerId !== p.id) return;
+    this._endPan();
+    if (!p.dragging) return;
+    if (p.view) this._setViewZoom(p.view);
+    if (ev.type === "pointerup") {
+      // The click this press is about to produce is not a tap on anything.
+      this._swallowClick = true;
+      setTimeout(() => (this._swallowClick = false), 0);
+    }
+  };
+
+  private _endPan(): void {
+    if (this._panFrame !== undefined) cancelAnimationFrame(this._panFrame);
+    this._panFrame = undefined;
+    this._pan = undefined;
+    this._panning = false;
+  }
+
+  /** Capture phase on the plan: runs before any device, room or opening sees the click. */
+  private readonly _onPanClick = {
+    handleEvent: (ev: Event): void => {
+      if (!this._swallowClick) return;
+      this._swallowClick = false;
+      ev.stopPropagation();
+      ev.preventDefault();
+    },
+    capture: true,
+  };
+
+  /** A drawn image would otherwise start the browser's own drag-and-drop instead of a pan. */
+  private readonly _onPlanDragStart = (ev: DragEvent): void => {
+    if (!isWholePlan(this._shownZoom)) ev.preventDefault();
+  };
+
+  /**
+   * Ctrl+wheel zooms about the cursor (a trackpad pinch arrives the same way).
+   * A plain wheel is left alone so the dashboard still scrolls. Coalesced to
+   * one render a frame.
+   */
+  private readonly _onPlanWheel = (ev: WheelEvent): void => {
+    if (!ev.ctrlKey || !this._config?.zoomControls) return;
+    ev.preventDefault();
+    const r = (ev.currentTarget as HTMLElement).getBoundingClientRect();
+    if (!(r.width > 0 && r.height > 0)) return;
+    const f = (v: number) => Math.min(1, Math.max(0, v));
+    this._wheelView = zoomAt(
+      this._wheelView ?? this._shownZoom,
+      wheelZoomFactor(ev.deltaY, ev.deltaMode),
+      f((ev.clientX - r.left) / r.width),
+      f((ev.clientY - r.top) / r.height)
+    );
+    this._panning = true;
+    this._wheelFrame ??= requestAnimationFrame(() => {
+      this._wheelFrame = undefined;
+      const v = this._wheelView;
+      this._wheelView = undefined;
+      if (v) this._setViewZoom(v);
+    });
+    if (this._wheelIdle) clearTimeout(this._wheelIdle);
+    this._wheelIdle = setTimeout(() => {
+      this._wheelIdle = undefined;
+      if (!this._pan) this._panning = false;
+    }, 150);
   };
 
   /** Any use of the card defers the next automatic move. */
@@ -970,6 +1160,12 @@ export class FloorplanCard extends LitElement {
     this._unsubscribeMotion?.();
     this._unsubscribeMotion = undefined;
     this._stopFocusTimer();
+    this._endPan();
+    if (this._wheelFrame !== undefined) cancelAnimationFrame(this._wheelFrame);
+    this._wheelFrame = undefined;
+    this._wheelView = undefined;
+    if (this._wheelIdle) clearTimeout(this._wheelIdle);
+    this._wheelIdle = undefined;
     // Orientation subscription for the per-screen rotations (issue #237).
     // Folded in here rather than declared as a second `disconnectedCallback`:
     // a class may only have one, and the later declaration would silently
@@ -2722,9 +2918,8 @@ export class FloorplanCard extends LitElement {
     const zoomedArea = (active.isOutdoor ? floors.flatMap((f) => f.areas) : active.areas)?.find(
       (a) => a.id === this._zoomedAreaId
     );
-    this._autoLayoutBase = `${this._configSerial}|${active.id}|${rot}|${scale}|${this._zoomedAreaId ?? ""}`;
     const visiblePanels = this._visibleFloorPanels(active, c, iso, zoomedArea, renderHass);
-    const zoom = zoomedArea
+    const roomZoom = zoomedArea
       ? areaZoomTransform(
         zoomedArea.points,
         c.width,
@@ -2738,6 +2933,15 @@ export class FloorplanCard extends LitElement {
         frame
       )
       : IDENTITY_ZOOM;
+    // A free zoom (issue #446) replaces the room's framing while it lasts;
+    // everything below — the wrapper, the overlay's counter-scale, the
+    // zoom-out button — reads this one value either way.
+    const zoomControls = c.zoomControls === true;
+    const zoom = zoomControls && this._viewZoom ? this._viewZoom : roomZoom;
+    this._shownZoom = zoom;
+    const pannable = zoomControls && !isWholePlan(zoom);
+    const freeKey = zoom === this._viewZoom ? `|${zoom.scale},${zoom.txPercent},${zoom.tyPercent}` : "";
+    this._autoLayoutBase = `${this._configSerial}|${active.id}|${rot}|${scale}|${this._zoomedAreaId ?? ""}${freeKey}`;
     // Chrome drawn inside the plan rather than above it (issue #152). The
     // flag is what the floor buttons follow; the chip needs a title as well,
     // and a compact card with no title has nothing to draw there.
@@ -2787,13 +2991,22 @@ export class FloorplanCard extends LitElement {
                size containment leaves 100cqh with nothing to resolve against
                and the plan collapses to nothing. -->
           <div
-            class="plan ${scale === "plan" ? "scale-plan" : ""} ${lineArt ? "line-art" : ""} ${this._rotation.running ? "rotating" : ""}"
-            tabindex=${focusRooms.length > 1 ? "0" : nothing}
-            role=${focusRooms.length > 1 ? "group" : nothing}
+            class="plan ${scale === "plan" ? "scale-plan" : ""} ${lineArt ? "line-art" : ""} ${this._rotation.running ? "rotating" : ""} ${pannable ? "pannable" : ""} ${this._panning ? "panning" : ""}"
+            tabindex=${focusRooms.length > 1 || zoomControls ? "0" : nothing}
+            role=${focusRooms.length > 1 || zoomControls ? "group" : nothing}
             aria-label=${focusRooms.length > 1
         ? "Floor plan. Use the arrow keys to move between rooms, Escape to see the whole plan."
-        : nothing}
-            @keydown=${focusRooms.length > 1 ? this._onPlanKey : nothing}
+        : zoomControls
+          ? "Floor plan. Plus and minus zoom, drag to move around, Escape to see the whole plan."
+          : nothing}
+            @keydown=${focusRooms.length > 1 ? this._onPlanKey : zoomControls ? this._onZoomKey : nothing}
+            @pointerdown=${zoomControls ? this._onPanDown : nothing}
+            @pointermove=${zoomControls ? this._onPanMove : nothing}
+            @pointerup=${zoomControls ? this._onPanEnd : nothing}
+            @pointercancel=${zoomControls ? this._onPanEnd : nothing}
+            @click=${zoomControls ? this._onPanClick : nothing}
+            @dragstart=${zoomControls ? this._onPlanDragStart : nothing}
+            @wheel=${zoomControls ? this._onPlanWheel : nothing}
             style="aspect-ratio: ${dims.w} / ${dims.h};
                    width: min(100%, calc(100cqh * ${dims.w} / ${dims.h}));
                    --fp-plan-w: ${dims.w};
@@ -3155,10 +3368,30 @@ export class FloorplanCard extends LitElement {
                 class="zoom-out"
                 title="Zoom out"
                 aria-label="Zoom out"
-                @click=${() => (this._zoomedAreaId = undefined)}
+                @click=${() => this._showWholePlan()}
               >
                 <ha-icon icon="mdi:magnify-minus-outline"></ha-icon>
               </button>`
+        : nothing}
+          ${zoomControls
+        ? html`<div class="zoom-steps" role="group" aria-label="Zoom" @keydown=${this._onZoomKey}>
+                <button
+                  title="Zoom in"
+                  aria-label="Zoom in"
+                  ?disabled=${zoom.scale >= MAX_PLAN_ZOOM}
+                  @click=${() => this._zoomStep(1)}
+                >
+                  <ha-icon icon="mdi:plus"></ha-icon>
+                </button>
+                <button
+                  title="Zoom out a step"
+                  aria-label="Zoom out a step"
+                  ?disabled=${isWholePlan(zoom)}
+                  @click=${() => this._zoomStep(-1)}
+                >
+                  <ha-icon icon="mdi:minus"></ha-icon>
+                </button>
+              </div>`
         : nothing}
           ${roomFocus?.controls && focusRooms.length > 1
         ? html`<div class="room-focus" role="group" aria-label="Move between rooms">
@@ -3191,7 +3424,7 @@ export class FloorplanCard extends LitElement {
         </div>
         ${c.showViewControls ? renderViewControls({
           view: iso ? "3d" : "2d", appearance: normalizeAppearance(c.appearance), rotation: targetRotation,
-          canReset: !!(this._viewOverride || this._appearanceOverride || this._rotation.target || this._rotation.running || this._zoomedAreaId),
+          canReset: !!(this._viewOverride || this._appearanceOverride || this._rotation.target || this._rotation.running || this._zoomedAreaId || this._viewZoom),
           exportEnabled: !!c.showExport,
           setView: (view) => { this._rotation.finish(); this._viewOverride = view === (normalizeProjection(this._config!.view ?? this._config!.projection) === "iso" ? "3d" : "2d") ? undefined : view; },
           setAppearance: (appearance) => { this._appearanceOverride = appearance === normalizeAppearance(this._config!.appearance) ? undefined : appearance; },
@@ -3542,6 +3775,37 @@ export class FloorplanCard extends LitElement {
         transition: none;
       }
     }
+    /* Free zoom (issue #446). The gesture is claimed only while there is
+       something to pan: an unzoomed plan keeps the page's own touch scrolling. */
+    .plan.pannable {
+      touch-action: none;
+      user-select: none;
+      -webkit-user-select: none;
+      cursor: grab;
+    }
+    .plan.panning { cursor: grabbing; }
+    .plan.panning .plan-zoom { transition: none; }
+    .zoom-steps {
+      position: absolute;
+      right: 8px;
+      bottom: 8px;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .zoom-steps button {
+      cursor: pointer;
+      border: 1px solid var(--divider-color, #ccc);
+      background: var(--card-background-color, #fff);
+      color: var(--primary-text-color);
+      border-radius: 6px;
+      padding: 4px;
+      line-height: 0;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+      touch-action: manipulation;
+    }
+    .zoom-steps button:disabled { opacity: .4; cursor: default; }
     /* The room-focus controls (issue #261), sharing the zoom-out button's look
        and its corner — it is the same job, one room further along. */
     .room-focus {
