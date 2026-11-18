@@ -3765,7 +3765,7 @@ export class FloorplanCardEditor extends LitElement {
     ],
     ["Rotation", ["rotation", "rotationPortrait", "rotationLandscape"]],
     ["Size", ["overlayScale", "overlayMinWidth", "compactHeader"]],
-    ["Rooms", ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"]],
+    ["Rooms", ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval", "zoomControls"]],
   ] as const;
 
   private static readonly TRACKER_GROUPS = [

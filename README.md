@@ -38,6 +38,9 @@ control lights, and view the plan in 3D.
   [vertical sections](docs/lighting.md#sunlight-on-a-section).
 - **Rooms and presence** — zoom into rooms, link Home Assistant areas, show
   presence ripples and track positions from distance sensors.
+- **Zoom and pan** — opt-in +/− buttons that hold a zoom level, and dragging the
+  plan around while zoomed, with a mouse or one finger (`zoomControls`). See
+  [Zoom buttons and dragging](docs/appearance.md#zoom-buttons-and-dragging).
 - **Multiple floors** — switch between floors or navigate with a staircase.
 - **Floor summaries** — aggregated floor badges (temp, humidity, presence, lights, windows) directly in the switcher.
 - **Spatial telemetry callouts** — floating HUD info-panels with SVG leader lines anchored to rooms, furniture, roofs or coordinates in 2D and 3D.

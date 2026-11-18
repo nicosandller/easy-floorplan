@@ -2309,6 +2309,15 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    */
   roomFocus?: boolean | { controls?: boolean; interval?: number; rooms?: string[] };
   /**
+   * Free zoom and pan (issue #446). `true` adds "+"/"−" buttons that step the
+   * zoom about the centre of the view and hold it there, lets the plan be
+   * dragged around while zoomed (mouse or one finger), and makes Ctrl+wheel
+   * zoom about the cursor. Composes with zoom-to-room: the buttons step from a
+   * room's framing, and a zoomed room can be dragged. Off by default, so an
+   * existing card neither grows buttons nor starts claiming touch gestures.
+   */
+  zoomControls?: boolean;
+  /**
    * Under `overlayScale: plan`, size the overlay as though the displayed plan
    * were at least this wide (px). All overlay measures stop shrinking together.
    * Unset or zero keeps normal scaling; ignored in fixed-pixel mode.

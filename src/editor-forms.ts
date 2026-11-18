@@ -2922,6 +2922,13 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
         selector: { number: { min: 0, max: MAX_FOCUS_INTERVAL, step: 1, mode: "box", unit_of_measurement: "s" } },
       },
       {
+        name: "zoomControls",
+        label: "Zoom buttons and dragging",
+        helper:
+          "+/− buttons that zoom in steps and hold the zoom, and dragging the plan around while zoomed (mouse or one finger; Ctrl+wheel zooms too). Off, the plan only zooms to a room",
+        selector: { boolean: {} },
+      },
+      {
         name: "offlineStyle",
         label: "Offline devices",
         helper: "How a device is drawn when its entity is unavailable or missing",
@@ -2963,6 +2970,7 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
           : DEFAULT_ZOOMED_OVERLAY_SCALE,
       roomFocusControls: normalizeRoomFocus(c.roomFocus)?.controls ?? false,
       roomFocusInterval: (normalizeRoomFocus(c.roomFocus)?.intervalMs ?? 0) / 1000,
+      zoomControls: c.zoomControls === true,
       offlineStyle: offlineStyleOf(c),
     },
     toPatch: (p) => {
@@ -2994,6 +3002,8 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
         out = { ...out, overlayMinWidth: normalizeOverlayMinWidth(out.overlayMinWidth) };
       if ("compactHeader" in out && !out.compactHeader)
         out = { ...out, compactHeader: undefined };
+      if ("zoomControls" in out && !out.zoomControls)
+        out = { ...out, zoomControls: undefined };
       if ("offlineStyle" in out && out.offlineStyle === DEFAULT_OFFLINE_STYLE)
         out = { ...out, offlineStyle: undefined };
       // Same again for the zoomed overlay: 1 means "no different while zoomed",
