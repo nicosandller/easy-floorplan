@@ -1169,6 +1169,9 @@ function areaScopeHelper(scope: AreaEntityScope | undefined, base?: string): str
  */
 export type BadgeMode = "icon" | "spin" | "pulse" | "value" | "picture" | "none";
 
+/** Domains whose state carries a profile picture (issue #420). */
+const PICTURE_DOMAINS = new Set(["person", "device_tracker"]);
+
 /** {@link BadgeMode} for an item, reading the three keys it stands in for. */
 function badgeModeOf(it: FloorItem): BadgeMode {
   // A ripple-only device draws no badge, whatever `badgeContent` says.
@@ -1411,6 +1414,12 @@ export function itemBadgeForm(
   badgeSource?: BadgeSourceInfo,
   overlayScale?: OverlayScale,
 ): FormSpec {
+  const mode = badgeModeOf(it);
+  // "Picture" (issue #420) is offered where there is a picture to show: the
+  // presence domains, whose state carries the person's profile photo, or a
+  // device already set to it (a custom picture, or YAML on another domain),
+  // so the menu can always name what the badge is doing.
+  const offerPicture = mode === "picture" || !!it.picture || PICTURE_DOMAINS.has(it.entity?.split(".")[0] ?? "");
   const fields: FormField[] = [
     {
       name: "badgeMode",
@@ -1422,10 +1431,20 @@ export function itemBadgeForm(
         opt("spin", "Icon, spinning"),
         opt("pulse", "Icon, pulsing"),
         opt("value", "Value"),
+        ...(offerPicture ? [opt("picture", "Picture")] : []),
         opt("none", "Nothing")
       ),
     },
   ];
+  if (mode === "picture") {
+    fields.push({
+      name: "picture",
+      label: "Picture URL",
+      helper:
+        "Leave empty to use the entity's own picture. Falls back to the icon when there is none or the entity is offline",
+      selector: { text: {} },
+    });
+  }
   // Which reading the value comes from (issue #136) — offered only where it is
   // a real question: the badge has to be showing a value, and the device has to
   // have more than one reading to choose between. Most devices never see this.
@@ -1436,7 +1455,7 @@ export function itemBadgeForm(
   // "the second one" — a plug showing power, link quality and battery can badge
   // whichever it likes (issue #180).
   const readings = itemReadings(it);
-  if (badgeModeOf(it) === "value" && readings.length) {
+  if (mode === "value" && readings.length) {
     fields.push({
       name: "badgeEntity",
       label: "Badge reads",
@@ -1465,7 +1484,8 @@ export function itemBadgeForm(
   return {
     fields,
     data: {
-      badgeMode: badgeModeOf(it),
+      badgeMode: mode,
+      picture: it.picture ?? "",
       // The dropdown's values are strings, so the stored index (or the legacy
       // "secondary") is spelled the same way here; toPatch turns it back into
       // a number. Opens on what the badge is *actually* reading when nothing
@@ -1484,6 +1504,9 @@ export function itemBadgeForm(
       // to configs that never had it.
       if ("badgeEntity" in out && typeof out.badgeEntity === "string" && out.badgeEntity !== "primary")
         out = { ...out, badgeEntity: Number(out.badgeEntity) };
+      // A cleared URL is no key, not an empty one.
+      if ("picture" in out && !(typeof out.picture === "string" && out.picture.trim()))
+        out = { ...out, picture: undefined };
       if (!("badgeMode" in out)) return out;
       const { badgeMode, ...rest } = out;
       return {
