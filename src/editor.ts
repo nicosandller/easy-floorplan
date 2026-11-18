@@ -172,6 +172,7 @@ import {
 } from "./render";
 import { autoLabelKey, measureLabelScene, rectToBox, type LabelSide } from "./label-placement";
 import { deadSpacesCached } from "./dead-space";
+import { applyWallFix, wallFindingsCached, type WallFinding } from "./wall-check";
 import { cssColor, cssColorOr, cssNumber, contrastText } from "./css-safe";
 import {
   skinStyle,
@@ -352,7 +353,7 @@ const TOOL_META: Record<Tool, { icon: string; label: string }> = {
   // Skylight uses home-roof to distinguish from standard windows.
   skylight: { icon: "mdi:home-roof", label: "Skylight" },
   tracker: { icon: "mdi:crosshairs-gps", label: "Tracker" },
-  area: { icon: "mdi:vector-polygon", label: "Area" },
+  area: { icon: "mdi:vector-polygon", label: "Room" },
   roof: { icon: "mdi:home-outline", label: "Roof" },
 };
 
@@ -776,6 +777,11 @@ export class FloorplanCardEditor extends LitElement {
    * shows. A dense plan is much easier to aim at without them.
    */
   @state() private _hideLabels = false;
+  /**
+   * Which plan-check finding the notice under the canvas is showing (issue
+   * #403). Editor view state only, clamped to however many there are now.
+   */
+  @state() private _wallCheckIndex = 0;
   /**
    * Trace templates, by floor id — a PDF or image of an existing plan under
    * the canvas to draw over. Editor view state only, like `_hideLabels`:
@@ -3735,10 +3741,31 @@ export class FloorplanCardEditor extends LitElement {
   ] as const;
 
   private static readonly FURNITURE_GROUPS = [
-    ["Shape", ["type", "hand", "w", "h", "angle"]],
+    ["Shape", ["type", "hand", "w", "h", "height3d", "angle"]],
     ["What it reads", ["entity", "invert"]],
     // What clicking it does — a staircase that changes floor (issue #121).
     ["Behavior", ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"]],
+  ] as const;
+
+  /** Project → View: one `projectDisplayForm`, in the order the fields render. */
+  private static readonly DISPLAY_GROUPS = [
+    [
+      "View",
+      [
+        "view",
+        "appearance",
+        "showViewControls",
+        "showExport",
+        "furniture3d",
+        "furnitureSeparateSection",
+        "furnitureSectionHeight",
+        "wallHeight",
+        "wallOpacity",
+      ],
+    ],
+    ["Rotation", ["rotation", "rotationPortrait", "rotationLandscape"]],
+    ["Size", ["overlayScale", "overlayMinWidth", "compactHeader"]],
+    ["Rooms", ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"]],
   ] as const;
 
   private static readonly TRACKER_GROUPS = [
@@ -3753,7 +3780,8 @@ export class FloorplanCardEditor extends LitElement {
     if (!pages.find((page) => page.id === active)?.groups.includes(title)) return html`${nothing}`;
     const label = ({
       "What it reads": "Sensor readings", Behavior: "Tap, hold & double-tap",
-      Look: "Plan style", Project: "Canvas", Display: "View & scale", Color: "State colors",
+      Look: "Plan style", Project: "Canvas", Color: "State colors",
+      Floor: `Storey · ${this._floor().name}`,
       "Floor image": `Background · ${this._floor().name}`,
     } as Record<string, string>)[title] ?? title;
     const codeSwitch = title === "Behavior" && customElements.get("ha-yaml-editor")
@@ -4434,8 +4462,8 @@ export class FloorplanCardEditor extends LitElement {
       }
       case "area": {
         const a = (f.areas ?? []).find((x) => x.id === sel.id);
-        if (!a) return "Area";
-        return `Area · ${a.name || `${a.points.length}-point`}`;
+        if (!a) return "Room";
+        return `Room · ${a.name || `${a.points.length}-point`}`;
       }
       case "roof": {
         const r = (f.roofs ?? []).find((x) => x.id === sel.id);
@@ -5008,6 +5036,73 @@ export class FloorplanCardEditor extends LitElement {
    * current selection. This keeps contextual controls (which come and go) out
    * of the always-present top row.
    */
+  /**
+   * The plan check's markers (issue #403): one ring per finding, the one the
+   * notice is showing drawn stronger, with a dashed line to where its fix
+   * moves the wall end. Inert, so drawing and picking work through them.
+   */
+  private _renderWallCheckMarks(findings: readonly WallFinding[], current: number): TemplateResult {
+    return svg`<g class="wall-check" aria-hidden="true">
+      ${findings.map((f, i) => svg`<g class="wall-check-mark ${i === current ? "current" : ""}">
+        ${f.kind === "duplicate" ? nothing
+          : svg`<line class="wall-check-fix" x1=${f.point.x} y1=${f.point.y} x2=${f.to.x} y2=${f.to.y} />`}
+        <circle cx=${f.point.x} cy=${f.point.y} r="11" />
+      </g>`)}
+    </g>`;
+  }
+
+  /**
+   * The plan check's notice (issue #403), between the canvas and the context
+   * bar. Rendered only when the active floor has something to flag, so a plan
+   * without findings looks exactly as it did before the check existed.
+   */
+  private _renderWallCheck(findings: readonly WallFinding[], current: number): TemplateResult | typeof nothing {
+    const f = findings[current];
+    if (!f) return nothing;
+    const n = findings.length;
+    const units = (v: number) => {
+      const r = Math.round(v * 10) / 10;
+      return `${r} unit${r === 1 ? "" : "s"}`;
+    };
+    const message = f.kind === "near-miss"
+      ? `A wall end stops ${units(f.gap)} short of the next wall.`
+      : f.kind === "duplicate"
+        ? "A wall is drawn on top of another wall."
+        : `Two walls overlap by ${units(f.length)}.`;
+    const action = f.kind === "near-miss" ? "Join" : f.kind === "duplicate" ? "Remove duplicate" : "Trim overlap";
+    const detail = f.kind === "near-miss"
+      ? "Moves the end onto the other wall."
+      : f.kind === "duplicate" ? "Deletes the copy and keeps the other wall." : "Shortens one wall so the two just meet.";
+    const wall = this._floor().walls[f.wallIndex];
+    const locked = !!wall?.locked;
+    const step = (by: number) => () => { this._wallCheckIndex = (current + by + n) % n; };
+    return html`<div class="wall-check-bar" role="status">
+      <ha-icon icon="mdi:wall" aria-hidden="true"></ha-icon>
+      <span class="wall-check-text">${message}</span>
+      ${n > 1
+        ? html`<span class="wall-check-nav">
+            <button class="wall-check-step" aria-label="Previous plan check" title="Previous" @click=${step(-1)}>
+              <ha-icon icon="mdi:chevron-left"></ha-icon></button>
+            <span class="wall-check-count">${current + 1} of ${n}</span>
+            <button class="wall-check-step" aria-label="Next plan check" title="Next" @click=${step(1)}>
+              <ha-icon icon="mdi:chevron-right"></ha-icon></button>
+          </span>`
+        : nothing}
+      <button class="wall-check-apply" ?disabled=${locked}
+        title=${locked ? "The wall is locked. Unlock it to fix this." : detail}
+        @click=${() => this._applyWallFinding(f)}>${action}</button>
+    </div>`;
+  }
+
+  /** One plan-check fix, as one undoable edit. */
+  private _applyWallFinding(finding: WallFinding): void {
+    const walls = applyWallFix(this._floor().walls, finding);
+    this._commitFloor({ walls });
+    if (finding.kind === "duplicate" && !walls.some((w) => w.id === finding.wallId)) {
+      this._selection = this._selection.filter((s) => !(s.kind === "wall" && s.id === finding.wallId));
+    }
+  }
+
   private _renderContextBar(): TemplateResult {
     const t = this._tool;
     let label: string;
@@ -5058,7 +5153,7 @@ export class FloorplanCardEditor extends LitElement {
         >
       `;
     } else if (t === "area") {
-      label = "Area";
+      label = "Room";
       const n = this._draftArea?.points.length ?? 0;
       body = html`
         <span class="ctx-hint">
@@ -5349,6 +5444,10 @@ export class FloorplanCardEditor extends LitElement {
           );
         })
       : blockingWallSegments;
+    // The plan check (issue #403). Held back while a wall is being drawn or
+    // dragged: an end passing close to another wall on its way is no finding.
+    const wallFindings = this._drag || this._draft ? [] : wallFindingsCached(floor.walls);
+    const wallCheckCurrent = Math.min(this._wallCheckIndex, Math.max(0, wallFindings.length - 1));
     const floorEmpty =
       !floor.walls.length &&
       !floor.openings.length &&
@@ -5904,6 +6003,7 @@ export class FloorplanCardEditor extends LitElement {
                   : nothing
               }
               ${this._renderAreaDraft()}
+              ${wallFindings.length ? this._renderWallCheckMarks(wallFindings, wallCheckCurrent) : nothing}
               ${
                 this._marquee
                   ? svg`<rect x=${Math.min(this._marquee.x0, this._marquee.x1)}
@@ -5957,6 +6057,7 @@ export class FloorplanCardEditor extends LitElement {
         </div>
         </div>
 
+          ${this._renderWallCheck(wallFindings, wallCheckCurrent)}
           ${this._renderContextBar()}
         </div>
         <aside class="side" aria-label="Inspector">
@@ -7013,7 +7114,7 @@ export class FloorplanCardEditor extends LitElement {
     const id = this._scopingAreaId();
     if (!id) return nothing;
     const area = (this._floor().areas ?? []).find((a) => a.id === id);
-    const name = area?.name ? area.name : "this area";
+    const name = area?.name ? area.name : "this room";
     // The switch lives on the Area element, which is a deselect-navigate-
     // reselect round trip from here — issue #94 was exactly someone reading
     // the old wording and finding no such control. Offer it inline instead.
@@ -7022,7 +7123,7 @@ export class FloorplanCardEditor extends LitElement {
       <span>Only entities in <strong>${name}</strong> are listed.</span>
       <button
         class="link-btn"
-        title="Turn off Filter entities for this area — every entity becomes selectable"
+        title="Turn off Filter entities for this room — every entity becomes selectable"
         @click=${() => this._updateArea(id, { filterEntities: false })}
       >
         Show all
@@ -7933,6 +8034,10 @@ export class FloorplanCardEditor extends LitElement {
     const patch = (p: Record<string, unknown>) =>
       this._patchConfig(p as Partial<FloorplanCardConfig>);
     const display = projectDisplayForm(c);
+    const floorPatch = (p: Record<string, unknown>, live: boolean) => {
+      if (live) this._patchFloorLive(p as Partial<Floor>);
+      else this._commitFloor(p as Partial<Floor>);
+    };
     return html`
       <div class="rows panel-body">
         ${this._renderGroup(
@@ -7979,13 +8084,28 @@ export class FloorplanCardEditor extends LitElement {
           this._renderSwitcherPlacement()
         )}
         ${this._renderGroup(
+          // What the floor is, rather than what is drawn under it (issue
+          // #433). Same form as the floor image, sliced in two.
+          "Floor",
+          this._renderForm(
+            formSlice(floorImageForm(this._floor()), ["isOutdoor", "isSection", "sectionFacing", "level"]),
+            floorPatch
+          )
+        )}
+        ${this._renderGroup(
           // Per floor, not per project — but it is the floor's paper, so it
           // belongs beside the plan's own.
           "Floor image",
-          this._renderForm(floorImageForm(this._floor()), (p, live) => {
-            if (live) this._patchFloorLive(p as Partial<Floor>);
-            else this._commitFloor(p as Partial<Floor>);
-          })
+          this._renderForm(
+            formSlice(floorImageForm(this._floor()), [
+              "image",
+              "imageFit",
+              "imageOpacity",
+              "imageDark",
+              "imageInvertDark",
+            ]),
+            floorPatch
+          )
         )}
         ${this._renderGroup(
           // Beside the floor image because it looks like one, but it is the
@@ -7993,32 +8113,15 @@ export class FloorplanCardEditor extends LitElement {
           "Trace template",
           this._renderTracePanel()
         )}
-        ${this._renderGroup(
+        ${
           // How the card is framed on the dashboard, as opposed to what is
           // drawn inside it. Set once for a surface and rarely touched again.
-          "Display",
-          this._renderForm(
-            formSlice(display, [
-              "view",
-              "appearance",
-              "showViewControls",
-              "showExport",
-              "wallHeight",
-              "wallOpacity",
-              "rotation",
-              "rotationPortrait",
-              "rotationLandscape",
-              "overlayScale",
-              "overlayMinWidth",
-              "compactHeader",
-              "zoomedOverlayAuto",
-              "zoomedOverlayScale",
-              "roomFocusControls",
-              "roomFocusInterval",
-            ]),
-            patch
-          )
-        )}
+          // One form, sliced into four headings (issue #433): fourteen fields
+          // in one run hid that the two "…on a screen" rotations qualify the
+          // one above them.
+          FloorplanCardEditor.DISPLAY_GROUPS.map(([title, names]) =>
+            this._renderGroup(title, this._renderForm(formSlice(display, names), patch)))
+        }
         ${this._renderGroup(
           // Light through the openings (issue #177) — where it comes from and
           // what it looks like where it lands.
@@ -8639,12 +8742,12 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderEssentialForm(itemEntityForm(it, areaEntities), ["entity"], apply)}
         ${this._renderEssentialForm(itemIdentityForm(it), ["name", "showName"], apply)}
         ${this._renderEssentialForm(itemShowStateForm(it), ["showState"], apply)}
-        ${this._renderEssentialForm(itemBadgeForm(it), ["size", "angle"], apply)}
+        ${this._renderEssentialForm(itemBadgeForm(it, undefined, this._config.overlayScale), ["size", "angle"], apply)}
         ${this._renderItemIconRow(it)}
         ${this._renderRoofChips(roofsOver)}
       `;
       const entityState = it.entity ? this.hass?.states[it.entity] : undefined;
-      const effects = itemEffectsForm(it, deviceClass, entityState);
+      const effects = itemEffectsForm(it, deviceClass, entityState, this._config.overlayScale);
       return html`
         ${this._renderGroup(
           "What it reads",
@@ -8656,7 +8759,7 @@ export class FloorplanCardEditor extends LitElement {
         ${itemHasLabel(it)
           ? this._renderGroup(
               "Label",
-              this._renderForm(itemLabelForm(it), apply),
+              this._renderForm(itemLabelForm(it, this._config.overlayScale), apply),
               it.disableLabelColor && it.useCustomLabelColor
                 ? this._renderColorRow({
                     label: "Custom color",
@@ -8736,7 +8839,7 @@ export class FloorplanCardEditor extends LitElement {
       const t = this._floor().texts.find((x) => x.id === sel.id);
       if (!t) return html`${nothing}`;
       return html`
-        ${this._renderEssentialForm(textForm(t, this._areaEntitiesAt(t.x, t.y)), ["text", "entity", "attribute", "size", "angle"], (patch, live) =>
+        ${this._renderEssentialForm(textForm(t, this._areaEntitiesAt(t.x, t.y), this._config.overlayScale), ["text", "entity", "attribute", "size", "angle"], (patch, live) =>
           this._applyElementPatch("text", t.id, patch, live)
         )}
         ${this._renderColorRow({
@@ -8759,12 +8862,13 @@ export class FloorplanCardEditor extends LitElement {
     if (sel.kind === "furniture") {
       const f = this._floor().furniture.find((x) => x.id === sel.id);
       if (!f) return html`${nothing}`;
-      const fSpec = furnitureForm(f, this._areaEntitiesAt(f.x, f.y), this._symbols(), getFloors(this._config));
+      const fSpec = furnitureForm(f, this._areaEntitiesAt(f.x, f.y), this._symbols(), getFloors(this._config),
+        this._config.furniture3d === true);
       const fApply = (patch: Record<string, unknown>, live: boolean) =>
         this._applyElementPatch("furniture", f.id, patch, live);
       const roofsOver = this._roofsOverPoint(f.x, f.y);
       if (this._selectionPage === "properties") return html`
-        ${this._renderEssentialForm(fSpec, ["w", "h", "angle", ...(f.type === "stairs" ? ["goToFloor"] : []), "hand"], fApply)}
+        ${this._renderEssentialForm(fSpec, ["w", "h", "height3d", "angle", ...(f.type === "stairs" ? ["goToFloor"] : []), "hand"], fApply)}
         ${this._renderColorRow({
           label: "Color", value: f.color, swatch: "#9e9e9e", placeholder: "Default",
           onLive: (color) => this._updateFurnitureLive(f.id, { color }),
@@ -8803,7 +8907,7 @@ export class FloorplanCardEditor extends LitElement {
       if (!a) return html`${nothing}`;
       const haAreas = haAreasOf(this.hass);
       const pendingEntities = a.haArea ? this._pendingAreaEntities(a) : [];
-      const aSpec = areaForm(a);
+      const aSpec = areaForm(a, this._config.overlayScale);
       const aApply = (patch: Record<string, unknown>, live: boolean) =>
         this._applyElementPatch("area", a.id, patch, live);
       const roofsOver = this._roofsOverArea(a);
@@ -8820,7 +8924,7 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderRoofChips(roofsOver, "Roofs above this room:")}
         <div class="row wide">
           <button class="secondary" @click=${() => this._createRoofFromArea(a)}>
-            <ha-icon icon="mdi:home-outline"></ha-icon> Create Roof from Room
+            <ha-icon icon="mdi:home-outline"></ha-icon> Create roof from room
           </button>
         </div>
       `;
@@ -8943,14 +9047,14 @@ export class FloorplanCardEditor extends LitElement {
                           (a) => html`
                             <button
                               class="chip-btn"
-                              title="Select this area"
+                              title="Select this room"
                               @click=${() => {
                                 this._selection = [{ kind: "area", id: a.id }];
                                 this._liveEditKey = null;
                               }}
                             >
                               <ha-icon icon="mdi:floor-plan"></ha-icon>
-                              ${a.name || "Area"}
+                              ${a.name || "Room"}
                             </button>
                           `
                         )}

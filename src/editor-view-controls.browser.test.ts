@@ -8,7 +8,7 @@ import { emptyConfig, getFloors, type FloorplanCardConfig } from "./types";
 
 afterEach(() => document.body.replaceChildren());
 
-it("saves live appearance and optional controls from Project → Display and restores them on reload", async () => {
+it("saves live appearance and optional controls from Project → View and restores them on reload", async () => {
   const original = emptyConfig("custom:easy-floorplan-card");
   original.floors = getFloors(original);
   original.floors[0].walls = [{ id: "wall", x1: 50, y1: 50, x2: 400, y2: 50 }];
@@ -19,7 +19,7 @@ it("saves live appearance and optional controls from Project → Display and res
   await editor.updateComplete;
   const state = editor as unknown as { _projectOpen: boolean; _projectPage: string };
   state._projectOpen = true;
-  // Project settings are category pages now: "Display" lives on the View page.
+  // Project settings are category pages now: the display fields live on the View page.
   state._projectPage = "view";
   editor.requestUpdate();
   await editor.updateComplete;
@@ -40,6 +40,8 @@ it("saves live appearance and optional controls from Project → Display and res
     input.dispatchEvent(new Event("change", { bubbles: true }));
     await editor.updateComplete;
   };
+  const labels = () => [...root.querySelectorAll(".row label")].map(label => label.textContent);
+  expect(labels()).not.toContain("3D furniture");
   await change("Appearance", "line-art");
   await change("Show view controls", true);
   await change("Allow SVG download", true);
@@ -48,12 +50,30 @@ it("saves live appearance and optional controls from Project → Display and res
   expect(saved.showViewControls).toBe(true);
   expect(saved.showExport).toBe(true);
   expect(saved.view).toBe("3d");
+  expect(labels()).toContain("3D furniture");
+  expect(labels()).not.toContain("Separate furniture cut height");
+  await change("3D furniture", true);
+  expect(labels()).toContain("Separate furniture cut height");
+  expect(labels()).not.toContain("Furniture cut height");
+  await change("Separate furniture cut height", true);
+  expect(field("Furniture cut height").value).toBe("180");
+  await change("Furniture cut height", "150");
+  expect(saved.furnitureSectionHeight).toBe(150);
+  await change("3D furniture", false);
+  expect(labels()).not.toContain("Separate furniture cut height");
+  expect(labels()).not.toContain("Furniture cut height");
+  expect(saved.furnitureSectionHeight).toBe(150);
+  await change("3D furniture", true);
+  expect(field("Furniture cut height").value).toBe("150");
   expect(saved.floors).toEqual(original.floors);
 
   const reloaded = JSON.parse(JSON.stringify(saved)) as FloorplanCardConfig;
   editor.setConfig(reloaded);
   await editor.updateComplete;
   expect(field("Appearance").value).toBe("line-art");
+  expect((field("3D furniture") as HTMLInputElement).checked).toBe(true);
+  expect((field("Separate furniture cut height") as HTMLInputElement).checked).toBe(true);
+  expect(field("Furniture cut height").value).toBe("150");
   expect((field("Show view controls") as HTMLInputElement).checked).toBe(true);
   const card = document.createElement("easy-floorplan-card") as FloorplanCard;
   card.setConfig(reloaded);

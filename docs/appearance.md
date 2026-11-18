@@ -555,7 +555,7 @@ where a px floor under the text is what keeps it readable from across the room.
 > default belongs in new configs, not in a changed reading of old ones.
 >
 > If you liked what 1.5 did, add `overlayScale: plan` and keep it — or pick **Canvas
-> units** under **Display** in the editor, which now writes your choice down instead of
+> units** under **Project → View → Size** in the editor, which now writes your choice down instead of
 > omitting it for being the default. Merely opening that panel changes nothing: a plan's
 > YAML gains the key when you choose a mode, not because you looked at the setting.
 
@@ -589,7 +589,7 @@ The rule of thumb: `plan` is what a plan wants, and the size numbers are yours t
 
 ### Minimum overlay size
 
-Under **Project → Display → Stop shrinking below**, choose the displayed plan width
+Under **Project → View → Size → Stop shrinking below**, choose the displayed plan width
 (in pixels) below which badges and labels should stop shrinking. This setting appears
 only with **Canvas units** selected. Zero turns it off.
 
@@ -655,7 +655,7 @@ rotationLandscape: 0   # desktop, wall tablet
 - Editing is unaffected. The editor always shows the plan as drawn, as it does for plain
   `rotation`.
 
-In the editor: **Project → Display**, under *Rotate display*.
+In the editor: **Project → View**, under **Rotation**.
 
 Icons and labels stay upright at every angle, so a rotated plan is still readable.
 A device or text given an **angle** of its own turns with the plan instead, since that
@@ -674,7 +674,7 @@ was rotated (issue #280).
 
 ## Live appearance and view controls
 
-Choose **Project → Display → Appearance → Line art** for a live architectural
+Choose **Project → View → View → Appearance → Line art** for a live architectural
 drawing of your existing plan. Enable **Show view controls** in the same group
 to give viewers these controls directly on the card:
 
@@ -732,7 +732,7 @@ with simulated lights, doors and both themes.
 
 ## SVG export
 
-Enable **Project → Display → Allow SVG download**, or add `showExport: true`, for
+Enable **Project → View → View → Allow SVG download**, or add `showExport: true`, for
 an optional download button at the end of the view controls. Without view controls,
 it appears as **Export SVG** below the plan. Select a floor, then download it.
 The download uses the current 2D or 3D view and the selected destination rotation
@@ -765,7 +765,7 @@ views and floors and download the example drawing.
 
 ## 3D view
 
-Choose **Project → Display → View → 3D isometric** to see the plan from a corner.
+Choose **Project → View → View → View: 3D isometric** to see the plan from a corner.
 The editor stays flat; all stored coordinates and entity bindings stay the same.
 
 ```yaml
@@ -774,6 +774,66 @@ wallHeight: 60    # canvas units, adjustable from 0 to 400
 wallOpacity: 0.65 # 0 = invisible, 1 = solid (default)
 rotation: 90     # optional: choose the viewing corner
 ```
+
+### Detailed 3D furniture
+
+In **Project → View → View**, choosing **3D isometric** reveals **3D furniture**.
+Enable it to use the initial `table`, `cornerShelf`, `bathtub` and `stove` models.
+Other symbols retain their block rendering, and 2D plans are unchanged.
+In **Project → Display**, choosing **3D isometric** reveals **3D furniture**.
+Enable it to use the 35 built-in detailed models, including beds, shelving,
+bathroom fittings, appliances and plants. `awning` and `curtain` retain block
+rendering, as do custom symbols without valid models. 2D plans are unchanged.
+
+Enabling models reveals **Separate furniture cut height**; enabling that option
+reveals **Furniture cut height** (0–400 canvas units, default 180).
+
+```yaml
+view: 3d
+wallHeight: 60
+furniture3d: true
+furnitureSeparateSection: true
+furnitureSectionHeight: 180
+```
+
+`furniture3d` and `furnitureSeparateSection` both default to `false`. Without a
+separate cut, models are clipped at `wallHeight`. With it, walls keep their height
+while furniture uses `furnitureSectionHeight`: parts above the plane disappear,
+and intersecting parts receive a flat top. Zero hides model geometry. Turning
+the options off retains the saved cut height. Models without a valid definition
+keep their usual block rendering, including its wall-relative height.
+
+Each placed piece can set `height3d` (**3D height** in the editor) to scale its
+model vertically before clipping. It defaults to the authored model height and
+is independent of footprint resizing; use half the height for a half-scale plan.
+See [Furniture configuration](configuration.md#furniture) for the accepted range.
+Detailed models currently stand on the floor: symbol `elevation` is supported
+only by the block fallback, so elevated custom symbols should omit `model3d`.
+See the [symbol author guide](../furniture/README.md#optional-3d-models-version-1)
+for the model format and limitations.
+
+The same four pieces with detailed models off, enabled at full height, and cut
+at 100 canvas units (wall height remains 60):
+
+| Default blocks | Detailed models, cut 220 | Separate cut 100 |
+| --- | --- | --- |
+| ![Default block furniture](img/furniture-3d-off.png) | ![Four detailed furniture models](img/furniture-3d-full.png) | ![Models with a separate cut at 100](img/furniture-3d-cut.png) |
+
+The expanded catalog includes beds, a bunk bed, vanity and indoor palm:
+
+![Bed, bunk bed, vanity and indoor palm from two angles](img/furniture-3d-complex.png)
+
+Appliance panels, the rug border and water-heater fittings remain lightweight
+geometry. The stairs model is 220 cm high; use `height3d` for another height.
+
+![Air handler, rug, water heater and 220 cm stairs](img/furniture-3d-details.png)
+
+The curved corner shower has two glass doors with a central gap, hinges, slim
+profiles, flared handles on both sides of each door, and a drain grille.
+
+![Detailed corner shower from two angles](img/furniture-3d-corner-shower.png)
+
+### Isometric rendering
 
 The prototype's `projection: iso` still works. An explicit `view` takes precedence;
 selecting a view in the editor removes the old alias.
@@ -790,7 +850,8 @@ selecting a view in the editor removes the old alias.
   rectangle it is, and tilts up out of the roof from its hinge as the sash opens.
   Its blind is drawn flat under the glass, as far down as the cover reports. It
   cuts no wall, in this view as in the flat one.
-- Furniture stands as a block with its usual glyph on top. Furniture actions and
+- Furniture defaults to a block with its usual glyph on top; opt-in detailed models
+  use the settings above. Furniture actions and
   staircase navigation continue to work.
 - Rooms, light pools, direct sunlight, ambient daylight and background images stay
   on the floor. Lighting reads the same opening/shutter state in both views,

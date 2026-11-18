@@ -33,7 +33,7 @@ Use the **Roof** drawing tool from the editor toolbar or drawing tool picker.
 ### 1. Drawing Modes
 - **Drag-Rectangle**: Press and hold on the canvas for >200ms, then drag to draw a rectangular roof in one gesture.
 - **Click-Polygon**: Click each vertex in sequence. Points snap to nearby wall endpoints and room corners. After placing 3 or more points, click the first point to close the outline (**Backspace** drops the last placed point, **Escape** cancels).
-- **Create Roof from Room**: When any area (room) is selected, click **Create Roof from Room** in the inspector to instantly generate a matching roof polygon over that room.
+- **Create roof from room**: When any area (room) is selected, click **Create roof from room** in the inspector to instantly generate a matching roof polygon over that room.
 
 ### 2. Moving and Resizing
 - **Move**: Click and drag inside the roof's fill area to move the entire roof.

@@ -1280,6 +1280,23 @@ describe("textForm / furnitureForm / trackerForm", () => {
     expect(form.toPatch({ zoneKind: "indoor" } as never)).toEqual({ zoneKind: undefined });
   });
 
+  it("areaForm names the object a room, keeping the zone kinds as its types (issue #432)", () => {
+    const field = areaForm({ id: "a", points: [] } as never).fields.find((x) => x.name === "zoneKind")!;
+    expect(field.label).toBe("Room type");
+    const opts = (field.selector as { select: { options: { value: string; label: string }[] } }).select.options;
+    expect(opts[0]).toEqual({ value: "indoor", label: "Indoor" });
+    expect(opts.map((o) => o.value)).toEqual(["indoor", "lawn", "patio", "pool", "terrace", "driveway", "garden", "courtyard"]);
+    const zoomed = itemGroup7aForm({ id: "i", kind: "sensor", x: 0, y: 0 } as FloorItem).fields
+      .find((x) => x.name === "showOnlyWhenZoomed")!;
+    expect(zoomed.label).toBe("Only show when zoomed into its room");
+    // Home Assistant's own area keeps its name; the switch lives on the room.
+    const scoped = itemEntityForm({ id: "i", kind: "sensor", x: 0, y: 0 } as FloorItem, {
+      name: "Kitchen",
+      entities: ["sensor.k"],
+    }).fields.find((x) => x.name === "entity")!;
+    expect(scoped.helper).toBe("Only entities in the Kitchen area — turn off “Filter entities” on the room to see all");
+  });
+
   it("floorImageForm exposes isOutdoor data and patches it", () => {
     const form = floorImageForm({ id: "f", name: "Courtyard", isOutdoor: true } as never);
     expect(form.data.isOutdoor).toBe(true);
@@ -1292,6 +1309,47 @@ describe("textForm / furnitureForm / trackerForm", () => {
     const form = furnitureForm({ id: "f", type: "table", x: 0, y: 0, w: 10, h: 10 } as never);
     expect(form.fields.map((x) => x.name)).not.toContain("hand");
     expect("hand" in form.data).toBe(false);
+  });
+});
+
+describe("field suffixes say what the value is measured in (issue #431)", () => {
+  const unit = (spec: { fields: FormField[] } | undefined, name: string) =>
+    (spec!.fields.find((x) => x.name === name)!.selector.number as { unit_of_measurement?: string })
+      .unit_of_measurement;
+  const wall = { id: "w", x1: 0, y1: 0, x2: 1, y2: 1 };
+  const item = { id: "i", kind: "sensor", x: 0, y: 0, entity: "sensor.t" } as FloorItem;
+  const motion = { id: "m", kind: "binary_sensor", x: 0, y: 0, entity: "binary_sensor.m", display: "iconRipple" } as FloorItem;
+  const text = { id: "t", x: 0, y: 0, text: "hi" } as FloorText;
+  const area = { id: "a", points: [] } as unknown as Area;
+  const plan = (overlayScale?: "plan" | "fixed") =>
+    ({ type: "t", width: 1000, height: 600, overlayScale }) as FloorplanCardConfig;
+
+  it("canvas measures always say units", () => {
+    expect(unit(wallForm(wall), "thickness")).toBe("units");
+    expect(unit(wallForm(wall), "height")).toBe("units");
+    expect(unit(trackerForm({ id: "t", x: 0, y: 0, w: 20, h: 20 } as Tracker), "dotSize")).toBe("units");
+  });
+
+  it("the minimum card width is screen pixels whatever the overlay scale", () => {
+    expect(unit(projectDisplayForm(plan("plan")), "overlayMinWidth")).toBe("px");
+  });
+
+  it("overlay measures say units under overlayScale: plan", () => {
+    expect(unit(itemLabelForm(item, "plan"), "labelSize")).toBe("units");
+    expect(unit(itemBadgeForm(item, undefined, "plan"), "size")).toBe("units");
+    expect(unit(itemEffectsForm(motion, "motion", undefined, "plan"), "rippleSize")).toBe("units");
+    expect(unit(textForm(text, undefined, "plan"), "size")).toBe("units");
+    expect(unit(areaForm(area, "plan"), "labelSize")).toBe("units");
+  });
+
+  it("overlay measures say px under overlayScale: fixed, and when it is absent", () => {
+    for (const scale of ["fixed", undefined] as const) {
+      expect(unit(itemLabelForm(item, scale), "labelSize")).toBe("px");
+      expect(unit(itemBadgeForm(item, undefined, scale), "size")).toBe("px");
+      expect(unit(itemEffectsForm(motion, "motion", undefined, scale), "rippleSize")).toBe("px");
+      expect(unit(textForm(text, undefined, scale), "size")).toBe("px");
+      expect(unit(areaForm(area, scale), "labelSize")).toBe("px");
+    }
   });
 });
 
@@ -2348,8 +2406,8 @@ describe("every field lands in exactly one panel group", () => {
     ["tapTarget", "tap_action", "hold_action", "double_tap_action"],
   ];
   const FURNITURE_GROUPS = [
-    ["type", "hand", "w", "h", "angle"],
-    ["entity"],
+    ["type", "hand", "w", "h", "height3d", "angle"],
+    ["entity", "invert"],
     ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"],
   ];
   const TRACKER_GROUPS = [["w", "h", "x", "y", "angle"], ["dotSize"]];
@@ -2404,31 +2462,48 @@ describe("every field lands in exactly one panel group", () => {
   it("covers every project field — offlineStyle is sliced away from its form", () => {
     // projectDisplayForm still owns rotation / overlayScale / compactHeader /
     // offlineStyle as one form with one toPatch, but the panel renders the
-    // first three under "Display" and the last under "Devices". Miss it in
-    // both slices and the control silently disappears.
-    const DISPLAY = [
+    // first three under View → Rotation and Size (issue #433) and the last
+    // under "Devices". Miss it in every slice and the control silently
+    // disappears.
+    const VIEW = [
       "view",
       "appearance",
       "showViewControls",
       "showExport",
-      "rotation",
-      "rotationPortrait",
-      "rotationLandscape",
-      "overlayScale",
-      "overlayMinWidth",
-      "compactHeader",
-      "zoomedOverlayAuto",
-      "zoomedOverlayScale",
-      "roomFocusControls",
-      "roomFocusInterval",
+      "furniture3d",
+      "furnitureSeparateSection",
+      "furnitureSectionHeight",
+      "wallHeight",
+      "wallOpacity",
     ];
+    const ROTATION = ["rotation", "rotationPortrait", "rotationLandscape"];
+    const SIZE = ["overlayScale", "overlayMinWidth", "compactHeader"];
+    const ROOMS = ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"];
     const DEVICES = ["offlineStyle"];
-    // Canvas units, so the conditional overlayMinWidth field is produced too.
-    const cfg = { type: "t", width: 1000, height: 600, overlayScale: "plan" } as FloorplanCardConfig;
-    check(projectDisplayForm(cfg).fields, [DISPLAY, DEVICES], "project display");
-    // Both slices resolve, and neither can emit the other's key.
-    expect(formSlice(projectDisplayForm(cfg), DISPLAY).fields.map((f) => f.name)).toEqual(DISPLAY);
-    expect(formSlice(projectDisplayForm(cfg), DEVICES).fields.map((f) => f.name)).toEqual(DEVICES);
+    // Canvas units, so the conditional overlayMinWidth field is produced too,
+    // and 3D with detailed furniture cut separately, so the wall fields and
+    // all three furniture fields are.
+    const cfg = {
+      type: "t",
+      width: 1000,
+      height: 600,
+      overlayScale: "plan",
+      view: "3d",
+      furniture3d: true,
+      furnitureSeparateSection: true,
+    } as FloorplanCardConfig;
+    check(projectDisplayForm(cfg).fields, [VIEW, ROTATION, SIZE, ROOMS, DEVICES], "project display");
+    // Every slice resolves, and none can emit another's key.
+    for (const slice of [VIEW, ROTATION, SIZE, ROOMS, DEVICES]) {
+      expect(formSlice(projectDisplayForm(cfg), slice).fields.map((f) => f.name)).toEqual(slice);
+    }
+    // The slices together are the old single list, in the same order.
+    expect(projectDisplayForm(cfg).fields.map((f) => f.name).filter((n) => n !== "offlineStyle")).toEqual([
+      ...VIEW,
+      ...ROTATION,
+      ...SIZE,
+      ...ROOMS,
+    ]);
   });
 
   it("covers every furniture, tracker, area and roof field", () => {
@@ -2998,3 +3073,45 @@ describe("roofForm", () => {
   });
 });
 
+
+describe("3D furniture display controls", () => {
+  const base = { type: "custom:easy-floorplan-card", width: 400, height: 400 } as FloorplanCardConfig;
+  const names = (c: Partial<FloorplanCardConfig>) => projectDisplayForm({ ...base, ...c }).fields.map(f => f.name);
+  it("reveals the opt-in, separate cut and height progressively", () => {
+    expect(names({ view: "2d", furniture3d: true, furnitureSeparateSection: true })).not.toContain("furniture3d");
+    expect(names({ view: "3d" })).toContain("furniture3d");
+    expect(names({ view: "3d" })).not.toContain("furnitureSeparateSection");
+    expect(names({ view: "3d", furniture3d: true })).toContain("furnitureSeparateSection");
+    expect(names({ view: "3d", furniture3d: true })).not.toContain("furnitureSectionHeight");
+    expect(names({ view: "3d", furniture3d: true, furnitureSeparateSection: true })).toContain("furnitureSectionHeight");
+    expect(names({ projection: "iso" })).toContain("furniture3d");
+  });
+  it("starts disabled and retains the saved height when toggles change", () => {
+    const form = projectDisplayForm(base);
+    expect(form.data.furniture3d).toBe(false);
+    expect(form.data.furnitureSeparateSection).toBe(false);
+    expect(form.data.furnitureSectionHeight).toBe(180);
+    const configured = projectDisplayForm({ ...base, furniture3d: true, furnitureSeparateSection: true, furnitureSectionHeight: 150 });
+    expect(configured.toPatch({ furnitureSeparateSection: false })).toEqual({ furnitureSeparateSection: false });
+    expect(configured.toPatch({ furniture3d: false })).toEqual({ furniture3d: false });
+    expect(configured.toPatch({ furnitureSectionHeight: 220 })).toEqual({ furnitureSectionHeight: 220 });
+  });
+});
+
+it("edits and clears the optional furniture 3D height", () => {
+  const f = { id: "s", type: "cornerShelf", x: 0, y: 0, w: 60, h: 60, height3d: 100 };
+  const form = furnitureForm(f, undefined, undefined, [], true);
+  expect(form.fields.some(field => field.name === "height3d")).toBe(true);
+  expect(form.data.height3d).toBe(100);
+  expect(form.toPatch!({ height3d: 150 })).toMatchObject({ height3d: 150 });
+  expect(form.toPatch!({ height3d: "" })).toHaveProperty("height3d", undefined);
+  expect(form.toPatch!({ height3d: -1 })).toHaveProperty("height3d", undefined);
+});
+
+it("only offers 3D height for an enabled valid model without clearing saved heights", () => {
+  for (const [type, enabled, visible] of [["table", true, true], ["table", false, false], ["awning", true, false], ["unknown", true, false]] as const) {
+    const form = furnitureForm({ id: "x", type, x: 0, y: 0, w: 60, h: 60, height3d: 75 }, undefined, undefined, [], enabled);
+    expect(form.fields.some(f => f.name === "height3d")).toBe(visible);
+    expect(form.data.height3d).toBe(75);
+  }
+});
