@@ -130,6 +130,7 @@ import {
   resolveStateColor,
   itemRawValue,
   badgeContentOf,
+  badgePictureOf,
   badgeValue,
   badgeValueSize,
   pressEffectOf,
@@ -329,6 +330,13 @@ export class FloorplanCard extends LitElement {
    * should invalidate one.
    */
   private _autoSides = new Map<string, LabelSide>();
+  /**
+   * Badge pictures that failed to load (issue #420), by URL, so the badge
+   * falls back to its icon and stays there across re-renders instead of
+   * retrying a broken image every state change. Keyed by URL, so a picture
+   * that changes gets a fresh try.
+   */
+  private _failedPictures = new Set<string>();
   /** Bumped by every setConfig — the cheap "the plan changed" half of the layout key. */
   private _configSerial = 0;
   /** This render's layout inputs, and the ones the current sides were measured from. */
@@ -1890,12 +1898,27 @@ export class FloorplanCard extends LitElement {
     // state colour, ripple stacking all unchanged — with the glyph swapped for
     // the number. A device with nothing numeric to show keeps its icon.
     const value = badgeContentOf(item) === "value" ? badgeValue(renderHass, item) : undefined;
+    // A face instead of a glyph (issue #420), in the same badge box so the
+    // ring, state colour and offline mark are untouched. The URL is resolved
+    // against the live `hass` (an origin, not a state), the picture itself off
+    // the state being drawn.
+    const hass = this.hass;
+    const picture = badgePictureOf(item, st, hass?.hassUrl ? (p) => hass.hassUrl!(p) : undefined);
     return html`
       <div
         class="badge"
         style="width:${box};height:${box};transform:rotate(${overlayAngle(cssNumber(item.angle, 0), rot)}deg);"
       >
-        ${value
+        ${picture && !this._failedPictures.has(picture)
+        ? html`<img
+              class="badge-picture"
+              src=${picture}
+              alt=""
+              loading="lazy"
+              draggable="false"
+              @error=${() => this._pictureFailed(picture)}
+            />`
+        : value
         ? html`<span
               class="badge-value"
               style="font-size:${overlayLength(badgeValueSize(size, value), scale)};"
@@ -1908,6 +1931,13 @@ export class FloorplanCard extends LitElement {
             ></ha-icon>`}
       </div>
     `;
+  }
+
+  /** A badge picture would not load: draw the icon instead (issue #420). */
+  private _pictureFailed(url: string): void {
+    if (this._failedPictures.has(url)) return;
+    this._failedPictures.add(url);
+    this.requestUpdate();
   }
 
   /**
@@ -4167,6 +4197,25 @@ export class FloorplanCard extends LitElement {
       justify-content: center;
       color: var(--fp-skin-text, var(--primary-text-color));
       box-shadow: var(--fp-skin-badge-shadow, 0 1px 3px rgba(0, 0, 0, 0.2));
+    }
+    /* The picture standing in for the icon (issue #420). It fills the badge
+       inside its border and takes the badge's own corner radius, so it is a
+       circle by default and a rounded square under a skin that squares the
+       badge. Clipped on the image rather than with overflow on .badge, which
+       would cut off the offline strike that overhangs it. Inert to the
+       pointer, so a long press reaches hold_action rather than the browser's
+       image menu, and a drag is never a native image drag. */
+    .badge-picture {
+      display: block;
+      flex: none;
+      width: 100%;
+      height: 100%;
+      border-radius: inherit;
+      object-fit: cover;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
     /* The reading standing in for the icon (issue #106). Inherits the badge's
        text color, so every rule that recolours a badge — active, --fp-state —
