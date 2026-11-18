@@ -967,6 +967,59 @@ describe("itemForm", () => {
     });
   });
 
+  // Issue #452: how many decimals a value badge prints.
+  describe("Badge decimals (#452)", () => {
+    const thermostat = {
+      ...item,
+      entity: "climate.hall",
+      kind: "climate",
+      badgeContent: "value",
+    } as FloorItem;
+    const names = (it: FloorItem) => itemForm(it).fields.map((x) => x.name);
+
+    it("appears only while the badge shows a value", () => {
+      expect(names(thermostat)).toContain("badgeDecimals");
+      // No second reading needed, unlike "Badge reads".
+      expect(names(thermostat)).not.toContain("badgeEntity");
+      expect(names({ ...thermostat, badgeContent: "icon" } as FloorItem)).not.toContain("badgeDecimals");
+      expect(names({ ...thermostat, badgeContent: "none" } as FloorItem)).not.toContain("badgeDecimals");
+      expect(names({ ...thermostat, display: "ripple" } as FloorItem)).not.toContain("badgeDecimals");
+    });
+
+    it("sits after the reading choice and before the size", () => {
+      const fields = itemBadgeForm({ ...thermostat, secondaryEntity: "sensor.t" } as FloorItem)
+        .fields.map((f) => f.name);
+      expect(fields).toEqual(["badgeMode", "badgeEntity", "badgeDecimals", "size", "angle"]);
+    });
+
+    it("offers the default, the entity's precision and 0..3", () => {
+      const field = itemForm(thermostat).fields.find((x) => x.name === "badgeDecimals")!;
+      const opts = (field.selector as { select: { options: { value: string }[] } }).select.options;
+      expect(opts.map((o) => o.value)).toEqual(["default", "auto", "0", "1", "2", "3"]);
+    });
+
+    it("opens on what the badge draws", () => {
+      const data = (badgeDecimals: unknown) =>
+        itemForm({ ...thermostat, badgeDecimals } as FloorItem).data.badgeDecimals;
+      expect(data(undefined)).toBe("default");
+      expect(data(1)).toBe("1");
+      expect(data(0)).toBe("0");
+      expect(data("auto")).toBe("auto");
+      // A value the badge ignores reads as the default it actually draws.
+      expect(data(7)).toBe("default");
+      expect(data("1")).toBe("default");
+    });
+
+    it("stores a number, 'auto', or no key at all for the default", () => {
+      const patch = (badgeDecimals: string) => itemForm(thermostat).toPatch({ badgeDecimals });
+      expect(patch("1").badgeDecimals).toBe(1);
+      expect(patch("0").badgeDecimals).toBe(0);
+      expect(patch("auto").badgeDecimals).toBe("auto");
+      const cleared = patch("default");
+      expect("badgeDecimals" in cleared && cleared.badgeDecimals !== undefined).toBe(false);
+    });
+  });
+
   it("moves the icon out of the form, next to the rules that override it (#127)", () => {
     expect(itemForm(item).fields.map((x) => x.name)).not.toContain("icon");
     expect(itemForm(item).data.icon).toBeUndefined();

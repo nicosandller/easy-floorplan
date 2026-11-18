@@ -78,6 +78,7 @@ import {
   labelPositionOf,
   itemReadings,
   badgeEntityIndex,
+  badgeDecimalsOf,
   offlineStyleOf,
   sliderStyleOf,
   shutterStyleOf,
@@ -1452,6 +1453,23 @@ export function itemBadgeForm(
       ),
     });
   }
+  // How the number is rounded (issue #452) — only while there is a number.
+  if (badgeModeOf(it) === "value") {
+    fields.push({
+      name: "badgeDecimals",
+      label: "Badge decimals",
+      helper:
+        "Entity's precision follows the display precision set in Home Assistant, for readings of an entity's state",
+      selector: dropdown(
+        opt("default", "Rounded (default)"),
+        opt("auto", "Entity's precision"),
+        opt("0", "0"),
+        opt("1", "1"),
+        opt("2", "2"),
+        opt("3", "3")
+      ),
+    });
+  }
   fields.push(
     {
       name: "size",
@@ -1469,6 +1487,9 @@ export function itemBadgeForm(
       // a number. Opens on what the badge is *actually* reading when nothing
       // is chosen, which is the whole point of badgeSource (issue #136).
       badgeEntity: String(badgeEntityIndex(it.badgeEntity) ?? badgeSource?.source ?? "primary"),
+      // A value the dropdown does not offer (hand-written YAML) is one the
+      // badge ignores too, so it opens on what is actually drawn.
+      badgeDecimals: String(badgeDecimalsOf(it.badgeDecimals) ?? "default"),
       size: it.size ?? DEFAULT_ITEM_SIZE,
       angle: it.angle ?? 0,
     },
@@ -1482,6 +1503,15 @@ export function itemBadgeForm(
       // to configs that never had it.
       if ("badgeEntity" in out && typeof out.badgeEntity === "string" && out.badgeEntity !== "primary")
         out = { ...out, badgeEntity: Number(out.badgeEntity) };
+      // Same for the decimals: "default" is no key at all, digits a number.
+      if ("badgeDecimals" in out)
+        out = {
+          ...out,
+          badgeDecimals:
+            out.badgeDecimals === "auto" ? "auto" : out.badgeDecimals === "default" || out.badgeDecimals == null
+              ? undefined
+              : Number(out.badgeDecimals),
+        };
       if (!("badgeMode" in out)) return out;
       const { badgeMode, ...rest } = out;
       return {

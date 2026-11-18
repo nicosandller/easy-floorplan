@@ -40,5 +40,8 @@ export function buildRenderHass(
     formatEntityAttributeValue: hass.formatEntityAttributeValue
       ? (stateObj: HassEntity, attribute: string) => hass.formatEntityAttributeValue!(stateObj, attribute)
       : undefined,
+    // Registry facts are not replayed: a display precision is configuration,
+    // the same at any point in the history (issue #452).
+    entities: hass.entities,
   };
 }
