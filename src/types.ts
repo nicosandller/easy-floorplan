@@ -835,6 +835,18 @@ export interface FloorItem {
    */
   badgeEntity?: BadgeEntity;
   /**
+   * Fill the badge's icon in proportion to the reading (issue #421): the glyph
+   * is drawn dim, and the part up to the reading is drawn in full, so a drop
+   * shows how humid a room is and a battery how charged it is without a number.
+   *
+   * `true` reads 0–100, which suits a percentage; `{ min, max }` sets another
+   * range, such as a day's expected kWh. The reading is the one the badge's
+   * colour rules are judged on ({@link attribute} when set, else the state)
+   * and is clamped to the range. Nothing numeric — offline, or a word — draws
+   * the plain icon. Only an icon badge fills; a value badge keeps its number.
+   */
+  fill?: boolean | BadgeFill;
+  /**
    * Hide this device on the live card while its entity is inactive (issue
    * #55), so a busy room only shows what is actually doing something. The
    * editor always draws it — dimmed — or it could never be selected again.
@@ -1037,6 +1049,14 @@ export type ItemDisplay = "badge" | "ripple" | "iconRipple";
 
 /** Which side of its run an LED strip lights — see {@link FloorItem.stripSide}. */
 export type StripSide = "both" | "left" | "right";
+
+/** The range a badge fill reads against — see {@link FloorItem.fill} (issue #421). */
+export interface BadgeFill {
+  /** The reading drawn as an empty icon. Default 0. */
+  min?: number;
+  /** The reading drawn as a full icon. Default 100. */
+  max?: number;
+}
 
 /** What a device badge holds — see {@link FloorItem.badgeContent} (issue #106). */
 export type BadgeContent = "icon" | "value" | "none";
