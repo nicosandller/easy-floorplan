@@ -320,7 +320,7 @@ swing.
 | `activeColor` | string                                 | theme color  | Badge color while on. Ignored while `stateColor` rules match. |
 | `inactiveColor` | string                               | theme badge  | Badge color while **off** — closed, locked or docked, whichever this entity's domain says. Ignored while `stateColor` rules match, and while the entity is [offline](behavior.md#offline-devices). See [Colors for on and off](behavior.md#colors-for-on-and-off). |
 | `rippleColor` | string                                 | `activeColor`| Ripple ring color, falling back to `activeColor` then the primary color. |
-| `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
+| `rippleSize`  | number                                 | `80`         | Max ripple diameter: screen px, or canvas units with `overlayScale: plan`. |
 | `rippleDirection` | number                             | `0`          | Direction the ripple arc is centred on, in degrees clockwise from the top **of the plan**, not of the screen — a rotated card turns the arc with the drawing, so it keeps pointing at the wall it was aimed at. Only visible when `rippleWidth` is under `360`. Wraps to be between `0`–`360`. |
 | `rippleWidth` | number                                 | `360`        | Angular width of the ripple arc in degrees. `360` rings all the way round; narrow it for a sensor on a wall that cannot see behind itself. Clamped to `0`–`360`. |
 | `glow`        | boolean                                | `false`      | Cast a pool of light onto the plan (lights only). See [Cast light](#cast-light). |
@@ -908,7 +908,7 @@ label gets no Label group, and an opening with no shutter gets no Shutter group.
 | Furniture | Shape · What it reads · Behavior · Color |
 | Area | Identity · What it reads · Color · Behavior · Home Assistant area |
 | Tracker | Zone · Sensors · Marker |
-| Project | Project · Look · Floor image · Display · Sunlight · Night dimming · Devices · Symbols |
+| Project | Project · Look · Floor · Floor image · View · Rotation · Size · Rooms · Sunlight · Night dimming · Devices · Symbols |
 
 Walls and text keep a plain list: a wall is thickness and length, a text is its words, size
 and angle. A heading over one or two fields is chrome rather than structure.

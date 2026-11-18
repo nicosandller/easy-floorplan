@@ -555,7 +555,7 @@ where a px floor under the text is what keeps it readable from across the room.
 > default belongs in new configs, not in a changed reading of old ones.
 >
 > If you liked what 1.5 did, add `overlayScale: plan` and keep it — or pick **Canvas
-> units** under **Display** in the editor, which now writes your choice down instead of
+> units** under **Project → View → Size** in the editor, which now writes your choice down instead of
 > omitting it for being the default. Merely opening that panel changes nothing: a plan's
 > YAML gains the key when you choose a mode, not because you looked at the setting.
 
@@ -589,7 +589,7 @@ The rule of thumb: `plan` is what a plan wants, and the size numbers are yours t
 
 ### Minimum overlay size
 
-Under **Project → Display → Stop shrinking below**, choose the displayed plan width
+Under **Project → View → Size → Stop shrinking below**, choose the displayed plan width
 (in pixels) below which badges and labels should stop shrinking. This setting appears
 only with **Canvas units** selected. Zero turns it off.
 
@@ -655,7 +655,7 @@ rotationLandscape: 0   # desktop, wall tablet
 - Editing is unaffected. The editor always shows the plan as drawn, as it does for plain
   `rotation`.
 
-In the editor: **Project → Display**, under *Rotate display*.
+In the editor: **Project → View**, under **Rotation**.
 
 Icons and labels stay upright at every angle, so a rotated plan is still readable.
 A device or text given an **angle** of its own turns with the plan instead, since that
@@ -674,7 +674,7 @@ was rotated (issue #280).
 
 ## Live appearance and view controls
 
-Choose **Project → Display → Appearance → Line art** for a live architectural
+Choose **Project → View → View → Appearance → Line art** for a live architectural
 drawing of your existing plan. Enable **Show view controls** in the same group
 to give viewers these controls directly on the card:
 
@@ -732,7 +732,7 @@ with simulated lights, doors and both themes.
 
 ## SVG export
 
-Enable **Project → Display → Allow SVG download**, or add `showExport: true`, for
+Enable **Project → View → View → Allow SVG download**, or add `showExport: true`, for
 an optional download button at the end of the view controls. Without view controls,
 it appears as **Export SVG** below the plan. Select a floor, then download it.
 The download uses the current 2D or 3D view and the selected destination rotation
@@ -765,7 +765,7 @@ views and floors and download the example drawing.
 
 ## 3D view
 
-Choose **Project → Display → View → 3D isometric** to see the plan from a corner.
+Choose **Project → View → View → View: 3D isometric** to see the plan from a corner.
 The editor stays flat; all stored coordinates and entity bindings stay the same.
 
 ```yaml
@@ -777,6 +777,9 @@ rotation: 90     # optional: choose the viewing corner
 
 ### Detailed 3D furniture
 
+In **Project → View → View**, choosing **3D isometric** reveals **3D furniture**.
+Enable it to use the initial `table`, `cornerShelf`, `bathtub` and `stove` models.
+Other symbols retain their block rendering, and 2D plans are unchanged.
 In **Project → Display**, choosing **3D isometric** reveals **3D furniture**.
 Enable it to use the 35 built-in detailed models, including beds, shelving,
 bathroom fittings, appliances and plants. `awning` and `curtain` retain block

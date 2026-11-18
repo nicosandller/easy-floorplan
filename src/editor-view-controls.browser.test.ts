@@ -8,7 +8,7 @@ import { emptyConfig, getFloors, type FloorplanCardConfig } from "./types";
 
 afterEach(() => document.body.replaceChildren());
 
-it("saves live appearance and optional controls from Project → Display and restores them on reload", async () => {
+it("saves live appearance and optional controls from Project → View and restores them on reload", async () => {
   const original = emptyConfig("custom:easy-floorplan-card");
   original.floors = getFloors(original);
   original.floors[0].walls = [{ id: "wall", x1: 50, y1: 50, x2: 400, y2: 50 }];
@@ -19,7 +19,7 @@ it("saves live appearance and optional controls from Project → Display and res
   await editor.updateComplete;
   const state = editor as unknown as { _projectOpen: boolean; _projectPage: string };
   state._projectOpen = true;
-  // Project settings are category pages now: "Display" lives on the View page.
+  // Project settings are category pages now: the display fields live on the View page.
   state._projectPage = "view";
   editor.requestUpdate();
   await editor.updateComplete;
