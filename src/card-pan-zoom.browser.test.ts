@@ -216,7 +216,8 @@ describe("dragging the zoomed plan", () => {
     const plan = t.plan();
     const at = (type: string, x: number, y: number) =>
       plan.dispatchEvent(new PointerEvent(type, {
-        pointerId: 3, pointerType: "mouse", isPrimary: true, button: 0, clientX: x, clientY: y,
+        pointerId: 3, pointerType: "mouse", isPrimary: true, button: 0, buttons: type === "pointerup" ? 0 : 1,
+        clientX: x, clientY: y,
         bubbles: true, composed: true,
       }));
     at("pointerdown", 400, 200);
@@ -234,13 +235,57 @@ describe("dragging the zoomed plan", () => {
     expect(cy(moved) - cy(lamp)).toBeCloseTo(-10, 0);
   });
 
+  it("moves the plan while the drag is still going, with the easing off", async () => {
+    const t = await mount();
+    await t.press("Zoom in");
+    const before = t.transform();
+    const plan = t.plan();
+    const at = (type: string, x: number, buttons: number) =>
+      plan.dispatchEvent(new PointerEvent(type, {
+        pointerId: 5, pointerType: "mouse", isPrimary: true, button: 0, buttons,
+        clientX: x, clientY: 100, bubbles: true, composed: true,
+      }));
+    at("pointerdown", 100, 1);
+    at("pointermove", 150, 1);
+    await frame();
+    await t.card.updateComplete;
+    expect(plan.classList.contains("panning")).toBe(true);
+    expect(t.transform().tx).toBeGreaterThan(before.tx);
+    at("pointerup", 150, 0);
+    await t.card.updateComplete;
+    expect(plan.classList.contains("panning")).toBe(false);
+  });
+
+  it("a press released off the plan does not leave hovering dragging it, or eat the next tap", async () => {
+    const t = await mount();
+    await t.press("Zoom in");
+    const before = t.transform();
+    const plan = t.plan();
+    // Down on the plan, released somewhere the plan never hears about.
+    plan.dispatchEvent(new PointerEvent("pointerdown", {
+      pointerId: 1, pointerType: "mouse", isPrimary: true, button: 0, buttons: 1,
+      clientX: 100, clientY: 100, bubbles: true, composed: true,
+    }));
+    // Later, the mouse merely passes over the plan with no button held.
+    plan.dispatchEvent(new PointerEvent("pointermove", {
+      pointerId: 1, pointerType: "mouse", isPrimary: true, buttons: 0,
+      clientX: 300, clientY: 200, bubbles: true, composed: true,
+    }));
+    await frame();
+    await t.card.updateComplete;
+    expect(t.transform()).toEqual(before);
+    await userEvent.click(t.lamp());
+    expect(calls).toHaveLength(1);
+  });
+
   it("stops at the plan's edge rather than dragging it off the card", async () => {
     const t = await mount();
     await t.press("Zoom in");
     const plan = t.plan();
     const at = (type: string, x: number, y: number) =>
       plan.dispatchEvent(new PointerEvent(type, {
-        pointerId: 4, pointerType: "mouse", isPrimary: true, button: 0, clientX: x, clientY: y,
+        pointerId: 4, pointerType: "mouse", isPrimary: true, button: 0, buttons: type === "pointerup" ? 0 : 1,
+        clientX: x, clientY: y,
         bubbles: true, composed: true,
       }));
     at("pointerdown", 100, 100);

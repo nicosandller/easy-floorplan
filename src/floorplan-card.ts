@@ -1039,8 +1039,11 @@ export class FloorplanCard extends LitElement {
    */
   private readonly _onPanDown = (ev: PointerEvent): void => {
     this._swallowClick = false;
-    if (!this._config?.zoomControls || isWholePlan(this._shownZoom) || this._pan) return;
+    if (!this._config?.zoomControls || isWholePlan(this._shownZoom)) return;
     if (!ev.isPrimary || (ev.pointerType === "mouse" && ev.button !== 0)) return;
+    // A press whose release landed outside the plan (on a corner button, past
+    // the card) never ended; a new primary press replaces it.
+    if (this._pan) this._endPan();
     const plan = ev.currentTarget as HTMLElement;
     const r = plan.getBoundingClientRect();
     this._pan = {
@@ -1052,6 +1055,13 @@ export class FloorplanCard extends LitElement {
   private readonly _onPanMove = (ev: PointerEvent): void => {
     const p = this._pan;
     if (!p || ev.pointerId !== p.id) return;
+    // A mouse with no button down has already been released somewhere this
+    // plan did not hear about: that press is over, and hovering must not pan.
+    if (ev.pointerType === "mouse" && ev.buttons === 0) {
+      this._endPan();
+      if (p.dragging && p.view) this._setViewZoom(p.view);
+      return;
+    }
     const dx = ev.clientX - p.x;
     const dy = ev.clientY - p.y;
     if (!p.dragging) {
@@ -1082,7 +1092,14 @@ export class FloorplanCard extends LitElement {
     if (!p || ev.pointerId !== p.id) return;
     this._endPan();
     if (!p.dragging) return;
-    if (p.view) this._setViewZoom(p.view);
+    if (p.view) {
+      // The last frame may not have been written yet; write it now, so the
+      // commit (which turns the transition back on) has nothing left to ease.
+      const v = p.view;
+      const wrap = p.plan.querySelector<HTMLElement>(":scope > .plan-zoom");
+      if (wrap) wrap.style.transform = `translate(${v.txPercent}%, ${v.tyPercent}%) scale(${v.scale})`;
+      this._setViewZoom(v);
+    }
     if (ev.type === "pointerup") {
       // The click this press is about to produce is not a tap on anything.
       this._swallowClick = true;
