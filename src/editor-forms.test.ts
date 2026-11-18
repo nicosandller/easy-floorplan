@@ -1525,6 +1525,7 @@ describe("wallForm / projectForm / floorImageForm", () => {
       "zoomedOverlayScale",
       "roomFocusControls",
       "roomFocusInterval",
+      "zoomControls",
       "offlineStyle",
     ]);
     expect(form.data.rotation).toBe("0");
@@ -2478,7 +2479,7 @@ describe("every field lands in exactly one panel group", () => {
     ];
     const ROTATION = ["rotation", "rotationPortrait", "rotationLandscape"];
     const SIZE = ["overlayScale", "overlayMinWidth", "compactHeader"];
-    const ROOMS = ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"];
+    const ROOMS = ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval", "zoomControls"];
     const DEVICES = ["offlineStyle"];
     // Canvas units, so the conditional overlayMinWidth field is produced too,
     // and 3D with detailed furniture cut separately, so the wall fields and
@@ -3114,4 +3115,17 @@ it("only offers 3D height for an enabled valid model without clearing saved heig
     expect(form.fields.some(f => f.name === "height3d")).toBe(visible);
     expect(form.data.height3d).toBe(75);
   }
+});
+
+describe("zoom controls in the display form (issue #446)", () => {
+  const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+
+  it("is off unless the config says so, and off stays out of the YAML", () => {
+    expect(projectDisplayForm(base).data.zoomControls).toBe(false);
+    expect(projectDisplayForm({ ...base, zoomControls: true }).data.zoomControls).toBe(true);
+    expect(projectDisplayForm(base).toPatch({ zoomControls: true })).toEqual({ zoomControls: true });
+    expect(
+      projectDisplayForm({ ...base, zoomControls: true }).toPatch({ zoomControls: false })
+    ).toEqual({ zoomControls: undefined });
+  });
 });
