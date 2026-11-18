@@ -78,6 +78,7 @@ import {
   labelPositionOf,
   itemReadings,
   badgeEntityIndex,
+  badgeDecimalsOf,
   offlineStyleOf,
   sliderStyleOf,
   shutterStyleOf,
@@ -1488,10 +1489,7 @@ export function itemBadgeForm(
       badgeEntity: String(badgeEntityIndex(it.badgeEntity) ?? badgeSource?.source ?? "primary"),
       // A value the dropdown does not offer (hand-written YAML) is one the
       // badge ignores too, so it opens on what is actually drawn.
-      badgeDecimals:
-        it.badgeDecimals === "auto" || [0, 1, 2, 3].includes(it.badgeDecimals as number)
-          ? String(it.badgeDecimals)
-          : "default",
+      badgeDecimals: String(badgeDecimalsOf(it.badgeDecimals) ?? "default"),
       size: it.size ?? DEFAULT_ITEM_SIZE,
       angle: it.angle ?? 0,
     },

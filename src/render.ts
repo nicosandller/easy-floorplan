@@ -2959,8 +2959,9 @@ const MAX_BADGE_DECIMALS = 3;
  * a whole number 0..3, `"auto"`, or undefined for "round as always". Anything
  * else — a string "1" from hand-written YAML, 1.5, a negative — counts as
  * unset, so a typo leaves the badge as it was rather than doing something odd.
+ * Exported so the editor's dropdown opens on the same reading of it.
  */
-function badgeDecimalsOf(v: unknown): number | "auto" | undefined {
+export function badgeDecimalsOf(v: unknown): number | "auto" | undefined {
   if (v === "auto") return "auto";
   return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= MAX_BADGE_DECIMALS ? v : undefined;
 }
