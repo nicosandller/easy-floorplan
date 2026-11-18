@@ -3822,7 +3822,9 @@ export class FloorplanCard extends LitElement {
       box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
       touch-action: manipulation;
     }
-    .zoom-steps button:disabled { opacity: .4; cursor: default; }
+    /* Grey the glyph, not the button: a see-through button lets a device in
+       the corner show through it. */
+    .zoom-steps button:disabled { color: var(--disabled-text-color, #bdbdbd); cursor: default; }
     /* The room-focus controls (issue #261), sharing the zoom-out button's look
        and its corner — it is the same job, one room further along. */
     .room-focus {
