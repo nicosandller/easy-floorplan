@@ -1425,7 +1425,8 @@ export function itemBadgeForm(
       name: "badgeMode",
       label: "Badge shows",
       helper:
-        "Animations play only while the entity is active. Value puts the reading in the badge, falling back to the icon when there is no number",
+        "Animations play only while the entity is active. Value puts the reading in the badge, falling back to the icon when there is no number" +
+        (offerPicture ? ". Picture shows the person's profile picture, falling back to the icon when there is none" : ""),
       selector: dropdown(
         opt("icon", "Icon, still"),
         opt("spin", "Icon, spinning"),
