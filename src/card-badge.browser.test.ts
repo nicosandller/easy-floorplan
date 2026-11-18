@@ -376,19 +376,24 @@ describe("a picture in the badge (issue #420)", () => {
     document.body.innerHTML = "";
   });
 
-  const hassWith = (person: { state: string; attributes?: Record<string, unknown> }) =>
+  const hassWith = (
+    person: { state: string; attributes?: Record<string, unknown> },
+    hassUrl?: (path: string) => string,
+  ) =>
     ({
       states: {
         "person.someone": { entity_id: "person.someone", attributes: {}, ...person },
       },
       entities: {},
       formatEntityState: (st: { state: string }) => st.state,
+      ...(hassUrl ? { hassUrl } : {}),
     }) as unknown as FloorplanCard["hass"];
 
   async function mountPerson(
     person: { state: string; attributes?: Record<string, unknown> },
     item: Partial<FloorItem> = {},
     skin?: string,
+    hassUrl?: (path: string) => string,
   ) {
     const host = document.createElement("div");
     host.style.width = "900px";
@@ -399,7 +404,7 @@ describe("a picture in the badge (issue #420)", () => {
       ...config({ entity: "person.someone", kind: "sensor", badgeContent: "picture", ...item }),
       ...(skin ? { skin } : {}),
     } as FloorplanCardConfig);
-    card.hass = hassWith(person);
+    card.hass = hassWith(person, hassUrl);
     host.appendChild(card);
     await card.updateComplete;
     const root = card.shadowRoot!;
@@ -451,6 +456,37 @@ describe("a picture in the badge (issue #420)", () => {
     t.card.hass = hassWith({ state: "home", attributes: { entity_picture: BLUE } });
     await t.card.updateComplete;
     expect(t.img()?.getAttribute("src")).toBe(BLUE);
+  });
+
+  it("resolves a bare entity_picture path through hass.hassUrl", async () => {
+    // HA hands entity_picture out as a path; the card asks the frontend for
+    // the full URL, as HA's own badges do.
+    const seen: string[] = [];
+    const t = await mountPerson(
+      { state: "home", attributes: { entity_picture: "/api/image/serve/placeholder0/512x512" } },
+      {},
+      undefined,
+      (path) => {
+        seen.push(path);
+        return BLUE;
+      },
+    );
+    expect(seen).toContain("/api/image/serve/placeholder0/512x512");
+    expect(t.img()?.getAttribute("src")).toBe(BLUE);
+  });
+
+  it("fills the badge inside its border whatever the image's own size", async () => {
+    const big = `data:image/svg+xml,${encodeURIComponent(
+      '<svg xmlns="http://www.w3.org/2000/svg" width="512" height="300"><rect width="512" height="300" fill="#3366cc"/></svg>'
+    )}`;
+    const t = await mountPerson({ state: "home", attributes: { entity_picture: big } });
+    const img = t.img()!;
+    await expect.poll(() => img.complete && img.naturalWidth > 0, { timeout: 3000 }).toBe(true);
+    const badge = t.badge()!;
+    const r = img.getBoundingClientRect();
+    expect(r.width).toBeCloseTo(badge.clientWidth, 0);
+    expect(r.height).toBeCloseTo(badge.clientHeight, 0);
+    expect(r.width).toBeGreaterThan(0);
   });
 
   it("uses the item's own picture over entity_picture", async () => {
