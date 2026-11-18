@@ -1167,7 +1167,7 @@ function areaScopeHelper(scope: AreaEntityScope | undefined, base?: string): str
  * existing YAML — including combinations this dropdown cannot name — keeps
  * rendering exactly as before.
  */
-export type BadgeMode = "icon" | "spin" | "pulse" | "value" | "none";
+export type BadgeMode = "icon" | "spin" | "pulse" | "value" | "picture" | "none";
 
 /** {@link BadgeMode} for an item, reading the three keys it stands in for. */
 function badgeModeOf(it: FloorItem): BadgeMode {
@@ -1190,7 +1190,7 @@ export function itemHasRipple(it: FloorItem): boolean {
 /** The three config keys implied by a badge mode + ring choice. */
 function badgeModePatch(mode: BadgeMode, ripple: boolean): Record<string, unknown> {
   const out: Record<string, unknown> = {
-    badgeContent: mode === "value" ? "value" : mode === "none" ? "none" : "icon",
+    badgeContent: mode === "value" || mode === "picture" || mode === "none" ? mode : "icon",
     // Touching the badge retires the `showIcon` boolean it replaced (issue
     // #106), so a migrated config carries one setting rather than two that
     // could later be edited into disagreeing. Configs nobody touches keep
@@ -1198,9 +1198,11 @@ function badgeModePatch(mode: BadgeMode, ripple: boolean): Record<string, unknow
     showIcon: undefined,
     display: !ripple ? "badge" : mode === "none" ? "ripple" : "iconRipple",
   };
-  // Only the icon modes say anything about animation; "Value"/"Nothing" leave
-  // the stored setting alone, so switching away and back does not lose it.
-  if (mode !== "value" && mode !== "none") out.iconAnimation = mode === "icon" ? "none" : mode;
+  // Only the icon modes say anything about animation; "Value"/"Picture"/
+  // "Nothing" leave the stored setting alone, so switching away and back does
+  // not lose it.
+  if (mode === "icon" || mode === "spin" || mode === "pulse")
+    out.iconAnimation = mode === "icon" ? "none" : mode;
   return out;
 }
 

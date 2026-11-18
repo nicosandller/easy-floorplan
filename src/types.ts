@@ -51,6 +51,12 @@ export interface HomeAssistant extends BaseHomeAssistant {
    * Lazily loads on-demand frontend translation fragments (e.g. "config").
    */
   loadFragmentTranslation?(fragment: string): Promise<unknown>;
+  /**
+   * Resolves a path against the Home Assistant origin. HA's own badges pass
+   * `entity_picture` through it, since that attribute is a bare path such as
+   * `/api/image/serve/…`. Not declared by `custom-card-helpers`.
+   */
+  hassUrl?(path?: string): string;
 }
 
 /**
@@ -813,9 +819,20 @@ export interface FloorItem {
    *   Which reading is worked out per domain by {@link badgeValue}; when
    *   nothing numeric is available the badge falls back to its icon, so this
    *   can never leave an empty circle;
+   * - `"picture"` — an image filling the badge, clipped to its shape (issue
+   *   #420): {@link picture} when set, else the entity's own `entity_picture`
+   *   (a person's profile photo, a media player's artwork). Falls back to the
+   *   icon when there is no image, the entity is offline or the image fails
+   *   to load;
    * - `"none"` — no badge at all, label only (the old `showIcon: false`).
    */
   badgeContent?: BadgeContent;
+  /**
+   * An image URL for `badgeContent: "picture"` (issue #420), used instead of
+   * the entity's `entity_picture` — e.g. `/local/people/guest.png`. Ignored
+   * by every other badge content.
+   */
+  picture?: string;
   /**
    * Which of this device's own entities the badge reads while
    * `badgeContent: "value"` (issue #136) — the main `entity`, or one of its
@@ -1039,7 +1056,7 @@ export type ItemDisplay = "badge" | "ripple" | "iconRipple";
 export type StripSide = "both" | "left" | "right";
 
 /** What a device badge holds — see {@link FloorItem.badgeContent} (issue #106). */
-export type BadgeContent = "icon" | "value" | "none";
+export type BadgeContent = "icon" | "value" | "picture" | "none";
 
 /**
  * Which of a device's readings feeds its value badge — see
