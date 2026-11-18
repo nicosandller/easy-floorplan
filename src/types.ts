@@ -35,7 +35,7 @@ export interface HomeAssistant extends BaseHomeAssistant {
    * the user's per-entity icon override, which never appears in the state's
    * `attributes`.
    */
-  entities?: Record<string, { entity_id?: string; area_id?: string | null; device_id?: string | null; labels?: string[]; icon?: string } | undefined>;
+  entities?: Record<string, { entity_id?: string; area_id?: string | null; device_id?: string | null; labels?: string[]; icon?: string; display_precision?: number } | undefined>;
   /** The device registry exposed by the frontend. */
   devices?: Record<string, { id?: string; area_id?: string | null; labels?: string[] } | undefined>;
   /** The area registry exposed by the frontend. */
@@ -68,6 +68,12 @@ export interface RenderHass {
   formatEntityAttributeValue?(stateObj: HassEntity, attribute: string): string;
   /** Read only for dark mode, which picks the side of every room tint. */
   themes?: { darkMode?: boolean };
+  /**
+   * The entity registry's display precision, read only by a value badge set to
+   * `badgeDecimals: "auto"` (issue #452). Forwarded off the real `hass`, which
+   * carries `display_precision` on `hass.entities` where one is set.
+   */
+  entities?: Record<string, { display_precision?: number } | undefined>;
 }
 
 /** A straight wall segment in virtual coordinate space. */
@@ -835,6 +841,30 @@ export interface FloorItem {
    */
   badgeEntity?: BadgeEntity;
   /**
+   * How many decimals a `badgeContent: "value"` badge prints (issue #452).
+   *
+   * Absent is the badge's own rounding, unchanged: one decimal below 10, whole
+   * numbers above, so a room at 18.4 °C reads `18°`. That suits most readings
+   * but not a thermostat, where 18.4 against 18.5 is the heating on or off.
+   *
+   * - a **number** 0..3 — exactly that many, on every reading the badge can
+   *   show: `badgeDecimals: 1` reads `18.4°`, and `18.0°` at 18 (HA's own
+   *   formatting keeps the zero too). Applied to the number as shown, so a
+   *   plug at 1240 W reads `1.2kW`.
+   * - `"auto"` — the entity's display precision from Home Assistant's entity
+   *   registry, when HA exposes one. That precision describes an entity's
+   *   *state*, so it applies where the badge reads a state (a sensor, or a
+   *   reading picked with {@link badgeEntity}); attribute readings — a
+   *   thermostat's own `current_temperature` among them — and readings folded
+   *   from W into kW keep the default rounding, as does an entity with no
+   *   precision set. Capped at 3.
+   *
+   * Only the number changes: the unit stays the compact one (`°`, not ` °C`),
+   * and a reading HA words for itself (a light's brightness as a percent)
+   * keeps its wording.
+   */
+  badgeDecimals?: BadgeDecimals;
+  /**
    * Hide this device on the live card while its entity is inactive (issue
    * #55), so a busy room only shows what is actually doing something. The
    * editor always draws it — dimmed — or it could never be selected again.
@@ -1057,6 +1087,13 @@ export type BadgeContent = "icon" | "value" | "none";
  * entity in Home Assistant cannot strand the choice.
  */
 export type BadgeEntity = "primary" | "secondary" | number;
+
+/**
+ * How many decimals a value badge prints — see {@link FloorItem.badgeDecimals}
+ * (issue #452). A whole number 0..3, or `"auto"` for the entity's own display
+ * precision.
+ */
+export type BadgeDecimals = number | "auto";
 
 /**
  * One colour rule for {@link FloorItem.stateColor} / {@link Furniture.stateColor}.

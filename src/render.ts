@@ -18,6 +18,7 @@ import type {
   IconAnimation,
   StateColorRule,
   BadgeContent,
+  BadgeDecimals,
   BadgeEntity,
   ItemReading,
   LabelPosition,
@@ -2946,10 +2947,65 @@ function scaleUnit(n: number, unit: string): { n: number; unit: string } {
   return { n, unit };
 }
 
-/** A reading and its own unit, compacted and scaled for the badge. */
-function formatReading(n: number, rawUnit: unknown): string {
-  const scaled = scaleUnit(n, compactUnit(rawUnit));
-  return compactNumber(scaled.n) + scaled.unit;
+/**
+ * The most decimals a badge prints. Three already makes `18.375°` a five-digit
+ * reading, the widest a default badge holds legibly; a registry precision past
+ * this is capped rather than shrinking the number into a smudge.
+ */
+const MAX_BADGE_DECIMALS = 3;
+
+/**
+ * How many decimals {@link FloorItem.badgeDecimals} asks for (issue #452):
+ * a whole number 0..3, `"auto"`, or undefined for "round as always". Anything
+ * else — a string "1" from hand-written YAML, 1.5, a negative — counts as
+ * unset, so a typo leaves the badge as it was rather than doing something odd.
+ */
+function badgeDecimalsOf(v: unknown): number | "auto" | undefined {
+  if (v === "auto") return "auto";
+  return typeof v === "number" && Number.isInteger(v) && v >= 0 && v <= MAX_BADGE_DECIMALS ? v : undefined;
+}
+
+/**
+ * The entity's display precision as the registry exposes it, capped for the
+ * badge, or undefined when HA has none for it (the user never set one and the
+ * integration suggests none).
+ */
+function registryPrecision(hass: RenderHass, entity: string): number | undefined {
+  const p = hass.entities?.[entity]?.display_precision;
+  return typeof p === "number" && Number.isInteger(p) && p >= 0 ? Math.min(p, MAX_BADGE_DECIMALS) : undefined;
+}
+
+/**
+ * A badge number to `decimals` places, or rounded the default way when that is
+ * undefined. `toFixed` keeps trailing zeros, so a forced one decimal reads
+ * `18.0°` — the same as HA shows a 0.1-precision sensor at 18. A reading that
+ * rounds to zero loses its sign: `-0.0°` is not a temperature anyone has.
+ */
+function badgeNumber(n: number, decimals: number | undefined): string {
+  if (decimals === undefined) return compactNumber(n);
+  const s = n.toFixed(decimals);
+  return Number(s) === 0 ? (0).toFixed(decimals) : s;
+}
+
+/**
+ * A reading and its own unit, compacted and scaled for the badge.
+ *
+ * `decimals` is the forced count, applied to the number as shown (after W→kW);
+ * `precision` is the entity's registry display precision, which describes the
+ * number in the entity's *own* unit — so it is used only when no scaling
+ * happened: a 0-precision watt sensor at 1240 W would otherwise read `1kW`,
+ * losing what the default `1.2kW` shows.
+ */
+function formatReading(
+  n: number,
+  rawUnit: unknown,
+  decimals?: number,
+  precision?: number,
+): string {
+  const unit = compactUnit(rawUnit);
+  const scaled = scaleUnit(n, unit);
+  const places = decimals ?? (scaled.unit === unit ? precision : undefined);
+  return badgeNumber(scaled.n, places) + scaled.unit;
 }
 
 /**
@@ -2975,6 +3031,8 @@ function formatReading(n: number, rawUnit: unknown): string {
  * Deliberately *not* routed through `hass.formatEntityState`: that applies the
  * user's display precision and the full unit ("21.5 °C"), which is exactly what
  * does not fit in a badge. This is the one place reading `state` raw is correct.
+ * The precision alone can be asked for with {@link FloorItem.badgeDecimals}
+ * (issue #452), which keeps the compact unit: `18.4°`, not `18.4 °C`.
  */
 export function badgeValue(
   hass: RenderHass | undefined,
@@ -2991,6 +3049,7 @@ export interface BadgeReadingItem {
   secondaryAttribute?: string;
   readings?: ItemReading[];
   badgeEntity?: BadgeEntity;
+  badgeDecimals?: BadgeDecimals;
 }
 
 /** What a badge is showing, and which of the device's readings it came from. */
@@ -3043,6 +3102,15 @@ export function badgeReading(
   // about which entity a reading comes from.
   const readings = itemReadings(item);
 
+  // Decimals (issue #452). A number applies to every reading alike; "auto"
+  // asks the entity registry, which describes an entity's *state* only, so
+  // attribute readings — the domain default among them — keep today's
+  // rounding under it. Unset is today's rounding everywhere.
+  const setting = badgeDecimalsOf(item.badgeDecimals);
+  const forced = typeof setting === "number" ? setting : undefined;
+  const precisionOf = (entity: string): number | undefined =>
+    setting === "auto" ? registryPrecision(hass, entity) : undefined;
+
   const primary = (): string | undefined => {
     const st = hass.states[item.entity as string];
     const attrs = st?.attributes as Record<string, unknown> | undefined;
@@ -3058,15 +3126,17 @@ export function badgeReading(
         // text, unit included; only the rest borrow a unit from the table.
         const worded = attributeBadgeText(entity, item.attribute, n);
         if (worded !== undefined) return worded;
-        return compactNumber(n) + (item.attribute === reading?.attribute ? reading.unit : "");
+        return badgeNumber(n, forced) + (item.attribute === reading?.attribute ? reading.unit : "");
       }
     }
     if (reading) {
       const n = numericReading(attrs?.[reading.attribute]);
-      if (n !== undefined) return compactNumber(n) + reading.unit;
+      if (n !== undefined) return badgeNumber(n, forced) + reading.unit;
     }
     const own = numericReading(st?.state);
-    return own === undefined ? undefined : formatReading(own, attrs?.unit_of_measurement);
+    return own === undefined
+      ? undefined
+      : formatReading(own, attrs?.unit_of_measurement, forced, precisionOf(entity));
   };
 
   /** The numeric value of one reading in the pool, or undefined. */
@@ -3082,10 +3152,12 @@ export function badgeReading(
       if (n === undefined) return undefined;
       // Same domain wording as the configured attribute above, so a brightness
       // reading in the pool (the issue's config) reads percent too.
-      return attributeBadgeText(entity, r.attribute, n) ?? compactNumber(n);
+      return attributeBadgeText(entity, r.attribute, n) ?? badgeNumber(n, forced);
     }
     const n = numericReading(st?.state);
-    return n === undefined ? undefined : formatReading(n, attrs?.unit_of_measurement);
+    return n === undefined
+      ? undefined
+      : formatReading(n, attrs?.unit_of_measurement, forced, precisionOf(entity));
   };
 
   // An explicit choice reads that entity and stops. Falling through to another
