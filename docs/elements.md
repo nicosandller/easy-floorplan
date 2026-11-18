@@ -73,6 +73,10 @@ then pick the entity in the **Selection** inspector.
   sensor reads `1.2kW` without configuring anything — the switch says "on", not a number,
   so the badge falls through. Once you pick, only that entity is read; if it has nothing
   to show the badge falls back to its icon rather than quietly showing the other.
+- **Badge decimals** — while the badge shows a value: *Rounded* (the default — one decimal
+  below 10, whole numbers above), a fixed **0**–**3**, or *Entity's precision*, which
+  follows the display precision set in Home Assistant when the badge reads an entity's
+  state. A thermostat at 18.4 °C reads `18°` rounded and `18.4°` with one decimal.
 - **Make it yours** — override the **icon** (autocomplete + live preview), the **name**,
   **size** and rotation. Without an override the icon follows the entity's **device
   class** (HA's *show as*), so a lock renders `mdi:lock` / `mdi:lock-open`.
