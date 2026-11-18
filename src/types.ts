@@ -1174,6 +1174,7 @@ export type FurnitureType =
   | "dresser"
   | "tallDresser"
   | "ladderShelf"
+  | "cornerShelf"
   | "bookcase"
   | "rug"
   | "plant"
@@ -1305,6 +1306,8 @@ export interface NotVisibilityCondition {
 
 /** A gray furniture/fixture diagram placed on the plan. */
 export interface Furniture {
+  /** Physical 3D height in canvas units; defaults to the model height. */
+  height3d?: number;
   id: string;
   /**
    * Which symbol to draw — a built-in {@link FurnitureType}, a symbol
@@ -1905,6 +1908,19 @@ export interface Floor {
   /** Whether this floor represents an outdoor courtyard area. */
   isOutdoor?: boolean;
   /**
+   * Draw this floor as a **vertical section** (issue #414) — a cut through the
+   * building with the sky at the top of the canvas and the ground at the
+   * bottom, every storey stacked on the one below — looking toward this
+   * compass bearing (0 = north, 90 = east). Absent, the floor is an ordinary
+   * plan.
+   *
+   * Only the sunlight reads it: on a section the sun's height sets the angle
+   * the light comes in at, and its bearing which side it comes from, so a
+   * window lets in a steep beam at noon and a level one in the evening. On a
+   * plan the same light is aimed by the bearing alone.
+   */
+  sectionFacing?: number;
+  /**
    * Explicit level number for 3D stacking (0 for ground floor, 1 for 1st floor, -1 for basement).
    * When omitted, defaults to Home Assistant's floor level or its relative order in the floor list.
    */
@@ -2205,6 +2221,12 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * survey. Ignored on the flat plan.
    */
   wallHeight?: number;
+  /** Opt in to detailed models in the isometric view. */
+  furniture3d?: boolean;
+  /** Use a furniture section plane independent of wall height. */
+  furnitureSeparateSection?: boolean;
+  /** Furniture section height in canvas units; defaults to 180 when enabled. */
+  furnitureSectionHeight?: number;
   /**
    * Built-in skin id (issue #122), e.g. `odnetnin`, `pastel`, `tron`. Restyles
    * the whole plan at once — paper, walls, badges, accents — by supplying the

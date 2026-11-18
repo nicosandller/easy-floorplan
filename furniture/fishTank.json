@@ -12,5 +12,23 @@
     { "ellipse": [68, 60, 7, 9], "role": "thin" },
     { "path": [["M", 61, 60], ["L", 56, 52], ["L", 56, 68], ["Z"]], "role": "solid" },
     { "circle": [82, 32, 4], "role": "hint" }
-  ]
+  ],
+  "model3d": {
+    "version": 1,
+    "units": "cm",
+    "size": {"width": 100, "depth": 40, "height": 116},
+    "parts": [
+      {"box": [4.0, 40.0, 60], "position": [0.0, 0.0, 5]},
+      {"box": [4.0, 40.0, 60], "position": [96.0, 0.0, 5]},
+      {"box": [92.0, 1.6, 60], "position": [4.0, 0.0, 5]},
+      {"box": [92.0, 38.4, 3], "position": [4.0, 1.6, 5]},
+      {"box": [100.0, 40.0, 3], "position": [0.0, 0.0, 62]},
+      {"box": [100.0, 40.0, 3], "position": [0.0, 0.0, 65]},
+      {"box": [100.0, 0.8, 45], "position": [0.0, 0.0, 68], "material": "glass"},
+      {"box": [100.0, 0.8, 45], "position": [0.0, 39.2, 68], "material": "glass"},
+      {"box": [2.0, 38.4, 45], "position": [0.0, 0.8, 68], "material": "glass"},
+      {"box": [2.0, 38.4, 45], "position": [98.0, 0.8, 68], "material": "glass"},
+      {"box": [100.0, 40.0, 3], "position": [0.0, 0.0, 113]}
+    ]
+  }
 }

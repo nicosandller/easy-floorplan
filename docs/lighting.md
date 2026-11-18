@@ -133,6 +133,20 @@ laying a plan out, and one with no sensible answer at night. It stacks with
 [Follow the sun](lighting.md#follow-the-sun), which dims the whole plan after dark and has the last
 word: there is nothing to let in at night.
 
+### Sunlight on a section
+
+A floor can be drawn as a vertical section instead of a plan: set its `sectionFacing` to
+the compass bearing you look toward (issue #414). A plan's canvas is the ground, so only
+the sun's bearing aims the light and its height shows up as how far a patch carries. A
+section's canvas stands upright, so there the height *is* the angle: a noon sun comes
+through the windows steeply, an evening one nearly level. The bearing decides which side
+the light comes from — a sun on your right as you face the drawing lights the right-hand
+windows — and a sun straight in front of you or behind you falls straight down the page.
+
+Draw the floor slabs and the outside walls as walls and they stop the light just as they
+do on a plan. Because the angle already carries the sun's height, `sunReach` is not
+shortened as the sun climbs on a section. A pinned `sunBearing` keeps a 30° sun.
+
 ## Skylights
 
 A wall is a line in plan, so the light through a hole in one is that gap swept
