@@ -8774,7 +8774,7 @@ export class FloorplanCardEditor extends LitElement {
           : nothing}
         ${this._renderGroup(
           "Badge",
-          this._renderForm(formSlice(itemBadgeForm(it, badgeSource), ["badgeMode", "badgeEntity"]), apply)
+          this._renderForm(formSlice(itemBadgeForm(it, badgeSource), ["badgeMode", "badgeEntity", "badgeDecimals"]), apply)
         )}
         ${this._renderGroup(
           "Color",
