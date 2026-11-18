@@ -66,9 +66,9 @@ describe("overlayMinWidth in the editor", () => {
     expect(t.unitWidth()).toBeCloseTo(t.stageWidth(), 0);
   });
 
-  it("shows the control under Project → View & scale", async () => {
+  it("shows the control under Project → View → Size", async () => {
     const t = await mount();
-    // In the Project tab, under Display.
+    // In the Project tab, on the View page under Size.
     const ed = t.ed as unknown as { _projectOpen: boolean; _projectPage: string };
     ed._projectOpen = true;
     ed._projectPage = "view";

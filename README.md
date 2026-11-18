@@ -29,13 +29,15 @@ control lights, and view the plan in 3D.
   furniture, text and devices with undo/redo, copy/paste and position locking.
   Room edges can mix wall, divider and open segments, and adjoining rooms can be
   joined with a Shift-click. See [Areas](docs/elements.md#areas).
+- **Plan check** — the editor flags wall ends that nearly meet and walls drawn on top of each other, with one-click Join / Remove / Trim. See [Plan check](docs/editor.md#plan-check).
 - **Live devices** — control lights and switches, show sensor readings, and follow
   doors, windows, shutters, awnings and curtains as they open and close. Device
   labels can sit on any side, or [pick the clearest one](docs/elements.md#devices) (`labelPosition: auto`).
 - **Fill-level icons** — a badge's icon fills with its reading, so a drop shows humidity
   and a battery its charge. See [Devices](docs/elements.md#devices) (`fill`).
 - **Lighting** — colored light from your lamps and spots, day/night dimming, sunlight,
-  moonlight and ambient daylight.
+  moonlight and ambient daylight, with sunlight at the sun's real height on
+  [vertical sections](docs/lighting.md#sunlight-on-a-section).
 - **Rooms and presence** — zoom into rooms, link Home Assistant areas, show
   presence ripples and track positions from distance sensors.
 - **Multiple floors** — switch between floors or navigate with a staircase.
@@ -45,6 +47,7 @@ control lights, and view the plan in 3D.
   action icon marks it, or set `showIcon: false` to make the drawing itself the
   button. See [actions on furniture](docs/behavior.md#actions-on-furniture).
 - **2D and 3D views** — display the same plan flat or with raised walls and furniture.
+- **[3D furniture models](docs/appearance.md#detailed-3d-furniture)** — 35 opt-in detailed furniture models in the isometric view (`furniture3d`), with an optional separate furniture cut height.
 - **Window sill height** — draw floor-to-ceiling or high windows in 3D with `sill`. See [Configuration](docs/configuration.md#opening-door--window--skylight--passage).
 - **Tilt-and-turn windows** — tell tilted from swung open with a second sensor (`tiltEntity`). See [Tilt-and-turn windows](docs/configuration.md#tilt-and-turn-windows).
 - **Outdoor courtyard & 3D stacked house** — exterior view of the entire house stacking all levels at physical elevations, with ground slabs and 3D roofs.

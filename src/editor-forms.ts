@@ -1,3 +1,4 @@
+import { normalizeHeight3d } from "./symbol-model";
 /**
  * Schema-driven form definitions for the editor: one `FormSpec` per element
  * kind, rendered either through HA's `<ha-form>` (native selectors) or the
@@ -15,6 +16,7 @@ import type {
   FloorplanCardConfig,
   Furniture,
   Opening,
+  OverlayScale,
   Roof,
   SliderStyle,
   Tracker,
@@ -93,6 +95,7 @@ import {
 import {
   normalizeProjection,
   normalizeWallHeight,
+  furnitureSectionHeight,
   normalizeWallOpacity,
   openingSill,
   MAX_SILL,
@@ -117,6 +120,24 @@ export interface FormField {
    */
   keepFullTurn?: boolean;
   selector: Record<string, unknown>;
+}
+
+/**
+ * The suffix on a field measured in canvas units: wall thickness and height,
+ * a tracker's dot. The header of a selected wall already says "units"
+ * (issue #431).
+ */
+export const CANVAS_UNITS = "units";
+
+/**
+ * The suffix on an overlay measure — a badge, its label, a room name, free
+ * text, a ripple. Those are canvas units under `overlayScale: plan` and screen
+ * pixels under `fixed` (see `overlayLength` in render.ts), so the suffix
+ * follows the plan's setting. An absent setting is `fixed`, as the card reads
+ * it.
+ */
+export function overlayUnit(scale: OverlayScale | undefined): string {
+  return normalizeOverlayScale(scale) === "plan" ? CANVAS_UNITS : "px";
 }
 
 /** Continuous controls (typing, sliders) — routed through the burst-history path. */
@@ -1120,7 +1141,7 @@ function areaScopedEntity(
 function areaScopeHelper(scope: AreaEntityScope | undefined, base?: string): string | undefined {
   if (!scope?.entities.length) return base;
   const where = scope.name ? `the ${scope.name} area` : "this area";
-  const note = `Only entities in ${where} — turn off “Filter entities” on the area to see all`;
+  const note = `Only entities in ${where} — turn off “Filter entities” on the room to see all`;
   return base ? `${base}. ${note}` : note;
 }
 
@@ -1309,7 +1330,7 @@ export function itemShowStateForm(it: FloorItem): FormSpec {
 }
 
 /** Group 3: where the label sits and how big it is. */
-export function itemLabelForm(it: FloorItem): FormSpec {
+export function itemLabelForm(it: FloorItem, overlayScale?: OverlayScale): FormSpec {
   const fields: FormField[] = [
     {
       name: "labelPosition",
@@ -1326,7 +1347,7 @@ export function itemLabelForm(it: FloorItem): FormSpec {
     {
       name: "labelSize",
       label: "Label size",
-      selector: { number: { min: 8, max: 40, step: 1, mode: "slider", unit_of_measurement: "px" } },
+      selector: { number: { min: 8, max: 40, step: 1, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) } },
     },
     {
       name: "disableLabelColor",
@@ -1391,7 +1412,12 @@ export function itemLabelForm(it: FloorItem): FormSpec {
  * then, or while it is already on, so a switch or a door contact is never
  * shown a control that could only draw an empty or a full icon.
  */
-export function itemBadgeForm(it: FloorItem, badgeSource?: BadgeSourceInfo, numericReading?: boolean): FormSpec {
+export function itemBadgeForm(
+  it: FloorItem,
+  badgeSource?: BadgeSourceInfo,
+  overlayScale?: OverlayScale,
+  numericReading?: boolean,
+): FormSpec {
   const fields: FormField[] = [
     {
       name: "badgeMode",
@@ -1456,7 +1482,7 @@ export function itemBadgeForm(it: FloorItem, badgeSource?: BadgeSourceInfo, nume
     {
       name: "size",
       label: "Size",
-      selector: { number: { min: 16, max: 160, step: 2, mode: "slider", unit_of_measurement: "px" } },
+      selector: { number: { min: 16, max: 160, step: 2, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) } },
     },
     angleField(true)
   );
@@ -1531,6 +1557,7 @@ export function itemEffectsForm(
   it: FloorItem,
   deviceClass?: string,
   entity?: { state?: string; attributes?: Record<string, unknown> } | null,
+  overlayScale?: OverlayScale,
 ): FormSpec | undefined {
   const ripple = itemHasRipple(it);
   const canRipple = isRippleEntity(it.entity, deviceClass);
@@ -1557,7 +1584,7 @@ export function itemEffectsForm(
         name: "rippleSize",
         label: "Ripple size",
         selector: {
-          number: { min: 40, max: 400, step: 4, mode: "slider", unit_of_measurement: "px" },
+          number: { min: 40, max: 400, step: 4, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) },
         },
       });
       fields.push({
@@ -1710,7 +1737,7 @@ export function itemGroup7aForm(it: FloorItem): FormSpec {
   const fields: FormField[] = [
     {
       name: "showOnlyWhenZoomed",
-      label: "Only show when zoomed into area",
+      label: "Only show when zoomed into its room",
       helper:
         "Hidden on the full plan, and shown once the room it sits in is zoomed into",
       selector: { boolean: {} },
@@ -2042,7 +2069,7 @@ export function itemBehaviourForm(it: FloorItem): FormSpec {
  * as it does for a device or a piece of furniture — a reading placed in the
  * kitchen is usually a kitchen entity.
  */
-export function textForm(t: FloorText, areaScope?: AreaEntityScope): FormSpec {
+export function textForm(t: FloorText, areaScope?: AreaEntityScope, overlayScale?: OverlayScale): FormSpec {
   const fields: FormField[] = [
     {
       name: "text",
@@ -2076,7 +2103,7 @@ export function textForm(t: FloorText, areaScope?: AreaEntityScope): FormSpec {
     {
       name: "size",
       label: "Size",
-      selector: { number: { min: 8, max: 200, mode: "slider", unit_of_measurement: "px" } },
+      selector: { number: { min: 8, max: 200, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) } },
     },
     angleField(true)
   );
@@ -2108,6 +2135,7 @@ export function furnitureForm(
   areaScope?: AreaEntityScope,
   catalog: SymbolCatalog = BUILTIN_SYMBOLS,
   floors: readonly Pick<Floor, "id" | "name">[] = [],
+  detailedModels = false,
 ): FormSpec {
   const choices = furnitureChoices(catalog);
   // A piece whose symbol this install doesn't have keeps its own id in the
@@ -2159,6 +2187,9 @@ export function furnitureForm(
         : []),
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
+      ...(detailedModels && catalog[f.type]?.model3d ? [
+        { name: "height3d", label: "3D height", helper: "Optional height in canvas units. Leave empty to use the model height. Applied before cutting.", selector: { number: { min: 0.1, max: 10000, step: 0.1, mode: "box" } } },
+      ] : []),
       angleField(),
       // Optional entity that makes the drawing live (issue #82) — a soil
       // sensor on a plant, a contact sensor on a cabinet. Last, because most
@@ -2244,6 +2275,7 @@ export function furnitureForm(
         : {}),
       w: f.w,
       h: f.h,
+      height3d: f.height3d,
       angle: f.angle ?? 0,
       entity: f.entity ?? "",
       ...(findSymbol(catalog, f.type)?.extend ? { invert: f.invert ?? false } : {}),
@@ -2257,6 +2289,7 @@ export function furnitureForm(
       visibility: f.visibility,
     },
     toPatch: (raw) => {
+      if ("height3d" in raw) raw = { ...raw, height3d: normalizeHeight3d(raw.height3d) };
       // On is the default, so only "off" is worth writing down; the reverse for invert.
       let p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
       if ("invert" in p) p = { ...p, invert: p.invert === true ? true : undefined };
@@ -2287,7 +2320,8 @@ export function trackerForm(tr: Tracker): FormSpec {
       {
         name: "dotSize",
         label: "Dot size",
-        selector: { number: { min: 6, max: 80, mode: "slider", unit_of_measurement: "px" } },
+        // Drawn in the SVG, so always canvas units.
+        selector: { number: { min: 6, max: 80, mode: "slider", unit_of_measurement: CANVAS_UNITS } },
       },
     ],
     data: {
@@ -2337,15 +2371,15 @@ export function areaNameForm(a: Area, haAreaNames: readonly string[] = []): Form
  * editor can slot the HA-link status line directly beneath the name it
  * describes; both halves still render through `ha-form`.
  */
-export function areaForm(a: Area): FormSpec {
+export function areaForm(a: Area, overlayScale?: OverlayScale): FormSpec {
   return {
     fields: [
       {
         name: "zoneKind",
-        label: "Zone type",
-        helper: "Categorizes room vs outdoor zones (lawn, patio, pool, driveway, terrace)",
+        label: "Room type",
+        helper: "Indoor, or an outdoor space (lawn, patio, pool, driveway, terrace)",
         selector: dropdown(
-          opt("indoor", "Indoor / Room"),
+          opt("indoor", "Indoor"),
           opt("lawn", "Lawn"),
           opt("patio", "Patio"),
           opt("pool", "Pool"),
@@ -2364,7 +2398,7 @@ export function areaForm(a: Area): FormSpec {
               name: "labelSize",
               label: "Name size",
               selector: {
-                number: { min: 8, max: 40, step: 1, mode: "slider" as const, unit_of_measurement: "px" },
+                number: { min: 8, max: 40, step: 1, mode: "slider" as const, unit_of_measurement: overlayUnit(overlayScale) },
               },
             },
           ]
@@ -2614,7 +2648,7 @@ export function wallForm(w: Wall): FormSpec {
         // doorway mask's cut is sized off the shared WALL_THICKNESS
         // constant, not per-wall — see render.ts's wallThickness).
         selector: {
-          number: { min: 2, max: MAX_SKIN_WALL_WIDTH, step: 1, mode: "slider", unit_of_measurement: "px" },
+          number: { min: 2, max: MAX_SKIN_WALL_WIDTH, step: 1, mode: "slider", unit_of_measurement: CANVAS_UNITS },
         },
       },
       {
@@ -2622,7 +2656,7 @@ export function wallForm(w: Wall): FormSpec {
         label: "Height",
         helper: "Override height for 3D view (leave empty to use default card wall height)",
         selector: {
-          number: { min: 0, max: MAX_WALL_HEIGHT, step: 1, mode: "slider", unit_of_measurement: "px" },
+          number: { min: 0, max: MAX_WALL_HEIGHT, step: 1, mode: "slider", unit_of_measurement: CANVAS_UNITS },
         },
       },
       // Issue #182. A dropdown rather than a switch: a railing is one kind of
@@ -2816,6 +2850,23 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
       },
       ...(normalizeProjection(c.view ?? c.projection) === "iso" ? [
         {
+          name: "furniture3d", label: "3D furniture",
+          helper: "Show detailed furniture models instead of simple blocks",
+          selector: { boolean: {} },
+        },
+        ...(c.furniture3d === true ? [
+          {
+            name: "furnitureSeparateSection", label: "Separate furniture cut height",
+            helper: "Cut furniture independently of wall height",
+            selector: { boolean: {} },
+          },
+          ...(c.furnitureSeparateSection === true ? [{
+            name: "furnitureSectionHeight", label: "Furniture cut height",
+            helper: "Canvas units. Furniture above this height is cut away; walls stay unchanged",
+            selector: { number: { min: 0, max: MAX_WALL_HEIGHT, step: 1, mode: "box" } },
+          }] : []),
+        ] : []),
+        {
           name: "wallHeight",
           label: "Wall height",
           helper: "Canvas units. Lower walls reveal more of each room",
@@ -2933,6 +2984,9 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
       appearance: normalizeAppearance(c.appearance),
       showViewControls: c.showViewControls ?? false,
       showExport: c.showExport ?? false,
+      furniture3d: c.furniture3d === true,
+      furnitureSeparateSection: c.furnitureSeparateSection === true,
+      furnitureSectionHeight: furnitureSectionHeight({ ...c, furnitureSeparateSection: true }),
       wallHeight: normalizeWallHeight(c.wallHeight),
       wallOpacity: normalizeWallOpacity(c.wallOpacity),
       rotation: String(normalizePlanRotation(c.rotation)),
@@ -2960,6 +3014,8 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
     },
     toPatch: (p) => {
       let out = p;
+      if ("furnitureSectionHeight" in out)
+        out = { ...out, furnitureSectionHeight: furnitureSectionHeight({ furnitureSeparateSection: true, furnitureSectionHeight: out.furnitureSectionHeight as number }) };
       // A deliberate 2D selection must also clear the prototype alias.
       if ("view" in out) out = { ...out, projection: undefined };
       if ("rotation" in out)
@@ -3266,6 +3322,13 @@ export function floorImageForm(f: Floor): FormSpec {
       selector: { boolean: {} },
     },
     {
+      name: "isSection",
+      label: "Vertical section",
+      helper:
+        "This floor is a cut through the building, ground at the bottom, so the sun comes in at its real height",
+      selector: { boolean: {} },
+    },
+    {
       name: "level",
       label: "Storey level",
       helper: "Vertical level index for 3D stacking (0 for ground floor, 1 for 1st floor, -1 for basement)",
@@ -3273,6 +3336,17 @@ export function floorImageForm(f: Floor): FormSpec {
     },
     { name: "image", label: "Background image", helper: "/local/floorplan.png or URL", selector: { text: {} } },
   ];
+  // Only a section looks somewhere (issue #414).
+  if (typeof f.sectionFacing === "number") {
+    fields.splice(2, 0, {
+      name: "sectionFacing",
+      label: "Looking toward",
+      helper: "Compass bearing you face when looking at this section: 0 = north, 90 = east",
+      selector: {
+        number: { min: 0, max: 359, step: 5, mode: "slider", unit_of_measurement: "°" },
+      },
+    });
+  }
   // Fit and opacity apply to whichever image is drawn, the dark one included.
   if (f.image || f.imageDark) {
     fields.push({
@@ -3313,6 +3387,8 @@ export function floorImageForm(f: Floor): FormSpec {
     fields,
     data: {
       isOutdoor: f.isOutdoor ?? false,
+      isSection: typeof f.sectionFacing === "number",
+      sectionFacing: f.sectionFacing ?? 0,
       level: f.level !== undefined ? f.level : "",
       image: f.image ?? "",
       imageFit: f.imageFit ?? "stretch",
@@ -3328,6 +3404,17 @@ export function floorImageForm(f: Floor): FormSpec {
       if ("imageInvertDark" in out && !out.imageInvertDark) out.imageInvertDark = undefined;
       if ("imageDark" in out && !out.imageDark) out.imageDark = undefined;
       if ("isOutdoor" in out && !out.isOutdoor) out.isOutdoor = undefined;
+      // A section is the presence of a bearing; 0 (north) is a real one.
+      if ("isSection" in out) {
+        out.sectionFacing = out.isSection
+          ? (typeof f.sectionFacing === "number" ? f.sectionFacing : 0)
+          : undefined;
+        delete out.isSection;
+      }
+      if ("sectionFacing" in out && out.sectionFacing !== undefined) {
+        const n = Number(out.sectionFacing);
+        out.sectionFacing = Number.isFinite(n) ? ((n % 360) + 360) % 360 : 0;
+      }
       if ("level" in out) {
         if (out.level === "" || out.level === null || isNaN(Number(out.level))) {
           out.level = undefined;
