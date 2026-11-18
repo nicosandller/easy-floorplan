@@ -1,6 +1,6 @@
 import type { Area, AreaPoint, Opening } from "./types";
 import { SUN_ELEVATION_DAY, SUN_ELEVATION_NIGHT } from "./types";
-import { OPENING_ON_WALL_EPS } from "./dead-space";
+import { OPENING_ON_WALL_EPS, distToSegment } from "./dead-space";
 import { liveSunAttribute, openingGlassIsClear } from "./render";
 
 /**
@@ -108,17 +108,6 @@ export function ambientPointInArea(area: Pick<Area, "points">, x: number, y: num
   return inside;
 }
 
-/** Distance from a point to a finite segment. */
-function distanceToSegment(x: number, y: number, a: AreaPoint, b: AreaPoint): number {
-  const vx = b.x - a.x;
-  const vy = b.y - a.y;
-  const len2 = vx * vx + vy * vy;
-  if (len2 === 0) return Math.hypot(x - a.x, y - a.y);
-  let t = ((x - a.x) * vx + (y - a.y) * vy) / len2;
-  t = Math.max(0, Math.min(1, t));
-  return Math.hypot(x - (a.x + t * vx), y - (a.y + t * vy));
-}
-
 /** Nearest boundary segment of an area to an opening centre. */
 function nearestBoundary(area: Area, opening: Pick<Opening, "x" | "y">): BoundaryMatch | undefined {
   if (area.points.length < 2) return undefined;
@@ -126,7 +115,7 @@ function nearestBoundary(area: Area, opening: Pick<Opening, "x" | "y">): Boundar
   for (let i = 0; i < area.points.length; i++) {
     const a = area.points[i]!;
     const b = area.points[(i + 1) % area.points.length]!;
-    const distance = distanceToSegment(opening.x, opening.y, a, b);
+    const distance = distToSegment(opening.x, opening.y, a, b);
     if (!best || distance < best.distance) best = { area, segmentIndex: i, distance };
   }
   return best;
