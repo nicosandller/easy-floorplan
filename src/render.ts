@@ -75,7 +75,7 @@ import { actionTargetEntity, hasAction } from "./actions";
 import { SKIN_ACCENT, SKIN_PAPER, SKIN_WALL, MAX_SKIN_WALL_WIDTH } from "./skins";
 // The same tolerance #141 uses to decide an opening sits on a wall, so "this
 // door is in this wall" means one thing across the card.
-import { OPENING_ON_WALL_EPS } from "./dead-space";
+import { OPENING_ON_WALL_EPS, distToSegment } from "./dead-space";
 import { projectPlanPoint, projectedCanvasSize, type DisplayFrame } from "./projection";
 // Defined beside the type union it reads rather than here with the rest of the
 // opening helpers, because `dead-space` needs it too and this module already
@@ -652,13 +652,7 @@ export function editorGlowPaint(
  */
 /** Perpendicular distance from a point to a wall segment. */
 function pointWallDist(x: number, y: number, w: Wall): number {
-  const dx = w.x2 - w.x1;
-  const dy = w.y2 - w.y1;
-  const len2 = dx * dx + dy * dy;
-  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - w.x1) * dx + (y - w.y1) * dy) / len2));
-  const px = w.x1 + t * dx;
-  const py = w.y1 + t * dy;
-  return Math.hypot(x - px, y - py);
+  return distToSegment(x, y, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
 }
 
 /** Distance along a ray from (cx,cy) toward (dx,dy) to a segment, or undefined. */

@@ -118,8 +118,8 @@ export function signedArea(points: readonly AreaPoint[]): number {
   return sum / 2;
 }
 
-/** Distance from `(x, y)` to the segment `a`–`b`. */
-function distToSegment(x: number, y: number, a: Pt, b: Pt): number {
+/** Distance from `(x, y)` to the segment `a`–`b` (to `a` when they coincide). */
+export function distToSegment(x: number, y: number, a: AreaPoint, b: AreaPoint): number {
   const vx = b.x - a.x;
   const vy = b.y - a.y;
   const len2 = vx * vx + vy * vy;
