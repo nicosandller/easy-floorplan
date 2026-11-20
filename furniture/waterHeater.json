@@ -8,5 +8,94 @@
   "parts": [
     { "ellipse": [50, 50, 50, 50], "role": "body" },
     { "circle": [50, 50, 17], "role": "thin" }
-  ]
+  ],
+  "model3d": {
+    "version": 1,
+    "units": "cm",
+    "size": {
+      "width": 52,
+      "depth": 52,
+      "height": 140
+    },
+    "parts": [
+      {
+        "cylinder": {
+          "radius": 23,
+          "height": 4
+        },
+        "position": [
+          3,
+          3,
+          0
+        ]
+      },
+      {
+        "cylinder": {
+          "radius": 26,
+          "height": 126
+        },
+        "position": [
+          0,
+          0,
+          4
+        ]
+      },
+      {
+        "cylinder": {
+          "radius": 24,
+          "height": 4
+        },
+        "position": [
+          2,
+          2,
+          130
+        ]
+      },
+      {
+        "cylinder": {
+          "radius": 9,
+          "height": 2
+        },
+        "position": [
+          17,
+          17,
+          134
+        ]
+      },
+      {
+        "cylinder": {
+          "radius": 2,
+          "height": 6
+        },
+        "position": [
+          12,
+          24,
+          134
+        ]
+      },
+      {
+        "cylinder": {
+          "radius": 2,
+          "height": 6
+        },
+        "position": [
+          36,
+          24,
+          134
+        ]
+      },
+      {
+        "box": [
+          10,
+          2,
+          18
+        ],
+        "position": [
+          21,
+          0,
+          80
+        ]
+      }
+    ]
+  }
 }

@@ -166,6 +166,11 @@ the editor's **floor** controls; the card shows a switcher when there is more th
   roofs, or fixed coordinates. See [Callout info-panels](callout-panels.md).
 - **`haFloor`** — id of a linked Home Assistant floor, set from the floor gear popover.
   Today it auto-names the floor.
+- **`sectionFacing`** — makes the floor a **vertical section** (issue #414): a cut through
+  the building with the sky at the top and the ground at the bottom, storeys stacked one
+  above the other. The value is the compass bearing you face when looking at the drawing
+  (0 = north, 90 = east). Set it from the floor gear popover's **Vertical section** switch.
+  See [Sunlight on a section](lighting.md#sunlight-on-a-section).
 - **`image`** — a background URL (e.g. `/local/floorplan.png`) drawn behind the elements,
   for tracing over a real plan. **`imageOpacity`** (0–1, default 1) fades it.
 - **`imageFit`** — how that image maps onto the canvas, per floor so scans of differing
@@ -246,6 +251,9 @@ See [Skylights](lighting.md#skylights) for what the sun does with one and
 | `angle`       | number                      | Rotation in degrees.                                   |
 | `entity`      | string                      | Contact `binary_sensor`, `cover` or `lock` driving open/closed (a `cover`'s `current_position` gives partial travel). A **lock** reads `unlocked` as open and `locked` as closed — see [Doors on locks](behavior.md#doors-on-locks). |
 | `secondaryEntity` | string                  | Anything with **two leaves**: a second contact / `cover` for the other leaf, so each moves on its own state. That means the two-panel sliders (`biparting`, `biparting-bypass`, `converging`) and any hinged double — a casement window, or a `sash: double` door. `entity` drives the leaf at the −x jamb, so `flipH` swaps which sensor draws which. Unset = both follow `entity`; ignored where there is only one leaf. |
+| `tiltEntity`  | string                      | Hinged windows only: a tilt-and-turn window's tilt sensor, an angle in degrees (a Shelly BLU Door/Window's `rotation`) or an on/off contact. While `entity` reads open and this reads tilted, the sash is drawn shut in its frame with its head leaning in (a dashed V in plan, leaning in 3D), and the light layers count it as only a little open. When `entity` reads shut the window is shut, whatever this says. A handle sensor whose `entity` state is `tilted` needs none. On a double sash the tilt is the first leaf's. See [Tilt-and-turn windows](#tilt-and-turn-windows). |
+| `tiltThreshold` | number (°)                | The angle at or above which a numeric `tiltEntity` reads tilted. Default `2`. Ignored for an on/off sensor. |
+| `tiltFull`    | number (°)                  | The angle a numeric `tiltEntity` reads fully tilted, against the tilt stop. Between `tiltThreshold` and this the sash leans in proportion. Default `5`. Ignored for an on/off sensor, which tilts all or nothing. |
 | `invert`      | boolean                     | Flip the open/closed interpretation.                   |
 | `activeColor` | string                      | Leaf/arc color while actively open (default primary). On a roll-up it colours the curtain and the track it leaves behind, so a fully raised shutter still reads as open. |
 | `inactiveColor` | string                    | Leaf/arc color while **closed** (default: the wall color). The moving parts only — the jambs and frame stay the wall's color either way, so the symbol still reads as a hole in a wall. A shutter that is down follows it, as one that is up follows `activeColor`. An [offline](behavior.md#offline-devices) contact falls back to the wall color rather than drawing a confident "shut". See [Colors for on and off](behavior.md#colors-for-on-and-off). |
@@ -260,6 +268,36 @@ See [Skylights](lighting.md#skylights) for what the sun does with one and
 | `hold_action` / `double_tap_action` | ActionConfig | With both entities bound, hold opens the shutter's more-info by default — a tap is never retargeted at the shutter motor. Double-tap does nothing unless configured. |
 | `sliderStyle` | `single` \| `bypass` \| `biparting` \| `biparting-bypass` \| `converging` | With `motion: slide`: one panel (default), two stacking, two centre-parting into the walls, two centre-parting over a fixed panel at each jamb, or two running together to stack in the middle. |
 | `locked`      | boolean                     | Pinned in place in the editor: it still selects, edits and deletes, but never moves, and it yields the click to anything unlocked on top of it. The editor writes it; the rendered card ignores it. See [Locking elements in place](editor.md#locking-elements-in-place). |
+
+### Tilt-and-turn windows
+
+A tilt-and-turn window opens two ways: tilted, leaning in from its head, or swung open
+like a casement. Most contact sensors read open for both, so bind the sensor that tells
+them apart as `tiltEntity`:
+
+```yaml
+- id: living_window
+  type: window
+  sash: single
+  'x': 300
+  'y': 40
+  length: 90
+  angle: 0
+  entity: binary_sensor.living_window          # on when tilted or open
+  tiltEntity: sensor.living_window_rotation    # 0° shut or swung, about 5° tilted
+```
+
+A Shelly BLU Door/Window reports its rotation as 0° shut, about 5° tilted and 0° again
+swung open, so the default `tiltThreshold` of 2° separates them. Raise it if a sensor
+drifts. The angle also sets how far the sash leans: fully at `tiltFull` (5° by default),
+and in proportion below it, so a window part way to its tilt stop draws part tilted. Set
+`tiltFull` to what your sensor reads with the window tilted fully. In the editor, these
+are under **What it reads** as **Tilt sensor**, **Tilted from** and **Fully tilted at**.
+
+How far a window is *swung* open comes from `entity`, as for any window: a contact is
+shut or open, and a `cover` with a `current_position` draws part open. An accelerometer
+like the Shelly's reads the lean against gravity, so it measures the tilt and not the
+swing.
 
 ## Item (device)
 
@@ -282,7 +320,7 @@ See [Skylights](lighting.md#skylights) for what the sun does with one and
 | `activeColor` | string                                 | theme color  | Badge color while on. Ignored while `stateColor` rules match. |
 | `inactiveColor` | string                               | theme badge  | Badge color while **off** — closed, locked or docked, whichever this entity's domain says. Ignored while `stateColor` rules match, and while the entity is [offline](behavior.md#offline-devices). See [Colors for on and off](behavior.md#colors-for-on-and-off). |
 | `rippleColor` | string                                 | `activeColor`| Ripple ring color, falling back to `activeColor` then the primary color. |
-| `rippleSize`  | number                                 | `80`         | Max ripple diameter (px).                              |
+| `rippleSize`  | number                                 | `80`         | Max ripple diameter: screen px, or canvas units with `overlayScale: plan`. |
 | `rippleDirection` | number                             | `0`          | Direction the ripple arc is centred on, in degrees clockwise from the top **of the plan**, not of the screen — a rotated card turns the arc with the drawing, so it keeps pointing at the wall it was aimed at. Only visible when `rippleWidth` is under `360`. Wraps to be between `0`–`360`. |
 | `rippleWidth` | number                                 | `360`        | Angular width of the ripple arc in degrees. `360` rings all the way round; narrow it for a sensor on a wall that cannot see behind itself. Clamped to `0`–`360`. |
 | `glow`        | boolean                                | `false`      | Cast a pool of light onto the plan (lights only). See [Cast light](#cast-light). |
@@ -484,12 +522,13 @@ plain box, so a missing symbol is a visible placeholder rather than a hole in th
 `height3d` optionally sets the total detailed model height in canvas units (finite, greater
 than zero, at most 10000). It defaults to `model3d.size.height`, scales the model
 vertically independently of `w` and `h`, and applies before section clipping.
-It does not enable 3D models or affect 2D/block rendering. For a half-scale plan,
+The editor offers this field only when 3D furniture is enabled and the selected
+symbol has a valid detailed model. Existing height overrides are retained when
+the field is hidden. It does not enable 3D models or affect 2D/block rendering. For a half-scale plan,
 set it to half the authored model height as well as halving the footprint.
-For detailed models, symbol `elevation.from` is the bottom offset in canvas units
-(default 0). `height3d` sets the height independently, defaulting to the authored
-model height. `elevation.to` is not used for models. The separate furniture cut
-is measured from the floor and never changes the mounting height.
+Detailed models use `elevation.from` as their bottom height in canvas units.
+Their top is the bottom plus `height3d` (or the authored model height).
+`elevation.to` is retained but ignored by detailed models.
 
 The editor's **+ Add** picker draws every symbol at its real size and is searchable — type
 `couch` and you get the sofa and the sectional.
@@ -506,6 +545,9 @@ picks which end a curtain gathers at: the left by default (`hand: right`), the r
 `hand: left`. `hand: center`
 makes it a pair that meets in the middle and gathers at both ends, still one piece with
 one entity. If the cover drops out, an awning draws retracted and a curtain draws closed.
+A cover that reports 100 % where the piece is retracted (some awnings driven as blinds do)
+takes `invert: true`, **Invert cover position** in the editor; a dropout still draws it
+retracted.
 In 3D the awning hangs under the eaves rather than standing on the floor. Unbound, either
 piece is drawn at full size.
 
@@ -606,9 +648,19 @@ animated inside a rectangular tracked area:
 - `color` / `opacity` — the room's fill; theme primary and `0.25` by default, or a soft
   tint under [`roomTints: auto`](appearance.md#room-tints).
 - `haArea` — id of a linked Home Assistant area, set by the editor when `name` matches one.
-- `sideWalls` — rectangle-room edge overrides: keys `top`, `right`, `bottom`, `left` and
-  values `wall`, `divider` or `none`. Double-click a room edge in the editor to cycle it;
-  a `divider` draws a dashed line instead of a full wall.
+- `sideWalls` — rectangle-room edge overrides: keys `top`, `right`, `bottom`, `left`.
+  Each value is either a plain state — `wall`, `divider` or `none` — for the whole
+  edge, or an array of segments `{ start, end, state }` (`start`/`end` fractions
+  `0`–`1` along the edge) so one edge can mix a wall section, a divider section and
+  an open gap. In the editor: double-click an edge (or a segment) to cycle it
+  through **wall → divider → none**; Ctrl/Cmd-click splits the clicked point into
+  its own segment and selects it; Shift-click an open section of the actual shared
+  edge joins two adjoining rectangle rooms. If either room is linked to a Home
+  Assistant area, both must be linked to the same area; two unlinked rooms may
+  also join. Shift-click an existing wall/divider splits it into a segment. A
+  selected segment's midpoint handle drags the whole segment along the edge, its
+  endpoint handles stretch just that end, and **Delete** removes it. A `divider`
+  draws a dashed line instead of a full wall.
 - `filterEntities` — with `haArea` set, scopes the entity picker for devices inside this
   polygon to that HA area's entities. Default `true`.
 - `entity` — makes the room live, driving `stateColor` and `activeColor` the same way
@@ -857,7 +909,7 @@ label gets no Label group, and an opening with no shutter gets no Shutter group.
 | Furniture | Shape · What it reads · Behavior · Color |
 | Area | Identity · What it reads · Color · Behavior · Home Assistant area |
 | Tracker | Zone · Sensors · Marker |
-| Project | Project · Look · Floor image · Display · Sunlight · Night dimming · Devices · Symbols |
+| Project | Project · Look · Floor · Floor image · View · Rotation · Size · Rooms · Sunlight · Night dimming · Devices · Symbols |
 
 Walls and text keep a plain list: a wall is thickness and length, a text is its words, size
 and angle. A heading over one or two fields is chrome rather than structure.

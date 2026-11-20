@@ -118,6 +118,40 @@ describe("awning and curtain follow their cover (issue #196)", () => {
     expect(normalizeSymbol({ ...base, elevation: { from: 0.2, to: 0.4 } })!.elevation).toEqual({ from: 0.2, to: 0.4 });
   });
 
+  it("reads the position the other way round with invert (issue #410)", () => {
+    const flipped = { ...awning, invert: true };
+    // A cover at 100 % that is rolled in: retracted, not extended.
+    expect(shownFurniture(flipped, cover(100)).h).toBeCloseTo(12);
+    expect(shownFurniture(flipped, cover(0))).toBe(flipped);
+    expect(shownFurniture(flipped, cover(25)).h).toBeCloseTo(200 * (0.06 + 0.94 * 0.75));
+    // Without a position, open/closed flips the same way.
+    expect(shownFurniture(flipped, { state: "open" }).h).toBeCloseTo(12);
+    const across = { ...curtain, invert: true };
+    expect(shownFurniture(across, cover(100))).toBe(across);
+    expect(shownFurniture(across, cover(0)).w).toBeCloseTo(160 * 0.14);
+  });
+
+  it("still fails closed on an outage when inverted", () => {
+    expect(shownFurniture({ ...awning, invert: true }, { state: "unavailable" }).h).toBeCloseTo(12);
+    const across = { ...curtain, invert: true };
+    expect(shownFurniture(across, { state: "unavailable" })).toBe(across);
+  });
+
+  it("offers invert on a piece that follows a cover, and writes it only when on", () => {
+    const names = (f: Furniture) => furnitureForm(f).fields.map((x) => x.name);
+    expect(names(awning)).toContain("invert");
+    expect(names(curtain)).toContain("invert");
+    expect(names({ id: "s", type: "sofa", x: 0, y: 0, w: 100, h: 50 })).not.toContain("invert");
+    expect(furnitureForm(awning).data.invert).toBe(false);
+    expect(furnitureForm({ ...awning, invert: true }).data.invert).toBe(true);
+    expect(furnitureForm(awning).toPatch({ invert: true })).toEqual({ invert: true });
+    expect(furnitureForm(awning).toPatch({ invert: false })).toEqual({ invert: undefined });
+    const helper = (f: Furniture) => furnitureForm(f).fields.find((x) => x.name === "entity")!.helper;
+    expect(helper(awning)).toContain("full size at 100 %");
+    expect(helper({ ...awning, invert: true })).toContain("full size at 0 %");
+    expect(helper(curtain)).toContain("full size at 0 %");
+  });
+
   it("offers the gathering side on a curtain only", () => {
     const names = (f: Furniture) => furnitureForm(f).fields.map((x) => x.name);
     expect(names(curtain)).toContain("hand");

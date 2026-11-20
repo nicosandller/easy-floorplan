@@ -214,8 +214,8 @@ to use the previous block at its usual wall-relative height. The canvas reserves
 space for visible models above low walls. Switching these options off preserves
 the saved cut height, and 2D rendering is unchanged.
 
-The initial models are `table`, `cornerShelf`, `bathtub`, and `stove`. Other symbols
-retain the block fallback. Additional models will follow separately. Tables are 80 cm.
+35 built-in symbols have detailed 3D models. `awning` and `curtain` keep the
+block fallback. Tables are 80 cm; the stairs model is 220 cm tall.
 Heights still use the plan coordinate scale directly; automatic vertical scaling
 when resizing a furniture footprint is not part of these controls.
 
@@ -240,7 +240,7 @@ For `model3d`, `elevation.from` is the bottom offset in canvas units, independen
 of wall height. Use `elevation: { from: 100 }` to mount a model 100 units above
 the floor. Accepted offsets are finite numbers from 0 to 10000; omitted means 0.
 The model retains its authored height unless the placed furniture sets `height3d`.
-`elevation.to` is not used for detailed models.
+`elevation.to` is preserved when supplied, but is not used for detailed models.
 
 For example, a 70-high TV with `elevation: { from: 100 }` spans 100–170.
 Setting `height3d: 80` changes its top to 180 without moving its bottom.

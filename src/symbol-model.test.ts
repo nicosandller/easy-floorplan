@@ -94,11 +94,6 @@ describe("placed 3D height", () => {
   });
 });
 
-it("ships only the four initial 3D models", () => {
-  expect(Object.values(BUILTIN_SYMBOLS).filter(s => s.model3d).map(s => s.id).sort())
-    .toEqual(["bathtub", "cornerShelf", "stove", "table"]);
-});
-
 it("positions elevated models at an absolute bottom before applying the independent cut", () => {
   const model = normalizeModel({ version: 1, units: "cm", size: { width: 60, depth: 10, height: 100 }, parts: [{ box: [60, 10, 100] }] })!;
   const f = { x: 0, y: 0, w: 60, h: 10 };
@@ -114,5 +109,66 @@ it("normalizes a model bottom offset without requiring an elevation top", () => 
   const model3d = { version: 1, units: "cm", size: { width: 10, depth: 10, height: 70 }, parts: [{ box: [10, 10, 70] }] };
   const raw = { id: "tv", parts: [{ rect: [0, 0, 100, 100] }], model3d };
   expect(normalizeSymbol({ ...raw, elevation: { from: 100 } })?.elevation).toEqual({ from: 100 });
+  const elevated = normalizeSymbol({ ...raw, elevation: { from: 100, to: 999 } })!;
+  expect(elevated.elevation).toEqual({ from: 100, to: 999 });
+  const solids = furnitureModelSolids({ x: 0, y: 0, w: 10, h: 10 }, elevated.model3d!, (x, y) => ({ x, y }), 400, "gray", { wallHeight: 200, elevation: elevated.elevation });
+  expect(solids[0]).toMatchObject({ z0: 100, z1: 170 });
   for (const from of [-1, Infinity, NaN, 10001]) expect(normalizeSymbol({ ...raw, elevation: { from } })?.elevation).toBeUndefined();
+});
+
+it("keeps the indoor palm inside 40×40 with a 120 cm crown", () => {
+  const m = BUILTIN_SYMBOLS.indoorPalm.model3d!;
+  expect(m).toBeDefined();
+  expect(m.size).toEqual({ width: 40, depth: 40, height: 120 });
+  expect(Math.max(...m.parts.map(p => p.z1))).toBeCloseTo(120);
+  expect(m.parts.length).toBeLessThanOrEqual(64);
+  const leaves = m.parts.filter(p => Math.abs(p.z1 - p.z0 - 1.2) < 1e-6);
+  expect(new Set(leaves.map(p => Math.round(p.z0 / 10))).size).toBeGreaterThanOrEqual(3);
+});
+
+it("ships the complete 35-model catalog, with awnings and curtains retaining the fallback", () => {
+  expect(Object.keys(BUILTIN_SYMBOLS).filter(id => BUILTIN_SYMBOLS[id].model3d).sort()).toEqual([
+    "airHandler", "bathtub", "bed", "bookcase", "bunkBed", "chair", "cornerShelf",
+    "cornerShowerCurved", "desk", "dishwasher", "dresser", "dryer", "fishTank", "fridge",
+    "hotTub", "indoorPalm", "ladderShelf", "piano", "plant", "quarterTub", "roundTable",
+    "rug", "sectional", "sink", "sofa", "stairs", "stove", "table", "tallDresser", "toilet",
+    "tv", "vanity", "wardrobe", "washer", "waterHeater",
+  ].sort());
+  expect(BUILTIN_SYMBOLS.awning.model3d).toBeUndefined();
+  expect(BUILTIN_SYMBOLS.curtain.model3d).toBeUndefined();
+});
+
+it("keeps stairs at 220 cm with ascending treads and clips without rescaling", () => {
+  const m = BUILTIN_SYMBOLS.stairs.model3d!;
+  expect(m.size.height).toBe(220);
+  expect(m.parts.map(p => p.z1)).toEqual([27.5, 55, 82.5, 110, 137.5, 165, 192.5, 220]);
+  const cut = furnitureModelSolids({ x: 0, y: 0, w: 90, h: 170 }, m, (x, y) => ({ x, y }), 100, "gray");
+  expect(cut.map(p => p.z1)).toEqual([27.5, 55, 82.5, 100, 100, 100, 100, 100]);
+});
+
+it.each(["airHandler", "rug", "waterHeater"])("keeps %s details within the authored dimensions", id => {
+  const m = BUILTIN_SYMBOLS[id].model3d!;
+  expect(m.parts.length).toBeGreaterThan(1);
+  expect(Math.max(...m.parts.map(p => p.z1))).toBe(m.size.height);
+  for (const p of m.parts) for (const [x, y] of p.base) {
+    expect(x).toBeGreaterThanOrEqual(0); expect(x).toBeLessThanOrEqual(m.size.width);
+    expect(y).toBeGreaterThanOrEqual(0); expect(y).toBeLessThanOrEqual(m.size.depth);
+  }
+});
+
+it("gives the corner shower two glass doors, four flared grips and a floor drain", () => {
+  const m = BUILTIN_SYMBOLS.cornerShowerCurved.model3d!;
+  expect(m.size).toEqual({ width: 100, depth: 100, height: 200 });
+  expect(m.parts.filter(p => p.glass)).toHaveLength(12);
+  const grips = m.parts.filter(p => p.z0 === 98 && p.z1 === 102);
+  expect(grips).toHaveLength(4);
+  // Each door has one grip inside and one outside its 97 cm glass radius.
+  const radii = grips.map(p => Math.hypot(
+    p.base.reduce((sum, v) => sum + v[0], 0) / p.base.length - 100,
+    p.base.reduce((sum, v) => sum + v[1], 0) / p.base.length - 2));
+  expect(radii.filter(r => r < 97)).toHaveLength(2);
+  expect(radii.filter(r => r > 97)).toHaveLength(2);
+  expect(m.parts.filter(p => p.z0 === 0 && p.z1 === 0.5)).toHaveLength(7);
+  const cut = furnitureModelSolids({ x: 0, y: 0, w: 100, h: 100 }, m, (x, y) => ({ x, y }), 100, "gray");
+  expect(cut.filter(p => p.z0 === 98).map(p => p.z1)).toEqual([100, 100, 100, 100]);
 });

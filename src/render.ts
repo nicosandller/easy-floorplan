@@ -202,6 +202,9 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
       // intermittent rather than broken.
       if (o.secondaryEntity) ids.add(o.secondaryEntity);
       if (o.shutterSecondaryEntity) ids.add(o.shutterSecondaryEntity);
+      // The tilt sensor (issue #409): the contact reads open whether tilted
+      // or swung, so only this one moves between the two.
+      if (o.tiltEntity) ids.add(o.tiltEntity);
     }
     for (const it of f.items) {
       if (it.entity) ids.add(it.entity);
@@ -3827,7 +3830,131 @@ export function openingIsActive(
   state: { state: string; attributes?: Record<string, unknown> } | undefined,
 ): boolean {
   if (!o.entity || !state || isSensorOutage(state.state)) return false;
+  // A handle sensor's `tilted` is open, just not swung (issue #409).
+  if (state.state === "tilted" && openingCanTilt(o)) return true;
   return openingInMotion(state.state) || resolveOpeningAmount(o, state) > 0;
+}
+
+/**
+ * A tilted sash seen from above (issue #409): its head leaning in over the
+ * room on the side the casement opens to, and the dashed V of the tilt
+ * symbol, from the jambs at the hinged sill up to the middle of the head. The leaf itself stays shut on the
+ * wall line, which is what tells tilted from swung at a glance. `width` is
+ * the first leaf's, hinged at the −x jamb like everything else here.
+ */
+function tiltMark(
+  o: Opening,
+  tilt: number | undefined,
+  width: number,
+  half: number,
+  tone: string,
+): SVGTemplateResult | typeof nothing {
+  const t = o.type === "window" ? Math.max(0, Math.min(1, cssNumber(tilt, 0))) : 0;
+  if (t <= 0) return nothing;
+  // Deeper than a real tilt, which is a hand's width: drawn true it would be
+  // a hairline beside the wall at any card size.
+  const depth = Math.min(width * 0.22, 26) * t;
+  const x0 = -half;
+  const x1 = -half + width;
+  const mid = (x0 + x1) / 2;
+  // Faded in over the first part of the lean only, so a partial tilt reads
+  // as a shallower lean rather than a fainter one.
+  return svg`<g class="fp-tilt" style="opacity:${Math.min(1, t * 4)};">
+      <line x1=${x0} y1=${-depth} x2=${x1} y2=${-depth}
+            stroke-width="2" stroke-linecap="round" style="stroke:${tone};" />
+      <polyline points="${x0},0 ${mid},${-depth} ${x1},0"
+                fill="none" stroke-width="1.5" stroke-dasharray="4 3"
+                style="stroke:${tone};" />
+    </g>`;
+}
+
+/** Degrees at or above which an angle sensor reads a sash as tilted (issue #409). */
+export const DEFAULT_TILT_THRESHOLD = 2;
+
+/**
+ * Degrees at which an angle sensor reads a sash as fully tilted (issue #409):
+ * what the reporter's Shelly BLU Door/Window reads against the tilt stop.
+ */
+export const DEFAULT_TILT_FULL = 5;
+
+/**
+ * How much of its gap a tilted sash clears for the light layers (issue #409):
+ * a hand's width at the head of the window, not the opening.
+ */
+export const TILT_CLEAR_FRACTION = 0.1;
+
+/**
+ * Whether an opening can tilt (issue #409): a hinged window. A door, a slider,
+ * a top-hung window and a roof light all move some other way.
+ */
+export function openingCanTilt(o: Pick<Opening, "type" | "motion">): boolean {
+  return o.type === "window" && openingMotion(o) === "swing";
+}
+
+/**
+ * How far a tilt sensor's state says the sash leans, 0..1. A number is an
+ * angle in degrees, either way round: nothing below `threshold`, then in
+ * proportion up to fully tilted at `full`. Anything else is an on/off reading,
+ * all or nothing. An outage is never tilted.
+ */
+export function tiltLean(
+  state: string | undefined,
+  threshold = DEFAULT_TILT_THRESHOLD,
+  full = DEFAULT_TILT_FULL,
+): number {
+  if (state === undefined || isSensorOutage(state)) return 0;
+  const deg = state.trim() === "" ? NaN : Math.abs(Number(state));
+  if (Number.isFinite(deg)) return deg < threshold ? 0 : Math.min(1, deg / Math.max(full, threshold));
+  return state === "on" || state === "open" || state === "tilted" ? 1 : 0;
+}
+
+/** Whether a tilt sensor's state says tilted at all. See {@link tiltLean}. */
+export function tiltReading(state: string | undefined, threshold = DEFAULT_TILT_THRESHOLD): boolean {
+  return tiltLean(state, threshold) > 0;
+}
+
+/**
+ * Whether a window is tilted rather than shut or swung open (issue #409).
+ *
+ * The open contact has the first word. Shut is shut, whatever the tilt sensor
+ * says, because a sash cannot lean in from a closed frame and an angle sensor
+ * can drift; an outage on it fails closed like every other opening. A handle
+ * sensor that reports `tilted` itself needs nothing else. Otherwise the
+ * contact reads open, and {@link Opening.tiltEntity} decides between tilted
+ * and swung. A window with a tilt sensor and no contact is shut until it tilts.
+ */
+export function resolveOpeningTilted(
+  o: Opening,
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+  tiltState: { state: string } | undefined,
+): boolean {
+  return resolveOpeningTilt(o, state, tiltState) > 0;
+}
+
+/**
+ * How far a window is tilted, 0..1, on the rules of {@link
+ * resolveOpeningTilted}: an angle sensor leans it in proportion, up to
+ * {@link Opening.tiltFull}; a contact or a handle's `tilted` leans it fully.
+ */
+export function resolveOpeningTilt(
+  o: Opening,
+  state: { state: string; attributes?: Record<string, unknown> } | undefined,
+  tiltState: { state: string } | undefined,
+): number {
+  if (!openingCanTilt(o)) return 0;
+  if (o.entity) {
+    if (!state || isSensorOutage(state.state)) return 0;
+    if (state.state === "tilted") return 1;
+    if (resolveOpeningAmount(o, state) === 0) return 0;
+  }
+  if (!o.tiltEntity) return 0;
+  const positive = (v: number | undefined, d: number) =>
+    typeof v === "number" && Number.isFinite(v) && v > 0 ? v : d;
+  return tiltLean(
+    tiltState?.state,
+    positive(o.tiltThreshold, DEFAULT_TILT_THRESHOLD),
+    positive(o.tiltFull, DEFAULT_TILT_FULL),
+  );
 }
 
 /**
@@ -4260,6 +4387,13 @@ export interface OpeningStyle {
    * existing callers are unaffected. See {@link resolveOpeningAmount}.
    */
   amount?: number;
+  /**
+   * How far a tilt-and-turn sash leans in (issue #409), 0..1: 1 tilted, 0 not.
+   * A number rather than a flag so the card eases it like any other travel.
+   * Hinged windows only, on the first leaf, which stays shut in its frame
+   * while it leans. See {@link resolveOpeningTilted}.
+   */
+  tilt?: number;
   /** Entity-driven "actively open" state: tints the moving parts with `accent`. */
   active?: boolean;
   /**
@@ -4479,6 +4613,7 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
               stroke=${color} stroke-width=${o.type === "window" ? 1.5 : 2.5} />`
             : nothing
         }
+        ${tiltMark(o, style.tilt, two ? half : leafW, half, tone)}
         <!-- leaf hinged at the left jamb (flipH mirrors it to the right one) -->
         <g transform="translate(${-half} 0)">
           <g class="fp-door-leaf" style="transform:rotate(${-90 * amt}deg);">
@@ -5334,7 +5469,7 @@ export function moonNightFactor(sunElevation: unknown): number {
  * tangent of the light's angle whatever is shining.
  */
 export function moonlightOf(
-  c: Pick<FloorplanCardConfig, "north">,
+  c: Pick<FloorplanCardConfig, "north"> & { sectionFacing?: number },
   time: number,
   location: { latitude?: unknown; longitude?: unknown } | undefined,
   sunElevation: unknown,
@@ -5358,7 +5493,11 @@ export function moonlightOf(
     cloudFactor(cover, CLOUD_DIRECT_MIN);
   if (!(strength > 0)) return undefined;
   return {
-    dir: planDirection(moon.bearing + 180, c.north ?? 0),
+    // On a section the moon's height is its direction, as the sun's is.
+    dir:
+      sectionFacingOf(c) === undefined
+        ? planDirection(moon.bearing + 180, c.north ?? 0)
+        : sectionLightDirection(c.sectionFacing as number, moon.bearing, moon.altitude),
     strength,
     altitude: moon.altitude,
   };
@@ -5949,6 +6088,71 @@ export function sunLightDirection(
   azimuth?: unknown,
 ): { x: number; y: number } {
   return planDirection(sunBearingOf(cfg, azimuth) + 180, cfg.north ?? 0);
+}
+
+/**
+ * Which way the light travels on a **vertical section** (issue #414): a floor
+ * drawn as a cut through the building, sky at the top of the canvas and the
+ * ground at the bottom, seen looking toward the compass bearing `facing`.
+ *
+ * A plan only needs the sun's bearing, because its canvas is the ground: the
+ * height of the sun shows up as how far a patch carries, not which way it
+ * points. A section turns that round. Its canvas is upright, so the sun's
+ * height *is* the direction — a noon sun comes down steeply, an evening one
+ * nearly level — and its bearing only decides from which side, and how
+ * steeply the light looks once it is flattened onto the drawing. Treated as a
+ * plan, a section was lit as if the sun stood at the top of the page and
+ * swung left and right through the day.
+ *
+ * The light vector is the sun's direction reversed, projected onto the
+ * drawing: right is the bearing a quarter turn clockwise from `facing`, down
+ * is down. A sun straight behind or in front of the viewer has no sideways
+ * part left, so its light falls straight down the page.
+ */
+export function sectionLightDirection(
+  facing: number,
+  bearing: number,
+  elevation: number,
+): { x: number; y: number } {
+  const rad = (deg: number) => (deg * Math.PI) / 180;
+  // Clear of the horizon, where the light would run flat along the floor and
+  // never reach it, and of the zenith, where it would not matter which side.
+  const e = rad(Math.max(1, Math.min(89, elevation)));
+  const x = -Math.cos(e) * Math.sin(rad(bearing - facing));
+  const y = Math.sin(e);
+  const len = Math.hypot(x, y);
+  return { x: x / len, y: y / len };
+}
+
+/**
+ * The sun's light direction for a floor, plan or section, and whether its
+ * reach should still be shortened by the elevation.
+ *
+ * On a section the elevation is already in the angle (see
+ * {@link sectionLightDirection}), so the reach is left alone — scaling it too
+ * would count the sun's height twice. A pinned sun on a section keeps
+ * {@link SUN_REACH_REF} as its height, the same mid-morning sun the pinned
+ * reach already describes; a live one with no readable elevation does too.
+ */
+export function floorSunLight(
+  cfg: Pick<FloorplanCardConfig, "north" | "sunBearing">,
+  floor: Pick<Floor, "sectionFacing"> | undefined,
+  azimuth?: unknown,
+  elevation?: unknown,
+): { dir: { x: number; y: number }; scaleReach: boolean } {
+  const facing = sectionFacingOf(floor);
+  if (facing === undefined) return { dir: sunLightDirection(cfg, azimuth), scaleReach: true };
+  const height = sunIsPinned(cfg) ? SUN_REACH_REF : (liveSunAttribute(elevation) ?? SUN_REACH_REF);
+  return {
+    dir: sectionLightDirection(facing, sunBearingOf(cfg, azimuth), height),
+    scaleReach: false,
+  };
+}
+
+/** The bearing a section floor looks toward, or undefined for a plan. */
+export function sectionFacingOf(floor: Pick<Floor, "sectionFacing"> | undefined): number | undefined {
+  const f = floor?.sectionFacing;
+  return typeof f === "number" && Number.isFinite(f) ? f : undefined;
 }
 
 /** A segment swept along the light: the shape both a beam and a shadow are. */
@@ -7099,6 +7303,7 @@ export function renderFurniture(
  * The cover's position is read the way a shutter's is ({@link shutterAmount}),
  * so a dropout reads as a closed cover rather than a guess: an awning draws
  * retracted, and a curtain (`open: "retracted"`) draws fully across.
+ * `invert` turns the position round (issue #410) but never the dropout.
  */
 export function shownFurniture(
   f: Furniture,
@@ -7107,7 +7312,7 @@ export function shownFurniture(
 ): Furniture {
   const ext = findSymbol(catalog, f.type)?.extend;
   if (!ext || !f.entity) return f;
-  const open = shutterAmount(state);
+  const open = shutterAmount(state, f.invert === true);
   const out = ext.open === "extended" ? open : 1 - open;
   const k = ext.min + (1 - ext.min) * out;
   if (k >= 1) return f;

@@ -35,7 +35,7 @@ it("keeps the configured section height when a tall wall expands the frame", asy
   expect(root.querySelectorAll('.fp-iso-furniture[data-id="shelf"]')).toHaveLength(6);
 });
 it("renders a newly added 2D-only symbol with the block fallback", async () => {
-  const root = await mount({ furniture: [{ id: "palm", type: "indoorPalm", x: 200, y: 200, w: 40, h: 40 }] });
+  const root = await mount({ furniture: [{ id: "palm", type: "awning", x: 200, y: 200, w: 40, h: 40 }] });
   expect(root.querySelectorAll('.fp-iso-furniture[data-id="palm"]')).toHaveLength(1);
 });
 
@@ -92,6 +92,14 @@ it("removes and restores cached 3D furniture when visibility changes", async () 
     expect(root.querySelectorAll('.fp-iso-furniture[data-id="shelf"]').length).toBe(state === "on" ? 6 : 0);
     expect(root.querySelectorAll('.fp-furniture-hit[role="button"]').length).toBe(state === "on" ? 1 : 0);
   }
+});
+
+it("emits one focus rectangle for the keyboard part of a multipart model", async () => {
+  const root = await mount({ furniture: [{ id: "shelf", type: "cornerShelf", x: 200, y: 200, w: 60, h: 60,
+    showIcon: false, tap_action: { action: "fire-dom-event" } }] });
+  expect(root.querySelectorAll('.fp-furniture-hit').length).toBeGreaterThan(1);
+  expect(root.querySelectorAll('.fp-furniture-hit .fp-furniture-focus')).toHaveLength(1);
+  expect(root.querySelectorAll('.fp-furniture-hit[tabindex="0"] .fp-furniture-focus')).toHaveLength(1);
 });
 
 it.each([0, 90, 180, 270] as const)("places elevated models within the frame and removes geometry and controls below the cut at %s", async rotation => {

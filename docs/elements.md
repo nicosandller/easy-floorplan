@@ -108,7 +108,8 @@ then pick the entity in the **Selection** inspector.
 ## Doors, windows, skylights & passages
 
 Drop a **door**, **passage** or **window** from the toolbar and it snaps onto the nearest
-wall. A **passage** is a doorway with no door in it — the card draws only the gap, and it
+wall. Click on or close to a wall: a click with no wall in reach places nothing, and the
+toolbar says so. A **passage** is a doorway with no door in it — the card draws only the gap, and it
 is always open. A
 **skylight** is the exception: it is a hole in the ceiling, so it snaps to nothing —
 click anywhere inside a room and it stays where you put it. It is also the one opening
@@ -216,13 +217,20 @@ openings:
 
 An **area** is a colored, named room polygon traced on top of your walls.
 
-Choose the **Area** tool and either press-drag to make a finished rectangle in one
+Choose the **Room** tool and either press-drag to make a finished rectangle in one
 gesture or click each corner for a custom polygon — points snap onto nearby wall corners
 and onto other areas' corners, so adjoining rooms share an exact boundary. After 3+
 points, click the **first** point to close the shape (**Backspace** drops the last point,
 **Escape** discards the outline). Drag inside the fill to move the room, or a corner
 handle to reshape it. Double-click a rectangle room's edge to cycle it through
-**wall → divider → none**.
+**wall → divider → none**. A wall or divider isn't all-or-nothing: Ctrl/Cmd-click a
+point on an edge to split off just that section as its own segment (and select it),
+or Shift-click an existing wall/divider to split it the same way without selecting
+it; drag a selected segment's midpoint to slide the whole segment along the edge, or
+an endpoint handle to stretch just that end, and press **Delete** to remove it.
+Shift-click an *open section of the actual shared edge* instead to join two
+adjoining rectangle rooms. If either room is linked to a Home Assistant area, both
+must be linked to the same area; two unlinked rooms may also join.
 
 Selected, an area offers **Name** / **Show name**, a **color** and **Fill opacity**, and —
 once it's live — the same conditional coloring devices get: **Entity**, **Active color**,

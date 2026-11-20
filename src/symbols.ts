@@ -85,7 +85,8 @@ export interface SymbolDef {
    */
   extend?: SymbolExtend;
   /**
-   * Where the piece sits in 3D, as fractions of the wall height, instead of
+   * For detailed models, from is the absolute bottom in canvas units; to is ignored.
+   * For block rendering, a valid from/to pair gives fractions of wall height, instead of
    * standing on the floor (issue #196): an awning is a sheet under the eaves.
    */
   elevation?: { from: number; to?: number };
@@ -427,7 +428,7 @@ function elevationOf(raw: unknown, model = false): { from: number; to?: number }
   const e = raw as Record<string, unknown>;
   const from = num(e.from);
   const to = num(e.to);
-  if (model && from !== null && from >= 0 && from <= 10000) return { from };
+  if (model && from !== null && from >= 0 && from <= 10000) return { from, ...(to !== null ? { to } : {}) };
   if (from === null || to === null || from < 0 || to > 1 || to <= from) return undefined;
   return { from, to };
 }

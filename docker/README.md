@@ -414,7 +414,7 @@ desktop/mobile screenshots and local frame timings to `.claude/rotation/`
 The icon placeholder is local to this preview. Use the HA container above to
 check real entity services, HA icons, editor selectors and history playback.
 
-To use 3D in that container, choose **Project → Display → View → 3D isometric**
+To use 3D in that container, choose **Project → View → View → View: 3D isometric**
 or add `view: 3d` to its card YAML. Older `projection: iso` configurations still
 work. Nothing is reseeded or changed in an existing dashboard by the standalone
 preview.

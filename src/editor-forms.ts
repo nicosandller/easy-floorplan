@@ -16,6 +16,7 @@ import type {
   FloorplanCardConfig,
   Furniture,
   Opening,
+  OverlayScale,
   Roof,
   SliderStyle,
   Tracker,
@@ -69,6 +70,9 @@ import {
   skylightCeilingHeight,
   MIN_SASH_SPAN,
   openingHasTwoLeaves,
+  openingCanTilt,
+  DEFAULT_TILT_THRESHOLD,
+  DEFAULT_TILT_FULL,
   sliderStyleHasTwoLeaves,
   pressEffectOf,
   labelPositionOf,
@@ -113,6 +117,24 @@ export interface FormField {
    */
   keepFullTurn?: boolean;
   selector: Record<string, unknown>;
+}
+
+/**
+ * The suffix on a field measured in canvas units: wall thickness and height,
+ * a tracker's dot. The header of a selected wall already says "units"
+ * (issue #431).
+ */
+export const CANVAS_UNITS = "units";
+
+/**
+ * The suffix on an overlay measure — a badge, its label, a room name, free
+ * text, a ripple. Those are canvas units under `overlayScale: plan` and screen
+ * pixels under `fixed` (see `overlayLength` in render.ts), so the suffix
+ * follows the plan's setting. An absent setting is `fixed`, as the card reads
+ * it.
+ */
+export function overlayUnit(scale: OverlayScale | undefined): string {
+  return normalizeOverlayScale(scale) === "plan" ? CANVAS_UNITS : "px";
 }
 
 /** Continuous controls (typing, sliders) — routed through the burst-history path. */
@@ -560,6 +582,30 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: { entity: { filter: [{ domain: OPENING_ENTITY_DOMAINS }] } },
     });
   }
+  // Tilt-and-turn (issue #409): a hinged window only. The threshold is asked
+  // only of an angle sensor; a contact is tilted or it is not.
+  if (openingCanTilt(o)) {
+    fields.push({
+      name: "tiltEntity",
+      label: "Tilt sensor",
+      helper: "Tilt-and-turn: an angle sensor or a contact that reads tilted. A handle sensor that reports tilted needs none",
+      selector: { entity: { filter: [{ domain: ["sensor", "binary_sensor"] }] } },
+    });
+    if (o.tiltEntity?.startsWith("sensor.")) {
+      fields.push({
+        name: "tiltThreshold",
+        label: "Tilted from",
+        helper: "The angle at which the sash counts as tilted",
+        selector: { number: { min: 0.5, max: 45, step: 0.5, mode: "box", unit_of_measurement: "°" } },
+      });
+      fields.push({
+        name: "tiltFull",
+        label: "Fully tilted at",
+        helper: "The angle the sensor reads against the tilt stop. Smaller angles lean it in proportion",
+        selector: { number: { min: 0.5, max: 90, step: 0.5, mode: "box", unit_of_measurement: "°" } },
+      });
+    }
+  }
   // Offered on doors too: French doors and patio doors get shutters as well.
   // A hinged shutter usually reports through a contact sensor, so binary
   // sensors belong in the picker next to covers (issue #74).
@@ -777,6 +823,9 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       sash: openingSash(o),
       entity: o.entity ?? "",
       secondaryEntity: o.secondaryEntity ?? "",
+      tiltEntity: o.tiltEntity ?? "",
+      tiltThreshold: o.tiltThreshold ?? DEFAULT_TILT_THRESHOLD,
+      tiltFull: o.tiltFull ?? DEFAULT_TILT_FULL,
       glazed: openingIsGlazed(o),
       sunlight: o.sunlight ?? true,
       shutterEntity: o.shutterEntity ?? "",
@@ -927,6 +976,18 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           if (!sliderStyleHasTwoLeaves(v as SliderStyle)) out.secondaryEntity = undefined;
         }
         else if (k === "invert") out.invert = v || undefined;
+        else if (k === "tiltEntity") {
+          out.tiltEntity = v || undefined;
+          // A contact has no angle to compare.
+          if (typeof v !== "string" || !v.startsWith("sensor.")) {
+            out.tiltThreshold = undefined;
+            out.tiltFull = undefined;
+          }
+        } else if (k === "tiltThreshold") {
+          out.tiltThreshold = typeof v === "number" && v > 0 && v !== DEFAULT_TILT_THRESHOLD ? v : undefined;
+        } else if (k === "tiltFull") {
+          out.tiltFull = typeof v === "number" && v > 0 && v !== DEFAULT_TILT_FULL ? v : undefined;
+        }
         else if (k === "type") {
           out.type = v;
           // Only a window stands on a sill; anything else would carry it as
@@ -1006,6 +1067,16 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       // override would silently reapply the next time it was switched on. That
       // covers the switch turned off and, since the default moves with the
       // entity, a contact cleared from under a badge that was only on by default.
+      // Only a hinged window tilts (issue #409): a type or motion change that
+      // makes it anything else takes the tilt sensor with it.
+      if (("type" in out || "motion" in out) && !openingCanTilt({
+        type: ("type" in out ? out.type : o.type) as Opening["type"],
+        motion: ("motion" in out ? out.motion : o.motion) as Opening["motion"],
+      })) {
+        out.tiltEntity = undefined;
+        out.tiltThreshold = undefined;
+        out.tiltFull = undefined;
+      }
       if (!("shutterEntity" in patch && !patch.shutterEntity)) {
         const after = { entity: "entity" in out ? (out.entity as string | undefined) : o.entity };
         const byDefault = shutterMarkDefault(after);
@@ -1067,7 +1138,7 @@ function areaScopedEntity(
 function areaScopeHelper(scope: AreaEntityScope | undefined, base?: string): string | undefined {
   if (!scope?.entities.length) return base;
   const where = scope.name ? `the ${scope.name} area` : "this area";
-  const note = `Only entities in ${where} — turn off “Filter entities” on the area to see all`;
+  const note = `Only entities in ${where} — turn off “Filter entities” on the room to see all`;
   return base ? `${base}. ${note}` : note;
 }
 
@@ -1256,7 +1327,7 @@ export function itemShowStateForm(it: FloorItem): FormSpec {
 }
 
 /** Group 3: where the label sits and how big it is. */
-export function itemLabelForm(it: FloorItem): FormSpec {
+export function itemLabelForm(it: FloorItem, overlayScale?: OverlayScale): FormSpec {
   const fields: FormField[] = [
     {
       name: "labelPosition",
@@ -1273,7 +1344,7 @@ export function itemLabelForm(it: FloorItem): FormSpec {
     {
       name: "labelSize",
       label: "Label size",
-      selector: { number: { min: 8, max: 40, step: 1, mode: "slider", unit_of_measurement: "px" } },
+      selector: { number: { min: 8, max: 40, step: 1, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) } },
     },
     {
       name: "disableLabelColor",
@@ -1333,7 +1404,11 @@ export function itemLabelForm(it: FloorItem): FormSpec {
  * here: what the badge is reading *right now*, so "Badge reads" can open on it
  * instead of on a guess. See {@link BadgeSourceInfo}.
  */
-export function itemBadgeForm(it: FloorItem, badgeSource?: BadgeSourceInfo): FormSpec {
+export function itemBadgeForm(
+  it: FloorItem,
+  badgeSource?: BadgeSourceInfo,
+  overlayScale?: OverlayScale,
+): FormSpec {
   const fields: FormField[] = [
     {
       name: "badgeMode",
@@ -1381,7 +1456,7 @@ export function itemBadgeForm(it: FloorItem, badgeSource?: BadgeSourceInfo): For
     {
       name: "size",
       label: "Size",
-      selector: { number: { min: 16, max: 160, step: 2, mode: "slider", unit_of_measurement: "px" } },
+      selector: { number: { min: 16, max: 160, step: 2, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) } },
     },
     angleField(true)
   );
@@ -1435,6 +1510,7 @@ export function itemEffectsForm(
   it: FloorItem,
   deviceClass?: string,
   entity?: { state?: string; attributes?: Record<string, unknown> } | null,
+  overlayScale?: OverlayScale,
 ): FormSpec | undefined {
   const ripple = itemHasRipple(it);
   const canRipple = isRippleEntity(it.entity, deviceClass);
@@ -1461,7 +1537,7 @@ export function itemEffectsForm(
         name: "rippleSize",
         label: "Ripple size",
         selector: {
-          number: { min: 40, max: 400, step: 4, mode: "slider", unit_of_measurement: "px" },
+          number: { min: 40, max: 400, step: 4, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) },
         },
       });
       fields.push({
@@ -1614,7 +1690,7 @@ export function itemGroup7aForm(it: FloorItem): FormSpec {
   const fields: FormField[] = [
     {
       name: "showOnlyWhenZoomed",
-      label: "Only show when zoomed into area",
+      label: "Only show when zoomed into its room",
       helper:
         "Hidden on the full plan, and shown once the room it sits in is zoomed into",
       selector: { boolean: {} },
@@ -1946,7 +2022,7 @@ export function itemBehaviourForm(it: FloorItem): FormSpec {
  * as it does for a device or a piece of furniture — a reading placed in the
  * kitchen is usually a kitchen entity.
  */
-export function textForm(t: FloorText, areaScope?: AreaEntityScope): FormSpec {
+export function textForm(t: FloorText, areaScope?: AreaEntityScope, overlayScale?: OverlayScale): FormSpec {
   const fields: FormField[] = [
     {
       name: "text",
@@ -1980,7 +2056,7 @@ export function textForm(t: FloorText, areaScope?: AreaEntityScope): FormSpec {
     {
       name: "size",
       label: "Size",
-      selector: { number: { min: 8, max: 200, mode: "slider", unit_of_measurement: "px" } },
+      selector: { number: { min: 8, max: 200, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) } },
     },
     angleField(true)
   );
@@ -2012,6 +2088,7 @@ export function furnitureForm(
   areaScope?: AreaEntityScope,
   catalog: SymbolCatalog = BUILTIN_SYMBOLS,
   floors: readonly Pick<Floor, "id" | "name">[] = [],
+  detailedModels = false,
 ): FormSpec {
   const choices = furnitureChoices(catalog);
   // A piece whose symbol this install doesn't have keeps its own id in the
@@ -2063,7 +2140,9 @@ export function furnitureForm(
         : []),
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
-      { name: "height3d", label: "3D height", helper: "Optional height in canvas units. Leave empty to use the model height. Applied before cutting.", selector: { number: { min: 0.1, max: 10000, step: 0.1, mode: "box" } } },
+      ...(detailedModels && catalog[f.type]?.model3d ? [
+        { name: "height3d", label: "3D height", helper: "Optional height in canvas units. Leave empty to use the model height. Applied before cutting.", selector: { number: { min: 0.1, max: 10000, step: 0.1, mode: "box" } } },
+      ] : []),
       angleField(),
       // Optional entity that makes the drawing live (issue #82) — a soil
       // sensor on a plant, a contact sensor on a cabinet. Last, because most
@@ -2075,12 +2154,23 @@ export function furnitureForm(
           areaScope,
           // An awning or curtain is what the entity is for (issue #196).
           findSymbol(catalog, f.type)?.extend
-            ? `The cover that moves it: drawn at its position, full size when fully ${
-                findSymbol(catalog, f.type)!.extend!.open === "extended" ? "open" : "closed"}`
+            ? `The cover that moves it: drawn at its position, full size at ${
+                (findSymbol(catalog, f.type)!.extend!.open === "extended") !== (f.invert === true) ? "100" : "0"} %`
             : "Optional — lets the drawing change color with a sensor"
         ),
         selector: areaScopedEntity(areaScope, f.entity),
       },
+      // Some covers report 100 % where the awning is rolled in (issue #410).
+      ...(findSymbol(catalog, f.type)?.extend
+        ? [
+            {
+              name: "invert",
+              label: "Invert cover position",
+              helper: "For a cover that reports 100 % where this is fully retracted",
+              selector: { boolean: {} },
+            },
+          ]
+        : []),
       // Clicking it changes floor (issue #121). Offered on any piece rather
       // than only on the built-in `stairs`, because a plan can draw its own
       // staircase and a rule keyed on one symbol id would leave those out.
@@ -2141,6 +2231,7 @@ export function furnitureForm(
       height3d: f.height3d,
       angle: f.angle ?? 0,
       entity: f.entity ?? "",
+      ...(findSymbol(catalog, f.type)?.extend ? { invert: f.invert ?? false } : {}),
       goToFloor: namedFloor !== undefined
         ? `floor:${namedFloor}`
         : typeof f.goToFloor === "string" ? f.goToFloor : "",
@@ -2152,8 +2243,9 @@ export function furnitureForm(
     },
     toPatch: (raw) => {
       if ("height3d" in raw) raw = { ...raw, height3d: normalizeHeight3d(raw.height3d) };
-      // On is the default, so only "off" is worth writing down.
+      // On is the default, so only "off" is worth writing down; the reverse for invert.
       let p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;
+      if ("invert" in p) p = { ...p, invert: p.invert === true ? true : undefined };
       if ("visibility" in p) {
         const v = Array.isArray(p.visibility) && p.visibility.length > 0 ? p.visibility : undefined;
         p = { ...p, visibility: v };
@@ -2181,7 +2273,8 @@ export function trackerForm(tr: Tracker): FormSpec {
       {
         name: "dotSize",
         label: "Dot size",
-        selector: { number: { min: 6, max: 80, mode: "slider", unit_of_measurement: "px" } },
+        // Drawn in the SVG, so always canvas units.
+        selector: { number: { min: 6, max: 80, mode: "slider", unit_of_measurement: CANVAS_UNITS } },
       },
     ],
     data: {
@@ -2231,15 +2324,15 @@ export function areaNameForm(a: Area, haAreaNames: readonly string[] = []): Form
  * editor can slot the HA-link status line directly beneath the name it
  * describes; both halves still render through `ha-form`.
  */
-export function areaForm(a: Area): FormSpec {
+export function areaForm(a: Area, overlayScale?: OverlayScale): FormSpec {
   return {
     fields: [
       {
         name: "zoneKind",
-        label: "Zone type",
-        helper: "Categorizes room vs outdoor zones (lawn, patio, pool, driveway, terrace)",
+        label: "Room type",
+        helper: "Indoor, or an outdoor space (lawn, patio, pool, driveway, terrace)",
         selector: dropdown(
-          opt("indoor", "Indoor / Room"),
+          opt("indoor", "Indoor"),
           opt("lawn", "Lawn"),
           opt("patio", "Patio"),
           opt("pool", "Pool"),
@@ -2258,7 +2351,7 @@ export function areaForm(a: Area): FormSpec {
               name: "labelSize",
               label: "Name size",
               selector: {
-                number: { min: 8, max: 40, step: 1, mode: "slider" as const, unit_of_measurement: "px" },
+                number: { min: 8, max: 40, step: 1, mode: "slider" as const, unit_of_measurement: overlayUnit(overlayScale) },
               },
             },
           ]
@@ -2508,7 +2601,7 @@ export function wallForm(w: Wall): FormSpec {
         // doorway mask's cut is sized off the shared WALL_THICKNESS
         // constant, not per-wall — see render.ts's wallThickness).
         selector: {
-          number: { min: 2, max: MAX_SKIN_WALL_WIDTH, step: 1, mode: "slider", unit_of_measurement: "px" },
+          number: { min: 2, max: MAX_SKIN_WALL_WIDTH, step: 1, mode: "slider", unit_of_measurement: CANVAS_UNITS },
         },
       },
       {
@@ -2516,7 +2609,7 @@ export function wallForm(w: Wall): FormSpec {
         label: "Height",
         helper: "Override height for 3D view (leave empty to use default card wall height)",
         selector: {
-          number: { min: 0, max: MAX_WALL_HEIGHT, step: 1, mode: "slider", unit_of_measurement: "px" },
+          number: { min: 0, max: MAX_WALL_HEIGHT, step: 1, mode: "slider", unit_of_measurement: CANVAS_UNITS },
         },
       },
       // Issue #182. A dropdown rather than a switch: a railing is one kind of
@@ -3182,6 +3275,13 @@ export function floorImageForm(f: Floor): FormSpec {
       selector: { boolean: {} },
     },
     {
+      name: "isSection",
+      label: "Vertical section",
+      helper:
+        "This floor is a cut through the building, ground at the bottom, so the sun comes in at its real height",
+      selector: { boolean: {} },
+    },
+    {
       name: "level",
       label: "Storey level",
       helper: "Vertical level index for 3D stacking (0 for ground floor, 1 for 1st floor, -1 for basement)",
@@ -3189,6 +3289,17 @@ export function floorImageForm(f: Floor): FormSpec {
     },
     { name: "image", label: "Background image", helper: "/local/floorplan.png or URL", selector: { text: {} } },
   ];
+  // Only a section looks somewhere (issue #414).
+  if (typeof f.sectionFacing === "number") {
+    fields.splice(2, 0, {
+      name: "sectionFacing",
+      label: "Looking toward",
+      helper: "Compass bearing you face when looking at this section: 0 = north, 90 = east",
+      selector: {
+        number: { min: 0, max: 359, step: 5, mode: "slider", unit_of_measurement: "°" },
+      },
+    });
+  }
   // Fit and opacity apply to whichever image is drawn, the dark one included.
   if (f.image || f.imageDark) {
     fields.push({
@@ -3229,6 +3340,8 @@ export function floorImageForm(f: Floor): FormSpec {
     fields,
     data: {
       isOutdoor: f.isOutdoor ?? false,
+      isSection: typeof f.sectionFacing === "number",
+      sectionFacing: f.sectionFacing ?? 0,
       level: f.level !== undefined ? f.level : "",
       image: f.image ?? "",
       imageFit: f.imageFit ?? "stretch",
@@ -3244,6 +3357,17 @@ export function floorImageForm(f: Floor): FormSpec {
       if ("imageInvertDark" in out && !out.imageInvertDark) out.imageInvertDark = undefined;
       if ("imageDark" in out && !out.imageDark) out.imageDark = undefined;
       if ("isOutdoor" in out && !out.isOutdoor) out.isOutdoor = undefined;
+      // A section is the presence of a bearing; 0 (north) is a real one.
+      if ("isSection" in out) {
+        out.sectionFacing = out.isSection
+          ? (typeof f.sectionFacing === "number" ? f.sectionFacing : 0)
+          : undefined;
+        delete out.isSection;
+      }
+      if ("sectionFacing" in out && out.sectionFacing !== undefined) {
+        const n = Number(out.sectionFacing);
+        out.sectionFacing = Number.isFinite(n) ? ((n % 360) + 360) % 360 : 0;
+      }
       if ("level" in out) {
         if (out.level === "" || out.level === null || isNaN(Number(out.level))) {
           out.level = undefined;
