@@ -13,7 +13,7 @@ import type {
   FloorInfoPanel,
   RenderHass,
 } from "./types";
-import { areaLabelPoint, pointInPolygon } from "./render";
+import { areaLabelPoint, entityNameText, pointInPolygon } from "./render";
 
 /**
  * Resolved display state for a single panel metric row.
@@ -52,7 +52,7 @@ export function resolvePanelMetrics(
         ? ""
         : m.label !== undefined
           ? m.label
-          : (attrs.friendly_name as string | undefined) ?? m.entity;
+          : entityNameText(hass, m.entity) ?? m.entity;
 
     const rawAttrUnit = (attrs.unit_of_measurement as string | undefined)?.trim();
     let unit = m.unit !== undefined ? m.unit.trim() : rawAttrUnit ?? "";

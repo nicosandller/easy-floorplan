@@ -135,6 +135,9 @@ export function hassRenderInputsChanged(
   // Both formatters, because a plan can be built entirely out of attribute
   // readings and would otherwise be watching a function it never calls.
   if (prev.formatEntityAttributeValue !== next.formatEntityAttributeValue) return true;
+  // And the name formatter: a device renamed in the registry renames every
+  // unnamed item on the plan, with no state of theirs having to change.
+  if (prev.formatEntityName !== next.formatEntityName) return true;
   // Dark mode picks the light or dark side of every room tint, and HA flips it
   // on a live card (an auto theme at sunset) without any entity changing.
   if (prev.themes?.darkMode !== next.themes?.darkMode) return true;
@@ -273,6 +276,57 @@ export function entityAttributeText(
   if (typeof fmt === "function") return fmt(stateObj, attribute);
   const raw = (stateObj.attributes as Record<string, unknown>)?.[attribute];
   return raw === undefined || raw === null || raw === "" ? NO_STATE : String(raw);
+}
+
+/**
+ * An entity's name as HA's own cards show it, or `undefined` when there is
+ * nothing to call it (issue #417) — no entity, no state object, or no name.
+ *
+ * This is only ever the fallback behind a name set in the config, so it
+ * answers `undefined` rather than `""` or the entity id: each caller keeps its
+ * own last resort (`?? id`, `|| item.entity`), exactly as before.
+ *
+ * Uses HA's `formatEntityName` from HA 2026.4 (see
+ * {@link nameFormatterUsable}), so an unnamed item reads the same as an
+ * unnamed tile next to it; otherwise the `friendly_name` attribute, which is
+ * what every HA before the 2026.11 naming change showed.
+ */
+export function entityNameText(
+  hass: RenderHass | undefined,
+  entityId: string | undefined,
+): string | undefined {
+  if (!entityId || !hass) return undefined;
+  const stateObj = hass.states[entityId];
+  if (!stateObj) return undefined;
+  const friendly = stateObj.attributes?.friendly_name as string | undefined;
+  const fmt = hass.formatEntityName;
+  if (typeof fmt !== "function" || !nameFormatterUsable(hass.config?.version)) {
+    return friendly || undefined;
+  }
+  // An empty answer counts as no answer, so a blank never beats a name.
+  return fmt(stateObj) || friendly || undefined;
+}
+
+/**
+ * Whether this HA's `formatEntityName` can be called with the state object
+ * alone and answer what HA's own cards show for an entity nobody has named.
+ *
+ * The function is older than that behaviour, so finding it on `hass` proves
+ * nothing. Read from the frontend each release shipped:
+ *
+ * - 2025.10 requires a second argument and throws without one;
+ * - 2025.11 to 2026.3 answer "device name, entity name", while HA's own cards
+ *   still showed the friendly name;
+ * - 2026.4 on answers what HA's cards show: the friendly name up to 2026.10,
+ *   the name composed from the registries since 2026.11.
+ *
+ * A version that cannot be read counts as too old. The friendly name is never
+ * broken there, only possibly out of step.
+ */
+function nameFormatterUsable(version: string | undefined): boolean {
+  const [year, month] = (version ?? "").split(".").map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return false;
+  return year > 2026 || (year === 2026 && month >= 4);
 }
 
 /**
@@ -1918,8 +1972,7 @@ export function itemBadgeLabel(
 ): string {
   const parts: string[] = [];
   if (item.showName) {
-    const friendly = item.entity ? hass?.states[item.entity]?.attributes?.friendly_name as string | undefined : undefined;
-    const name = item.name || friendly || item.entity;
+    const name = item.name || entityNameText(hass, item.entity) || item.entity;
     if (name) parts.push(name);
   }
 
@@ -3660,11 +3713,8 @@ export function furnitureAccessibleName(
       .map((g) => furnitureActionForGesture(f, g))
       .map((p) => (p ? actionTargetEntity({ entity: p.entity }, p.config) : undefined))
       .find((e) => e) ?? f.entity;
-  const friendly = target
-    ? (hass?.states[target]?.attributes?.friendly_name as string | undefined)
-    : undefined;
   return (
-    friendly || target || findSymbol(catalog, f.type)?.name || humanSymbolId(f.type) || "Furniture"
+    entityNameText(hass, target) || target || findSymbol(catalog, f.type)?.name || humanSymbolId(f.type) || "Furniture"
   );
 }
 

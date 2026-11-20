@@ -97,6 +97,7 @@ import {
   SHUTTER_MARK_ICON_SIZE,
   hasShutterMark,
   entityStateText,
+  entityNameText,
   renderRipple,
   renderFurniture,
   shownPieces,
@@ -960,7 +961,7 @@ export class FloorplanCard extends LitElement {
   };
 
   private _label(item: FloorItem, renderHass: RenderHass | undefined): string {
-    return item.name ?? renderHass?.states[item.entity]?.attributes?.friendly_name ?? item.entity ?? "";
+    return item.name ?? entityNameText(renderHass, item.entity) ?? item.entity ?? "";
   }
 
   public disconnectedCallback(): void {
@@ -1554,7 +1555,7 @@ export class FloorplanCard extends LitElement {
       const target = solid.kind === "opening-hit";
       return svg`<g class="fp-iso-opening-button"
           role=${target ? "button" : nothing} tabindex=${target ? "0" : nothing}
-          aria-label=${target ? (o.entity ? renderHass?.states[o.entity]?.attributes?.friendly_name ?? o.entity : o.shutterEntity ?? o.type) : nothing}
+          aria-label=${target ? (o.entity ? entityNameText(renderHass, o.entity) ?? o.entity : o.shutterEntity ?? o.type) : nothing}
           @action=${(ev: CustomEvent<{ action: "tap" | "hold" | "double_tap" }>) => this._onOpeningAction(ev, o)}
           .actionHandler=${actionHandler({
         hasHold: hasAction(this._openingPress(o, "hold")?.config),
@@ -1586,8 +1587,7 @@ export class FloorplanCard extends LitElement {
     const step = overlayLength(SHUTTER_MARK_PIXEL_OFFSET, scale);
     const push = `translate(calc(${n.x} * ${step}), calc(${n.y} * ${step}))`;
     const box = overlayLength(SHUTTER_MARK_SIZE, scale);
-    const name =
-      (renderHass?.states[id]?.attributes?.friendly_name as string | undefined) ?? id;
+    const name = entityNameText(renderHass, id) ?? id;
     return html`
       <div
         class="shutter-mark ${active ? "on" : "off"}"
@@ -1643,8 +1643,7 @@ export class FloorplanCard extends LitElement {
     const step = overlayLength(SHUTTER_MARK_PIXEL_OFFSET, scale);
     const push = `translate(calc(${n.x} * ${step}), calc(${n.y} * ${step}))`;
     const box = overlayLength(SHUTTER_MARK_SIZE, scale);
-    const name =
-      (renderHass?.states[id]?.attributes?.friendly_name as string | undefined) ?? id;
+    const name = entityNameText(renderHass, id) ?? id;
     return html`
       <div
         class="shutter-mark ${active ? "on" : "off"}"
