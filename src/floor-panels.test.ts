@@ -104,6 +104,22 @@ describe("resolvePanelMetrics", () => {
     expect(metrics[2]!.unit).toBe("");
   });
 
+  it("labels an unlabelled row with the name HA's own cards show (issue #417)", () => {
+    const panel: FloorInfoPanel = {
+      id: "p1",
+      x: 0,
+      y: 0,
+      metrics: [{ entity: "sensor.plug_power" }, { entity: "sensor.plug_power", label: "Draw" }],
+    };
+    const hass = createMockHass({
+      "sensor.plug_power": { state: "12", attributes: { friendly_name: "Smart plug 3 Power" } },
+    });
+    hass.formatEntityName = () => "Coffee machine Power";
+    hass.config = { version: "2026.11.2" } as HomeAssistant["config"];
+    const rows = resolvePanelMetrics(panel, hass);
+    expect(rows.map((r) => r.label)).toEqual(["Coffee machine Power", "Draw"]);
+  });
+
   it("leaves out a metric row that has no entity yet", () => {
     const panel: FloorInfoPanel = {
       id: "p1",
