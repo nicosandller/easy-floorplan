@@ -314,6 +314,7 @@ swing.
 | `icon`        | string                                 | entity icon  | Override mdi icon.                                     |
 | `name`        | string                                 | friendly name| Label / tooltip override.                             |
 | `size`        | number                                 | `34`         | Icon badge diameter (px).                              |
+| `elevation.from` | number | `0` | Badge and label height above the floor in canvas units (0–10000), for example `elevation: {from: 80}`. Editable as **Height above floor**. Only affects isometric view; the 2D position and floor lighting stay unchanged. Badges above the wall cutting height are displayed at that height; the stored physical height is preserved. Independent of furniture cutting height. |
 | `angle`       | number                                 | `0`          | Icon rotation (deg).                                   |
 | `display`     | `badge` \| `ripple` \| `iconRipple`    | `badge`      | How the device is drawn. The editor spells this as the **Ripple** toggle (plus **Badge shows: Nothing** for `ripple`) and offers it only on devices that detect something where they sit (see [Presence ripples](elements.md#presence-ripples)); in YAML it works on any entity. |
 | `iconAnimation` | `auto` \| `none` \| `spin` \| `pulse` | `auto`       | Animate the icon while active. `auto`: fan spins; media player / vacuum pulse. A `climate` entity animates only while its `hvac_action` says it is working — an AC holding `cool` at temperature keeps its colour but stops moving. The editor spells this as the icon options of **Badge shows**, showing `auto` as whatever it resolves to. |
@@ -526,8 +527,9 @@ The editor offers this field only when 3D furniture is enabled and the selected
 symbol has a valid detailed model. Existing height overrides are retained when
 the field is hidden. It does not enable 3D models or affect 2D/block rendering. For a half-scale plan,
 set it to half the authored model height as well as halving the footprint.
-Detailed models currently start at floor level: the symbol-author `elevation`
-setting applies only to the block fallback, not to `model3d`.
+Detailed models use `elevation.from` as their bottom height in canvas units.
+Their top is the bottom plus `height3d` (or the authored model height).
+`elevation.to` is retained but ignored by detailed models.
 
 The editor's **+ Add** picker draws every symbol at its real size and is searchable — type
 `couch` and you get the sofa and the sectional.
@@ -912,3 +914,18 @@ label gets no Label group, and an opening with no shutter gets no Shutter group.
 
 Walls and text keep a plain list: a wall is thickness and length, a text is its words, size
 and angle. A heading over one or two fields is chrome rather than structure.
+
+### Per-piece mounting height
+
+A furniture entry can set `elevation: { from: 100 }` to place its detailed model
+100 canvas units above the floor. The editor calls this **Height above floor**.
+The placed value overrides the symbol's `elevation.from`, which defaults to zero.
+Zero explicitly places the piece on the floor; clearing the field restores the
+symbol default. `height3d` remains the piece's independent physical height.
+`elevation.to` is preserved but ignored for detailed rendering.
+
+```yaml
+furniture:
+  - { id: tv_living, type: tv, x: 400, "y": 300, w: 120, h: 10, elevation: { from: 100 } }
+  - { id: tv_bedroom, type: tv, x: 800, "y": 300, w: 90, h: 10, elevation: { from: 140 } }
+```

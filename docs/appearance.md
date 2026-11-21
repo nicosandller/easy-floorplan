@@ -778,9 +778,6 @@ rotation: 90     # optional: choose the viewing corner
 ### Detailed 3D furniture
 
 In **Project → View → View**, choosing **3D isometric** reveals **3D furniture**.
-Enable it to use the initial `table`, `cornerShelf`, `bathtub` and `stove` models.
-Other symbols retain their block rendering, and 2D plans are unchanged.
-In **Project → Display**, choosing **3D isometric** reveals **3D furniture**.
 Enable it to use the 35 built-in detailed models, including beds, shelving,
 bathroom fittings, appliances and plants. `awning` and `curtain` retain block
 rendering, as do custom symbols without valid models. 2D plans are unchanged.
@@ -807,8 +804,8 @@ Each placed piece can set `height3d` (**3D height** in the editor) to scale its
 model vertically before clipping. It defaults to the authored model height and
 is independent of footprint resizing; use half the height for a half-scale plan.
 See [Furniture configuration](configuration.md#furniture) for the accepted range.
-Detailed models currently stand on the floor: symbol `elevation` is supported
-only by the block fallback, so elevated custom symbols should omit `model3d`.
+Detailed models use `elevation.from` as their bottom height in canvas units.
+Their top is the bottom plus the model height; `elevation.to` is preserved but ignored.
 See the [symbol author guide](../furniture/README.md#optional-3d-models-version-1)
 for the model format and limitations.
 

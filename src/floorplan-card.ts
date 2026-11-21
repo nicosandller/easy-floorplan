@@ -1,6 +1,6 @@
 import { windowPanes, paneOpening } from "./window-panes";
 import { FurnitureModelCache } from "./furniture-model-cache";
-import { furnitureModelHeight } from "./symbol-model";
+import { furnitureModelBounds, normalizeElevationFrom } from "./symbol-model";
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -1118,7 +1118,7 @@ export class FloorplanCard extends LitElement {
       const catalog = symbolCatalog(c.symbols);
       for (const f of active?.furniture ?? []) {
         const model = catalog[f.type]?.model3d;
-        if (model) wallHeight = Math.max(wallHeight, Math.min(furnitureModelHeight(f, model), furnitureSectionHeight(c)));
+        if (model) wallHeight = Math.max(wallHeight, Math.min(furnitureModelBounds(f, model, baseWallHeight, catalog[f.type]?.elevation).top, furnitureSectionHeight(c)));
       }
     }
     return {
@@ -1463,10 +1463,10 @@ export class FloorplanCard extends LitElement {
     const visibleFurniture = active.furniture.filter(f => isFurnitureVisible(f, effHass));
     const modelEntries = visibleFurniture.flatMap(furniture => {
       const model = c.furniture3d === true ? catalog[furniture.type]?.model3d : undefined;
-      return model ? [{ furniture, model, color: furnitureTone(furniture) }] : [];
+      return model ? [{ furniture, model, color: furnitureTone(furniture), elevation: catalog[furniture.type]?.elevation }] : [];
     });
     const modelSolids = this._furnitureModelCache.project(modelEntries,
-      { width: c.width, height: c.height, rotation: rot, sectionHeight }, map);
+      { width: c.width, height: c.height, rotation: rot, sectionHeight, wallHeight: baseWallHeight }, map);
     for (const f of visibleFurniture) {
       const cached = modelSolids.get(f);
       if (cached) {
@@ -1475,7 +1475,8 @@ export class FloorplanCard extends LitElement {
       }
       // A piece that hangs rather than stands — an awning under the eaves
       // (issue #196) — is a sheet between its symbol's two heights.
-      const raised = findSymbol(catalog, f.type)?.elevation;
+      const elevation = findSymbol(catalog, f.type)?.elevation;
+      const raised = elevation?.to !== undefined && elevation.from >= 0 && elevation.to <= 1 && elevation.to > elevation.from ? { from: elevation.from, to: elevation.to } : undefined;
       const top = raised ? baseWallHeight * raised.to : furnitureHeight;
       const up = raised ? elevationShift(top, rot) : lift;
       solids.push(
@@ -1518,7 +1519,7 @@ export class FloorplanCard extends LitElement {
         let focus: SVGTemplateResult | undefined;
         if (keyboard) {
           const model = catalog[f.type]!.model3d!;
-          const height = Math.min(furnitureModelHeight(f, model), sectionHeight);
+          const height = Math.min(furnitureModelBounds(f, model, baseWallHeight, catalog[f.type]?.elevation).top, sectionHeight);
           const footprint = furnitureSolid(f, map, height, furnitureTone(f)).base;
           const xs = footprint.map(p => p.x - height), ys = footprint.map(p => p.y - height);
           focus = svg`<rect class="fp-furniture-focus" aria-hidden="true"
@@ -1852,8 +1853,11 @@ export class FloorplanCard extends LitElement {
     // Floor-level coordinates would leave the control below the table in 3D.
     const frame = this._frame(c, rot);
     const at = rotatePlanPoint(f.x, f.y, c.width, c.height, rot);
-    const model = c.furniture3d === true ? symbolCatalog(c.symbols)[f.type]?.model3d : undefined;
-    const height = model ? Math.min(furnitureModelHeight(f, model), furnitureSectionHeight(c))
+    const symbol = symbolCatalog(c.symbols)[f.type];
+    const model = c.furniture3d === true ? symbol?.model3d : undefined;
+    const bounds = model ? furnitureModelBounds(f, model, normalizeWallHeight(c.wallHeight), symbol?.elevation) : undefined;
+    if (bounds && (bounds.height <= 0 || bounds.bottom >= furnitureSectionHeight(c))) return nothing;
+    const height = model ? Math.min(bounds!.top, furnitureSectionHeight(c))
       : normalizeWallHeight(c.wallHeight) * FURNITURE_HEIGHT_FRACTION;
     const p = projectPlanPoint(at.x, at.y, frame, height);
     const d = projectedCanvasSize(frame);
@@ -2089,7 +2093,10 @@ export class FloorplanCard extends LitElement {
 
     // Rotated frame: the overlay is HTML, so each anchor is remapped instead
     // of transformed — badges and labels stay upright at any rotation.
-    const { p, d } = this._display(item.x, item.y, c, rot);
+    // Keep ceiling-mounted badges visible at the wall cut, while preserving
+    // their physical height in the configuration. Furniture may use a taller cut.
+    const badgeHeight = Math.min(normalizeElevationFrom(item.elevation?.from) ?? 0, normalizeWallHeight(c.wallHeight));
+    const { p, d } = this._display(item.x, item.y, c, rot, badgeHeight);
     // Only a device that answers is a button (issue #134) — the press effect,
     // the pointer cursor, the `button` role, the tab stop and the gesture
     // listeners all hang off this one fact.
