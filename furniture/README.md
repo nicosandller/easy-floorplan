@@ -234,6 +234,35 @@ Leave the field empty to retain `model3d.size.height`. Only finite values greate
 and at most 10000 are accepted. This does not change the 2D symbol or enable 3D rendering;
 symbols without a 3D model retain their existing fallback rendering.
 
-Detailed models currently start at floor level. The symbol-level `elevation`
-setting applies only to block rendering and is ignored when `model3d` is used.
-For elevated custom symbols, omit `model3d` to retain the elevated fallback.
+### Elevated 3D models
+
+For `model3d`, `elevation.from` is the bottom offset in canvas units, independent
+of wall height. Use `elevation: { from: 100 }` to mount a model 100 units above
+the floor. Accepted offsets are finite numbers from 0 to 10000; omitted means 0.
+The model retains its authored height unless the placed furniture sets `height3d`.
+`elevation.to` is preserved when supplied, but is not used for detailed models.
+
+For example, a 70-high TV with `elevation: { from: 100 }` spans 100–170.
+Setting `height3d: 80` changes its top to 180 without moving its bottom.
+A separate cut at 130 clips it at 130; a cut at 100 hides it completely.
+Changing wall height or cut height never moves the mounting position.
+
+Symbols without a valid `model3d` retain the legacy wall-relative `from/to`
+interval for block rendering. A model's absolute `from` alone does not define
+that legacy interval; with detailed rendering off it uses the normal block
+fallback. The 2D drawing remains unchanged.
+
+### Per-piece mounting height
+
+A furniture entry can set `elevation: { from: 100 }` to place its detailed model
+100 canvas units above the floor. The editor calls this **Height above floor**.
+The placed value overrides the symbol's `elevation.from`, which defaults to zero.
+Zero explicitly places the piece on the floor; clearing the field restores the
+symbol default. `height3d` remains the piece's independent physical height.
+`elevation.to` is preserved but ignored for detailed rendering.
+
+```yaml
+furniture:
+  - { id: tv_living, type: tv, x: 400, "y": 300, w: 120, h: 10, elevation: { from: 100 } }
+  - { id: tv_bedroom, type: tv, x: 800, "y": 300, w: 90, h: 10, elevation: { from: 140 } }
+```

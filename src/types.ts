@@ -701,6 +701,8 @@ export type LabelPosition = "below" | "left" | "right" | "above" | "auto";
 /** An entity icon placed on the plan. */
 export interface FloorItem {
   id: string;
+  /** Badge height above the floor in canvas units; only affects isometric view. */
+  elevation?: { from?: number };
   entity: string;
   /**
    * **Legacy spelling of the first {@link readings} row.** A second entity
@@ -1308,6 +1310,8 @@ export interface NotVisibilityCondition {
 export interface Furniture {
   /** Physical 3D height in canvas units; defaults to the model height. */
   height3d?: number;
+  /** Bottom height in canvas units; overrides the symbol default for detailed models. */
+  elevation?: { from?: number; to?: number };
   id: string;
   /**
    * Which symbol to draw — a built-in {@link FurnitureType}, a symbol
