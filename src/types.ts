@@ -701,6 +701,8 @@ export type LabelPosition = "below" | "left" | "right" | "above" | "auto";
 /** An entity icon placed on the plan. */
 export interface FloorItem {
   id: string;
+  /** Badge height above the floor in canvas units; only affects isometric view. */
+  elevation?: { from?: number };
   entity: string;
   /**
    * **Legacy spelling of the first {@link readings} row.** A second entity

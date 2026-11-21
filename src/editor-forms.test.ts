@@ -1,4 +1,13 @@
 import { describe, it, expect } from "vitest";
+it("edits badge mounting height without changing its plan position", () => {
+  const form = itemBadgeForm({ id: "lamp", entity: "light.lamp", kind: "light", x: 20, y: 30, elevation: { from: 80 } });
+  expect(form.data.elevationFrom).toBe(80);
+  expect(form.toPatch!({ elevationFrom: 130 })).toEqual({ elevation: { from: 130 } });
+  expect(form.toPatch!({ elevationFrom: 0 })).toEqual({ elevation: { from: 0 } });
+  for (const value of ["", -1, Infinity, NaN, 10001]) {
+    expect(form.toPatch!({ elevationFrom: value })).toEqual({ elevation: { from: undefined } });
+  }
+});
 import {
   isLiveField,
   diffFormValue,
@@ -555,7 +564,7 @@ describe("itemForm", () => {
       ["entity", "attribute"], // 2. What it reads…
       ["showState"], //         …including whether its own state shows
       ["labelPosition", "labelSize", "disableLabelColor"], // 3. Label
-      ["badgeMode", "size", "angle"], // 4. Badge
+      ["badgeMode", "elevationFrom", "size", "angle"], // 4. Badge
       // 5. Colour and the readings list are hand-rolled rows, not ha-form
       //    fields, so they do not appear here — the editor slots them into
       //    their groups.

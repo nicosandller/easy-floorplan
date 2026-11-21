@@ -1,5 +1,5 @@
 import { FurnitureModelCache } from "./furniture-model-cache";
-import { furnitureModelBounds } from "./symbol-model";
+import { furnitureModelBounds, normalizeElevationFrom } from "./symbol-model";
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
 import { customElement, property, state } from "lit/decorators.js";
 import { repeat } from "lit/directives/repeat.js";
@@ -2084,7 +2084,10 @@ export class FloorplanCard extends LitElement {
 
     // Rotated frame: the overlay is HTML, so each anchor is remapped instead
     // of transformed — badges and labels stay upright at any rotation.
-    const { p, d } = this._display(item.x, item.y, c, rot);
+    // Keep ceiling-mounted badges visible at the wall cut, while preserving
+    // their physical height in the configuration. Furniture may use a taller cut.
+    const badgeHeight = Math.min(normalizeElevationFrom(item.elevation?.from) ?? 0, normalizeWallHeight(c.wallHeight));
+    const { p, d } = this._display(item.x, item.y, c, rot, badgeHeight);
     // Only a device that answers is a button (issue #134) — the press effect,
     // the pointer cursor, the `button` role, the tab stop and the gesture
     // listeners all hang off this one fact.

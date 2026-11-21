@@ -8742,7 +8742,7 @@ export class FloorplanCardEditor extends LitElement {
         ${this._renderEssentialForm(itemEntityForm(it, areaEntities), ["entity"], apply)}
         ${this._renderEssentialForm(itemIdentityForm(it), ["name", "showName"], apply)}
         ${this._renderEssentialForm(itemShowStateForm(it), ["showState"], apply)}
-        ${this._renderEssentialForm(itemBadgeForm(it, undefined, this._config.overlayScale), ["size", "angle"], apply)}
+        ${this._renderEssentialForm(itemBadgeForm(it, undefined, this._config.overlayScale), ["size", "angle", "elevationFrom"], apply)}
         ${this._renderItemIconRow(it)}
         ${this._renderRoofChips(roofsOver)}
       `;

@@ -1454,6 +1454,12 @@ export function itemBadgeForm(
   }
   fields.push(
     {
+      name: "elevationFrom",
+      label: "Height above floor",
+      helper: "Badge height in canvas units in isometric view, displayed no higher than the wall cut. Leave empty for floor level. The 2D position and floor lighting stay unchanged.",
+      selector: { number: { min: 0, max: 10000, step: 1, mode: "box" } },
+    },
+    {
       name: "size",
       label: "Size",
       selector: { number: { min: 16, max: 160, step: 2, mode: "slider", unit_of_measurement: overlayUnit(overlayScale) } },
@@ -1470,6 +1476,7 @@ export function itemBadgeForm(
       // is chosen, which is the whole point of badgeSource (issue #136).
       badgeEntity: String(badgeEntityIndex(it.badgeEntity) ?? badgeSource?.source ?? "primary"),
       size: it.size ?? DEFAULT_ITEM_SIZE,
+      elevationFrom: it.elevation?.from,
       angle: it.angle ?? 0,
     },
     // "Badge shows" is the editor's spelling of three config keys (issue
@@ -1477,6 +1484,10 @@ export function itemBadgeForm(
     // that control lives in another group now.
     toPatch: (p) => {
       let out = p;
+      if ("elevationFrom" in out) {
+        const { elevationFrom, ...rest } = out;
+        out = { ...rest, elevation: { from: normalizeElevationFrom(elevationFrom) } };
+      }
       // The dropdown speaks strings; the config stores "primary" or an index.
       // Written as a number so the legacy "secondary" spelling stops spreading
       // to configs that never had it.
