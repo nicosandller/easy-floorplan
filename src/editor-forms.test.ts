@@ -2383,6 +2383,8 @@ describe("every field lands in exactly one panel group", () => {
       "width",
       "ceilingHeight",
       "sill",
+      "openingHeight", "paneCount",
+      ...Array.from({ length: 8 }, (_, i) => ["Height", "Motion", "Entity", "Invert"].map(k => `pane${i}${k}`)).flat(),
       "sash",
       "sashSpan",
       "hinge",

@@ -1,3 +1,4 @@
+import { windowPanes, paneOpening } from "./window-panes";
 import { FurnitureModelCache } from "./furniture-model-cache";
 import { furnitureModelHeight } from "./symbol-model";
 import { LitElement, html, css, svg, nothing, type TemplateResult, type PropertyValues } from "lit";
@@ -1163,6 +1164,13 @@ export class FloorplanCard extends LitElement {
     const amount = this._openingAmount(o, renderHass);
     const shutterState = o.shutterEntity ? renderHass?.states[o.shutterEntity] : undefined;
     return {
+      panes: windowPanes(o).map((p) => {
+        const leaf = paneOpening(o, p);
+        // Vertical sliders use the same 0..100 cover position as hinged panes.
+        const state = leaf.entity ? renderHass?.states[leaf.entity] : undefined;
+        return { amount: p.motion === "fixed" ? 0 : resolveOpeningAmount(leaf, state),
+          active: p.motion !== "fixed" && openingIsActive(leaf, state) };
+      }),
       color: SKIN_WALL,
       // The closed tone (issue #228). Absent, the moving parts stay
       // the wall colour, which is what a closed opening always was —
@@ -1218,6 +1226,7 @@ export class FloorplanCard extends LitElement {
     const shutter = style.shutter;
     return {
       ...style,
+      panes: style.panes?.map((p, i) => ({ ...p, amount: at(`pane${i}`, p.amount) })),
       amount,
       open: amount > 0,
       tilt: at("tilt", style.tilt ?? 0),

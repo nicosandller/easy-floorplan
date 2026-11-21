@@ -1,3 +1,4 @@
+import { windowPanes, MAX_WINDOW_PANES } from "./window-panes";
 import { normalizeHeight3d } from "./symbol-model";
 /**
  * Schema-driven form definitions for the editor: one `FormSpec` per element
@@ -432,6 +433,21 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       selector: { number: { min: 0, max: MAX_SILL, step: 0.05, mode: "slider" } },
     });
   }
+  if (o.type === "window") {
+    fields.push({ name: "openingHeight", label: "Glass height (plan units)",
+      helper: "Use the same scale as wall height; leave empty for the default height",
+      selector: { number: { min: 0, mode: "box" } } });
+    fields.push({ name: "paneCount", label: "Window – Multipane",
+      helper: "0 keeps the ordinary window; panes are ordered bottom to top",
+      selector: { number: { min: 0, max: MAX_WINDOW_PANES, step: 1, mode: "box" } } });
+    windowPanes(o).forEach((_p, i) => {
+      const label = `Pane ${i + 1} (${i === 0 ? "bottom" : i === windowPanes(o).length - 1 ? "top" : "middle"})`;
+      fields.push({ name: `pane${i}Height`, label: `${label}: relative height`, selector: { number: { min: 0.01, mode: "box" } } },
+        { name: `pane${i}Motion`, label: `${label}: motion`, selector: dropdown(opt("fixed", "Fixed"), opt("swing", "Side-hinged"), opt("awning", "Top-hinged"), opt("slide-up", "Slide up"), opt("slide-down", "Slide down")) },
+        { name: `pane${i}Entity`, label: `${label}: sensor / cover`, selector: { entity: { filter: [{ domain: ["binary_sensor", "cover"] }] } } },
+        { name: `pane${i}Invert`, label: `${label}: invert`, selector: { boolean: {} } });
+    });
+  }
   // Leaf count, for anything hinged. Offered on doors too: a double door is
   // as ordinary as a double casement, and was previously undrawable — every
   // door came out as one leaf spanning the whole opening, however wide.
@@ -816,6 +832,12 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       width: skylightWidth(o),
       ceilingHeight: skylightCeilingHeight(o),
       sill: openingSill(o),
+      openingHeight: o.openingHeight,
+      paneCount: windowPanes(o).length,
+      ...Object.fromEntries(windowPanes(o).flatMap((p, i) => [
+        [`pane${i}Height`, p.height], [`pane${i}Motion`, p.motion],
+        [`pane${i}Entity`, p.entity ?? ""], [`pane${i}Invert`, p.invert ?? false],
+      ])),
       hinge: o.flipH ? "right" : "left",
       opens: o.flipV ? "other" : "this",
       slide: o.flipH ? "right" : "left",
@@ -847,7 +869,10 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
     toPatch(patch) {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(patch)) {
-        if (k === "shutterEntity") {
+        if (k === "paneCount" || /^pane\d+(Height|Motion|Entity|Invert)$/.test(k)) continue;
+        if (k === "openingHeight") {
+          out.openingHeight = typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
+        } else if (k === "shutterEntity") {
           out.shutterEntity = v;
           // Everything that only means something *with* a shutter goes with
           // it. Left behind, a stale invert or side would silently reapply to
@@ -1053,6 +1078,25 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
           }
         }
         else out[k] = v;
+      }
+      if (Object.keys(patch).some((k) => k === "paneCount" || /^pane\d+(Height|Motion|Entity|Invert)$/.test(k))) {
+        const previous = windowPanes(o);
+        const raw = patch.paneCount;
+        const count = typeof raw === "number" && Number.isFinite(raw)
+          ? Math.max(0, Math.min(MAX_WINDOW_PANES, Math.round(raw))) : previous.length;
+        const panes = Array.from({ length: count }, (_, i) => ({ ...previous[i] }));
+        for (let i = 0; i < count; i++) {
+          const p = panes[i];
+          for (const [field, key] of [["Height", "height"], ["Motion", "motion"], ["Entity", "entity"], ["Invert", "invert"]] as const) {
+            const k = `pane${i}${field}`;
+            if (k in patch) (p as Record<string, unknown>)[key] = patch[k];
+          }
+        }
+        out.panes = count ? windowPanes({ ...o, panes }) : undefined;
+      }
+      if ("type" in out && out.type !== "window") {
+        out.panes = undefined;
+        out.openingHeight = undefined;
       }
       // Only the answer that differs from the default is worth writing down —
       // "off" beside a bound opening, "on" for a shutter alone (issue #293) —

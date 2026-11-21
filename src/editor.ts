@@ -3707,6 +3707,8 @@ export class FloorplanCardEditor extends LitElement {
       "width",
       "ceilingHeight",
       "sill",
+      "openingHeight", "paneCount",
+      ...Array.from({ length: 8 }, (_, i) => ["Height", "Motion", "Entity", "Invert"].map((key) => `pane${i}${key}`)).flat(),
       "sash",
       "sashSpan",
       "hinge",

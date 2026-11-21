@@ -1,3 +1,4 @@
+
 import { furnitureModelHeight } from "./symbol-model";
 /**
  * The isometric view (issue #261).
@@ -299,12 +300,20 @@ export interface IsoOpeningInput {
   sill?: number;
 }
 
+/** Explicit window height uses the same units as wallHeight. */
+export function openingTop(o: { type: string; sill?: number; openingHeight?: number }, height: number): number {
+  return o.type === "window" && typeof o.openingHeight === "number" && Number.isFinite(o.openingHeight) && o.openingHeight > 0
+    ? Math.min(height, height * openingSill(o) + o.openingHeight)
+    : height * GLASS_FRACTION;
+}
+
 interface Span {
   s0: number;
   s1: number;
   type: "door" | "window";
   /** Windows only: the sill, as a fraction of the wall height. */
   sill: number;
+  opening?: { type: string; sill?: number; openingHeight?: number };
 }
 
 /**
@@ -396,7 +405,7 @@ function openingSpans(
     }
     if (s1 - s0 <= 0) continue;
     const window = o.type === "window";
-    spans.push({ s0, s1, type: window ? "window" : "door", sill: window ? openingSill(o) : 0 });
+    spans.push({ s0, s1, type: window ? "window" : "door", sill: window ? openingSill(o) : 0, opening: o });
   }
   spans.sort((a, b) => a.s0 - b.s0);
   // Overlapping openings merge; the first kind wins, but a window span
@@ -487,13 +496,13 @@ export function wallSolids(
           id: w.id,
           base: [at(s.s0), at(s.s1)],
           z0: height * s.sill,
-          z1: height * GLASS_FRACTION,
+          z1: s.opening ? openingTop(s.opening, height) : height * GLASS_FRACTION,
         });
       }
       if (hasHeader) {
-        const openingTop = height * GLASS_FRACTION;
-        if (height > openingTop + 1e-4) {
-          pieces(s.s0, s.s1, height, kind, openingTop);
+        const top = s.opening ? openingTop(s.opening, height) : height * GLASS_FRACTION;
+        if (height > top + 1e-4) {
+          pieces(s.s0, s.s1, height, kind, top);
         }
       }
       cursor = s.s1;

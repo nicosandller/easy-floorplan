@@ -1,3 +1,4 @@
+import { windowPanes, paneOpening } from "./window-panes";
 import { rotationBasis } from "./rotation";
 import { svg, html, nothing, type SVGTemplateResult, type TemplateResult } from "lit";
 import {
@@ -195,6 +196,7 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
   for (const f of getFloors(c)) {
     for (const o of f.openings) {
       if (o.entity) ids.add(o.entity);
+      for (const pane of windowPanes(o)) if (pane.entity) ids.add(pane.entity);
       if (o.shutterEntity) ids.add(o.shutterEntity);
       // The opening's second leaf (issues #145, #159). Exactly the trap named
       // above, and the worst version of it: the leaf is not frozen, it catches
@@ -4377,6 +4379,8 @@ export function openingMarkNormal(
 
 /** Style options for {@link renderOpening}. */
 export interface OpeningStyle {
+  /** Independently resolved bottom-to-top multipane states. */
+  panes?: { amount: number; active?: boolean }[];
   /** Base color of the jambs / leaf / swing arc. */
   color: string;
   /** Whether the opening is drawn open (default `true`). */
@@ -4455,6 +4459,14 @@ export interface OpeningStyle {
  * can transition them smoothly between open and closed.
  */
 export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResult {
+  const panes = windowPanes(o);
+  if (panes.length) {
+    // A plan cannot show stacked glazing: show the most-open moving sash.
+    const i = panes.reduce((best, p, n) =>
+      p.motion !== "fixed" && (best < 0 || (style.panes?.[n]?.amount ?? 0) > (style.panes?.[best]?.amount ?? 0)) ? n : best, -1);
+    const pane = panes[Math.max(0, i)];
+    return renderOpening(paneOpening(o, pane), { ...style, ...style.panes?.[Math.max(0, i)], panes: undefined });
+  }
   const { color, open = true, active = false, accent = SKIN_ACCENT } = style;
   const half = o.length / 2;
   const cutH = WALL_THICKNESS + 4;

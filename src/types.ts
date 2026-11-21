@@ -215,6 +215,15 @@ export type SliderStyle = "single" | "bypass" | "biparting" | "biparting-bypass"
  * stored independently. A skylight is in the ceiling and so snaps to no wall —
  * see {@link OpeningType}.
  */
+export interface WindowPane {
+  /** Relative share of the glass height. Defaults to 1. */
+  height?: number;
+  motion?: "fixed" | "swing" | "awning" | "slide-up" | "slide-down";
+  /** Defaults to the window's entity for movable panes. */
+  entity?: string;
+  invert?: boolean;
+}
+
 export interface Opening {
   id: string;
   /**
@@ -339,6 +348,10 @@ export interface Opening {
    * passages and skylights have no sill and ignore it.
    */
   sill?: number;
+  /** Glass height in plan units, measured above the sill; clamped to the wall. */
+  openingHeight?: number;
+  /** Window – Multipane: full-width panes ordered from bottom to top. */
+  panes?: WindowPane[];
   /**
    * Optional entity (e.g. a contact `binary_sensor` or a `cover`) whose state
    * drives whether the opening is drawn open or closed. When unset, doors are

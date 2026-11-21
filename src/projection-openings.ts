@@ -1,4 +1,5 @@
 /** Standing opening panels, using the same travel and mirrors as the 2D symbols. */
+import { windowPanes } from "./window-panes";
 import type { Opening } from "./types";
 import { cssColor, cssColorOr, cssNumber } from "./css-safe";
 import {
@@ -6,7 +7,7 @@ import {
   openingIsSkylight, openingIsPassage, skylightWidth, type OpeningStyle,
 } from "./render";
 import { SKIN_ACCENT } from "./skins";
-import { GLASS_FRACTION, openingSill, type IsoSolid, type Pt } from "./projection";
+import { openingTop, openingSill, type IsoSolid, type Pt } from "./projection";
 
 /** How far a tilted sash leans in the 3D view (issue #409), in radians. */
 export const TILT_VIEW_ANGLE = Math.PI / 8;
@@ -22,7 +23,7 @@ export function openingSolids(
   const out: IsoSolid[] = [];
   const half = o.length / 2;
   const z0 = o.type === "window" ? height * openingSill(o) : 0;
-  const z1 = height * GLASS_FRACTION;
+  const z1 = openingTop(o, height);
   const clamp = (v: unknown) => Math.max(0, Math.min(1, cssNumber(v, 0)));
   const amount = clamp(style.amount ?? (style.open === false ? 0 : 1));
   const amount2 = style.second ? clamp(style.second.amount) : amount;
@@ -59,7 +60,36 @@ export function openingSolids(
   // A passage (issue #309) is the gap alone: the wall is cut for it as for a
   // door, and nothing stands in it but its shutter, when it has one.
   const motion = openingIsPassage(o) ? undefined : openingMotion(o);
-  if (motion === "swing") {
+  const panes = windowPanes(o);
+  if (panes.length) {
+    const total = panes.reduce((n, p) => n + p.height!, 0);
+    let bottom = z0;
+    panes.forEach((p, i) => {
+      const h = (z1 - z0) * p.height! / total;
+      const top = bottom + h;
+      const state = style.panes?.[i];
+      const a = p.motion === "fixed" ? 0 : clamp(state?.amount ?? amount);
+      const paint = tone(a, state?.active ?? (p.motion !== "fixed" && style.active));
+      const shift = p.motion === "slide-up" ? Math.min(h, z1 - top) * a
+        : p.motion === "slide-down" ? -Math.min(h, bottom - z0) * a : 0;
+      if (p.motion === "awning") {
+        const angle = a * Math.PI / 2;
+        const low = top - h * Math.cos(angle);
+        const reach = h * Math.sin(angle);
+        const left = at(-half, -reach), right = at(half, -reach);
+        out.push({ kind: "panel", id: o.id, base: [left, right], z0: low, z1: top, color: paint, glazed,
+          vertices: [{ ...left, z: low }, { ...right, z: low },
+            { ...at(half, 0), z: top }, { ...at(-half, 0), z: top }] });
+      } else if (p.motion === "swing") {
+        const angle = a * Math.PI / 2;
+        pane(-half, 0, -half + o.length * Math.cos(angle), -o.length * Math.sin(angle), paint, bottom, top);
+      } else {
+        const track = p.motion === "slide-up" || p.motion === "slide-down" ? -2 : 0;
+        pane(-half, track, half, track, paint, bottom + shift, top + shift);
+      }
+      bottom = top;
+    });
+  } else if (motion === "swing") {
     const two = openingSash(o) === "double";
     const width = two ? half : o.length * openingSashSpan(o);
     const lean = o.type === "window" ? clamp(style.tilt) : 0;
