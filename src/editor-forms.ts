@@ -1,4 +1,4 @@
-import { normalizeHeight3d } from "./symbol-model";
+import { normalizeHeight3d, normalizeElevationFrom } from "./symbol-model";
 /**
  * Schema-driven form definitions for the editor: one `FormSpec` per element
  * kind, rendered either through HA's `<ha-form>` (native selectors) or the
@@ -2141,6 +2141,7 @@ export function furnitureForm(
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
       ...(detailedModels && catalog[f.type]?.model3d ? [
+        { name: "elevationFrom", label: "Height above floor", helper: "Bottom height in canvas units. Leave empty to use the symbol default. Zero places it on the floor.", selector: { number: { min: 0, max: 10000, step: 0.1, mode: "box" } } },
         { name: "height3d", label: "3D height", helper: "Optional height in canvas units. Leave empty to use the model height. Applied before cutting.", selector: { number: { min: 0.1, max: 10000, step: 0.1, mode: "box" } } },
       ] : []),
       angleField(),
@@ -2229,6 +2230,7 @@ export function furnitureForm(
       w: f.w,
       h: f.h,
       height3d: f.height3d,
+      elevationFrom: f.elevation?.from,
       angle: f.angle ?? 0,
       entity: f.entity ?? "",
       ...(findSymbol(catalog, f.type)?.extend ? { invert: f.invert ?? false } : {}),
@@ -2242,6 +2244,12 @@ export function furnitureForm(
       visibility: f.visibility,
     },
     toPatch: (raw) => {
+      if ("elevationFrom" in raw) {
+        const { elevationFrom, ...rest } = raw;
+        const from = normalizeElevationFrom(elevationFrom);
+        const elevation = { ...f.elevation, from };
+        raw = { ...rest, elevation: from === undefined && elevation.to === undefined ? undefined : elevation };
+      }
       if ("height3d" in raw) raw = { ...raw, height3d: normalizeHeight3d(raw.height3d) };
       // On is the default, so only "off" is worth writing down; the reverse for invert.
       let p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;

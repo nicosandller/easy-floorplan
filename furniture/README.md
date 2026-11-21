@@ -251,3 +251,18 @@ Symbols without a valid `model3d` retain the legacy wall-relative `from/to`
 interval for block rendering. A model's absolute `from` alone does not define
 that legacy interval; with detailed rendering off it uses the normal block
 fallback. The 2D drawing remains unchanged.
+
+### Per-piece mounting height
+
+A furniture entry can set `elevation: { from: 100 }` to place its detailed model
+100 canvas units above the floor. The editor calls this **Height above floor**.
+The placed value overrides the symbol's `elevation.from`, which defaults to zero.
+Zero explicitly places the piece on the floor; clearing the field restores the
+symbol default. `height3d` remains the piece's independent physical height.
+`elevation.to` is preserved but ignored for detailed rendering.
+
+```yaml
+furniture:
+  - { id: tv_living, type: tv, x: 400, "y": 300, w: 120, h: 10, elevation: { from: 100 } }
+  - { id: tv_bedroom, type: tv, x: 800, "y": 300, w: 90, h: 10, elevation: { from: 140 } }
+```

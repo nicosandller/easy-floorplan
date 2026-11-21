@@ -66,3 +66,13 @@ it("keeps elevation independent of wall height and rebuilds when the bottom chan
   const third = cache.project([{ ...raised, elevation: { from: 10 } }], { ...view, wallHeight: 200 }, project).get(furniture)!;
   expect(third[0]!.z0).toBeCloseTo(110);
 });
+
+it("reprojects a piece when its own elevation changes", () => {
+  const cache = new FurnitureModelCache(), project = map();
+  const a = { ...furniture, elevation: { from: 10 } };
+  const b = { ...furniture, elevation: { from: 40 } };
+  const first = cache.project([{ ...entry, furniture: a }], view, project).get(a)!;
+  const second = cache.project([{ ...entry, furniture: b }], view, project).get(b)!;
+  expect(second).not.toBe(first);
+  expect(second[0].z0 - first[0].z0).toBe(30);
+});

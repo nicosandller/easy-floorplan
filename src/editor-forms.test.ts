@@ -2406,7 +2406,7 @@ describe("every field lands in exactly one panel group", () => {
     ["tapTarget", "tap_action", "hold_action", "double_tap_action"],
   ];
   const FURNITURE_GROUPS = [
-    ["type", "hand", "w", "h", "height3d", "angle"],
+    ["type", "hand", "w", "h", "height3d", "elevationFrom", "angle"],
     ["entity", "invert"],
     ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"],
   ];
@@ -3114,4 +3114,11 @@ it("only offers 3D height for an enabled valid model without clearing saved heig
     expect(form.fields.some(f => f.name === "height3d")).toBe(visible);
     expect(form.data.height3d).toBe(75);
   }
+});
+
+it("edits a placed elevation while preserving its legacy top", () => {
+  const form = furnitureForm({ id: "tv", type: "tv", x: 0, y: 0, w: 90, h: 10, elevation: { from: 100, to: 0.8 } }, undefined, undefined, [], true);
+  expect(form.data.elevationFrom).toBe(100);
+  expect(form.toPatch!({ elevationFrom: 0 })).toEqual({ elevation: { from: 0, to: 0.8 } });
+  expect(form.toPatch!({ elevationFrom: "" })).toEqual({ elevation: { from: undefined, to: 0.8 } });
 });

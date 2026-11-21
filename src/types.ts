@@ -1308,6 +1308,8 @@ export interface NotVisibilityCondition {
 export interface Furniture {
   /** Physical 3D height in canvas units; defaults to the model height. */
   height3d?: number;
+  /** Bottom height in canvas units; overrides the symbol default for detailed models. */
+  elevation?: { from?: number; to?: number };
   id: string;
   /**
    * Which symbol to draw — a built-in {@link FurnitureType}, a symbol

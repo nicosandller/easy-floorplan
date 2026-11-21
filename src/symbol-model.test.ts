@@ -172,3 +172,12 @@ it("gives the corner shower two glass doors, four flared grips and a floor drain
   const cut = furnitureModelSolids({ x: 0, y: 0, w: 100, h: 100 }, m, (x, y) => ({ x, y }), 100, "gray");
   expect(cut.filter(p => p.z0 === 98).map(p => p.z1)).toEqual([100, 100, 100, 100]);
 });
+
+it("lets each placed model override its symbol bottom, including zero", () => {
+  const model = BUILTIN_SYMBOLS.tv.model3d!;
+  for (const [from, expected] of [[100, 100], [140, 140], [0, 0], [-1, 50], [undefined, 50], [NaN, 50]] as const) {
+    const parts = furnitureModelSolids({ x: 0, y: 0, w: 90, h: 10, elevation: { from }, height3d: 70 }, model, (x, y) => ({ x, y }), 1000, "gray", { wallHeight: 200, elevation: { from: 50 } });
+    expect(Math.min(...parts.map(p => p.z0))).toBeCloseTo(expected);
+    expect(Math.max(...parts.map(p => p.z1))).toBeCloseTo(expected + 70);
+  }
+});

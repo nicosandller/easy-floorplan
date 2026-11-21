@@ -87,10 +87,14 @@ export function furnitureModelHeight(f: { height3d?: number }, model: SymbolMode
 
 /** Model elevation is an absolute bottom offset, independent of height and cut. */
 export function furnitureModelBounds(
-  f: { height3d?: number }, model: SymbolModel, _wallHeight: number,
+  f: { height3d?: number; elevation?: { from?: number } }, model: SymbolModel, _wallHeight: number,
   elevation?: { from: number; to?: number }
 ): { bottom: number; top: number; height: number } {
-  const bottom = elevation?.from ?? 0;
+  const bottom = normalizeElevationFrom(f.elevation?.from) ?? normalizeElevationFrom(elevation?.from) ?? 0;
   const height = furnitureModelHeight(f, model);
   return { bottom, height, top: bottom + height };
+}
+
+export function normalizeElevationFrom(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0 && value <= 10000 ? value : undefined;
 }

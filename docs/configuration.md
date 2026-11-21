@@ -913,3 +913,18 @@ label gets no Label group, and an opening with no shutter gets no Shutter group.
 
 Walls and text keep a plain list: a wall is thickness and length, a text is its words, size
 and angle. A heading over one or two fields is chrome rather than structure.
+
+### Per-piece mounting height
+
+A furniture entry can set `elevation: { from: 100 }` to place its detailed model
+100 canvas units above the floor. The editor calls this **Height above floor**.
+The placed value overrides the symbol's `elevation.from`, which defaults to zero.
+Zero explicitly places the piece on the floor; clearing the field restores the
+symbol default. `height3d` remains the piece's independent physical height.
+`elevation.to` is preserved but ignored for detailed rendering.
+
+```yaml
+furniture:
+  - { id: tv_living, type: tv, x: 400, "y": 300, w: 120, h: 10, elevation: { from: 100 } }
+  - { id: tv_bedroom, type: tv, x: 800, "y": 300, w: 90, h: 10, elevation: { from: 140 } }
+```

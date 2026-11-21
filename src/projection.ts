@@ -542,7 +542,7 @@ export function furnitureSectionHeight(c: {
 
 /** Preserve real heights; section furniture at the displayed wall height. */
 export function furnitureModelSolids(
-  f: { id?: string; x: number; y: number; w: number; h: number; angle?: number; height3d?: number },
+  f: { id?: string; x: number; y: number; w: number; h: number; angle?: number; height3d?: number; elevation?: { from?: number } },
   model: SymbolModel, map: (x: number, y: number) => Pt, sectionHeight: number, color: string,
   placement?: { wallHeight: number; elevation?: { from: number; to?: number } }
 ): IsoSolid[] {
