@@ -189,7 +189,7 @@ describe("project headings (issue #433)", () => {
       ["View", ["view", "appearance", "showViewControls", "showExport"]],
       ["Rotation", ["rotation", "rotationPortrait", "rotationLandscape"]],
       ["Size", ["overlayScale", "overlayMinWidth", "compactHeader"]],
-      ["Rooms", ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"]],
+      ["Rooms", ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval", "zoomControls"]],
     ]);
   });
 

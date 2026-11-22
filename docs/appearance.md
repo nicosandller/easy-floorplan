@@ -998,6 +998,34 @@ and crowds half again as much. Use `auto` when you zoom to read a device, the de
 multiplier when a wall tablet is read from across the room and you want to say precisely
 how big.
 
+## Zoom buttons and dragging
+
+Zooming to a room frames that room. To zoom anywhere, by as much as you like, and move
+around the plan while zoomed, turn on `zoomControls` (**Zoom buttons and dragging** in the
+editor, beside the room arrows):
+
+```yaml
+zoomControls: true
+```
+
+- **+ / −** in the bottom-right corner zoom in steps of 1.5× about the middle of what is
+  on screen, up to 10×, and the plan stays at that level until you change it. With a room
+  zoomed, they step on from the room's framing. Stepping back down to 1× is the whole plan.
+- **Drag** the zoomed plan to move around it: click and drag with a mouse, or drag with
+  one finger. It stops at the plan's edge. A press that moves less than a few pixels is
+  still a tap, hold or double-tap on whatever is under it; one that moves further only
+  pans.
+- **Ctrl+wheel** zooms about the cursor (so does a trackpad pinch on a desktop browser).
+  A plain wheel keeps scrolling the dashboard.
+- **Escape** (with the plan focused) and the zoom-out button return to the whole plan,
+  pan included. Tapping another room, the room arrows and changing floor start from that
+  room's own framing.
+
+On a touch screen the card only claims a one-finger drag while it is zoomed in. At the
+whole plan a finger on the card scrolls the dashboard exactly as before. Badges follow
+`zoomedOverlayScale` just as they do for a zoomed room. Two-finger pinch on a phone is not
+supported yet.
+
 ## Styling hooks (card-mod)
 
 Every rendered element carries its config `id` as `data-id`, plus a type class, so

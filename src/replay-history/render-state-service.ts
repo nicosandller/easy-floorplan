@@ -40,5 +40,10 @@ export function buildRenderHass(
     formatEntityAttributeValue: hass.formatEntityAttributeValue
       ? (stateObj: HassEntity, attribute: string) => hass.formatEntityAttributeValue!(stateObj, attribute)
       : undefined,
+    formatEntityName: hass.formatEntityName
+      ? (stateObj: HassEntity) => hass.formatEntityName!(stateObj)
+      : undefined,
+    // With the version that says whether that formatter can be used at all.
+    config: { version: hass.config?.version },
   };
 }
