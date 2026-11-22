@@ -1168,7 +1168,7 @@ export class FloorplanCard extends LitElement {
         const leaf = paneOpening(o, p);
         // Vertical sliders use the same 0..100 cover position as hinged panes.
         const state = leaf.entity ? renderHass?.states[leaf.entity] : undefined;
-        return { amount: p.motion === "fixed" ? 0 : resolveOpeningAmount(leaf, state),
+        return { positionAware: typeof state?.attributes?.current_position === "number", amount: p.motion === "fixed" ? 0 : resolveOpeningAmount(leaf, state),
           active: p.motion !== "fixed" && openingIsActive(leaf, state) };
       }),
       color: SKIN_WALL,
@@ -1185,6 +1185,7 @@ export class FloorplanCard extends LitElement {
           itemIsOffline(o, o.entity ? renderHass?.states[o.entity]?.state : undefined)
           ? undefined
           : o.inactiveColor,
+      positionAware: typeof (o.entity ? renderHass?.states[o.entity]?.attributes?.current_position : undefined) === "number",
       open: amount > 0,
       amount,
       tilt: this._openingTilt(o, renderHass),

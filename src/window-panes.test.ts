@@ -20,8 +20,15 @@ describe("Window – Multipane", () => {
     const open = panels(o, [0, 1, 0]);
     expect(open[0]).toEqual(shut[0]);
     expect(open[2]).toEqual(shut[2]);
-    expect(open[1].vertices?.[0].y).toBeCloseTo(-20);
+    expect(open[1].vertices?.[0].y).toBeCloseTo(-10);
     expect(open[1].vertices?.[2].z).toBe(40);
+  });
+
+  it("retains full travel when a position sensor is available", () => {
+    const o: Opening = { ...win, motion: "awning" };
+    const draw = (positionAware: boolean) => openingSolids(o, { color: "#555", amount: 1, positionAware }, map, 100).find(s => s.kind === "panel")!;
+    expect(draw(false).vertices?.[0].y).toBeCloseTo(-30);
+    expect(draw(true).vertices?.[0].y).toBeCloseTo(-60);
   });
 
   it("slides the lower sash up behind the upper sash, without changing its size", () => {

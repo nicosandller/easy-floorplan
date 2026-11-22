@@ -4380,7 +4380,8 @@ export function openingMarkNormal(
 /** Style options for {@link renderOpening}. */
 export interface OpeningStyle {
   /** Independently resolved bottom-to-top multipane states. */
-  panes?: { amount: number; active?: boolean }[];
+  panes?: { amount: number; active?: boolean; positionAware?: boolean }[];
+  positionAware?: boolean;
   /** Base color of the jambs / leaf / swing arc. */
   color: string;
   /** Whether the opening is drawn open (default `true`). */

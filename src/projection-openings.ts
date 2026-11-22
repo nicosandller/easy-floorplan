@@ -73,7 +73,7 @@ export function openingSolids(
       const shift = p.motion === "slide-up" ? Math.min(h, z1 - top) * a
         : p.motion === "slide-down" ? -Math.min(h, bottom - z0) * a : 0;
       if (p.motion === "awning") {
-        const angle = a * Math.PI / 2;
+        const angle = a * (state?.positionAware ? Math.PI / 2 : Math.PI / 6);
         const low = top - h * Math.cos(angle);
         const reach = h * Math.sin(angle);
         const left = at(-half, -reach), right = at(half, -reach);
@@ -118,7 +118,7 @@ export function openingSolids(
   } else if (motion === "roll") {
     pane(-half, 0, half, 0, color, z0 + (z1 - z0) * amount, z1, false);
   } else if (motion === "awning") {
-    const angle = amount * Math.PI / 2;
+    const angle = amount * (style.positionAware ? Math.PI / 2 : Math.PI / 6);
     const reach = (z1 - z0) * Math.sin(angle);
     const bottom = z1 - (z1 - z0) * Math.cos(angle);
     const a = at(-half, -reach);
