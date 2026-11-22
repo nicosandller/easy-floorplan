@@ -55,6 +55,9 @@ import {
   DEFAULT_LABEL_SIZE,
   WALL_THICKNESS,
   badgeContentOf,
+  badgeFillRange,
+  DEFAULT_FILL_MIN,
+  DEFAULT_FILL_MAX,
   domainIconAnimation,
   entitySupportsGlow,
   stripRun,
@@ -1404,11 +1407,17 @@ export function itemLabelForm(it: FloorItem, overlayScale?: OverlayScale): FormS
  * `badgeSource` is a hass-derived fact resolved at the call site rather than
  * here: what the badge is reading *right now*, so "Badge reads" can open on it
  * instead of on a guess. See {@link BadgeSourceInfo}.
+ *
+ * `numericReading` is the other hass-derived fact: whether the device's
+ * reading is a number right now. The icon fill (issue #421) is offered only
+ * then, or while it is already on, so a switch or a door contact is never
+ * shown a control that could only draw an empty or a full icon.
  */
 export function itemBadgeForm(
   it: FloorItem,
   badgeSource?: BadgeSourceInfo,
   overlayScale?: OverlayScale,
+  numericReading?: boolean,
 ): FormSpec {
   const fields: FormField[] = [
     {
@@ -1470,6 +1479,23 @@ export function itemBadgeForm(
       ),
     });
   }
+  // The icon fill (issue #421): an icon badge only, since a value badge already
+  // shows the number and a badge showing nothing has no glyph to fill.
+  const mode = badgeModeOf(it);
+  const fillRange = badgeFillRange(it.fill);
+  if ((mode === "icon" || mode === "spin" || mode === "pulse") && (numericReading || fillRange)) {
+    fields.push({
+      name: "fill",
+      label: "Fill the icon by its reading",
+      helper: "The icon fills from the bottom: empty at the lowest reading, full at the highest",
+      selector: { boolean: {} },
+    });
+    if (fillRange)
+      fields.push(
+        { name: "fillMin", label: "Empty at", selector: { number: { mode: "box", step: "any" } } },
+        { name: "fillMax", label: "Full at", selector: { number: { mode: "box", step: "any" } } }
+      );
+  }
   fields.push(
     {
       name: "size",
@@ -1481,7 +1507,10 @@ export function itemBadgeForm(
   return {
     fields,
     data: {
-      badgeMode: badgeModeOf(it),
+      badgeMode: mode,
+      fill: !!fillRange,
+      fillMin: fillRange?.min ?? DEFAULT_FILL_MIN,
+      fillMax: fillRange?.max ?? DEFAULT_FILL_MAX,
       // The dropdown's values are strings, so the stored index (or the legacy
       // "secondary") is spelled the same way here; toPatch turns it back into
       // a number. Opens on what the badge is *actually* reading when nothing
@@ -1512,6 +1541,24 @@ export function itemBadgeForm(
               ? undefined
               : Number(out.badgeDecimals),
         };
+      // The fill's three controls are one config key (issue #421): `true` for
+      // the percentage range, the range itself only when it differs from it.
+      if ("fill" in out || "fillMin" in out || "fillMax" in out) {
+        const { fill: on, fillMin, fillMax, ...rest } = out as Record<string, unknown>;
+        const now = badgeFillRange(it.fill);
+        const enabled = on === undefined ? !!now : on === true;
+        const num = (v: unknown, d: number) => (typeof v === "number" && Number.isFinite(v) ? v : d);
+        const min = num(fillMin, now?.min ?? DEFAULT_FILL_MIN);
+        const max = num(fillMax, now?.max ?? DEFAULT_FILL_MAX);
+        out = {
+          ...rest,
+          fill: !enabled
+            ? undefined
+            : min === DEFAULT_FILL_MIN && max === DEFAULT_FILL_MAX
+              ? true
+              : { min, max },
+        };
+      }
       if (!("badgeMode" in out)) return out;
       const { badgeMode, ...rest } = out;
       return {
@@ -2952,6 +2999,13 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
         selector: { number: { min: 0, max: MAX_FOCUS_INTERVAL, step: 1, mode: "box", unit_of_measurement: "s" } },
       },
       {
+        name: "zoomControls",
+        label: "Zoom buttons and dragging",
+        helper:
+          "+/− buttons that zoom in steps and hold the zoom, and dragging the plan around while zoomed (mouse or one finger; Ctrl+wheel zooms too). Off, the plan only zooms to a room",
+        selector: { boolean: {} },
+      },
+      {
         name: "offlineStyle",
         label: "Offline devices",
         helper: "How a device is drawn when its entity is unavailable or missing",
@@ -2993,6 +3047,7 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
           : DEFAULT_ZOOMED_OVERLAY_SCALE,
       roomFocusControls: normalizeRoomFocus(c.roomFocus)?.controls ?? false,
       roomFocusInterval: (normalizeRoomFocus(c.roomFocus)?.intervalMs ?? 0) / 1000,
+      zoomControls: c.zoomControls === true,
       offlineStyle: offlineStyleOf(c),
     },
     toPatch: (p) => {
@@ -3024,6 +3079,8 @@ export function projectDisplayForm(c: FloorplanCardConfig): FormSpec {
         out = { ...out, overlayMinWidth: normalizeOverlayMinWidth(out.overlayMinWidth) };
       if ("compactHeader" in out && !out.compactHeader)
         out = { ...out, compactHeader: undefined };
+      if ("zoomControls" in out && !out.zoomControls)
+        out = { ...out, zoomControls: undefined };
       if ("offlineStyle" in out && out.offlineStyle === DEFAULT_OFFLINE_STYLE)
         out = { ...out, offlineStyle: undefined };
       // Same again for the zoomed overlay: 1 means "no different while zoomed",

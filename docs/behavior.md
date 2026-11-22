@@ -224,7 +224,7 @@ and rooms. Tapping the furniture surface outside either icon still reaches the A
 The icon's accessible label names its floor destination or the entity the action
 targets. Where there is no floor destination, the card names it
 after the entity the gesture will act on — the action's own `entity` where it names one —
-using its friendly name, or the entity id. Only `toggle` and `more-info` act on an entity,
+using its name as Home Assistant shows it, or the entity id. Only `toggle` and `more-info` act on an entity,
 so a `navigate` or a `url` supplies no name; the piece's own `entity` answers instead,
 since that is what the drawing is bound to. Failing both, the symbol the piece is drawn as,
 by the name its definition carries rather than its id — `cornerShowerCurved` is announced as

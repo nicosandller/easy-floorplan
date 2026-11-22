@@ -145,6 +145,8 @@ import {
   itemRawValue,
   isRippleEntity,
   badgeContentOf,
+  badgeFillFraction,
+  renderBadgeFill,
   editorItemLabel,
   badgeValue,
   badgeReading,
@@ -161,6 +163,7 @@ import {
   snapToWall,
   collectWatchedEntities,
   hassRenderInputsChanged,
+  entityNameText,
   wallStrokeStyle,
   dividerStrokeStyle,
   normalizeOverlayScale,
@@ -3765,7 +3768,7 @@ export class FloorplanCardEditor extends LitElement {
     ],
     ["Rotation", ["rotation", "rotationPortrait", "rotationLandscape"]],
     ["Size", ["overlayScale", "overlayMinWidth", "compactHeader"]],
-    ["Rooms", ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"]],
+    ["Rooms", ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval", "zoomControls"]],
   ] as const;
 
   private static readonly TRACKER_GROUPS = [
@@ -4446,7 +4449,7 @@ export class FloorplanCardEditor extends LitElement {
       }
       case "item": {
         const it = f.items.find((x) => x.id === sel.id);
-        return it?.entity ? String(it.name || this.hass?.states[it.entity]?.attributes.friendly_name || it.entity) : "Device";
+        return it?.entity ? String(it.name || entityNameText(this.hass, it.entity) || it.entity) : "Device";
       }
       case "text": {
         const t = f.texts.find((x) => x.id === sel.id);
@@ -7563,7 +7566,7 @@ export class FloorplanCardEditor extends LitElement {
              transform:translate(-50%,-50%)
                        translate(calc(${n.x} * ${step}), calc(${n.y} * ${step}));
              --fp-active:${accent};"
-      title=${`${(st?.attributes?.friendly_name as string | undefined) ?? id} — shown on the card, tap it there to open the shutter`}
+      title=${`${entityNameText(this.hass, id) ?? id} — shown on the card, tap it there to open the shutter`}
     >
       <ha-icon icon=${icon} style="--mdc-icon-size:${overlayLength(
         SHUTTER_MARK_ICON_SIZE,
@@ -7598,7 +7601,7 @@ export class FloorplanCardEditor extends LitElement {
              transform:translate(-50%,-50%)
                        translate(calc(${n.x} * ${step}), calc(${n.y} * ${step}));
              --fp-active:${accent};"
-      title=${`${(st?.attributes?.friendly_name as string | undefined) ?? id} — shown on the card, tap it there to open its dialog`}
+      title=${`${entityNameText(this.hass, id) ?? id} — shown on the card, tap it there to open its dialog`}
     >
       <ha-icon icon=${icon} style="--mdc-icon-size:${overlayLength(
         SHUTTER_MARK_ICON_SIZE,
@@ -7629,6 +7632,8 @@ export class FloorplanCardEditor extends LitElement {
     const stateColor = cssColor(resolveStateColor(it.stateColor, rawValue));
     const labelColor = itemLabelColor(it, stateColor);
     const value = badgeContentOf(it) === "value" ? badgeValue(this.hass, it) : undefined;
+    // The icon fill (issue #421), from the same reading as the card.
+    const fill = badgeFillFraction(it, rawValue);
     // The active colour — the one the user set, else the bulb's own colour
     // (issue #106). The canvas never previewed either, so setting "Active
     // color" changed nothing here and a coloured lamp would have looked plain;
@@ -7687,7 +7692,9 @@ export class FloorplanCardEditor extends LitElement {
             style="font-size:${overlayLength(badgeValueSize(size, value), scale)};"
             >${value}</span
           >`
-        : html`<ha-icon
+        : fill !== undefined
+          ? renderBadgeFill(icon, fill, overlayLength(itemIconSize(size), scale), anim)
+          : html`<ha-icon
             class=${anim ? `anim-${anim}` : ""}
             icon=${icon}
             style="--mdc-icon-size:${overlayLength(itemIconSize(size), scale)};"
@@ -8716,9 +8723,7 @@ export class FloorplanCardEditor extends LitElement {
       // What the badge is reading right now, so the "Badge reads" row can open
       // on it rather than on a guess (issue #136). Same "resolve off hass at
       // the call site" arrangement as deviceClass above.
-      const friendly = (id?: string) =>
-        (id ? (this.hass?.states[id]?.attributes?.friendly_name as string | undefined) : undefined) ??
-        id;
+      const friendly = (id?: string) => entityNameText(this.hass, id) ?? id;
       const badgeSource = {
         source: badgeReading(this.hass, it)?.source ?? "primary",
         primaryLabel: friendly(it.entity),
@@ -8774,7 +8779,19 @@ export class FloorplanCardEditor extends LitElement {
           : nothing}
         ${this._renderGroup(
           "Badge",
-          this._renderForm(formSlice(itemBadgeForm(it, badgeSource), ["badgeMode", "badgeEntity", "badgeDecimals"]), apply)
+          this._renderForm(
+            formSlice(
+              // Fill is offered only on a numeric reading (issue #421).
+              itemBadgeForm(
+                it,
+                badgeSource,
+                this._config.overlayScale,
+                badgeFillFraction({ fill: true }, itemRawValue(it, it.entity ? this.hass?.states[it.entity] : undefined)) !== undefined
+              ),
+              ["badgeMode", "badgeEntity", "badgeDecimals", "fill", "fillMin", "fillMax"]
+            ),
+            apply
+          )
         )}
         ${this._renderGroup(
           "Color",
@@ -10774,7 +10791,8 @@ export class FloorplanCardEditor extends LitElement {
     ha-icon.anim-spin {
       animation: fp-icon-spin 2s linear infinite;
     }
-    ha-icon.anim-pulse {
+    ha-icon.anim-pulse,
+    .badge-fill.anim-pulse {
       animation: fp-icon-pulse 1.6s ease-in-out infinite;
     }
     @keyframes fp-icon-spin {
@@ -10796,7 +10814,8 @@ export class FloorplanCardEditor extends LitElement {
     }
     @media (prefers-reduced-motion: reduce) {
       ha-icon.anim-spin,
-      ha-icon.anim-pulse {
+      ha-icon.anim-pulse,
+      .badge-fill.anim-pulse {
         animation: none;
       }
     }

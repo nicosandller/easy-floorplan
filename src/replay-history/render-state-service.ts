@@ -43,5 +43,10 @@ export function buildRenderHass(
     // Registry facts are not replayed: a display precision is configuration,
     // the same at any point in the history (issue #452).
     entities: hass.entities,
+    formatEntityName: hass.formatEntityName
+      ? (stateObj: HassEntity) => hass.formatEntityName!(stateObj)
+      : undefined,
+    // With the version that says whether that formatter can be used at all.
+    config: { version: hass.config?.version },
   };
 }
