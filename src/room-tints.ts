@@ -42,6 +42,7 @@
 import type { AreaPoint, OutdoorZoneKind } from "./types";
 import { findSkin } from "./skins";
 import { outdoorZoneDefaultColor } from "./render";
+import { distToSegment } from "./dead-space";
 
 export interface RoomTint {
   /** Stable name, used in docs and tests. */
@@ -221,13 +222,7 @@ export function areasAdjacent(
 function distanceToRing(poly: readonly AreaPoint[], p: AreaPoint): number {
   let best = Infinity;
   for (let i = 0; i < poly.length; i++) {
-    const a = poly[i]!;
-    const b = poly[(i + 1) % poly.length]!;
-    const dx = b.x - a.x;
-    const dy = b.y - a.y;
-    const l2 = dx * dx + dy * dy;
-    const t = l2 ? Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / l2)) : 0;
-    best = Math.min(best, Math.hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy)));
+    best = Math.min(best, distToSegment(p.x, p.y, poly[i]!, poly[(i + 1) % poly.length]!));
   }
   return best;
 }

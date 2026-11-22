@@ -112,6 +112,7 @@ import {
   normalizeOverlayMinWidth,
   overlayLength,
   hassRenderInputsChanged,
+  entityNameText,
   collectNamedEntities,
   collectWatchedEntities,
   isEntityOn,
@@ -2276,6 +2277,128 @@ describe("itemStateText with attributes (issue #70)", () => {
     const prev = { ...base, formatEntityAttributeValue: () => "old" } as never;
     const next = { ...base, formatEntityAttributeValue: () => "new" } as never;
     expect(hassRenderInputsChanged(prev, next, ["climate.home"])).toBe(true);
+  });
+});
+
+describe("entityNameText (issue #417)", () => {
+  // The friendly name is what HA composed before 2026.11 and still carries on
+  // the state. `formatEntityName` stands in for the frontend's own, which
+  // composes a name out of the registries and can now say something else.
+  const named = () => {
+    const h = livingArea();
+    (h.states[TEMP]!.attributes as Record<string, unknown>).friendly_name = "Living Temp";
+    return h;
+  };
+  const withHaName = (
+    format: (s: { entity_id: string }) => string = () => "Thermostat Temperature",
+    // `null` for a `hass` that carries no version; a default would swallow `undefined`.
+    version: string | null = "2026.11.2",
+  ) => {
+    const h = named() as unknown as Record<string, unknown>;
+    h.formatEntityName = format;
+    if (version !== null) h.config = { version };
+    return h as never;
+  };
+  // What 2025.10 really does when handed the state object alone.
+  const throwsWithoutItsSecondArgument = () => {
+    throw new TypeError("undefined is not iterable");
+  };
+
+  it("uses HA's own name when the frontend provides the formatter", () => {
+    expect(entityNameText(withHaName(), TEMP)).toBe("Thermostat Temperature");
+  });
+
+  it("hands the formatter the state object, as HA's own cards do", () => {
+    expect(entityNameText(withHaName((s) => `name of ${s.entity_id}`), TEMP)).toBe(`name of ${TEMP}`);
+  });
+
+  it("falls back to the friendly name on a frontend without the formatter", () => {
+    expect(entityNameText(named(), TEMP)).toBe("Living Temp");
+  });
+
+  it("treats an empty answer from HA as no answer", () => {
+    expect(entityNameText(withHaName(() => ""), TEMP)).toBe("Living Temp");
+  });
+
+  it("leaves the formatter alone before 2026.4, where it exists but answers differently", () => {
+    // 2025.10 throws without a second argument; 2025.11 to 2026.3 compose a
+    // name HA's own cards did not show. Neither may be called, so the stand-in
+    // throws: reaching it at all fails the test.
+    for (const version of ["2025.10.4", "2025.11.0", "2026.3.4"]) {
+      expect(entityNameText(withHaName(throwsWithoutItsSecondArgument, version), TEMP)).toBe(
+        "Living Temp",
+      );
+    }
+  });
+
+  it("uses it from 2026.4 on, betas and dev builds included", () => {
+    for (const version of ["2026.4.0", "2026.4.0b2", "2026.10.3", "2026.12.0.dev20261120", "2027.1.0"]) {
+      expect(entityNameText(withHaName(undefined, version), TEMP)).toBe("Thermostat Temperature");
+    }
+  });
+
+  it("treats a version it cannot read as too old", () => {
+    expect(entityNameText(withHaName(throwsWithoutItsSecondArgument, null), TEMP)).toBe("Living Temp");
+    expect(entityNameText(withHaName(throwsWithoutItsSecondArgument, "unknown"), TEMP)).toBe("Living Temp");
+  });
+
+  it("answers undefined, never the id, when there is nothing to call it", () => {
+    // Each caller keeps its own last resort, so the helper must not pick one.
+    expect(entityNameText(undefined, TEMP)).toBeUndefined();
+    expect(entityNameText(named(), undefined)).toBeUndefined();
+    expect(entityNameText(named(), "sensor.absent")).toBeUndefined();
+    expect(entityNameText(livingArea(), TEMP)).toBeUndefined();
+  });
+
+  it("is only the fallback: a name set in the config still wins", () => {
+    expect(
+      itemBadgeLabel(withHaName(), { entity: TEMP, kind: "light", showName: true, name: "Lamp" }),
+    ).toBe("Lamp");
+    expect(itemBadgeLabel(withHaName(), { entity: TEMP, kind: "light", showName: true })).toBe(
+      "Thermostat Temperature",
+    );
+  });
+
+  it("names a furniture button the same way", () => {
+    expect(furnitureAccessibleName({ type: "roundTable", entity: TEMP }, withHaName())).toBe(
+      "Thermostat Temperature",
+    );
+  });
+
+  it("carries the formatter, and the version that allows it, through the slice the card renders from (issue #260)", () => {
+    // The version is set on the real `hass` only, so this fails if the build
+    // forwards the formatter but drops what says it can be used.
+    const rendered = buildRenderHass(
+      withHaName(),
+      [TEMP],
+      { getStateAt: () => new Map() } as never,
+      false,
+      0,
+    );
+    expect(entityNameText(rendered, TEMP)).toBe("Thermostat Temperature");
+  });
+
+  it("names a replayed state by what the entity is called now", () => {
+    // A replay swaps in the state recorded at that moment, friendly name and
+    // all. The name is the registry's, so it does not travel back in time.
+    const recorded = { entity_id: TEMP, state: "16", attributes: { friendly_name: "Old name" } };
+    const rendered = buildRenderHass(
+      withHaName((s) => `now ${s.entity_id}`),
+      [TEMP],
+      { getStateAt: () => new Map([[TEMP, recorded]]) } as never,
+      true,
+      100,
+    );
+    expect(entityNameText(rendered, TEMP)).toBe(`now ${TEMP}`);
+  });
+
+  it("re-renders when HA rebuilds the name formatter", () => {
+    // Renaming a device changes the registry, not necessarily any state the
+    // plan watches.
+    const base = named() as unknown as Record<string, unknown>;
+    const prev = { ...base, formatEntityName: () => "old" } as never;
+    const next = { ...base, formatEntityName: () => "new" } as never;
+    expect(hassRenderInputsChanged(prev, next, [TEMP])).toBe(true);
   });
 });
 

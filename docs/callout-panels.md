@@ -80,7 +80,7 @@ floors:
 | --- | --- | --- | --- |
 | `entity` | `string` | *(required)* | Home Assistant entity ID providing state. Rows without an entity are omitted. |
 | `attribute` | `string` | optional | Entity state attribute name to display instead of the primary state value. |
-| `label` | `string` | optional | Row label. Defaults to entity's `friendly_name` or entity ID. |
+| `label` | `string` | optional | Row label. Defaults to the entity's name as Home Assistant's own cards show it, or the entity ID. |
 | `unit` | `string` | optional | Unit override (e.g., `°C`, `W`, `%`). Defaults to entity `unit_of_measurement`. |
 | `icon` | `string` | optional | MDI icon override (e.g., `mdi:thermometer`). Defaults to entity `icon`. Set to `"none"` to hide. |
 | `showIcon` | `boolean` | `true` | Set to `false` to hide the icon for this specific metric row. |
