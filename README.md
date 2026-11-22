@@ -87,7 +87,8 @@ HACS adds the dashboard resource automatically.
 
 ## Create your first plan
 
-1. Edit your Home Assistant dashboard, select **Add card** and choose **Easy Floorplan**.
+1. Edit your Home Assistant dashboard, select **Add card**, open the **By card** tab and
+   choose **Easy Floorplan**. Its tile shows a sample room; your new card starts empty.
 2. In the visual editor, choose **Wall** and drag to draw each wall.
 3. Choose **Door** or **Window** and place it on a wall.
 4. Choose **+ Add → Device**, move it into place, then select its Home Assistant
