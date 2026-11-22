@@ -1534,6 +1534,7 @@ describe("wallForm / projectForm / floorImageForm", () => {
       "zoomedOverlayScale",
       "roomFocusControls",
       "roomFocusInterval",
+      "zoomControls",
       "offlineStyle",
     ]);
     expect(form.data.rotation).toBe("0");
@@ -2489,7 +2490,7 @@ describe("every field lands in exactly one panel group", () => {
     ];
     const ROTATION = ["rotation", "rotationPortrait", "rotationLandscape"];
     const SIZE = ["overlayScale", "overlayMinWidth", "compactHeader"];
-    const ROOMS = ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"];
+    const ROOMS = ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval", "zoomControls"];
     const DEVICES = ["offlineStyle"];
     // Canvas units, so the conditional overlayMinWidth field is produced too,
     // and 3D with detailed furniture cut separately, so the wall fields and
@@ -3085,6 +3086,33 @@ describe("roofForm", () => {
 });
 
 
+describe("the icon fill controls (issue #421)", () => {
+  const sensor = { id: "h", kind: "sensor", entity: "sensor.h", x: 0, y: 0 } as FloorItem;
+  const names = (it: FloorItem, numeric?: boolean) => itemBadgeForm(it, undefined, undefined, numeric).fields.map((f) => f.name);
+
+  it("is offered on a numeric reading, with its range only once it is on", () => {
+    expect(names(sensor)).not.toContain("fill");
+    expect(names(sensor, true)).toContain("fill");
+    expect(names(sensor, true)).not.toContain("fillMin");
+    expect(names({ ...sensor, fill: true } as FloorItem)).toEqual(expect.arrayContaining(["fill", "fillMin", "fillMax"]));
+  });
+
+  it("is not offered on a value badge or a badge showing nothing", () => {
+    expect(names({ ...sensor, badgeContent: "value" } as FloorItem, true)).not.toContain("fill");
+    expect(names({ ...sensor, badgeContent: "none" } as FloorItem, true)).not.toContain("fill");
+  });
+
+  it("writes true for the percentage range and the range otherwise", () => {
+    expect(itemBadgeForm(sensor, undefined, undefined, true).toPatch({ fill: true }).fill).toBe(true);
+    const on = { ...sensor, fill: true } as FloorItem;
+    expect(itemBadgeForm(on).toPatch({ fillMax: 12 }).fill).toEqual({ min: 0, max: 12 });
+    expect(itemBadgeForm(on).toPatch({ fill: false }).fill).toBeUndefined();
+    const ranged = { ...sensor, fill: { min: 0, max: 12 } } as FloorItem;
+    expect(itemBadgeForm(ranged).data).toMatchObject({ fill: true, fillMin: 0, fillMax: 12 });
+    expect(itemBadgeForm(ranged).toPatch({ fillMax: 100 }).fill).toBe(true);
+  });
+});
+
 describe("3D furniture display controls", () => {
   const base = { type: "custom:easy-floorplan-card", width: 400, height: 400 } as FloorplanCardConfig;
   const names = (c: Partial<FloorplanCardConfig>) => projectDisplayForm({ ...base, ...c }).fields.map(f => f.name);
@@ -3132,4 +3160,17 @@ it("edits a placed elevation while preserving its legacy top", () => {
   expect(form.data.elevationFrom).toBe(100);
   expect(form.toPatch!({ elevationFrom: 0 })).toEqual({ elevation: { from: 0, to: 0.8 } });
   expect(form.toPatch!({ elevationFrom: "" })).toEqual({ elevation: { from: undefined, to: 0.8 } });
+});
+
+describe("zoom controls in the display form (issue #446)", () => {
+  const base = { type: "t", width: 1000, height: 600 } as FloorplanCardConfig;
+
+  it("is off unless the config says so, and off stays out of the YAML", () => {
+    expect(projectDisplayForm(base).data.zoomControls).toBe(false);
+    expect(projectDisplayForm({ ...base, zoomControls: true }).data.zoomControls).toBe(true);
+    expect(projectDisplayForm(base).toPatch({ zoomControls: true })).toEqual({ zoomControls: true });
+    expect(
+      projectDisplayForm({ ...base, zoomControls: true }).toPatch({ zoomControls: false })
+    ).toEqual({ zoomControls: undefined });
+  });
 });

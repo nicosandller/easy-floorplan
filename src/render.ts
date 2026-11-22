@@ -20,6 +20,7 @@ import type {
   StateColorRule,
   BadgeContent,
   BadgeEntity,
+  BadgeFill,
   ItemReading,
   LabelPosition,
   PressEffect,
@@ -76,7 +77,7 @@ import { actionTargetEntity, hasAction } from "./actions";
 import { SKIN_ACCENT, SKIN_PAPER, SKIN_WALL, MAX_SKIN_WALL_WIDTH } from "./skins";
 // The same tolerance #141 uses to decide an opening sits on a wall, so "this
 // door is in this wall" means one thing across the card.
-import { OPENING_ON_WALL_EPS } from "./dead-space";
+import { OPENING_ON_WALL_EPS, distToSegment } from "./dead-space";
 import { projectPlanPoint, projectedCanvasSize, type DisplayFrame } from "./projection";
 // Defined beside the type union it reads rather than here with the rest of the
 // opening helpers, because `dead-space` needs it too and this module already
@@ -136,6 +137,9 @@ export function hassRenderInputsChanged(
   // Both formatters, because a plan can be built entirely out of attribute
   // readings and would otherwise be watching a function it never calls.
   if (prev.formatEntityAttributeValue !== next.formatEntityAttributeValue) return true;
+  // And the name formatter: a device renamed in the registry renames every
+  // unnamed item on the plan, with no state of theirs having to change.
+  if (prev.formatEntityName !== next.formatEntityName) return true;
   // Dark mode picks the light or dark side of every room tint, and HA flips it
   // on a live card (an auto theme at sunset) without any entity changing.
   if (prev.themes?.darkMode !== next.themes?.darkMode) return true;
@@ -275,6 +279,57 @@ export function entityAttributeText(
   if (typeof fmt === "function") return fmt(stateObj, attribute);
   const raw = (stateObj.attributes as Record<string, unknown>)?.[attribute];
   return raw === undefined || raw === null || raw === "" ? NO_STATE : String(raw);
+}
+
+/**
+ * An entity's name as HA's own cards show it, or `undefined` when there is
+ * nothing to call it (issue #417) — no entity, no state object, or no name.
+ *
+ * This is only ever the fallback behind a name set in the config, so it
+ * answers `undefined` rather than `""` or the entity id: each caller keeps its
+ * own last resort (`?? id`, `|| item.entity`), exactly as before.
+ *
+ * Uses HA's `formatEntityName` from HA 2026.4 (see
+ * {@link nameFormatterUsable}), so an unnamed item reads the same as an
+ * unnamed tile next to it; otherwise the `friendly_name` attribute, which is
+ * what every HA before the 2026.11 naming change showed.
+ */
+export function entityNameText(
+  hass: RenderHass | undefined,
+  entityId: string | undefined,
+): string | undefined {
+  if (!entityId || !hass) return undefined;
+  const stateObj = hass.states[entityId];
+  if (!stateObj) return undefined;
+  const friendly = stateObj.attributes?.friendly_name as string | undefined;
+  const fmt = hass.formatEntityName;
+  if (typeof fmt !== "function" || !nameFormatterUsable(hass.config?.version)) {
+    return friendly || undefined;
+  }
+  // An empty answer counts as no answer, so a blank never beats a name.
+  return fmt(stateObj) || friendly || undefined;
+}
+
+/**
+ * Whether this HA's `formatEntityName` can be called with the state object
+ * alone and answer what HA's own cards show for an entity nobody has named.
+ *
+ * The function is older than that behaviour, so finding it on `hass` proves
+ * nothing. Read from the frontend each release shipped:
+ *
+ * - 2025.10 requires a second argument and throws without one;
+ * - 2025.11 to 2026.3 answer "device name, entity name", while HA's own cards
+ *   still showed the friendly name;
+ * - 2026.4 on answers what HA's cards show: the friendly name up to 2026.10,
+ *   the name composed from the registries since 2026.11.
+ *
+ * A version that cannot be read counts as too old. The friendly name is never
+ * broken there, only possibly out of step.
+ */
+function nameFormatterUsable(version: string | undefined): boolean {
+  const [year, month] = (version ?? "").split(".").map(Number);
+  if (!Number.isFinite(year) || !Number.isFinite(month)) return false;
+  return year > 2026 || (year === 2026 && month >= 4);
 }
 
 /**
@@ -654,13 +709,7 @@ export function editorGlowPaint(
  */
 /** Perpendicular distance from a point to a wall segment. */
 function pointWallDist(x: number, y: number, w: Wall): number {
-  const dx = w.x2 - w.x1;
-  const dy = w.y2 - w.y1;
-  const len2 = dx * dx + dy * dy;
-  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - w.x1) * dx + (y - w.y1) * dy) / len2));
-  const px = w.x1 + t * dx;
-  const py = w.y1 + t * dy;
-  return Math.hypot(x - px, y - py);
+  return distToSegment(x, y, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
 }
 
 /** Distance along a ray from (cx,cy) toward (dx,dy) to a segment, or undefined. */
@@ -1920,8 +1969,7 @@ export function itemBadgeLabel(
 ): string {
   const parts: string[] = [];
   if (item.showName) {
-    const friendly = item.entity ? hass?.states[item.entity]?.attributes?.friendly_name as string | undefined : undefined;
-    const name = item.name || friendly || item.entity;
+    const name = item.name || entityNameText(hass, item.entity) || item.entity;
     if (name) parts.push(name);
   }
 
@@ -2770,6 +2818,95 @@ export function badgeContentOf(item: {
   if (item.badgeContent === "icon" || item.badgeContent === "value" || item.badgeContent === "none")
     return item.badgeContent;
   return item.showIcon === false ? "none" : "icon";
+}
+
+/** The range a `fill: true` badge reads against (issue #421): a percentage. */
+export const DEFAULT_FILL_MIN = 0;
+export const DEFAULT_FILL_MAX = 100;
+
+/**
+ * The range an item's badge fills over, or `undefined` when it does not fill
+ * (issue #421). `true` is the percentage range; an object overrides either end.
+ * A non-finite end falls back to its default rather than poisoning the maths.
+ */
+export function badgeFillRange(fill: boolean | BadgeFill | undefined): { min: number; max: number } | undefined {
+  if (!fill) return undefined;
+  const o = fill === true ? {} : fill;
+  const min = typeof o.min === "number" && Number.isFinite(o.min) ? o.min : DEFAULT_FILL_MIN;
+  const max = typeof o.max === "number" && Number.isFinite(o.max) ? o.max : DEFAULT_FILL_MAX;
+  return { min, max };
+}
+
+/**
+ * How full a device's icon is drawn, 0 to 1, or `undefined` for the plain icon
+ * (issue #421). `raw` is {@link itemRawValue}, the reading the colour rules
+ * already judge, so a drop that turns red above 70 % is also 70 % full.
+ *
+ * Anything that is not a number answers `undefined`: an offline sensor must
+ * not be drawn as an empty one, which would say "0 %" where the truth is "no
+ * reading". A range given the wrong way round (`min` above `max`) fills as the
+ * reading falls, which is what a battery-style "remaining" sensor wants; equal
+ * ends fill completely at or past them and not at all below.
+ */
+export function badgeFillFraction(
+  item: { fill?: boolean | BadgeFill; badgeContent?: BadgeContent; showIcon?: boolean },
+  raw: unknown,
+): number | undefined {
+  const range = badgeFillRange(item.fill);
+  if (!range || badgeContentOf(item) !== "icon") return undefined;
+  const n = typeof raw === "number" ? raw : typeof raw === "string" && raw.trim() !== "" ? Number(raw) : NaN;
+  if (!Number.isFinite(n)) return undefined;
+  const { min, max } = range;
+  if (min === max) return n >= max ? 1 : 0;
+  return Math.min(1, Math.max(0, (n - min) / (max - min)));
+}
+
+/**
+ * How far down the icon box the fill's clip starts, as a percentage, for a
+ * fraction from {@link badgeFillFraction}. Material Design icons are drawn on a
+ * 24-unit grid inside a 2-unit margin, so the glyph spans 2–22 of the box, not
+ * all of it: mapping onto that span puts 50 % at the glyph's middle rather
+ * than a little low, and makes 0 % and 100 % look empty and full rather than
+ * nearly so.
+ */
+export function badgeFillClipTop(fraction: number): number {
+  const f = Math.min(1, Math.max(0, fraction));
+  return Math.round(((2 + 20 * (1 - f)) / 24) * 10000) / 100;
+}
+
+/**
+ * The glyph of a filling badge (issue #421), shared by the card and the editor
+ * canvas so the preview cannot disagree with the plan: the icon twice, a dim
+ * copy for the empty part and a full one clipped to the reading. Both take
+ * the badge's ink, so every rule that recolours a badge carries the fill too.
+ *
+ * The icon size is set on each copy, not the wrapper: both stylesheets give
+ * `ha-icon` its own `--mdc-icon-size`, which beats an inherited one. The
+ * wrapper is pinned to the icon box so the clip's percentages are of the box.
+ *
+ * Only a pulse is passed on. A spin would turn the clip with the glyph and
+ * pour the level round the badge, so a filling icon holds still instead.
+ */
+export function renderBadgeFill(
+  icon: string,
+  fraction: number,
+  iconSize: string,
+  anim: string | undefined,
+): TemplateResult {
+  const top = badgeFillClipTop(fraction);
+  const pct = Math.round(fraction * 100);
+  return html`<span
+    class="badge-fill ${anim === "pulse" ? "anim-pulse" : ""}"
+    data-fill=${pct}
+    style="position:relative;display:inline-flex;width:${iconSize};height:${iconSize};line-height:0;"
+  >
+    <ha-icon icon=${icon} style="--mdc-icon-size:${iconSize};opacity:0.35;"></ha-icon>
+    <ha-icon
+      class="badge-fill-level"
+      icon=${icon}
+      style="--mdc-icon-size:${iconSize};position:absolute;inset:0;clip-path:inset(${top}% 0 0 0);"
+    ></ha-icon>
+  </span>`;
 }
 
 /**
@@ -3662,11 +3799,8 @@ export function furnitureAccessibleName(
       .map((g) => furnitureActionForGesture(f, g))
       .map((p) => (p ? actionTargetEntity({ entity: p.entity }, p.config) : undefined))
       .find((e) => e) ?? f.entity;
-  const friendly = target
-    ? (hass?.states[target]?.attributes?.friendly_name as string | undefined)
-    : undefined;
   return (
-    friendly || target || findSymbol(catalog, f.type)?.name || humanSymbolId(f.type) || "Furniture"
+    entityNameText(hass, target) || target || findSymbol(catalog, f.type)?.name || humanSymbolId(f.type) || "Furniture"
   );
 }
 

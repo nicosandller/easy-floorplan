@@ -30,6 +30,16 @@ export interface HomeAssistant extends BaseHomeAssistant {
    */
   formatEntityAttributeValue?(stateObj: HassEntity, attribute: string): string;
   /**
+   * An entity's name as HA's own cards show it when no name is set on the
+   * card: composed from the entity, its device and that device's parent, out
+   * of the registries. Since 2026.11 that can differ from the `friendly_name`
+   * attribute, which HA plans to deprecate. Optional because a frontend older
+   * than 2025.10 has none — and present is not the same as usable: called like
+   * this, with the state object alone, it only answers as HA's cards do from
+   * 2026.4. {@link entityNameText} holds that gate and falls back for the rest.
+   */
+  formatEntityName?(stateObj: HassEntity): string;
+  /**
    * The entity registry as the frontend exposes it. `custom-card-helpers` does
    * not declare it, though HA has handed it to cards since 2023.4. It carries
    * the user's per-entity icon override, which never appears in the state's
@@ -66,6 +76,9 @@ export interface RenderHass {
   states: Record<string, HassEntity | undefined>;
   formatEntityState(stateObj: HassEntity): string;
   formatEntityAttributeValue?(stateObj: HassEntity, attribute: string): string;
+  formatEntityName?(stateObj: HassEntity): string;
+  /** Read only for the version, which decides whether `formatEntityName` is usable. */
+  config?: { version?: string };
   /** Read only for dark mode, which picks the side of every room tint. */
   themes?: { darkMode?: boolean };
 }
@@ -850,6 +863,18 @@ export interface FloorItem {
    */
   badgeEntity?: BadgeEntity;
   /**
+   * Fill the badge's icon in proportion to the reading (issue #421): the glyph
+   * is drawn dim, and the part up to the reading is drawn in full, so a drop
+   * shows how humid a room is and a battery how charged it is without a number.
+   *
+   * `true` reads 0–100, which suits a percentage; `{ min, max }` sets another
+   * range, such as a day's expected kWh. The reading is the one the badge's
+   * colour rules are judged on ({@link attribute} when set, else the state)
+   * and is clamped to the range. Nothing numeric — offline, or a word — draws
+   * the plain icon. Only an icon badge fills; a value badge keeps its number.
+   */
+  fill?: boolean | BadgeFill;
+  /**
    * Hide this device on the live card while its entity is inactive (issue
    * #55), so a busy room only shows what is actually doing something. The
    * editor always draws it — dimmed — or it could never be selected again.
@@ -1052,6 +1077,14 @@ export type ItemDisplay = "badge" | "ripple" | "iconRipple";
 
 /** Which side of its run an LED strip lights — see {@link FloorItem.stripSide}. */
 export type StripSide = "both" | "left" | "right";
+
+/** The range a badge fill reads against — see {@link FloorItem.fill} (issue #421). */
+export interface BadgeFill {
+  /** The reading drawn as an empty icon. Default 0. */
+  min?: number;
+  /** The reading drawn as a full icon. Default 100. */
+  max?: number;
+}
 
 /** What a device badge holds — see {@link FloorItem.badgeContent} (issue #106). */
 export type BadgeContent = "icon" | "value" | "none";
@@ -2325,6 +2358,15 @@ export interface FloorplanCardConfig extends LovelaceCardConfig {
    * key press starts the dwell again. See {@link normalizeRoomFocus}.
    */
   roomFocus?: boolean | { controls?: boolean; interval?: number; rooms?: string[] };
+  /**
+   * Free zoom and pan (issue #446). `true` adds "+"/"−" buttons that step the
+   * zoom about the centre of the view and hold it there, lets the plan be
+   * dragged around while zoomed (mouse or one finger), and makes Ctrl+wheel
+   * zoom about the cursor. Composes with zoom-to-room: the buttons step from a
+   * room's framing, and a zoomed room can be dragged. Off by default, so an
+   * existing card neither grows buttons nor starts claiming touch gestures.
+   */
+  zoomControls?: boolean;
   /**
    * Under `overlayScale: plan`, size the overlay as though the displayed plan
    * were at least this wide (px). All overlay measures stop shrinking together.
