@@ -2,6 +2,7 @@ import { describe, it, expect } from "vitest";
 import {
   deadSpaces,
   deadSpacesCached,
+  distToSegment,
   signedArea,
   splitSegments,
   traceFaces,
@@ -49,6 +50,19 @@ describe("signedArea", () => {
     ];
     expect(signedArea(ring)).toBe(100);
     expect(signedArea([...ring].reverse())).toBe(-100);
+  });
+});
+
+describe("distToSegment", () => {
+  const a = { x: 0, y: 0 };
+  const b = { x: 10, y: 0 };
+  it("measures to the nearest point along the segment or its ends", () => {
+    expect(distToSegment(5, 3, a, b)).toBe(3);
+    expect(distToSegment(-3, 4, a, b)).toBe(5);
+    expect(distToSegment(13, -4, a, b)).toBe(5);
+  });
+  it("measures to the single point of a zero-length segment (#437)", () => {
+    expect(distToSegment(3, 4, a, a)).toBe(5);
   });
 });
 
