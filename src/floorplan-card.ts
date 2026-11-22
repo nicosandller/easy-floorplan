@@ -130,6 +130,8 @@ import {
   resolveStateColor,
   itemRawValue,
   badgeContentOf,
+  badgeFillFraction,
+  renderBadgeFill,
   badgeValue,
   badgeValueSize,
   pressEffectOf,
@@ -2103,6 +2105,9 @@ export class FloorplanCard extends LitElement {
     // state colour, ripple stacking all unchanged — with the glyph swapped for
     // the number. A device with nothing numeric to show keeps its icon.
     const value = badgeContentOf(item) === "value" ? badgeValue(renderHass, item) : undefined;
+    // A filling icon (issue #421) reads the value the colour rules judge.
+    const fill = badgeFillFraction(item, itemRawValue(item, st));
+    const iconSize = overlayLength(itemIconSize(size), scale);
     return html`
       <div
         class="badge"
@@ -2114,10 +2119,12 @@ export class FloorplanCard extends LitElement {
               style="font-size:${overlayLength(badgeValueSize(size, value), scale)};"
               >${value}</span
             >`
-        : html`<ha-icon
+        : fill !== undefined
+          ? renderBadgeFill(this._itemIcon(item, renderHass), fill, iconSize, anim)
+          : html`<ha-icon
               class=${anim ? `anim-${anim}` : ""}
               icon=${this._itemIcon(item, renderHass)}
-              style="--mdc-icon-size:${overlayLength(itemIconSize(size), scale)};"
+              style="--mdc-icon-size:${iconSize};"
             ></ha-icon>`}
       </div>
     `;
@@ -4548,7 +4555,8 @@ export class FloorplanCard extends LitElement {
     ha-icon.anim-spin {
       animation: fp-icon-spin 2s linear infinite;
     }
-    ha-icon.anim-pulse {
+    ha-icon.anim-pulse,
+    .badge-fill.anim-pulse {
       animation: fp-icon-pulse 1.6s ease-in-out infinite;
     }
     @keyframes fp-icon-spin {
@@ -4570,7 +4578,8 @@ export class FloorplanCard extends LitElement {
     }
     @media (prefers-reduced-motion: reduce) {
       ha-icon.anim-spin,
-      ha-icon.anim-pulse {
+      ha-icon.anim-pulse,
+      .badge-fill.anim-pulse {
         animation: none;
       }
     }
