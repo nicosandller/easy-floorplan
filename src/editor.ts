@@ -145,6 +145,8 @@ import {
   itemRawValue,
   isRippleEntity,
   badgeContentOf,
+  badgeFillFraction,
+  renderBadgeFill,
   editorItemLabel,
   badgeValue,
   badgeReading,
@@ -3766,7 +3768,7 @@ export class FloorplanCardEditor extends LitElement {
     ],
     ["Rotation", ["rotation", "rotationPortrait", "rotationLandscape"]],
     ["Size", ["overlayScale", "overlayMinWidth", "compactHeader"]],
-    ["Rooms", ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval"]],
+    ["Rooms", ["zoomedOverlayAuto", "zoomedOverlayScale", "roomFocusControls", "roomFocusInterval", "zoomControls"]],
   ] as const;
 
   private static readonly TRACKER_GROUPS = [
@@ -7630,6 +7632,8 @@ export class FloorplanCardEditor extends LitElement {
     const stateColor = cssColor(resolveStateColor(it.stateColor, rawValue));
     const labelColor = itemLabelColor(it, stateColor);
     const value = badgeContentOf(it) === "value" ? badgeValue(this.hass, it) : undefined;
+    // The icon fill (issue #421), from the same reading as the card.
+    const fill = badgeFillFraction(it, rawValue);
     // The active colour — the one the user set, else the bulb's own colour
     // (issue #106). The canvas never previewed either, so setting "Active
     // color" changed nothing here and a coloured lamp would have looked plain;
@@ -7688,7 +7692,9 @@ export class FloorplanCardEditor extends LitElement {
             style="font-size:${overlayLength(badgeValueSize(size, value), scale)};"
             >${value}</span
           >`
-        : html`<ha-icon
+        : fill !== undefined
+          ? renderBadgeFill(icon, fill, overlayLength(itemIconSize(size), scale), anim)
+          : html`<ha-icon
             class=${anim ? `anim-${anim}` : ""}
             icon=${icon}
             style="--mdc-icon-size:${overlayLength(itemIconSize(size), scale)};"
@@ -8773,7 +8779,19 @@ export class FloorplanCardEditor extends LitElement {
           : nothing}
         ${this._renderGroup(
           "Badge",
-          this._renderForm(formSlice(itemBadgeForm(it, badgeSource), ["badgeMode", "badgeEntity"]), apply)
+          this._renderForm(
+            formSlice(
+              // Fill is offered only on a numeric reading (issue #421).
+              itemBadgeForm(
+                it,
+                badgeSource,
+                this._config.overlayScale,
+                badgeFillFraction({ fill: true }, itemRawValue(it, it.entity ? this.hass?.states[it.entity] : undefined)) !== undefined
+              ),
+              ["badgeMode", "badgeEntity", "fill", "fillMin", "fillMax"]
+            ),
+            apply
+          )
         )}
         ${this._renderGroup(
           "Color",
@@ -10773,7 +10791,8 @@ export class FloorplanCardEditor extends LitElement {
     ha-icon.anim-spin {
       animation: fp-icon-spin 2s linear infinite;
     }
-    ha-icon.anim-pulse {
+    ha-icon.anim-pulse,
+    .badge-fill.anim-pulse {
       animation: fp-icon-pulse 1.6s ease-in-out infinite;
     }
     @keyframes fp-icon-spin {
@@ -10795,7 +10814,8 @@ export class FloorplanCardEditor extends LitElement {
     }
     @media (prefers-reduced-motion: reduce) {
       ha-icon.anim-spin,
-      ha-icon.anim-pulse {
+      ha-icon.anim-pulse,
+      .badge-fill.anim-pulse {
         animation: none;
       }
     }

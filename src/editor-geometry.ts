@@ -23,6 +23,7 @@ import {
   floorPanels,
 } from "./types";
 import { RECT_AREA_SIDES } from "./types";
+import { distToSegment } from "./dead-space";
 
 export const RECT_AREA_EPSILON = 0.001;
 
@@ -695,11 +696,7 @@ function nearestOf(
 
 /** Distance from a point to a wall segment. */
 function distToWall(x: number, y: number, w: WallSegment): number {
-  const dx = w.x2 - w.x1;
-  const dy = w.y2 - w.y1;
-  const len2 = dx * dx + dy * dy;
-  const t = len2 === 0 ? 0 : Math.max(0, Math.min(1, ((x - w.x1) * dx + (y - w.y1) * dy) / len2));
-  return Math.hypot(x - (w.x1 + t * dx), y - (w.y1 + t * dy));
+  return distToSegment(x, y, { x: w.x1, y: w.y1 }, { x: w.x2, y: w.y2 });
 }
 
 /** How close both ends must be to one wall for a strip to count as on it. */

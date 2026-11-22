@@ -16,10 +16,10 @@ and control your home in 2D or 3D.
 
 <a name="what-you-can-end-up-with"></a>
 
-https://github.com/user-attachments/assets/c743c15d-07de-4f5f-9727-3b24b101c7c6
+https://github.com/user-attachments/assets/ee1d5fb9-e40e-43af-a748-70698e2e455e
 
-20-second overview: draw walls and doors, connect a Home Assistant entity,
-control lights, and view the plan in 3D.
+22-second overview: draw walls and doors, connect a Home Assistant entity,
+control lights, follow the sun from day to night, and view the plan in 3D.
 
 ## Features
 
@@ -33,11 +33,16 @@ control lights, and view the plan in 3D.
 - **Live devices** — control lights and switches, show sensor readings, and follow
   doors, windows, shutters, awnings and curtains as they open and close. Device
   labels can sit on any side, or [pick the clearest one](docs/elements.md#devices) (`labelPosition: auto`).
+- **Fill-level icons** — a badge's icon fills with its reading, so a drop shows humidity
+  and a battery its charge. See [Devices](docs/elements.md#devices) (`fill`).
 - **Lighting** — colored light from your lamps and spots, day/night dimming, sunlight,
   moonlight and ambient daylight, with sunlight at the sun's real height on
   [vertical sections](docs/lighting.md#sunlight-on-a-section).
 - **Rooms and presence** — zoom into rooms, link Home Assistant areas, show
   presence ripples and track positions from distance sensors.
+- **Zoom and pan** — opt-in +/− buttons that hold a zoom level, and dragging the
+  plan around while zoomed, with a mouse or one finger (`zoomControls`). See
+  [Zoom buttons and dragging](docs/appearance.md#zoom-buttons-and-dragging).
 - **Multiple floors** — switch between floors or navigate with a staircase.
 - **Floor summaries** — aggregated floor badges (temp, humidity, presence, lights, windows) directly in the switcher.
 - **Spatial telemetry callouts** — floating HUD info-panels with SVG leader lines anchored to rooms, furniture, roofs or coordinates in 2D and 3D.
@@ -82,7 +87,8 @@ HACS adds the dashboard resource automatically.
 
 ## Create your first plan
 
-1. Edit your Home Assistant dashboard, select **Add card** and choose **Easy Floorplan**.
+1. Edit your Home Assistant dashboard, select **Add card**, open the **By card** tab and
+   choose **Easy Floorplan**. Its tile shows a sample room; your new card starts empty.
 2. In the visual editor, choose **Wall** and drag to draw each wall.
 3. Choose **Door** or **Window** and place it on a wall.
 4. Choose **+ Add → Device**, move it into place, then select its Home Assistant
