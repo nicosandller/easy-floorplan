@@ -30,6 +30,16 @@ export interface HomeAssistant extends BaseHomeAssistant {
    */
   formatEntityAttributeValue?(stateObj: HassEntity, attribute: string): string;
   /**
+   * An entity's name as HA's own cards show it when no name is set on the
+   * card: composed from the entity, its device and that device's parent, out
+   * of the registries. Since 2026.11 that can differ from the `friendly_name`
+   * attribute, which HA plans to deprecate. Optional because a frontend older
+   * than 2025.10 has none — and present is not the same as usable: called like
+   * this, with the state object alone, it only answers as HA's cards do from
+   * 2026.4. {@link entityNameText} holds that gate and falls back for the rest.
+   */
+  formatEntityName?(stateObj: HassEntity): string;
+  /**
    * The entity registry as the frontend exposes it. `custom-card-helpers` does
    * not declare it, though HA has handed it to cards since 2023.4. It carries
    * the user's per-entity icon override, which never appears in the state's
@@ -66,6 +76,9 @@ export interface RenderHass {
   states: Record<string, HassEntity | undefined>;
   formatEntityState(stateObj: HassEntity): string;
   formatEntityAttributeValue?(stateObj: HassEntity, attribute: string): string;
+  formatEntityName?(stateObj: HassEntity): string;
+  /** Read only for the version, which decides whether `formatEntityName` is usable. */
+  config?: { version?: string };
   /** Read only for dark mode, which picks the side of every room tint. */
   themes?: { darkMode?: boolean };
 }

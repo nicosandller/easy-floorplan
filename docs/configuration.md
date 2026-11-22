@@ -313,7 +313,7 @@ swing.
 | `x`, `y`      | number                                 | —            | Position.                                              |
 | `kind`        | light/switch/sensor/binary_sensor/climate/cover/media_player/fan/camera/lock/humidifier/vacuum/generic | inferred | Used for the default icon. |
 | `icon`        | string                                 | entity icon  | Override mdi icon.                                     |
-| `name`        | string                                 | friendly name| Label / tooltip override.                             |
+| `name`        | string                                 | entity name  | Label / tooltip override. Unset, the device is named as Home Assistant's own cards name it. |
 | `size`        | number                                 | `34`         | Icon badge diameter (px).                              |
 | `angle`       | number                                 | `0`          | Icon rotation (deg).                                   |
 | `display`     | `badge` \| `ripple` \| `iconRipple`    | `badge`      | How the device is drawn. The editor spells this as the **Ripple** toggle (plus **Badge shows: Nothing** for `ripple`) and offers it only on devices that detect something where they sit (see [Presence ripples](elements.md#presence-ripples)); in YAML it works on any entity. |

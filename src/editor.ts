@@ -163,6 +163,7 @@ import {
   snapToWall,
   collectWatchedEntities,
   hassRenderInputsChanged,
+  entityNameText,
   wallStrokeStyle,
   dividerStrokeStyle,
   normalizeOverlayScale,
@@ -4448,7 +4449,7 @@ export class FloorplanCardEditor extends LitElement {
       }
       case "item": {
         const it = f.items.find((x) => x.id === sel.id);
-        return it?.entity ? String(it.name || this.hass?.states[it.entity]?.attributes.friendly_name || it.entity) : "Device";
+        return it?.entity ? String(it.name || entityNameText(this.hass, it.entity) || it.entity) : "Device";
       }
       case "text": {
         const t = f.texts.find((x) => x.id === sel.id);
@@ -7565,7 +7566,7 @@ export class FloorplanCardEditor extends LitElement {
              transform:translate(-50%,-50%)
                        translate(calc(${n.x} * ${step}), calc(${n.y} * ${step}));
              --fp-active:${accent};"
-      title=${`${(st?.attributes?.friendly_name as string | undefined) ?? id} — shown on the card, tap it there to open the shutter`}
+      title=${`${entityNameText(this.hass, id) ?? id} — shown on the card, tap it there to open the shutter`}
     >
       <ha-icon icon=${icon} style="--mdc-icon-size:${overlayLength(
         SHUTTER_MARK_ICON_SIZE,
@@ -7600,7 +7601,7 @@ export class FloorplanCardEditor extends LitElement {
              transform:translate(-50%,-50%)
                        translate(calc(${n.x} * ${step}), calc(${n.y} * ${step}));
              --fp-active:${accent};"
-      title=${`${(st?.attributes?.friendly_name as string | undefined) ?? id} — shown on the card, tap it there to open its dialog`}
+      title=${`${entityNameText(this.hass, id) ?? id} — shown on the card, tap it there to open its dialog`}
     >
       <ha-icon icon=${icon} style="--mdc-icon-size:${overlayLength(
         SHUTTER_MARK_ICON_SIZE,
@@ -8722,9 +8723,7 @@ export class FloorplanCardEditor extends LitElement {
       // What the badge is reading right now, so the "Badge reads" row can open
       // on it rather than on a guess (issue #136). Same "resolve off hass at
       // the call site" arrangement as deviceClass above.
-      const friendly = (id?: string) =>
-        (id ? (this.hass?.states[id]?.attributes?.friendly_name as string | undefined) : undefined) ??
-        id;
+      const friendly = (id?: string) => entityNameText(this.hass, id) ?? id;
       const badgeSource = {
         source: badgeReading(this.hass, it)?.source ?? "primary",
         primaryLabel: friendly(it.entity),
