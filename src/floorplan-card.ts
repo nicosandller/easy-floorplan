@@ -1117,7 +1117,7 @@ export class FloorplanCard extends LitElement {
       const catalog = symbolCatalog(c.symbols);
       for (const f of active?.furniture ?? []) {
         const model = catalog[f.type]?.model3d;
-        if (model) wallHeight = Math.max(wallHeight, Math.min(furnitureModelBounds(f, model, baseWallHeight, catalog[f.type]?.elevation).top, furnitureSectionHeight(c)));
+        if (model) wallHeight = Math.max(wallHeight, Math.min(furnitureModelBounds(f, model, catalog[f.type]?.elevation).top, furnitureSectionHeight(c)));
       }
     }
     return {
@@ -1510,7 +1510,7 @@ export class FloorplanCard extends LitElement {
         let focus: SVGTemplateResult | undefined;
         if (keyboard) {
           const model = catalog[f.type]!.model3d!;
-          const height = Math.min(furnitureModelBounds(f, model, baseWallHeight, catalog[f.type]?.elevation).top, sectionHeight);
+          const height = Math.min(furnitureModelBounds(f, model, catalog[f.type]?.elevation).top, sectionHeight);
           const footprint = furnitureSolid(f, map, height, furnitureTone(f)).base;
           const xs = footprint.map(p => p.x - height), ys = footprint.map(p => p.y - height);
           focus = svg`<rect class="fp-furniture-focus" aria-hidden="true"
@@ -1846,7 +1846,7 @@ export class FloorplanCard extends LitElement {
     const at = rotatePlanPoint(f.x, f.y, c.width, c.height, rot);
     const symbol = symbolCatalog(c.symbols)[f.type];
     const model = c.furniture3d === true ? symbol?.model3d : undefined;
-    const bounds = model ? furnitureModelBounds(f, model, normalizeWallHeight(c.wallHeight), symbol?.elevation) : undefined;
+    const bounds = model ? furnitureModelBounds(f, model, symbol?.elevation) : undefined;
     if (bounds && (bounds.height <= 0 || bounds.bottom >= furnitureSectionHeight(c))) return nothing;
     const height = model ? Math.min(bounds!.top, furnitureSectionHeight(c))
       : normalizeWallHeight(c.wallHeight) * FURNITURE_HEIGHT_FRACTION;

@@ -142,6 +142,27 @@ describe("live view controls", () => {
     }
   });
 
+  it("moves a device label with its badge and caps both at the wall cut", async () => {
+    const t = await mount();
+    Object.assign(t.floor.items[0], { name: "Ceiling light", showName: true, labelPosition: "below" });
+    const positions = [];
+    for (const height of [0, 80, 240]) {
+      t.floor.items[0].elevation = { from: height };
+      t.card.setConfig({ ...t.config });
+      await t.card.updateComplete;
+      const item = t.root.querySelector('.fp-item[data-id="lamp"]')!;
+      const badge = item.querySelector(".badge")!.getBoundingClientRect();
+      const label = item.querySelector(".label")!.getBoundingClientRect();
+      expect(label.height).toBeGreaterThan(0);
+      positions.push({ badge: badge.y, label: label.y });
+    }
+    const scale = t.root.querySelector<SVGSVGElement>(".plan-zoom > svg")!.getScreenCTM()!.d;
+    for (const [i, offset] of [[1, 80], [2, 100]]) {
+      expect(positions[0].badge - positions[i].badge).toBeCloseTo(offset * scale, 1);
+      expect(positions[0].label - positions[i].label).toBeCloseTo(offset * scale, 1);
+    }
+  });
+
   it("preserves viewer choices across unrelated config updates and resets to the saved defaults", async () => {
     const t = await mount({rotation:90});
     await t.click("2D plan");
