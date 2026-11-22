@@ -16,10 +16,10 @@ and control your home in 2D or 3D.
 
 <a name="what-you-can-end-up-with"></a>
 
-https://github.com/user-attachments/assets/c743c15d-07de-4f5f-9727-3b24b101c7c6
+https://github.com/user-attachments/assets/ee1d5fb9-e40e-43af-a748-70698e2e455e
 
-20-second overview: draw walls and doors, connect a Home Assistant entity,
-control lights, and view the plan in 3D.
+22-second overview: draw walls and doors, connect a Home Assistant entity,
+control lights, follow the sun from day to night, and view the plan in 3D.
 
 ## Features
 
