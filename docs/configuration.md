@@ -334,6 +334,7 @@ swing.
 | `glowDirection` | number                               | `0`          | Which way a spot's cone points, in degrees measured on the plan like `rippleDirection`: `0` straight up, `90` to the right. |
 | `badgeContent` | `icon` \| `value` \| `none`           | `icon`       | What the badge holds. `value` draws the reading inside it, falling back to the icon when there is no number; `none` leaves the label alone. |
 | `badgeEntity` | `primary` \| number                    | automatic    | Which reading a `value` badge shows: the device's own entity, or an index into `readings`. Unset picks the first with a number; set, only that one is read (an index past the end shows the icon). `secondary` is accepted as the legacy spelling of `0`. |
+| `badgeDecimals` | number \| `auto`                    | rounded      | Decimals in a `value` badge. Unset rounds as always: one decimal below 10, whole numbers above (`18°`). `0`–`3` prints exactly that many on any reading (`1` → `18.4°`, `18.0°`; a plug at 1240 W → `1.2kW`). `auto` follows the entity's display precision from Home Assistant, where HA exposes one, when the badge reads an entity's state (a sensor, or a reading picked with `badgeEntity`); attribute readings, such as a thermostat's own temperature, keep the default rounding. The unit stays compact. More digits mean smaller text. |
 | `fill`        | boolean \| `{ min?, max? }`            | —            | Fill an icon badge from the bottom in proportion to the reading (issue #421). `true` reads 0–100; `min`/`max` set another range (defaults 0 and 100). Reads `attribute` when set, else the state, clamped to the range; no number draws the plain icon. Ignored on `value` and `none` badges. See [Devices](elements.md#devices). |
 | `showIcon`    | boolean                                | `true`       | **Deprecated** — use `badgeContent`. Honoured only when it is unset (`false` = `none`). |
 | `hideWhenInactive` | boolean                           | `false`      | Hide on the card while the entity is inactive. Always shown, dimmed, in the editor. |
@@ -885,6 +886,22 @@ whichever it likes:
 ```
 
 `badgeEntity: secondary` still works and means index `0`.
+
+A thermostat that should show tenths reads them off its temperature sensor, or rounds its
+own reading to a fixed count:
+
+```yaml
+  - id: hall_thermostat
+    entity: climate.hall
+    kind: climate
+    badgeContent: value
+    badgeEntity: 0            # the first reading below
+    badgeDecimals: auto       # that sensor's display precision: 18.4°
+    readings:
+      - { entity: sensor.hall_temperature, showState: false }
+```
+
+`badgeDecimals: 1` on the thermostat alone shows its `current_temperature` as `18.4°` too.
 
 > **Upgrading?** One behaviour changed with the merge. `secondaryEntity` used to be part of
 > the state line, so it only showed while **Show state** was on — which is off by default
