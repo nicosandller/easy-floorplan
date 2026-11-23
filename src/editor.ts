@@ -8791,7 +8791,7 @@ export class FloorplanCardEditor extends LitElement {
                 this._config.overlayScale,
                 badgeFillFraction({ fill: true }, itemRawValue(it, it.entity ? this.hass?.states[it.entity] : undefined)) !== undefined
               ),
-              ["badgeMode", "badgeEntity", "fill", "fillMin", "fillMax"]
+              ["badgeMode", "badgeEntity", "badgeDecimals", "fill", "fillMin", "fillMax"]
             ),
             apply
           )
