@@ -174,6 +174,7 @@ export function openingSolids(
       pane(-half, 2, half, 2, paint, z0 + (z1 - z0) * a, z1, false);
     }
   }
+  for (const solid of out) if (solid.kind === "panel") solid.frameColor = cssColor(o.frameColor);
   return out;
 }
 
@@ -256,5 +257,6 @@ function skylightSolids(
   out.push({ kind: "panel", id: o.id, base, z0: height, z1: freeZ,
     color: tone(amount, style.active), glazed: openingIsGlazed(o),
     vertices: [{ ...hingeA, z: height }, { ...hingeB, z: height }, { ...freeB, z: freeZ }, { ...freeA, z: freeZ }] });
+  for (const solid of out) if (solid.kind === "panel") solid.frameColor = cssColor(o.frameColor);
   return out;
 }

@@ -18,3 +18,9 @@ it('edits count, proportions and materials without changing opening controls',()
  expect(f.toPatch({doorPanel1Material:'solid',doorPanel0Height:2})).toEqual({panels:[{height:2,material:'solid'},{height:1,material:'solid'}]});
  expect(f.toPatch({doorPanelCount:0})).toEqual({panels:undefined});
 });
+
+it('keeps frame color separate from glass and rejects unsafe CSS',()=>{
+ const draw=(frameColor:string)=>openingSolids({...door,frameColor},{color:'#555',amount:1},(x,y)=>({x,y}),100).filter(p=>p.kind==='panel');
+ expect(draw('#805020').every(p=>p.frameColor==='#805020')).toBe(true);
+ expect(draw('red; display:none').every(p=>p.frameColor===undefined)).toBe(true);
+});

@@ -35,3 +35,7 @@ moving sash; vertical movement is visible in 3D. Existing windows without
 `panes` retain their previous rendering. Pane count and individual settings
 are available under Shape in the editor. Tap actions remain on the window;
 separate pane controls can be added as device badges.
+
+## Frame color
+
+Set `frameColor` on a window or door to color its 3D frame and glazing bars, for example `frameColor: "#805020"`. The editor exposes **Frame and glazing bars** under Color. Clearing it restores the light default. Glass and solid infill keep their own state colors.

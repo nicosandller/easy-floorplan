@@ -443,6 +443,8 @@ export interface Opening {
    * separately, so a pair with one sash open and one shut shows both colours.
    */
   inactiveColor?: string;
+  /** Frame and glazing-bar color in the 3D view. */
+  frameColor?: string;
   /**
    * Mirror the symbol left↔right in the opening's local frame. For a swing door
    * this moves the hinge to the other jamb; for a slider it reverses the slide
