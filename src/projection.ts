@@ -262,6 +262,7 @@ export interface IsoSolid {
   /** Explicit raised corners for a tilted opening panel or 3D roof face. */
   vertices?: Array<Pt & { z: number }>;
   glazed?: boolean;
+  framed?: boolean;
   /** Translucent material for an optional furniture model part. */
   glass?: boolean;
   /** Adjacent wall chunks share these faces; drawing them shows ribs through transparency. */
@@ -1146,7 +1147,7 @@ export function renderIsoSolid(s: IsoSolid): SVGTemplateResult {
     const outline = points(s.vertices
       ? s.vertices.map((p) => elevate(p, p.z))
       : [elevate(a, s.z0), elevate(b, s.z0), elevate(b, s.z1), elevate(a, s.z1)]);
-    return svg`${s.kind === "panel" && s.glazed ? svg`<polygon class="fp-iso-window-frame" data-id=${id}
+    return svg`${s.kind === "panel" && (s.glazed || s.framed) ? svg`<polygon class="fp-iso-window-frame" data-id=${id}
       points=${outline} fill="none" stroke="var(--fp-window-frame-color, #e2e8ed)" stroke-width="5"
       stroke-linejoin="round" vector-effect="non-scaling-stroke" pointer-events="none" />` : nothing}
       <polygon class=${`fp-iso-${s.kind}${s.glazed ? " fp-iso-glazed" : ""}`} data-id=${id}

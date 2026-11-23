@@ -365,6 +365,8 @@ export interface Opening {
   openingHeight?: number;
   /** Window – Multipane: full-width panes ordered from bottom to top. */
   panes?: WindowPane[];
+  /** Door infill, bottom to top. The whole leaf moves together. */
+  panels?: { height?: number; material?: "glass" | "solid" }[];
   /**
    * Optional entity (e.g. a contact `binary_sensor` or a `cover`) whose state
    * drives whether the opening is drawn open or closed. When unset, doors are

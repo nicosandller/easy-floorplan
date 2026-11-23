@@ -451,6 +451,12 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         { name: `pane${i}Invert`, label: `${label}: invert`, selector: { boolean: {} } });
     });
   }
+  if (o.type === "door") {
+    fields.push({ name: "doorPanelCount", label: "Door panels (bottom to top)", selector: { number: { min: 0, max: 8, step: 1, mode: "box" } } });
+    (o.panels ?? []).slice(0, 8).forEach((_p, i) => fields.push(
+      { name: `doorPanel${i}Height`, label: `Panel ${i + 1}: relative height`, selector: { number: { min: 0.01, mode: "box" } } },
+      { name: `doorPanel${i}Material`, label: `Panel ${i + 1}: material`, selector: dropdown(opt("solid", "Solid infill"), opt("glass", "Glass")) }));
+  }
   // Leaf count, for anything hinged. Offered on doors too: a double door is
   // as ordinary as a double casement, and was previously undrawable — every
   // door came out as one leaf spanning the whole opening, however wide.
@@ -837,6 +843,8 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
       sill: openingSill(o),
       openingHeight: o.openingHeight,
       paneCount: windowPanes(o).length,
+      doorPanelCount: o.panels?.length ?? 0,
+      ...Object.fromEntries((o.panels ?? []).slice(0, 8).flatMap((p, i) => [[`doorPanel${i}Height`, p.height ?? 1], [`doorPanel${i}Material`, p.material ?? "solid"]])),
       ...Object.fromEntries(windowPanes(o).flatMap((p, i) => [
         [`pane${i}Height`, p.height], [`pane${i}Motion`, p.motion],
         [`pane${i}Entity`, p.entity ?? ""], [`pane${i}Invert`, p.invert ?? false],
@@ -872,6 +880,7 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
     toPatch(patch) {
       const out: Record<string, unknown> = {};
       for (const [k, v] of Object.entries(patch)) {
+        if (k === "doorPanelCount" || /^doorPanel\d+(Height|Material)$/.test(k)) continue;
         if (k === "paneCount" || /^pane\d+(Height|Motion|Entity|Invert)$/.test(k)) continue;
         if (k === "openingHeight") {
           out.openingHeight = typeof v === "number" && Number.isFinite(v) && v > 0 ? v : undefined;
@@ -1082,6 +1091,15 @@ export function openingForm(o: Opening, featuresOf: (entityId: string) => number
         }
         else out[k] = v;
       }
+      if (Object.keys(patch).some(k => k === "doorPanelCount" || /^doorPanel\d+(Height|Material)$/.test(k))) {
+        const n = typeof patch.doorPanelCount === "number" && Number.isFinite(patch.doorPanelCount) ? Math.max(0, Math.min(8, Math.round(patch.doorPanelCount))) : o.panels?.length ?? 0;
+        out.panels = n ? Array.from({ length: n }, (_, i) => {
+          const height = patch[`doorPanel${i}Height`] ?? o.panels?.[i]?.height ?? 1;
+          const material = patch[`doorPanel${i}Material`] ?? o.panels?.[i]?.material;
+          return { height: typeof height === "number" && Number.isFinite(height) && height > 0 ? height : 1, material: material === "glass" ? "glass" : "solid" };
+        }) : undefined;
+      }
+      if ("type" in out && out.type !== "door") out.panels = undefined;
       if (Object.keys(patch).some((k) => k === "paneCount" || /^pane\d+(Height|Motion|Entity|Invert)$/.test(k))) {
         const previous = windowPanes(o);
         const raw = patch.paneCount;

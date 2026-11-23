@@ -43,7 +43,18 @@ export function openingSolids(
     paint = color, bottom = z0, top = z1, glass = glazed,
   ) => {
     if (top <= bottom) return;
-    out.push({ kind: "panel", id: o.id, base: [at(x1, y1), at(x2, y2)], z0: bottom, z1: top, color: paint, glazed: glass });
+    const panels = o.type === "door" && Array.isArray(o.panels) ? o.panels.slice(0, 8) : [];
+    if (panels.length && glass === glazed) {
+      const weights = panels.map(p => typeof p?.height === "number" && Number.isFinite(p.height) && p.height > 0 ? p.height : 1);
+      const total = weights.reduce((a, b) => a + b, 0);
+      let z = bottom;
+      panels.forEach((p, i) => {
+        const next = z + (top - bottom) * weights[i] / total;
+        out.push({ kind: "panel", id: o.id, base: [at(x1, y1), at(x2, y2)], z0: z, z1: next,
+          color: paint, glazed: p?.material === "glass", framed: true });
+        z = next;
+      });
+    } else out.push({ kind: "panel", id: o.id, base: [at(x1, y1), at(x2, y2)], z0: bottom, z1: top, color: paint, glazed: glass });
   };
   const swing = (left: number, right: number, width: number, a: number, b: number,
     paint = color, paint2 = color2, side = -1, glass = glazed, offset = 0) => {
