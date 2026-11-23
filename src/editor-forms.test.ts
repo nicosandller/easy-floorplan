@@ -998,7 +998,7 @@ describe("itemForm", () => {
     it("sits after the reading choice and before the size", () => {
       const fields = itemBadgeForm({ ...thermostat, secondaryEntity: "sensor.t" } as FloorItem)
         .fields.map((f) => f.name);
-      expect(fields).toEqual(["badgeMode", "badgeEntity", "badgeDecimals", "size", "angle"]);
+      expect(fields).toEqual(["badgeMode", "badgeEntity", "badgeDecimals", "elevationFrom", "size", "angle"]);
     });
 
     it("offers the default, the entity's precision and 0..3", () => {
