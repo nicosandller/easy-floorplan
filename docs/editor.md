@@ -1,7 +1,8 @@
 # Editing a floorplan
 
 Back to the [README](../README.md). Start with [your first plan](../README.md#create-your-first-plan),
-then use the [element guide](elements.md) for individual controls. The
+then the [editor tasks](editor-tasks.md) for the five things you do most often. The
+[element guide](elements.md) covers individual controls; the
 [editor workspace guide](editor-workspace.md) shows the tools, inspector and phone layouts.
 
 The visual editor lets you draw walls, place openings, move elements, nudge them with

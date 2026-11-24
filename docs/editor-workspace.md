@@ -6,6 +6,9 @@ shows labeled tabs for the remaining settings: Sensors or Readings, Style,
 Actions and Visibility, as applicable to that object. **Project** opens the plan's
 six settings destinations: Plan, Style, View, Lighting, Devices and Symbols.
 
+For the tasks themselves — drawing a wall, placing a door, binding a sensor — see
+[editor tasks](editor-tasks.md).
+
 ![Desktop tools, fitted plan and selected stair properties](img/editor-workspace-preview.jpg)
 
 The desktop screenshot shows the same sample home and selected stairs as the

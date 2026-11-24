@@ -118,7 +118,8 @@ editor and locking finished elements in place.
 
 | Guide | What it covers |
 | --- | --- |
-| <a name="locking-elements-in-place"></a>[Editor](docs/editor.md) | Applying changes and locking elements in place. |
+| [Editor tasks](docs/editor-tasks.md) | Five walkthroughs: draw walls, place a door or window, bind a sensor, make a light glow, add a floor. |
+| <a name="locking-elements-in-place"></a>[Editor](docs/editor.md) | Applying changes, plan check and locking elements in place. |
 | [Editor workspace](docs/editor-workspace.md) | Drawing tools, settings tabs, zoom and phone layouts, with screenshots. |
 | <a name="elements"></a><a name="devices"></a><a name="animations"></a><a name="press-feedback"></a><a name="doors-windows-skylights--passages"></a><a name="areas"></a><a name="live-position-trackers"></a><a name="presence-ripples"></a><a name="fans"></a>[Elements and controls](docs/elements.md) | Devices, openings, rooms, trackers and animations, with examples. |
 | <a name="configuration-reference"></a><a name="more-readings-per-device"></a>[Configuration](docs/configuration.md) | YAML keys, defaults, coordinates and a complete example. |
