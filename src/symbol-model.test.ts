@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { normalizeModel } from "./symbol-model";
+import { normalizeModel, furnitureModelBounds } from "./symbol-model";
 import { BUILTIN_SYMBOLS, normalizeSymbol } from "./symbols";
 import { furnitureModelSolids } from "./projection";
 const size = { width: 60, depth: 60, height: 180 };
 const model = (parts: unknown[]) => ({ version: 1, units: "cm", size, parts });
 const box = { box: [3, 30, 180] };
+it("interprets legacy fractional symbol offsets as absolute units for detailed models", () => {
+  const symbol = normalizeSymbol({ id: "legacy", parts: [{ rect: [0, 0, 100, 100] }],
+    model3d: model([box]), elevation: { from: 0.2, to: 0.8 } })!;
+  expect(furnitureModelBounds({}, symbol.model3d!, symbol.elevation)).toEqual({ bottom: 0.2, height: 180, top: 180.2 });
+  expect(furnitureModelBounds({ elevation: { from: 0 } }, symbol.model3d!, symbol.elevation).bottom).toBe(0);
+  expect(symbol.elevation).toEqual({ from: 0.2, to: 0.8 });
+});
 
 describe("optional 3D furniture", () => {
   it("validates every shipped model, with bounded geometry", () => {

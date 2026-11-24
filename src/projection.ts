@@ -1,4 +1,3 @@
-
 import { furnitureModelBounds } from "./symbol-model";
 /**
  * The isometric view (issue #261).
@@ -558,7 +557,7 @@ export function furnitureModelSolids(
   placement?: { wallHeight: number; elevation?: { from: number; to?: number } }
 ): IsoSolid[] {
   const angle = (f.angle ?? 0) * Math.PI / 180, c = Math.cos(angle), s = Math.sin(angle);
-  const { bottom, height } = furnitureModelBounds(f, model, placement?.wallHeight ?? sectionHeight, placement?.elevation);
+  const { bottom, height } = furnitureModelBounds(f, model, placement?.elevation);
   if (height <= 0 || bottom >= sectionHeight) return [];
   const scaleZ = height / model.size.height;
   return model.parts.filter(part => bottom + part.z0 * scaleZ < sectionHeight).map(part => ({

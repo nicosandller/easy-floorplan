@@ -39,3 +39,21 @@ separate pane controls can be added as device badges.
 ## Frame color
 
 Set `frameColor` on a window or door to color its 3D frame and glazing bars, for example `frameColor: "#805020"`. The editor exposes **Frame and glazing bars** under Color. Clearing it restores the light default. Glass and solid infill keep their own state colors.
+
+## Door infill
+
+Doors use `panels`, ordered bottom to top. Each panel has a positive relative
+`height` (default 1) and `material: glass` or `solid` (default solid). Set the
+count, proportions and materials under Shape in the editor. All panels move
+together with the door leaf; double doors repeat the layout on each leaf.
+
+```yaml
+type: door
+panels:
+  - { height: 1, material: solid }
+  - { height: 1, material: glass }
+  - { height: 1, material: glass }
+```
+
+Use two equal panels for a solid lower half and glazed upper half. Omit
+`panels` to keep the existing whole-leaf appearance. No migration is required.

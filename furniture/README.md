@@ -242,6 +242,13 @@ the floor. Accepted offsets are finite numbers from 0 to 10000; omitted means 0.
 The model retains its authored height unless the placed furniture sets `height3d`.
 `elevation.to` is preserved when supplied, but is not used for detailed models.
 
+Compatibility note: a custom symbol with both `model3d` and a legacy fractional
+`elevation: { from: 0.2, to: 0.8 }` previously rendered its detailed model on the
+floor. It now uses an absolute bottom offset of **0.2 canvas units**, not 20% of
+the wall height. This is intentional: detailed models always use absolute mounting
+heights. Set `from: 0` (or a per-piece override of zero) to keep such a model on the
+floor. The fractional interval still applies to its block-rendering fallback.
+
 For example, a 70-high TV with `elevation: { from: 100 }` spans 100–170.
 Setting `height3d: 80` changes its top to 180 without moving its bottom.
 A separate cut at 130 clips it at 130; a cut at 100 hides it completely.
@@ -254,15 +261,5 @@ fallback. The 2D drawing remains unchanged.
 
 ### Per-piece mounting height
 
-A furniture entry can set `elevation: { from: 100 }` to place its detailed model
-100 canvas units above the floor. The editor calls this **Height above floor**.
-The placed value overrides the symbol's `elevation.from`, which defaults to zero.
-Zero explicitly places the piece on the floor; clearing the field restores the
-symbol default. `height3d` remains the piece's independent physical height.
-`elevation.to` is preserved but ignored for detailed rendering.
-
-```yaml
-furniture:
-  - { id: tv_living, type: tv, x: 400, "y": 300, w: 120, h: 10, elevation: { from: 100 } }
-  - { id: tv_bedroom, type: tv, x: 800, "y": 300, w: 90, h: 10, elevation: { from: 140 } }
-```
+See [Per-piece mounting height](../docs/configuration.md#per-piece-mounting-height)
+for instance overrides and editor settings.

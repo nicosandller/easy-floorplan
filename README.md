@@ -23,6 +23,8 @@ control lights, follow the sun from day to night, and view the plan in 3D.
 
 ## Features
 
+- **Multipane windows and doors** — stack window panes with independent opening motions, or combine glass and solid door panels. Choose proportions and frame colors. See [Multipane configuration](docs/window-multipane.md).
+
 - **Trace a plan** — load a PDF or image in the editor, calibrate its scale and trace walls over it. See [Tracing over an existing plan](docs/editor.md#tracing-over-an-existing-plan).
 
 - **Visual editing** — draw walls, snap doors and windows into place, and arrange
@@ -53,7 +55,7 @@ control lights, follow the sun from day to night, and view the plan in 3D.
   action icon marks it, or set `showIcon: false` to make the drawing itself the
   button. See [actions on furniture](docs/behavior.md#actions-on-furniture).
 - **2D and 3D views** — display the same plan flat or with raised walls and furniture.
-- **[3D furniture models](docs/appearance.md#detailed-3d-furniture)** — 35 opt-in detailed furniture models in the isometric view (`furniture3d`), with an optional separate furniture cut height.
+- **[3D furniture models](docs/appearance.md#detailed-3d-furniture)** — 35 opt-in detailed furniture models in the isometric view (`furniture3d`), with [per-piece mounting height](docs/configuration.md#per-piece-mounting-height) and an optional separate furniture cut height.
 - **Window sill height** — draw floor-to-ceiling or high windows in 3D with `sill`. See [Configuration](docs/configuration.md#opening-door--window--skylight--passage).
 - **Tilt-and-turn windows** — tell tilted from swung open with a second sensor (`tiltEntity`). See [Tilt-and-turn windows](docs/configuration.md#tilt-and-turn-windows).
 - **Outdoor courtyard & 3D stacked house** — exterior view of the entire house stacking all levels at physical elevations, with ground slabs and 3D roofs.
