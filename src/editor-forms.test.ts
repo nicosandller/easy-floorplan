@@ -1,4 +1,13 @@
 import { describe, it, expect } from "vitest";
+it("edits badge mounting height without changing its plan position", () => {
+  const form = itemBadgeForm({ id: "lamp", entity: "light.lamp", kind: "light", x: 20, y: 30, elevation: { from: 80 } });
+  expect(form.data.elevationFrom).toBe(80);
+  expect(form.toPatch!({ elevationFrom: 130 })).toEqual({ elevation: { from: 130 } });
+  expect(form.toPatch!({ elevationFrom: 0 })).toEqual({ elevation: { from: 0 } });
+  for (const value of ["", -1, Infinity, NaN, 10001]) {
+    expect(form.toPatch!({ elevationFrom: value })).toEqual({ elevation: { from: undefined } });
+  }
+});
 import {
   isLiveField,
   diffFormValue,
@@ -555,7 +564,7 @@ describe("itemForm", () => {
       ["entity", "attribute"], // 2. What it reads…
       ["showState"], //         …including whether its own state shows
       ["labelPosition", "labelSize", "disableLabelColor"], // 3. Label
-      ["badgeMode", "size", "angle"], // 4. Badge
+      ["badgeMode", "elevationFrom", "size", "angle"], // 4. Badge
       // 5. Colour and the readings list are hand-rolled rows, not ha-form
       //    fields, so they do not appear here — the editor slots them into
       //    their groups.
@@ -989,7 +998,7 @@ describe("itemForm", () => {
     it("sits after the reading choice and before the size", () => {
       const fields = itemBadgeForm({ ...thermostat, secondaryEntity: "sensor.t" } as FloorItem)
         .fields.map((f) => f.name);
-      expect(fields).toEqual(["badgeMode", "badgeEntity", "badgeDecimals", "size", "angle"]);
+      expect(fields).toEqual(["badgeMode", "badgeEntity", "badgeDecimals", "elevationFrom", "size", "angle"]);
     });
 
     it("offers the default, the entity's precision and 0..3", () => {
@@ -2460,7 +2469,7 @@ describe("every field lands in exactly one panel group", () => {
     ["tapTarget", "tap_action", "hold_action", "double_tap_action"],
   ];
   const FURNITURE_GROUPS = [
-    ["type", "hand", "w", "h", "height3d", "angle"],
+    ["type", "hand", "w", "h", "height3d", "elevationFrom", "angle"],
     ["entity", "invert"],
     ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"],
   ];
@@ -3195,6 +3204,13 @@ it("only offers 3D height for an enabled valid model without clearing saved heig
     expect(form.fields.some(f => f.name === "height3d")).toBe(visible);
     expect(form.data.height3d).toBe(75);
   }
+});
+
+it("edits a placed elevation while preserving its legacy top", () => {
+  const form = furnitureForm({ id: "tv", type: "tv", x: 0, y: 0, w: 90, h: 10, elevation: { from: 100, to: 0.8 } }, undefined, undefined, [], true);
+  expect(form.data.elevationFrom).toBe(100);
+  expect(form.toPatch!({ elevationFrom: 0 })).toEqual({ elevation: { from: 0, to: 0.8 } });
+  expect(form.toPatch!({ elevationFrom: "" })).toEqual({ elevation: { from: undefined, to: 0.8 } });
 });
 
 describe("zoom controls in the display form (issue #446)", () => {
