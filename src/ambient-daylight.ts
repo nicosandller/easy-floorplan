@@ -1,7 +1,7 @@
 import type { Area, AreaPoint, Opening } from "./types";
 import { SUN_ELEVATION_DAY, SUN_ELEVATION_NIGHT } from "./types";
 import { OPENING_ON_WALL_EPS, distToSegment } from "./dead-space";
-import { liveSunAttribute, openingGlassIsClear } from "./render";
+import { liveSunAttribute, openingGlassIsClear, pointInPolygon } from "./render";
 
 /**
  * Diffuse daylight geometry and the Area-only source-classification fallback.
@@ -92,20 +92,9 @@ function normalizedOptions(opts: AmbientDaylightOptions = {}) {
   };
 }
 
-/** Ray-cast point-in-polygon. Points on the edge are close enough for our sampling use. */
+/** {@link pointInPolygon} for an area, kept because callers and tests pass the area itself. */
 export function ambientPointInArea(area: Pick<Area, "points">, x: number, y: number): boolean {
-  const points = area.points;
-  if (points.length < 3) return false;
-  let inside = false;
-  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-    const a = points[i]!;
-    const b = points[j]!;
-    const crosses = a.y > y !== b.y > y;
-    if (!crosses) continue;
-    const xHit = ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x;
-    if (x < xHit) inside = !inside;
-  }
-  return inside;
+  return pointInPolygon(area.points, x, y);
 }
 
 /** Nearest boundary segment of an area to an opening centre. */

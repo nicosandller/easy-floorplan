@@ -41,7 +41,7 @@
 
 import type { AreaPoint, OutdoorZoneKind } from "./types";
 import { findSkin } from "./skins";
-import { outdoorZoneDefaultColor } from "./render";
+import { outdoorZoneDefaultColor, pointInPolygon } from "./render";
 import { distToSegment } from "./dead-space";
 
 export interface RoomTint {
@@ -139,16 +139,6 @@ function finitePoints(points: unknown): AreaPoint[] {
   );
 }
 
-function inside(points: readonly AreaPoint[], x: number, y: number): boolean {
-  let hit = false;
-  for (let i = 0, j = points.length - 1; i < points.length; j = i++) {
-    const a = points[i]!;
-    const b = points[j]!;
-    if (a.y > y !== b.y > y && x < ((b.x - a.x) * (y - a.y)) / (b.y - a.y) + a.x) hit = !hit;
-  }
-  return hit;
-}
-
 /**
  * Whether edge p→q and edge r→s run along each other: r and s both within
  * `gap` of the line through p→q, and their projections onto it overlapping by
@@ -215,7 +205,7 @@ export function areasAdjacent(
   // reads a boundary point either way.
   const deepIn = (poly: readonly AreaPoint[], pts: readonly AreaPoint[]) =>
     poly.length >= 3 &&
-    pts.some((p) => inside(poly, p.x, p.y) && distanceToRing(poly, p) > gap);
+    pts.some((p) => pointInPolygon(poly, p.x, p.y) && distanceToRing(poly, p) > gap);
   return deepIn(a, b) || deepIn(b, a);
 }
 
