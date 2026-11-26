@@ -222,6 +222,10 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
       if (it.hideStateEntity) ids.add(it.hideStateEntity);
       if (it.hideBadgeEntity) ids.add(it.hideBadgeEntity);
       for (const r of itemReadings(it)) if (r.entity) ids.add(r.entity);
+      // Visibility conditions (issue #407), same reason as furniture's below.
+      if (it.visibility) {
+        for (const ent of collectConditionEntities(it.visibility)) ids.add(ent);
+      }
     }
     // Entity-bound text (issue #225). Same trap as the furniture below and the
     // areas after it: miss this and the number is painted once and then frozen,

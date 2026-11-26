@@ -33,7 +33,7 @@ import type {
   FloorInfoPanelMetric,
   VisibilityCondition,
 } from "./types";
-import { isFurnitureVisible } from "./furniture-visibility";
+import { isFurnitureVisible, isItemVisible } from "./furniture-visibility";
 
 const EMPTY_VISIBILITY: VisibilityCondition[] = [];
 
@@ -4071,8 +4071,43 @@ export class FloorplanCardEditor extends LitElement {
    * (<ha-card-conditions-editor>) and real-time status indication (Issue #310).
    */
   private _renderFurnitureVisibility(f: Furniture): TemplateResult {
-    const hasConditions = Array.isArray(f.visibility) && f.visibility.length > 0;
-    const isVisible = isFurnitureVisible(f, this.hass);
+    return this._renderVisibilityConditions(
+      f.id,
+      f.visibility,
+      isFurnitureVisible(f, this.hass),
+      "Control when this piece appears on the floorplan. In the editor, hidden furniture is dimmed so it can still be moved or edited.",
+      (visibility) => this._updateFurniture(f.id, { visibility })
+    );
+  }
+
+  /**
+   * The same conditions editor for a device (issue #407). It sits under the
+   * older hide options; a device shows only when both allow it.
+   */
+  private _renderItemVisibility(it: FloorItem): TemplateResult {
+    // Set apart from the hide toggles above, or the status pill reads as theirs.
+    return html`
+      <div class="item-visibility-conditions">
+        <div class="visibility-subtitle">Card conditions</div>
+        ${this._renderVisibilityConditions(
+          it.id,
+          it.visibility,
+          isItemVisible(it, this.hass),
+          "Show or hide this device using Home Assistant's card conditions (state, screen size, user, time, location). In the editor, hidden devices are dimmed so they can still be moved or edited.",
+          (visibility) => this._updateItem(it.id, { visibility })
+        )}
+      </div>
+    `;
+  }
+
+  private _renderVisibilityConditions(
+    id: string,
+    visibility: VisibilityCondition[] | undefined,
+    isVisible: boolean,
+    hint: string,
+    commit: (visibility: VisibilityCondition[] | undefined) => void
+  ): TemplateResult {
+    const hasConditions = Array.isArray(visibility) && visibility.length > 0;
 
     let statusText: string;
     let statusClass: string;
@@ -4092,9 +4127,9 @@ export class FloorplanCardEditor extends LitElement {
       statusIcon = "mdi:eye-off-outline";
     }
 
-    const effectiveVisibility = f.visibility ?? EMPTY_VISIBILITY;
+    const effectiveVisibility = visibility ?? EMPTY_VISIBILITY;
     const conditions =
-      this._activeConditionsRef?.id === f.id &&
+      this._activeConditionsRef?.id === id &&
       configsEqual(this._activeConditionsRef.conditions, effectiveVisibility)
         ? this._activeConditionsRef.conditions
         : effectiveVisibility;
@@ -4107,19 +4142,17 @@ export class FloorplanCardEditor extends LitElement {
             <span>${statusText}</span>
           </span>
         </div>
-        <p class="hint">
-          Control when this piece appears on the floorplan. In the editor, hidden furniture is dimmed so it can still be moved or edited.
-        </p>
+        <p class="hint">${hint}</p>
         <ha-card-conditions-editor
           .hass=${this.hass}
           .conditions=${conditions}
           @value-changed=${(e: CustomEvent<{ value: VisibilityCondition[] }>) => {
             e.stopPropagation();
             const val = e.detail?.value;
-            const visibility = Array.isArray(val) && val.length > 0 ? val : undefined;
-            this._activeConditionsRef = { id: f.id, conditions: val ?? EMPTY_VISIBILITY };
-            if (configsEqual(visibility, f.visibility)) return;
-            this._updateFurniture(f.id, { visibility });
+            const next = Array.isArray(val) && val.length > 0 ? val : undefined;
+            this._activeConditionsRef = { id, conditions: val ?? EMPTY_VISIBILITY };
+            if (configsEqual(next, visibility)) return;
+            commit(next);
           }}
         ></ha-card-conditions-editor>
       </div>
@@ -7717,7 +7750,8 @@ export class FloorplanCardEditor extends LitElement {
     // "Only when active" devices are invisible on the card while idle (issue
     // #55). The editor must still show them — dimmed — or they could never be
     // found and edited again.
-    const hiddenOnCard = itemHiddenWhenInactive(it, st?.state, this.hass);
+    const hiddenOnCard =
+      itemHiddenWhenInactive(it, st?.state, this.hass) || !isItemVisible(it, this.hass);
     // An auto label shows the side this canvas measured for it (see
     // _syncAutoLabels), `below` until it has been measured.
     const position = labelPositionOf(it);
@@ -8848,7 +8882,7 @@ export class FloorplanCardEditor extends LitElement {
             )
           : nothing}
         ${this._renderGroup("Behavior", this._renderForm(itemBehaviourForm(it), apply))}
-        ${this._renderGroup("Visibility", this._renderForm(itemGroup7aForm(it), apply))}
+        ${this._renderGroup("Visibility", html`${this._renderForm(itemGroup7aForm(it), apply)}${this._renderItemVisibility(it)}`)}
       `;
     }
 
@@ -11357,6 +11391,15 @@ export class FloorplanCardEditor extends LitElement {
       display: flex;
       flex-direction: column;
       gap: 10px;
+    }
+    .item-visibility-conditions {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--divider-color, rgba(0, 0, 0, 0.12));
+    }
+    .visibility-subtitle {
+      font-weight: 500;
+      margin-bottom: 8px;
     }
     .visibility-status-row {
       display: flex;

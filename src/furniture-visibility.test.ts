@@ -9,6 +9,7 @@ import {
   hasTimeConditions,
   isEntityId,
   isFurnitureVisible,
+  isItemVisible,
   getUserPerson,
   resolveLocationZones,
   statesMatch,
@@ -1142,6 +1143,40 @@ describe("furniture-visibility", () => {
 
       const queries = collectConditionMediaQueries(config);
       expect(queries).toEqual(["(min-width: 1024px)"]);
+    });
+  });
+
+  describe("device visibility (issue #407)", () => {
+    const deviceConfig = (visibility: VisibilityCondition[]): FloorplanCardConfig =>
+      ({
+        type: "custom:easy-floorplan-card",
+        floors: [
+          {
+            id: "f1",
+            items: [{ id: "lamp", entity: "light.lamp", x: 0, y: 0, visibility }],
+            furniture: [],
+          },
+        ],
+      } as unknown as FloorplanCardConfig);
+
+    it("is visible with no conditions, or before hass arrives", () => {
+      expect(isItemVisible({}, mockHass({}))).toBe(true);
+      expect(isItemVisible({ visibility: [] }, mockHass({}))).toBe(true);
+      expect(isItemVisible({ visibility: [{ condition: "user", users: ["u1"] }] }, undefined)).toBe(true);
+    });
+
+    it("follows the same conditions as furniture", () => {
+      const visibility: VisibilityCondition[] = [{ condition: "user", users: ["u1"] }];
+      expect(isItemVisible({ visibility }, mockHass({}, "u1"))).toBe(true);
+      expect(isItemVisible({ visibility }, mockHass({}, "u2"))).toBe(false);
+    });
+
+    it("counts device conditions in the plan-wide scans", () => {
+      expect(collectConditionMediaQueries(deviceConfig([{ condition: "screen", media_query: "(max-width: 767px)" }])))
+        .toEqual(["(max-width: 767px)"]);
+      expect(hasTimeConditions(deviceConfig([{ condition: "time", after: "08:00" } as VisibilityCondition]))).toBe(true);
+      expect(hasLocationConditions(deviceConfig([{ condition: "location", target: { entity_id: "person.a" } } as unknown as VisibilityCondition]))).toBe(true);
+      expect(hasTimeConditions(deviceConfig([]))).toBe(false);
     });
   });
 });

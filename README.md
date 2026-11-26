@@ -47,6 +47,7 @@ control lights, follow the sun from day to night, and view the plan in 3D.
   plan around while zoomed, with a mouse or one finger (`zoomControls`). See
   [Zoom buttons and dragging](docs/appearance.md#zoom-buttons-and-dragging).
 - **Multiple floors** — switch between floors or navigate with a staircase.
+- **Conditional visibility** — show or hide devices and furniture with Home Assistant's card conditions (state, screen size, user, time, location), for example a simpler plan on a phone. See [Conditional device visibility](docs/behavior.md#conditional-device-visibility).
 - **Floor summaries** — aggregated floor badges (temp, humidity, presence, lights, windows) directly in the switcher.
 - **Spatial telemetry callouts** — floating HUD info-panels with SVG leader lines anchored to rooms, furniture, roofs or coordinates in 2D and 3D.
 - **Furniture actions** — give a piece a tap, hold or double-tap action. A round
