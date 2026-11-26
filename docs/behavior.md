@@ -495,3 +495,29 @@ If a referenced entity becomes `unavailable`, `unknown`, or is missing during a 
 
 In the visual editor, hidden furniture renders dimmed (`opacity: 0.35`, `.card-hidden`) rather than disappearing, ensuring it remains selectable, movable, and editable. The editor inspector features a dedicated **Visibility** category with a live preview pill (`Visible on floorplan`, `Hidden on floorplan`, or `Always visible`) and Home Assistant's native `<ha-card-conditions-editor>` condition builder.
 
+## Conditional device visibility
+
+Devices take the same `visibility` conditions as furniture (issue #407): state,
+numeric state, screen, user, time, location, and `and` / `or` / `not`. A device
+whose conditions fail drops off the card; in the editor it is dimmed so it stays
+selectable. Conditions that can't be evaluated fail open, as above.
+
+This sits beside the older [Advanced Hiding Logic](#advanced-hiding-logic): a
+device shows only when both allow it. Its glow and light strip are not affected,
+the same as with the older option.
+
+A phone-only simplification, for example:
+
+```yaml
+items:
+  - id: hall_motion
+    entity: binary_sensor.hall_motion
+    x: 320
+    'y': 140
+    visibility:
+      - condition: screen
+        media_query: "(min-width: 768px)"
+```
+
+In the editor the conditions builder is under **Visibility**, below the older
+hide options.

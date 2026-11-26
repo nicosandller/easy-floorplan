@@ -915,6 +915,13 @@ export interface FloorItem {
    * doorbell on the porch, a thermostat out in the hall.
    */
   area?: string;
+  /**
+   * Home Assistant card visibility conditions (issue #407), the same schema
+   * furniture uses (#310): the device is hidden on the card when any condition
+   * fails. Applies on top of the older `enableHideByEntity` option below.
+   * When omitted or empty, the device is always visible.
+   */
+  visibility?: VisibilityCondition[];
   // --- Extended hide logic for the entire item (Whole-Item) ---
   enableHideByEntity?: boolean;
   hideEntity?: string;

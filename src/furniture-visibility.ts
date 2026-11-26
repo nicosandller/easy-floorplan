@@ -15,6 +15,7 @@
 
 import {
   getFloors,
+  type FloorItem,
   type FloorplanCardConfig,
   type Furniture,
   type HomeAssistant,
@@ -750,6 +751,29 @@ export function isFurnitureVisible(
 }
 
 /**
+ * Determines whether a device is visible according to its configured conditions
+ * (issue #407). Same rules as furniture; the older hide options are separate.
+ */
+export function isItemVisible(
+  it: Pick<FloorItem, "visibility">,
+  hass?: HomeAssistant | RenderHass
+): boolean {
+  if (!it.visibility || it.visibility.length === 0) return true;
+  if (!hass) return true;
+  return evaluateConditions(it.visibility, hass);
+}
+
+/** Every visibility rule list on the plan: furniture and devices, all floors. */
+function allVisibilityLists(config: FloorplanCardConfig): (VisibilityCondition[] | undefined)[] {
+  const lists: (VisibilityCondition[] | undefined)[] = [];
+  for (const floor of getFloors(config)) {
+    for (const f of floor.furniture ?? []) lists.push(f.visibility);
+    for (const it of floor.items ?? []) lists.push(it.visibility);
+  }
+  return lists;
+}
+
+/**
  * Checks whether a conditions list recursively contains a specific condition type.
  */
 export function hasConditionType(
@@ -771,29 +795,19 @@ export function hasConditionType(
 }
 
 /**
- * Checks whether any furniture visibility rules across the floorplan reference time conditions.
+ * Checks whether any furniture or device visibility rules across the floorplan reference time conditions.
  */
 export function hasTimeConditions(config?: FloorplanCardConfig): boolean {
   if (!config) return false;
-  for (const floor of getFloors(config)) {
-    for (const f of floor.furniture ?? []) {
-      if (hasConditionType(f.visibility, "time")) return true;
-    }
-  }
-  return false;
+  return allVisibilityLists(config).some((v) => hasConditionType(v, "time"));
 }
 
 /**
- * Checks whether any furniture visibility rules across the floorplan reference location conditions.
+ * Checks whether any furniture or device visibility rules across the floorplan reference location conditions.
  */
 export function hasLocationConditions(config?: FloorplanCardConfig): boolean {
   if (!config) return false;
-  for (const floor of getFloors(config)) {
-    for (const f of floor.furniture ?? []) {
-      if (hasConditionType(f.visibility, "location")) return true;
-    }
-  }
-  return false;
+  return allVisibilityLists(config).some((v) => hasConditionType(v, "location"));
 }
 
 /**
@@ -850,7 +864,6 @@ export function collectConditionEntities(
  */
 export function collectConditionMediaQueries(config: FloorplanCardConfig): string[] {
   const queries: string[] = [];
-  const floors = getFloors(config);
 
   const walk = (c: unknown) => {
     if (!c || typeof c !== "object") return;
@@ -865,12 +878,8 @@ export function collectConditionMediaQueries(config: FloorplanCardConfig): strin
     if (Array.isArray(cond.not)) for (const nested of cond.not) walk(nested);
   };
 
-  for (const floor of floors) {
-    for (const f of floor.furniture ?? []) {
-      for (const cond of f.visibility ?? []) {
-        walk(cond);
-      }
-    }
+  for (const list of allVisibilityLists(config)) {
+    for (const cond of list ?? []) walk(cond);
   }
 
   return queries;

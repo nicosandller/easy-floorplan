@@ -266,6 +266,7 @@ import { ReplayControllerImpl } from "./replay-history/replay-controller";
 import { createReplayPanelProps, renderReplayPanel } from "./replay-history/replay-panel";
 import {
   isFurnitureVisible,
+  isItemVisible,
   collectConditionMediaQueries,
   hasLocationConditions,
   hasTimeConditions,
@@ -3390,7 +3391,8 @@ export class FloorplanCard extends LitElement {
           // entity still deserve their badge (issue #39). Keyed by id so a
           // floor switch builds fresh DOM (see the openings comment).
           // "Only when active" devices drop out here (issue #55), and so do
-          // the ones that only show inside their own room (#222) — the
+          // the ones that only show inside their own room (#222) or whose
+          // visibility conditions fail (#407) — the
           // editor still draws them, dimmed, so they stay editable.
           active.items.filter(
             (it) =>
@@ -3399,6 +3401,7 @@ export class FloorplanCard extends LitElement {
                 it.entity ? renderHass?.states[it.entity]?.state : undefined,
                 renderHass
               ) && !itemHiddenUntilZoomed(it, zoomedArea)
+              && isItemVisible(it, effHass)
           ),
           (it, i) => it.id || i,
           (it) => this._renderItem(it, c, rot, scale, renderHass)
