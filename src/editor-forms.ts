@@ -1,4 +1,4 @@
-import { normalizeHeight3d } from "./symbol-model";
+import { normalizeHeight3d, normalizeElevationFrom } from "./symbol-model";
 /**
  * Schema-driven form definitions for the editor: one `FormSpec` per element
  * kind, rendered either through HA's `<ha-form>` (native selectors) or the
@@ -81,6 +81,7 @@ import {
   labelPositionOf,
   itemReadings,
   badgeEntityIndex,
+  badgeDecimalsOf,
   offlineStyleOf,
   sliderStyleOf,
   shutterStyleOf,
@@ -1483,6 +1484,23 @@ export function itemBadgeForm(
       ),
     });
   }
+  // How the number is rounded (issue #452) — only while there is a number.
+  if (badgeModeOf(it) === "value") {
+    fields.push({
+      name: "badgeDecimals",
+      label: "Badge decimals",
+      helper:
+        "Entity's precision follows the display precision set in Home Assistant, for readings of an entity's state",
+      selector: dropdown(
+        opt("default", "Rounded (default)"),
+        opt("auto", "Entity's precision"),
+        opt("0", "0"),
+        opt("1", "1"),
+        opt("2", "2"),
+        opt("3", "3")
+      ),
+    });
+  }
   // The icon fill (issue #421): an icon badge only, since a value badge already
   // shows the number and a badge showing nothing has no glyph to fill.
   const fillRange = badgeFillRange(it.fill);
@@ -1500,6 +1518,12 @@ export function itemBadgeForm(
       );
   }
   fields.push(
+    {
+      name: "elevationFrom",
+      label: "Height above floor",
+      helper: "Badge height in canvas units in isometric view, displayed no higher than the wall cut. Leave empty for floor level. The 2D position and floor lighting stay unchanged.",
+      selector: { number: { min: 0, max: 10000, step: 1, mode: "box" } },
+    },
     {
       name: "size",
       label: "Size",
@@ -1520,7 +1544,11 @@ export function itemBadgeForm(
       // a number. Opens on what the badge is *actually* reading when nothing
       // is chosen, which is the whole point of badgeSource (issue #136).
       badgeEntity: String(badgeEntityIndex(it.badgeEntity) ?? badgeSource?.source ?? "primary"),
+      // A value the dropdown does not offer (hand-written YAML) is one the
+      // badge ignores too, so it opens on what is actually drawn.
+      badgeDecimals: String(badgeDecimalsOf(it.badgeDecimals) ?? "default"),
       size: it.size ?? DEFAULT_ITEM_SIZE,
+      elevationFrom: it.elevation?.from,
       angle: it.angle ?? 0,
     },
     // "Badge shows" is the editor's spelling of three config keys (issue
@@ -1528,6 +1556,10 @@ export function itemBadgeForm(
     // that control lives in another group now.
     toPatch: (p) => {
       let out = p;
+      if ("elevationFrom" in out) {
+        const { elevationFrom, ...rest } = out;
+        out = { ...rest, elevation: { from: normalizeElevationFrom(elevationFrom) } };
+      }
       // The dropdown speaks strings; the config stores "primary" or an index.
       // Written as a number so the legacy "secondary" spelling stops spreading
       // to configs that never had it.
@@ -1536,6 +1568,15 @@ export function itemBadgeForm(
       // A cleared URL is no key, not an empty one.
       if ("picture" in out && !(typeof out.picture === "string" && out.picture.trim()))
         out = { ...out, picture: undefined };
+      // Same for the decimals: "default" is no key at all, digits a number.
+      if ("badgeDecimals" in out)
+        out = {
+          ...out,
+          badgeDecimals:
+            out.badgeDecimals === "auto" ? "auto" : out.badgeDecimals === "default" || out.badgeDecimals == null
+              ? undefined
+              : Number(out.badgeDecimals),
+        };
       // The fill's three controls are one config key (issue #421): `true` for
       // the percentage range, the range itself only when it differs from it.
       if ("fill" in out || "fillMin" in out || "fillMax" in out) {
@@ -2213,6 +2254,7 @@ export function furnitureForm(
       { name: "w", label: "Width", required: true, selector: { number: { min: 10, mode: "box" } } },
       { name: "h", label: "Height", required: true, selector: { number: { min: 10, mode: "box" } } },
       ...(detailedModels && catalog[f.type]?.model3d ? [
+        { name: "elevationFrom", label: "Height above floor", helper: "Bottom height in canvas units. Leave empty to use the symbol default. Zero places it on the floor.", selector: { number: { min: 0, max: 10000, step: 0.1, mode: "box" } } },
         { name: "height3d", label: "3D height", helper: "Optional height in canvas units. Leave empty to use the model height. Applied before cutting.", selector: { number: { min: 0.1, max: 10000, step: 0.1, mode: "box" } } },
       ] : []),
       angleField(),
@@ -2301,6 +2343,7 @@ export function furnitureForm(
       w: f.w,
       h: f.h,
       height3d: f.height3d,
+      elevationFrom: f.elevation?.from,
       angle: f.angle ?? 0,
       entity: f.entity ?? "",
       ...(findSymbol(catalog, f.type)?.extend ? { invert: f.invert ?? false } : {}),
@@ -2314,6 +2357,12 @@ export function furnitureForm(
       visibility: f.visibility,
     },
     toPatch: (raw) => {
+      if ("elevationFrom" in raw) {
+        const { elevationFrom, ...rest } = raw;
+        const from = normalizeElevationFrom(elevationFrom);
+        const elevation = { ...f.elevation, from };
+        raw = { ...rest, elevation: from === undefined && elevation.to === undefined ? undefined : elevation };
+      }
       if ("height3d" in raw) raw = { ...raw, height3d: normalizeHeight3d(raw.height3d) };
       // On is the default, so only "off" is worth writing down; the reverse for invert.
       let p = "showIcon" in raw ? { ...raw, showIcon: raw.showIcon === false ? false : undefined } : raw;

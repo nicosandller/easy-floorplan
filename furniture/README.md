@@ -234,6 +234,32 @@ Leave the field empty to retain `model3d.size.height`. Only finite values greate
 and at most 10000 are accepted. This does not change the 2D symbol or enable 3D rendering;
 symbols without a 3D model retain their existing fallback rendering.
 
-Detailed models currently start at floor level. The symbol-level `elevation`
-setting applies only to block rendering and is ignored when `model3d` is used.
-For elevated custom symbols, omit `model3d` to retain the elevated fallback.
+### Elevated 3D models
+
+For `model3d`, `elevation.from` is the bottom offset in canvas units, independent
+of wall height. Use `elevation: { from: 100 }` to mount a model 100 units above
+the floor. Accepted offsets are finite numbers from 0 to 10000; omitted means 0.
+The model retains its authored height unless the placed furniture sets `height3d`.
+`elevation.to` is preserved when supplied, but is not used for detailed models.
+
+Compatibility note: a custom symbol with both `model3d` and a legacy fractional
+`elevation: { from: 0.2, to: 0.8 }` previously rendered its detailed model on the
+floor. It now uses an absolute bottom offset of **0.2 canvas units**, not 20% of
+the wall height. This is intentional: detailed models always use absolute mounting
+heights. Set `from: 0` (or a per-piece override of zero) to keep such a model on the
+floor. The fractional interval still applies to its block-rendering fallback.
+
+For example, a 70-high TV with `elevation: { from: 100 }` spans 100–170.
+Setting `height3d: 80` changes its top to 180 without moving its bottom.
+A separate cut at 130 clips it at 130; a cut at 100 hides it completely.
+Changing wall height or cut height never moves the mounting position.
+
+Symbols without a valid `model3d` retain the legacy wall-relative `from/to`
+interval for block rendering. A model's absolute `from` alone does not define
+that legacy interval; with detailed rendering off it uses the normal block
+fallback. The 2D drawing remains unchanged.
+
+### Per-piece mounting height
+
+See [Per-piece mounting height](../docs/configuration.md#per-piece-mounting-height)
+for instance overrides and editor settings.

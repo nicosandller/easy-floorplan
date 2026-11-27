@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><title>Elevation examples</title>
+<style>
+body{margin:0;padding:24px;background:#eef2f6;color:#233546;font:16px system-ui}
+h1{font-size:25px;margin:0 0 8px}p{margin:0 0 12px}
+easy-floorplan-card{display:block;width:1050px;--primary-text-color:#233546;--card-background-color:#fff}
+</style>
+<h1 id="title"></h1><p id="caption"></p><main></main>
+<script type="module">
+import '../../src/floorplan-card.ts';
+import {emptyConfig,getFloors} from '../../src/types.ts';
+const after=new URLSearchParams(location.search).get('mode')==='after';
+document.querySelector('#title').textContent=after?'After: individual mounting heights':'Before: all objects at floor level';
+document.querySelector('#caption').textContent=after?'Wall cut: 100 cm · Furniture cut: 220 cm · Right screen mounted at 100 cm.':'Wall cut: 100 cm · Both screens and all badges are at floor level.';
+const c={...emptyConfig('custom:easy-floorplan-card'),width:700,height:450,view:'3d',wallHeight:100,
+  furniture3d:true,furnitureSeparateSection:true,furnitureSectionHeight:220,wallOpacity:.35,
+  symbols:{screen:{id:'screen',name:'Screen',size:{w:110,h:10},parts:[{rect:[0,0,100,100]}],
+    model3d:{version:1,units:'cm',size:{width:110,depth:10,height:65},parts:[{box:[110,10,65]}]}}}};
+const f=getFloors(c)[0];
+f.walls=[{id:'n',x1:50,y1:50,x2:650,y2:50},{id:'e',x1:650,y1:50,x2:650,y2:400},
+{id:'s',x1:650,y1:400,x2:50,y2:400},{id:'w',x1:50,y1:400,x2:50,y2:50}];
+f.areas=[{id:'room',name:'',points:[{x:50,y:50},{x:650,y:50},{x:650,y:400},{x:50,y:400}],color:'#bcd7e1'}];
+f.furniture=[{id:'a',type:'screen',x:180,y:70,w:110,h:10,elevation:{from:0}},
+{id:'b',type:'screen',x:430,y:70,w:110,h:10,elevation:{from:after?100:0}},
+{id:'table',type:'table',x:350,y:260,w:100,h:65,height3d:80}];
+f.items=[0,80,240].map((height,i)=>({id:'badge'+i,entity:'sensor.demo'+i,kind:'sensor',x:180+i*170,y:345,
+ name:after?(i===2?'Ceiling 240 → 100 cm':height+' cm'):'Floor (target '+height+' cm)',showName:true,showState:false,badgeContent:'value',size:42,
+ labelPosition:'below',elevation:{from:after?height:0}}));
+c.floors=[f];
+const card=document.createElement('easy-floorplan-card');card.setConfig(c);
+card.hass={states:Object.fromEntries([0,80,240].map((height,i)=>['sensor.demo'+i,{entity_id:'sensor.demo'+i,state:String(after?height:0),attributes:{}}])),entities:{},formatEntityState:s=>s.state};
+document.querySelector('main').append(card);await card.updateComplete;window.renderDone=true;
+</script></html>

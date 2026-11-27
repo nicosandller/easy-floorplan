@@ -1,10 +1,17 @@
 import { describe, expect, it } from "vitest";
-import { normalizeModel } from "./symbol-model";
+import { normalizeModel, furnitureModelBounds } from "./symbol-model";
 import { BUILTIN_SYMBOLS, normalizeSymbol } from "./symbols";
 import { furnitureModelSolids } from "./projection";
 const size = { width: 60, depth: 60, height: 180 };
 const model = (parts: unknown[]) => ({ version: 1, units: "cm", size, parts });
 const box = { box: [3, 30, 180] };
+it("interprets legacy fractional symbol offsets as absolute units for detailed models", () => {
+  const symbol = normalizeSymbol({ id: "legacy", parts: [{ rect: [0, 0, 100, 100] }],
+    model3d: model([box]), elevation: { from: 0.2, to: 0.8 } })!;
+  expect(furnitureModelBounds({}, symbol.model3d!, symbol.elevation)).toEqual({ bottom: 0.2, height: 180, top: 180.2 });
+  expect(furnitureModelBounds({ elevation: { from: 0 } }, symbol.model3d!, symbol.elevation).bottom).toBe(0);
+  expect(symbol.elevation).toEqual({ from: 0.2, to: 0.8 });
+});
 
 describe("optional 3D furniture", () => {
   it("validates every shipped model, with bounded geometry", () => {
@@ -94,6 +101,28 @@ describe("placed 3D height", () => {
   });
 });
 
+it("positions elevated models at an absolute bottom before applying the independent cut", () => {
+  const model = normalizeModel({ version: 1, units: "cm", size: { width: 60, depth: 10, height: 100 }, parts: [{ box: [60, 10, 100] }] })!;
+  const f = { x: 0, y: 0, w: 60, h: 10 };
+  const map = (x: number, y: number) => ({ x, y });
+  const placement = { wallHeight: 200, elevation: { from: 100 } };
+  expect(furnitureModelSolids(f, model, map, 300, "gray", placement)[0]).toMatchObject({ z0: 100, z1: 200 });
+  expect(furnitureModelSolids(f, model, map, 130, "gray", placement)[0]).toMatchObject({ z0: 100, z1: 130 });
+  expect(furnitureModelSolids(f, model, map, 100, "gray", placement)).toEqual([]);
+  expect(furnitureModelSolids({ ...f, height3d: 80 }, model, map, 300, "gray", placement)[0]).toMatchObject({ z0: 100, z1: 180 });
+});
+
+it("normalizes a model bottom offset without requiring an elevation top", () => {
+  const model3d = { version: 1, units: "cm", size: { width: 10, depth: 10, height: 70 }, parts: [{ box: [10, 10, 70] }] };
+  const raw = { id: "tv", parts: [{ rect: [0, 0, 100, 100] }], model3d };
+  expect(normalizeSymbol({ ...raw, elevation: { from: 100 } })?.elevation).toEqual({ from: 100 });
+  const elevated = normalizeSymbol({ ...raw, elevation: { from: 100, to: 999 } })!;
+  expect(elevated.elevation).toEqual({ from: 100, to: 999 });
+  const solids = furnitureModelSolids({ x: 0, y: 0, w: 10, h: 10 }, elevated.model3d!, (x, y) => ({ x, y }), 400, "gray", { wallHeight: 200, elevation: elevated.elevation });
+  expect(solids[0]).toMatchObject({ z0: 100, z1: 170 });
+  for (const from of [-1, Infinity, NaN, 10001]) expect(normalizeSymbol({ ...raw, elevation: { from } })?.elevation).toBeUndefined();
+});
+
 it("keeps the indoor palm inside 40×40 with a 120 cm crown", () => {
   const m = BUILTIN_SYMBOLS.indoorPalm.model3d!;
   expect(m).toBeDefined();
@@ -149,4 +178,13 @@ it("gives the corner shower two glass doors, four flared grips and a floor drain
   expect(m.parts.filter(p => p.z0 === 0 && p.z1 === 0.5)).toHaveLength(7);
   const cut = furnitureModelSolids({ x: 0, y: 0, w: 100, h: 100 }, m, (x, y) => ({ x, y }), 100, "gray");
   expect(cut.filter(p => p.z0 === 98).map(p => p.z1)).toEqual([100, 100, 100, 100]);
+});
+
+it("lets each placed model override its symbol bottom, including zero", () => {
+  const model = BUILTIN_SYMBOLS.tv.model3d!;
+  for (const [from, expected] of [[100, 100], [140, 140], [0, 0], [-1, 50], [undefined, 50], [NaN, 50]] as const) {
+    const parts = furnitureModelSolids({ x: 0, y: 0, w: 90, h: 10, elevation: { from }, height3d: 70 }, model, (x, y) => ({ x, y }), 1000, "gray", { wallHeight: 200, elevation: { from: 50 } });
+    expect(Math.min(...parts.map(p => p.z0))).toBeCloseTo(expected);
+    expect(Math.max(...parts.map(p => p.z1))).toBeCloseTo(expected + 70);
+  }
 });

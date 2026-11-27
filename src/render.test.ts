@@ -3020,6 +3020,183 @@ describe("badgeValue (#106)", () => {
   });
 });
 
+describe("badgeDecimals (#452)", () => {
+  type St = { state: string; attributes?: object };
+  const hass = (states: Record<string, St>, precision: Record<string, number> = {}) =>
+    ({
+      states: Object.fromEntries(
+        Object.entries(states).map(([id, s]) => [id, { entity_id: id, attributes: {}, ...s }]),
+      ),
+      entities: Object.fromEntries(
+        Object.entries(precision).map(([id, p]) => [id, { display_precision: p }]),
+      ),
+    }) as unknown as RenderHass;
+
+  // The issue's device: a thermostat badged with a 0.1-precision template sensor.
+  const room = hass(
+    {
+      "climate.hall": {
+        state: "heat",
+        attributes: { hvac_action: "heating", current_temperature: 18.4, temperature: 19.5 },
+      },
+      "sensor.hall_temp": { state: "18.43", attributes: { unit_of_measurement: "°C" } },
+      "sensor.plug_power": { state: "1240.5", attributes: { unit_of_measurement: "W" } },
+    },
+    { "sensor.hall_temp": 1, "sensor.plug_power": 0 },
+  );
+  const thermostat = {
+    entity: "climate.hall",
+    readings: [{ entity: "sensor.hall_temp" }, { attribute: "temperature" }],
+  };
+
+  it("leaves every reading exactly as before when unset", () => {
+    expect(badgeValue(room, { entity: "climate.hall" })).toBe("18°");
+    expect(badgeValue(room, { ...thermostat, badgeEntity: 0 })).toBe("18°");
+    expect(badgeValue(room, { entity: "sensor.hall_temp" })).toBe("18°");
+    expect(badgeValue(room, { entity: "sensor.plug_power" })).toBe("1.2kW");
+  });
+
+  it("forces that many decimals on the domain's default reading", () => {
+    expect(badgeValue(room, { entity: "climate.hall", badgeDecimals: 1 })).toBe("18.4°");
+  });
+
+  it("forces them on a configured attribute, unit kept", () => {
+    expect(
+      badgeValue(room, { entity: "climate.hall", attribute: "current_temperature", badgeDecimals: 2 }),
+    ).toBe("18.40°");
+  });
+
+  it("forces them on the entity's own state", () => {
+    expect(badgeValue(room, { entity: "sensor.hall_temp", badgeDecimals: 1 })).toBe("18.4°");
+  });
+
+  it("forces them on a reading chosen with badgeEntity — the issue's config", () => {
+    expect(badgeValue(room, { ...thermostat, badgeEntity: 0, badgeDecimals: 1 })).toBe("18.4°");
+    // An attribute reading in the pool, too.
+    expect(badgeValue(room, { ...thermostat, badgeEntity: 1, badgeDecimals: 1 })).toBe("19.5");
+  });
+
+  it("rounds to whole numbers at 0, including below 10 where the default keeps one", () => {
+    const h = hass({ "sensor.t": { state: "7.6", attributes: { unit_of_measurement: "°C" } } });
+    expect(badgeValue(h, { entity: "sensor.t" })).toBe("7.6°");
+    expect(badgeValue(h, { entity: "sensor.t", badgeDecimals: 0 })).toBe("8°");
+    expect(badgeValue(room, { entity: "climate.hall", badgeDecimals: 0 })).toBe("18°");
+  });
+
+  it("keeps trailing zeros, and never prints a negative zero", () => {
+    const h = hass({
+      "sensor.t": { state: "18", attributes: { unit_of_measurement: "°C" } },
+      "sensor.out": { state: "-0.04", attributes: { unit_of_measurement: "°C" } },
+    });
+    expect(badgeValue(h, { entity: "sensor.t", badgeDecimals: 1 })).toBe("18.0°");
+    expect(badgeValue(h, { entity: "sensor.out", badgeDecimals: 1 })).toBe("0.0°");
+  });
+
+  it("applies a forced count after W→kW, to the number shown", () => {
+    expect(badgeValue(room, { entity: "sensor.plug_power", badgeDecimals: 2 })).toBe("1.24kW");
+    expect(badgeValue(room, { entity: "sensor.plug_power", badgeDecimals: 0 })).toBe("1kW");
+  });
+
+  it("follows the registry precision on 'auto', for the state and for a chosen reading", () => {
+    expect(badgeValue(room, { entity: "sensor.hall_temp", badgeDecimals: "auto" })).toBe("18.4°");
+    expect(badgeValue(room, { ...thermostat, badgeEntity: 0, badgeDecimals: "auto" })).toBe("18.4°");
+    const two = hass(
+      { "sensor.t": { state: "18.4", attributes: { unit_of_measurement: "°C" } } },
+      { "sensor.t": 2 },
+    );
+    expect(badgeValue(two, { entity: "sensor.t", badgeDecimals: "auto" })).toBe("18.40°");
+  });
+
+  it("falls back to the default rounding on 'auto' with no registry precision", () => {
+    const bare = hass({ "sensor.t": { state: "18.43", attributes: { unit_of_measurement: "°C" } } });
+    expect(badgeValue(bare, { entity: "sensor.t", badgeDecimals: "auto" })).toBe("18°");
+    // No `entities` on hass at all — an older frontend, or a test double.
+    const none = { states: bare.states } as unknown as RenderHass;
+    expect(badgeValue(none, { entity: "sensor.t", badgeDecimals: "auto" })).toBe("18°");
+  });
+
+  it("keeps attribute readings on the default rounding under 'auto'", () => {
+    // The registry precision describes a state; a thermostat's own temperature
+    // is an attribute, and so is a configured one.
+    const h = hass(
+      { "climate.hall": { state: "heat", attributes: { current_temperature: 18.4 } } },
+      { "climate.hall": 1 },
+    );
+    expect(badgeValue(h, { entity: "climate.hall", badgeDecimals: "auto" })).toBe("18°");
+    expect(
+      badgeValue(h, { entity: "climate.hall", attribute: "current_temperature", badgeDecimals: "auto" }),
+    ).toBe("18°");
+    expect(badgeValue(room, { ...thermostat, badgeEntity: 1, badgeDecimals: "auto" })).toBe("20");
+  });
+
+  it("does not apply a watt precision to kilowatts under 'auto'", () => {
+    // Precision 0 on a watt sensor would otherwise turn 1240 W into "1kW".
+    expect(badgeValue(room, { entity: "sensor.plug_power", badgeDecimals: "auto" })).toBe("1.2kW");
+    const w = hass(
+      { "sensor.p": { state: "512.34", attributes: { unit_of_measurement: "W" } } },
+      { "sensor.p": 1 },
+    );
+    expect(badgeValue(w, { entity: "sensor.p", badgeDecimals: "auto" })).toBe("512.3W");
+  });
+
+  it("caps a registry precision at three decimals", () => {
+    const h = hass(
+      { "sensor.t": { state: "18.123456", attributes: { unit_of_measurement: "°C" } } },
+      { "sensor.t": 6 },
+    );
+    expect(badgeValue(h, { entity: "sensor.t", badgeDecimals: "auto" })).toBe("18.123°");
+  });
+
+  it("treats anything but a whole 0..3 or 'auto' as unset", () => {
+    for (const junk of [4, -1, 1.5, Number.NaN, "1", "two", null]) {
+      expect(
+        badgeValue(room, { entity: "sensor.hall_temp", badgeDecimals: junk as never }),
+      ).toBe("18°");
+    }
+  });
+
+  it("leaves a reading HA words for itself alone", () => {
+    const h = hass({ "light.office": { state: "on", attributes: { brightness: 128 } } });
+    expect(
+      badgeValue(h, { entity: "light.office", attribute: "brightness", badgeDecimals: 2 }),
+    ).toBe("50%");
+  });
+
+  it("reads the registry through the slice the card renders from", () => {
+    // The editor hands badgeValue the real hass; the card hands it the
+    // RenderHass built from it. If the build dropped `entities`, "auto" would
+    // work in the editor and silently fall back on the card (cf. issue #260).
+    const real = {
+      states: { "sensor.hall_temp": { entity_id: "sensor.hall_temp", state: "18.43", attributes: { unit_of_measurement: "°C" } } },
+      entities: { "sensor.hall_temp": { display_precision: 1 } },
+      formatEntityState: () => "",
+    };
+    const rendered = buildRenderHass(
+      real as never,
+      ["sensor.hall_temp"],
+      { getStateAt: () => new Map() } as never,
+      false,
+      0,
+    );
+    expect(badgeValue(rendered, { entity: "sensor.hall_temp", badgeDecimals: "auto" })).toBe("18.4°");
+  });
+
+  it("sizes a decimal reading to fit the default badge", () => {
+    // Per-font-pixel widths built from the measured table below: three digits
+    // at 9999's 0.69 each, plus the "." and "°" allowances rounded up.
+    const perPx = 3 * 0.69 + 0.28 + 0.45;
+    const size = badgeValueSize(34, "18.4°");
+    expect(size).toBe(10);
+    expect(size * perPx).toBeLessThanOrEqual(34 - 3);
+    // Smaller than the whole-number reading, larger than the legibility floor.
+    expect(size).toBeLessThan(badgeValueSize(34, "18°"));
+    // A sixth glyph is where the default badge runs out: two decimals on a
+    // kilowatt reading reach the 6px floor, so that wants a bigger badge.
+    expect(badgeValueSize(34, "1.2kW")).toBe(8);
+    expect(badgeValueSize(34, "1.24kW")).toBe(6);
+  });
+});
+
 describe("badgeValueSize (#106)", () => {
   // Measured advance widths for the badge's 600-weight face, in units of
   // font-size. Sizing must keep the rendered text inside the circle for every

@@ -315,6 +315,7 @@ swing.
 | `icon`        | string                                 | entity icon  | Override mdi icon.                                     |
 | `name`        | string                                 | entity name  | Label / tooltip override. Unset, the device is named as Home Assistant's own cards name it. |
 | `size`        | number                                 | `34`         | Icon badge diameter (px).                              |
+| `elevation.from` | number | `0` | Badge and label height above the floor in canvas units (0–10000), for example `elevation: {from: 80}`. Editable as **Height above floor**. Only affects isometric view; the 2D position and floor lighting stay unchanged. Badges above the wall cutting height are displayed at that height; the stored physical height is preserved. Independent of furniture cutting height. |
 | `angle`       | number                                 | `0`          | Icon rotation (deg).                                   |
 | `display`     | `badge` \| `ripple` \| `iconRipple`    | `badge`      | How the device is drawn. The editor spells this as the **Ripple** toggle (plus **Badge shows: Nothing** for `ripple`) and offers it only on devices that detect something where they sit (see [Presence ripples](elements.md#presence-ripples)); in YAML it works on any entity. |
 | `iconAnimation` | `auto` \| `none` \| `spin` \| `pulse` | `auto`       | Animate the icon while active. `auto`: fan spins; media player / vacuum pulse. A `climate` entity animates only while its `hvac_action` says it is working — an AC holding `cool` at temperature keeps its colour but stops moving. The editor spells this as the icon options of **Badge shows**, showing `auto` as whatever it resolves to. |
@@ -335,6 +336,7 @@ swing.
 | `badgeContent` | `icon` \| `value` \| `picture` \| `none` | `icon`       | What the badge holds. `value` draws the reading inside it, falling back to the icon when there is no number; `picture` draws `picture`, else the entity's `entity_picture` (a person's profile picture), clipped to the badge shape and falling back to the icon when there is none or the entity is offline; `none` leaves the label alone. See [Profile pictures](elements.md#profile-pictures). |
 | `picture`     | string                                 | —            | Image URL for a `picture` badge, used instead of the entity's `entity_picture` — e.g. `/local/people/guest.png`. |
 | `badgeEntity` | `primary` \| number                    | automatic    | Which reading a `value` badge shows: the device's own entity, or an index into `readings`. Unset picks the first with a number; set, only that one is read (an index past the end shows the icon). `secondary` is accepted as the legacy spelling of `0`. |
+| `badgeDecimals` | number \| `auto`                    | rounded      | Decimals in a `value` badge. Unset rounds as always: one decimal below 10, whole numbers above (`18°`). `0`–`3` prints exactly that many on any reading (`1` → `18.4°`, `18.0°`; a plug at 1240 W → `1.2kW`). `auto` follows the entity's display precision from Home Assistant, where HA exposes one, when the badge reads an entity's state (a sensor, or a reading picked with `badgeEntity`); attribute readings, such as a thermostat's own temperature, keep the default rounding. The unit stays compact. More digits mean smaller text. |
 | `fill`        | boolean \| `{ min?, max? }`            | —            | Fill an icon badge from the bottom in proportion to the reading (issue #421). `true` reads 0–100; `min`/`max` set another range (defaults 0 and 100). Reads `attribute` when set, else the state, clamped to the range; no number draws the plain icon. Ignored on `value` and `none` badges. See [Devices](elements.md#devices). |
 | `showIcon`    | boolean                                | `true`       | **Deprecated** — use `badgeContent`. Honoured only when it is unset (`false` = `none`). |
 | `hideWhenInactive` | boolean                           | `false`      | Hide on the card while the entity is inactive. Always shown, dimmed, in the editor. |
@@ -529,8 +531,9 @@ The editor offers this field only when 3D furniture is enabled and the selected
 symbol has a valid detailed model. Existing height overrides are retained when
 the field is hidden. It does not enable 3D models or affect 2D/block rendering. For a half-scale plan,
 set it to half the authored model height as well as halving the footprint.
-Detailed models currently start at floor level: the symbol-author `elevation`
-setting applies only to the block fallback, not to `model3d`.
+Detailed models use `elevation.from` as their bottom height in canvas units.
+Their top is the bottom plus `height3d` (or the authored model height).
+`elevation.to` is retained but ignored by detailed models.
 
 The editor's **+ Add** picker draws every symbol at its real size and is searchable — type
 `couch` and you get the sofa and the sectional.
@@ -887,6 +890,22 @@ whichever it likes:
 
 `badgeEntity: secondary` still works and means index `0`.
 
+A thermostat that should show tenths reads them off its temperature sensor, or rounds its
+own reading to a fixed count:
+
+```yaml
+  - id: hall_thermostat
+    entity: climate.hall
+    kind: climate
+    badgeContent: value
+    badgeEntity: 0            # the first reading below
+    badgeDecimals: auto       # that sensor's display precision: 18.4°
+    readings:
+      - { entity: sensor.hall_temperature, showState: false }
+```
+
+`badgeDecimals: 1` on the thermostat alone shows its `current_temperature` as `18.4°` too.
+
 > **Upgrading?** One behaviour changed with the merge. `secondaryEntity` used to be part of
 > the state line, so it only showed while **Show state** was on — which is off by default
 > for anything that isn't a `sensor`. As a reading it now shows on its own terms. If you
@@ -915,3 +934,18 @@ label gets no Label group, and an opening with no shutter gets no Shutter group.
 
 Walls and text keep a plain list: a wall is thickness and length, a text is its words, size
 and angle. A heading over one or two fields is chrome rather than structure.
+
+### Per-piece mounting height
+
+A furniture entry can set `elevation: { from: 100 }` to place its detailed model
+100 canvas units above the floor. The editor calls this **Height above floor**.
+The placed value overrides the symbol's `elevation.from`, which defaults to zero.
+Zero explicitly places the piece on the floor; clearing the field restores the
+symbol default. `height3d` remains the piece's independent physical height.
+`elevation.to` is preserved but ignored for detailed rendering.
+
+```yaml
+furniture:
+  - { id: tv_living, type: tv, x: 400, "y": 300, w: 120, h: 10, elevation: { from: 100 } }
+  - { id: tv_bedroom, type: tv, x: 800, "y": 300, w: 90, h: 10, elevation: { from: 140 } }
+```

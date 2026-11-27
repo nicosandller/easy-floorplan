@@ -113,6 +113,56 @@ describe("live view controls", () => {
     expect(t.root.querySelector("output")!.textContent).toBe("0°");
   });
 
+  it("projects individual badge heights consistently with elevated furniture and a separate section", async () => {
+    const t = await mount({ furnitureSeparateSection: true, furnitureSectionHeight: 220 });
+    t.floor.furniture[0].height3d = 240;
+    t.floor.furniture[0].elevation = { from: 130 };
+    t.card.setConfig({ ...t.config });
+    await t.card.updateComplete;
+    for (const height of [0, 80, 100, 240, 300]) {
+      t.floor.items[0].elevation = { from: height };
+      t.card.setConfig({ ...t.config });
+      await t.card.updateComplete;
+      for (const view of ["2D plan", "3D isometric"]) {
+        await t.click(view);
+        for (let i = 0; i < 4; i++) {
+          const floor = t.root.querySelector<SVGGraphicsElement>(".plan-zoom > svg > g > g")!;
+          const item = t.floor.items[0];
+          const point = new DOMPoint(item.x, item.y).matrixTransform(floor.getScreenCTM()!);
+          if (view === "3D isometric") {
+            const svg = t.root.querySelector<SVGSVGElement>(".plan-zoom > svg")!;
+            point.y -= Math.min(height, 100) * svg.getScreenCTM()!.d;
+          }
+          const badge = t.root.querySelector('.fp-item[data-id="lamp"] .badge')!.getBoundingClientRect();
+          expect(badge.x + badge.width / 2).toBeCloseTo(point.x, 1);
+          expect(badge.y + badge.height / 2).toBeCloseTo(point.y, 1);
+          await t.click("Rotate right");
+        }
+      }
+    }
+  });
+
+  it("moves a device label with its badge and caps both at the wall cut", async () => {
+    const t = await mount();
+    Object.assign(t.floor.items[0], { name: "Ceiling light", showName: true, labelPosition: "below" });
+    const positions = [];
+    for (const height of [0, 80, 240]) {
+      t.floor.items[0].elevation = { from: height };
+      t.card.setConfig({ ...t.config });
+      await t.card.updateComplete;
+      const item = t.root.querySelector('.fp-item[data-id="lamp"]')!;
+      const badge = item.querySelector(".badge")!.getBoundingClientRect();
+      const label = item.querySelector(".label")!.getBoundingClientRect();
+      expect(label.height).toBeGreaterThan(0);
+      positions.push({ badge: badge.y, label: label.y });
+    }
+    const scale = t.root.querySelector<SVGSVGElement>(".plan-zoom > svg")!.getScreenCTM()!.d;
+    for (const [i, offset] of [[1, 80], [2, 100]]) {
+      expect(positions[0].badge - positions[i].badge).toBeCloseTo(offset * scale, 1);
+      expect(positions[0].label - positions[i].label).toBeCloseTo(offset * scale, 1);
+    }
+  });
+
   it("preserves viewer choices across unrelated config updates and resets to the saved defaults", async () => {
     const t = await mount({rotation:90});
     await t.click("2D plan");

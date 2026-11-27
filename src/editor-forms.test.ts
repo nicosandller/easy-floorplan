@@ -1,4 +1,13 @@
 import { describe, it, expect } from "vitest";
+it("edits badge mounting height without changing its plan position", () => {
+  const form = itemBadgeForm({ id: "lamp", entity: "light.lamp", kind: "light", x: 20, y: 30, elevation: { from: 80 } });
+  expect(form.data.elevationFrom).toBe(80);
+  expect(form.toPatch!({ elevationFrom: 130 })).toEqual({ elevation: { from: 130 } });
+  expect(form.toPatch!({ elevationFrom: 0 })).toEqual({ elevation: { from: 0 } });
+  for (const value of ["", -1, Infinity, NaN, 10001]) {
+    expect(form.toPatch!({ elevationFrom: value })).toEqual({ elevation: { from: undefined } });
+  }
+});
 import {
   isLiveField,
   diffFormValue,
@@ -555,7 +564,7 @@ describe("itemForm", () => {
       ["entity", "attribute"], // 2. What it reads…
       ["showState"], //         …including whether its own state shows
       ["labelPosition", "labelSize", "disableLabelColor"], // 3. Label
-      ["badgeMode", "size", "angle"], // 4. Badge
+      ["badgeMode", "elevationFrom", "size", "angle"], // 4. Badge
       // 5. Colour and the readings list are hand-rolled rows, not ha-form
       //    fields, so they do not appear here — the editor slots them into
       //    their groups.
@@ -1014,6 +1023,59 @@ describe("itemForm", () => {
       expect(itemForm(plug).toPatch({ badgeEntity: "0" }).badgeEntity).toBe(0);
       expect(itemForm(plug).toPatch({ badgeEntity: "2" }).badgeEntity).toBe(2);
       expect(itemForm(plug).toPatch({ badgeEntity: "primary" }).badgeEntity).toBe("primary");
+    });
+  });
+
+  // Issue #452: how many decimals a value badge prints.
+  describe("Badge decimals (#452)", () => {
+    const thermostat = {
+      ...item,
+      entity: "climate.hall",
+      kind: "climate",
+      badgeContent: "value",
+    } as FloorItem;
+    const names = (it: FloorItem) => itemForm(it).fields.map((x) => x.name);
+
+    it("appears only while the badge shows a value", () => {
+      expect(names(thermostat)).toContain("badgeDecimals");
+      // No second reading needed, unlike "Badge reads".
+      expect(names(thermostat)).not.toContain("badgeEntity");
+      expect(names({ ...thermostat, badgeContent: "icon" } as FloorItem)).not.toContain("badgeDecimals");
+      expect(names({ ...thermostat, badgeContent: "none" } as FloorItem)).not.toContain("badgeDecimals");
+      expect(names({ ...thermostat, display: "ripple" } as FloorItem)).not.toContain("badgeDecimals");
+    });
+
+    it("sits after the reading choice and before the size", () => {
+      const fields = itemBadgeForm({ ...thermostat, secondaryEntity: "sensor.t" } as FloorItem)
+        .fields.map((f) => f.name);
+      expect(fields).toEqual(["badgeMode", "badgeEntity", "badgeDecimals", "elevationFrom", "size", "angle"]);
+    });
+
+    it("offers the default, the entity's precision and 0..3", () => {
+      const field = itemForm(thermostat).fields.find((x) => x.name === "badgeDecimals")!;
+      const opts = (field.selector as { select: { options: { value: string }[] } }).select.options;
+      expect(opts.map((o) => o.value)).toEqual(["default", "auto", "0", "1", "2", "3"]);
+    });
+
+    it("opens on what the badge draws", () => {
+      const data = (badgeDecimals: unknown) =>
+        itemForm({ ...thermostat, badgeDecimals } as FloorItem).data.badgeDecimals;
+      expect(data(undefined)).toBe("default");
+      expect(data(1)).toBe("1");
+      expect(data(0)).toBe("0");
+      expect(data("auto")).toBe("auto");
+      // A value the badge ignores reads as the default it actually draws.
+      expect(data(7)).toBe("default");
+      expect(data("1")).toBe("default");
+    });
+
+    it("stores a number, 'auto', or no key at all for the default", () => {
+      const patch = (badgeDecimals: string) => itemForm(thermostat).toPatch({ badgeDecimals });
+      expect(patch("1").badgeDecimals).toBe(1);
+      expect(patch("0").badgeDecimals).toBe(0);
+      expect(patch("auto").badgeDecimals).toBe("auto");
+      const cleared = patch("default");
+      expect("badgeDecimals" in cleared && cleared.badgeDecimals !== undefined).toBe(false);
     });
   });
 
@@ -2457,7 +2519,7 @@ describe("every field lands in exactly one panel group", () => {
     ["tapTarget", "tap_action", "hold_action", "double_tap_action"],
   ];
   const FURNITURE_GROUPS = [
-    ["type", "hand", "w", "h", "height3d", "angle"],
+    ["type", "hand", "w", "h", "height3d", "elevationFrom", "angle"],
     ["entity", "invert"],
     ["goToFloor", "tap_action", "hold_action", "double_tap_action", "showIcon"],
   ];
@@ -3192,6 +3254,13 @@ it("only offers 3D height for an enabled valid model without clearing saved heig
     expect(form.fields.some(f => f.name === "height3d")).toBe(visible);
     expect(form.data.height3d).toBe(75);
   }
+});
+
+it("edits a placed elevation while preserving its legacy top", () => {
+  const form = furnitureForm({ id: "tv", type: "tv", x: 0, y: 0, w: 90, h: 10, elevation: { from: 100, to: 0.8 } }, undefined, undefined, [], true);
+  expect(form.data.elevationFrom).toBe(100);
+  expect(form.toPatch!({ elevationFrom: 0 })).toEqual({ elevation: { from: 0, to: 0.8 } });
+  expect(form.toPatch!({ elevationFrom: "" })).toEqual({ elevation: { from: undefined, to: 0.8 } });
 });
 
 describe("zoom controls in the display form (issue #446)", () => {
