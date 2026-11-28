@@ -52,6 +52,16 @@ describe("Window – Multipane", () => {
     expect(paneOpening(o, { motion: "fixed" }).entity).toBeUndefined();
   });
 
+  it("inherits inversion with the parent entity but isolates a pane's own sensor", () => {
+    const o: Opening = { ...win, entity: "binary_sensor.parent", invert: true,
+      panes: [{ motion: "awning" }, { motion: "awning", entity: "binary_sensor.own" }] };
+    const [inherited, own] = windowPanes(o).map(p => paneOpening(o, p));
+    expect(resolveOpeningAmount(inherited, { state: "off" })).toBe(1);
+    expect(resolveOpeningAmount(inherited, { state: "on" })).toBe(0);
+    expect(resolveOpeningAmount(own, { state: "on" })).toBe(1);
+    expect(resolveOpeningAmount(paneOpening(o, {motion:"awning", entity:"binary_sensor.own", invert:true}), {state:"off"})).toBe(1);
+  });
+
   it("sanitizes malformed layouts and ignores pane settings on doors", () => {
     expect(windowPanes({ ...win, panes: [null, { height: -1, motion: "bad" }] as never })).toEqual([
       { height: 1, motion: "fixed", entity: undefined, invert: false },

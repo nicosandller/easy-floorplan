@@ -40,11 +40,11 @@ export function openingSolids(
   };
   const pane = (
     x1: number, y1: number, x2: number, y2: number,
-    paint = color, bottom = z0, top = z1, glass = glazed,
+    paint = color, bottom = z0, top = z1, glass = glazed, subdivide = true,
   ) => {
     if (top <= bottom) return;
     const panels = o.type === "door" && Array.isArray(o.panels) ? o.panels.slice(0, 8) : [];
-    if (panels.length && glass === glazed) {
+    if (panels.length && subdivide) {
       const weights = panels.map(p => typeof p?.height === "number" && Number.isFinite(p.height) && p.height > 0 ? p.height : 1);
       const total = weights.reduce((a, b) => a + b, 0);
       let z = bottom;
@@ -57,12 +57,12 @@ export function openingSolids(
     } else out.push({ kind: "panel", id: o.id, base: [at(x1, y1), at(x2, y2)], z0: bottom, z1: top, color: paint, glazed: glass });
   };
   const swing = (left: number, right: number, width: number, a: number, b: number,
-    paint = color, paint2 = color2, side = -1, glass = glazed, offset = 0) => {
+    paint = color, paint2 = color2, side = -1, glass = glazed, offset = 0, subdivide = true) => {
     const ra = a * Math.PI / 2;
-    pane(left, offset, left + width * Math.cos(ra), offset + side * width * Math.sin(ra), paint, z0, z1, glass);
+    pane(left, offset, left + width * Math.cos(ra), offset + side * width * Math.sin(ra), paint, z0, z1, glass, subdivide);
     if (right > left) {
       const rb = b * Math.PI / 2;
-      pane(right, offset, right - width * Math.cos(rb), offset + side * width * Math.sin(rb), paint2, z0, z1, glass);
+      pane(right, offset, right - width * Math.cos(rb), offset + side * width * Math.sin(rb), paint2, z0, z1, glass, subdivide);
     }
   };
 
@@ -169,9 +169,9 @@ export function openingSolids(
     const paint2 = shutter.second ? tone(b, shutter.second.active, shutter.accent ?? style.accent) : paint;
     if (shutter.style === "swing") {
       const side = shutter.flip ? -1 : 1;
-      swing(-half, half, half, a, b, paint, paint2, side, false, side * ((WALL_THICKNESS + 4) / 2 + 1.5));
+      swing(-half, half, half, a, b, paint, paint2, side, false, side * ((WALL_THICKNESS + 4) / 2 + 1.5), false);
     } else {
-      pane(-half, 2, half, 2, paint, z0 + (z1 - z0) * a, z1, false);
+      pane(-half, 2, half, 2, paint, z0 + (z1 - z0) * a, z1, false, false);
     }
   }
   for (const solid of out) if (solid.kind === "panel") solid.frameColor = cssColor(o.frameColor);

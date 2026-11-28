@@ -238,7 +238,7 @@ export interface WindowPane {
   /** Relative share of the glass height. Defaults to 1. */
   height?: number;
   motion?: "fixed" | "swing" | "awning" | "slide-up" | "slide-down";
-  /** Defaults to the window's entity for movable panes. */
+  /** Defaults to the window's entity and invert for movable panes. */
   entity?: string;
   invert?: boolean;
 }

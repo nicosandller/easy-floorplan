@@ -24,3 +24,14 @@ it('keeps frame color separate from glass and rejects unsafe CSS',()=>{
  expect(draw('#805020').every(p=>p.frameColor==='#805020')).toBe(true);
  expect(draw('red; display:none').every(p=>p.frameColor===undefined)).toBe(true);
 });
+
+it.each([false, true])('does not subdivide a shutter on a door (glazed=%s)', (glazed) => {
+ for (const style of ['roll', 'swing'] as const) {
+  const solids = openingSolids({...door, glazed}, {color:'#555', amount:0,
+   shutter:{style, amount:0.5}}, (x,y)=>({x,y}), 100).filter(p=>p.kind==='panel');
+  const shutters = solids.slice(2);
+  expect(shutters).toHaveLength(style === 'roll' ? 1 : 2);
+  expect(shutters.every(p=>p.glazed === false && !p.framed)).toBe(true);
+  expect(solids.slice(0,2).map(p=>p.glazed)).toEqual([false,true]);
+ }
+});

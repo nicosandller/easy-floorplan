@@ -1,3 +1,4 @@
+import { windowPanes } from "../window-panes";
 import type { FloorplanCardConfig } from "../types";
 import { getFloors } from "../types";
 import { cloudCoverEntityOf, itemReadings, moonlightOn } from "../render";
@@ -30,6 +31,7 @@ export class ReplayScopeService {
     if (cloud) ids.add(cloud);
     for (const opening of activeFloor.openings) {
       if (opening.entity) ids.add(opening.entity);
+      for (const pane of windowPanes(opening)) if (pane.entity) ids.add(pane.entity);
       if (opening.secondaryEntity) ids.add(opening.secondaryEntity);
       if (opening.shutterEntity) ids.add(opening.shutterEntity);
       if (opening.shutterSecondaryEntity) ids.add(opening.shutterSecondaryEntity);

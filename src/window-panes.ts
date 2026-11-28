@@ -21,5 +21,5 @@ export function paneOpening(o: Opening, p: WindowPane): Opening {
     secondaryEntity: undefined, tiltEntity: undefined,
     motion: p.motion === "swing" || p.motion === "awning" ? p.motion : "fixed",
     entity: p.motion === "fixed" ? undefined : p.entity || o.entity,
-    invert: p.invert || false };
+    invert: p.entity ? p.invert === true : o.invert === true };
 }

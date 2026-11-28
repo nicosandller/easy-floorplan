@@ -1212,6 +1212,15 @@ describe("FloorplanCard replay", () => {
     expect(getReplayWatchedEntities((card as any)._config, (card as any)._activeFloorId)).toEqual(["light.kitchen"]);
   });
 
+  it("replays pane sensors only from the active floor and deduplicates inherited sensors", () => {
+    const floor = (id: string, entity: string) => ({id,name:id,walls:[],items:[],texts:[],areas:[],trackers:[],furniture:[],
+      openings:[{id:"window",type:"window",x:0,y:0,length:90,angle:0,entity:"binary_sensor.parent",
+        panes:[{motion:"awning"},{motion:"slide-up",entity},{motion:"awning",entity}]}]});
+    const config = {type:"custom:easy-floorplan-card",floors:[floor("ground","cover.lower"),floor("upper","cover.other")]} as unknown as FloorplanCardConfig;
+    expect(getReplayWatchedEntities(config,"ground")).toEqual(["binary_sensor.parent","cover.lower"]);
+    expect(getReplayWatchedEntities(config,"upper")).toEqual(["binary_sensor.parent","cover.other"]);
+  });
+
   it("includes furniture visibility condition entities in replay scope", () => {
     const config = {
       type: "custom:easy-floorplan-card",

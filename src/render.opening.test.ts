@@ -1679,3 +1679,15 @@ describe("openingClearFraction — a top-hinged sash leaves the plan (issue #272
     expect(openingHasTwoLeaves(awning)).toBe(false);
   });
 });
+
+describe("multipane vertical sliding in plan view", () => {
+  it.each(["slide-up", "slide-down"] as const)("marks an open %s sash but not a closed or fixed pane", motion => {
+    const o: Partial<Opening> = {type:"window",panes:[{motion},{motion:"fixed"}]};
+    const closed = svgOf(o, {panes:[{amount:0},{amount:0}]});
+    const open = svgOf(o, {panes:[{amount:0.5,active:true},{amount:0}]});
+    expect(closed).not.toContain('fp-pane-slide-direction');
+    expect(open).toContain('fp-pane-slide-direction');
+    expect(open).toContain(`scale(1 ${motion === "slide-up" ? 1 : -1})`);
+    expect(svgOf({...o,panes:[{motion:"fixed"}]}, {amount:1})).not.toContain('fp-pane-slide-direction');
+  });
+});

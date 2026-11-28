@@ -4673,7 +4673,19 @@ export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResul
     const i = panes.reduce((best, p, n) =>
       p.motion !== "fixed" && (best < 0 || (style.panes?.[n]?.amount ?? 0) > (style.panes?.[best]?.amount ?? 0)) ? n : best, -1);
     const pane = panes[Math.max(0, i)];
-    return renderOpening(paneOpening(o, pane), { ...style, ...style.panes?.[Math.max(0, i)], panes: undefined });
+    const state = { ...style, ...style.panes?.[Math.max(0, i)], panes: undefined };
+    const symbol = renderOpening(paneOpening(o, pane), state);
+    // Vertical sash travel disappears when viewed from above. An arrow marks
+    // an open sash and its travel direction without changing its 3D geometry.
+    const sliding = pane.motion === "slide-up" || pane.motion === "slide-down";
+    const amount = Math.max(0, Math.min(1, state.amount ?? (state.open ? 1 : 0)));
+    if (!sliding || amount === 0) return symbol;
+    const direction = pane.motion === "slide-up" ? 1 : -1;
+    return svg`${symbol}<g class="fp-pane-slide-direction" transform="translate(${o.x} ${o.y}) rotate(${o.angle})"
+      stroke=${cssColorOr(state.active ? state.accent ?? SKIN_ACCENT : state.color, SKIN_ACCENT)}
+      stroke-width="2" fill="none" pointer-events="none">
+      <path transform="scale(1 ${direction})" d="M 0 8 L 0 -8 M -4 -3 L 0 -8 L 4 -3" />
+    </g>`;
   }
   const { color, open = true, active = false, accent = SKIN_ACCENT } = style;
   const half = o.length / 2;
