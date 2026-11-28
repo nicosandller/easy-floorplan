@@ -234,6 +234,15 @@ export type SliderStyle = "single" | "bypass" | "biparting" | "biparting-bypass"
  * stored independently. A skylight is in the ceiling and so snaps to no wall —
  * see {@link OpeningType}.
  */
+export interface WindowPane {
+  /** Relative share of the glass height. Defaults to 1. */
+  height?: number;
+  motion?: "fixed" | "swing" | "awning" | "slide-up" | "slide-down";
+  /** Defaults to the window's entity and invert for movable panes. */
+  entity?: string;
+  invert?: boolean;
+}
+
 export interface Opening {
   id: string;
   /**
@@ -358,6 +367,12 @@ export interface Opening {
    * passages and skylights have no sill and ignore it.
    */
   sill?: number;
+  /** Glass height in plan units, measured above the sill; clamped to the wall. */
+  openingHeight?: number;
+  /** Window – Multipane: full-width panes ordered from bottom to top. */
+  panes?: WindowPane[];
+  /** Door infill, bottom to top. The whole leaf moves together. */
+  panels?: { height?: number; material?: "glass" | "solid" }[];
   /**
    * Optional entity (e.g. a contact `binary_sensor` or a `cover`) whose state
    * drives whether the opening is drawn open or closed. When unset, doors are
@@ -428,6 +443,8 @@ export interface Opening {
    * separately, so a pair with one sash open and one shut shows both colours.
    */
   inactiveColor?: string;
+  /** Frame and glazing-bar color in the 3D view. */
+  frameColor?: string;
   /**
    * Mirror the symbol left↔right in the opening's local frame. For a swing door
    * this moves the hinge to the other jamb; for a slider it reverses the slide

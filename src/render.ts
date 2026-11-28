@@ -1,3 +1,4 @@
+import { windowPanes, paneOpening } from "./window-panes";
 import { rotationBasis } from "./rotation";
 import { svg, html, nothing, type SVGTemplateResult, type TemplateResult } from "lit";
 import {
@@ -200,6 +201,7 @@ export function collectWatchedEntities(c: FloorplanCardConfig): Set<string> {
   for (const f of getFloors(c)) {
     for (const o of f.openings) {
       if (o.entity) ids.add(o.entity);
+      for (const pane of windowPanes(o)) if (pane.entity) ids.add(pane.entity);
       if (o.shutterEntity) ids.add(o.shutterEntity);
       // The opening's second leaf (issues #145, #159). Exactly the trap named
       // above, and the worst version of it: the leaf is not frozen, it catches
@@ -4584,6 +4586,9 @@ export function openingMarkNormal(
 
 /** Style options for {@link renderOpening}. */
 export interface OpeningStyle {
+  /** Independently resolved bottom-to-top multipane states. */
+  panes?: { amount: number; active?: boolean; positionAware?: boolean }[];
+  positionAware?: boolean;
   /** Base color of the jambs / leaf / swing arc. */
   color: string;
   /** Whether the opening is drawn open (default `true`). */
@@ -4662,6 +4667,26 @@ export interface OpeningStyle {
  * can transition them smoothly between open and closed.
  */
 export function renderOpening(o: Opening, style: OpeningStyle): SVGTemplateResult {
+  const panes = windowPanes(o);
+  if (panes.length) {
+    // A plan cannot show stacked glazing: show the most-open moving sash.
+    const i = panes.reduce((best, p, n) =>
+      p.motion !== "fixed" && (best < 0 || (style.panes?.[n]?.amount ?? 0) > (style.panes?.[best]?.amount ?? 0)) ? n : best, -1);
+    const pane = panes[Math.max(0, i)];
+    const state = { ...style, ...style.panes?.[Math.max(0, i)], panes: undefined };
+    const symbol = renderOpening(paneOpening(o, pane), state);
+    // Vertical sash travel disappears when viewed from above. An arrow marks
+    // an open sash and its travel direction without changing its 3D geometry.
+    const sliding = pane.motion === "slide-up" || pane.motion === "slide-down";
+    const amount = Math.max(0, Math.min(1, state.amount ?? (state.open ? 1 : 0)));
+    if (!sliding || amount === 0) return symbol;
+    const direction = pane.motion === "slide-up" ? 1 : -1;
+    return svg`${symbol}<g class="fp-pane-slide-direction" transform="translate(${o.x} ${o.y}) rotate(${o.angle})"
+      stroke=${cssColorOr(state.active ? state.accent ?? SKIN_ACCENT : state.color, SKIN_ACCENT)}
+      stroke-width="2" fill="none" pointer-events="none">
+      <path transform="scale(1 ${direction})" d="M 0 8 L 0 -8 M -4 -3 L 0 -8 L 4 -3" />
+    </g>`;
+  }
   const { color, open = true, active = false, accent = SKIN_ACCENT } = style;
   const half = o.length / 2;
   const cutH = WALL_THICKNESS + 4;

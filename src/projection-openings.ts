@@ -1,4 +1,5 @@
 /** Standing opening panels, using the same travel and mirrors as the 2D symbols. */
+import { windowPanes } from "./window-panes";
 import type { Opening } from "./types";
 import { cssColor, cssColorOr, cssNumber } from "./css-safe";
 import {
@@ -6,7 +7,7 @@ import {
   openingIsSkylight, openingIsPassage, skylightWidth, type OpeningStyle,
 } from "./render";
 import { SKIN_ACCENT } from "./skins";
-import { GLASS_FRACTION, openingSill, type IsoSolid, type Pt } from "./projection";
+import { openingTop, openingSill, type IsoSolid, type Pt } from "./projection";
 
 /** How far a tilted sash leans in the 3D view (issue #409), in radians. */
 export const TILT_VIEW_ANGLE = Math.PI / 8;
@@ -22,7 +23,7 @@ export function openingSolids(
   const out: IsoSolid[] = [];
   const half = o.length / 2;
   const z0 = o.type === "window" ? height * openingSill(o) : 0;
-  const z1 = height * GLASS_FRACTION;
+  const z1 = openingTop(o, height);
   const clamp = (v: unknown) => Math.max(0, Math.min(1, cssNumber(v, 0)));
   const amount = clamp(style.amount ?? (style.open === false ? 0 : 1));
   const amount2 = style.second ? clamp(style.second.amount) : amount;
@@ -39,18 +40,29 @@ export function openingSolids(
   };
   const pane = (
     x1: number, y1: number, x2: number, y2: number,
-    paint = color, bottom = z0, top = z1, glass = glazed,
+    paint = color, bottom = z0, top = z1, glass = glazed, subdivide = true,
   ) => {
     if (top <= bottom) return;
-    out.push({ kind: "panel", id: o.id, base: [at(x1, y1), at(x2, y2)], z0: bottom, z1: top, color: paint, glazed: glass });
+    const panels = o.type === "door" && Array.isArray(o.panels) ? o.panels.slice(0, 8) : [];
+    if (panels.length && subdivide) {
+      const weights = panels.map(p => typeof p?.height === "number" && Number.isFinite(p.height) && p.height > 0 ? p.height : 1);
+      const total = weights.reduce((a, b) => a + b, 0);
+      let z = bottom;
+      panels.forEach((p, i) => {
+        const next = z + (top - bottom) * weights[i] / total;
+        out.push({ kind: "panel", id: o.id, base: [at(x1, y1), at(x2, y2)], z0: z, z1: next,
+          color: paint, glazed: p?.material === "glass", framed: true });
+        z = next;
+      });
+    } else out.push({ kind: "panel", id: o.id, base: [at(x1, y1), at(x2, y2)], z0: bottom, z1: top, color: paint, glazed: glass });
   };
   const swing = (left: number, right: number, width: number, a: number, b: number,
-    paint = color, paint2 = color2, side = -1, glass = glazed, offset = 0) => {
+    paint = color, paint2 = color2, side = -1, glass = glazed, offset = 0, subdivide = true) => {
     const ra = a * Math.PI / 2;
-    pane(left, offset, left + width * Math.cos(ra), offset + side * width * Math.sin(ra), paint, z0, z1, glass);
+    pane(left, offset, left + width * Math.cos(ra), offset + side * width * Math.sin(ra), paint, z0, z1, glass, subdivide);
     if (right > left) {
       const rb = b * Math.PI / 2;
-      pane(right, offset, right - width * Math.cos(rb), offset + side * width * Math.sin(rb), paint2, z0, z1, glass);
+      pane(right, offset, right - width * Math.cos(rb), offset + side * width * Math.sin(rb), paint2, z0, z1, glass, subdivide);
     }
   };
 
@@ -59,7 +71,36 @@ export function openingSolids(
   // A passage (issue #309) is the gap alone: the wall is cut for it as for a
   // door, and nothing stands in it but its shutter, when it has one.
   const motion = openingIsPassage(o) ? undefined : openingMotion(o);
-  if (motion === "swing") {
+  const panes = windowPanes(o);
+  if (panes.length) {
+    const total = panes.reduce((n, p) => n + p.height!, 0);
+    let bottom = z0;
+    panes.forEach((p, i) => {
+      const h = (z1 - z0) * p.height! / total;
+      const top = bottom + h;
+      const state = style.panes?.[i];
+      const a = p.motion === "fixed" ? 0 : clamp(state?.amount ?? amount);
+      const paint = tone(a, state?.active ?? (p.motion !== "fixed" && style.active));
+      const shift = p.motion === "slide-up" ? Math.min(h, z1 - top) * a
+        : p.motion === "slide-down" ? -Math.min(h, bottom - z0) * a : 0;
+      if (p.motion === "awning") {
+        const angle = a * (state?.positionAware ? Math.PI / 2 : Math.PI / 6);
+        const low = top - h * Math.cos(angle);
+        const reach = h * Math.sin(angle);
+        const left = at(-half, -reach), right = at(half, -reach);
+        out.push({ kind: "panel", id: o.id, base: [left, right], z0: low, z1: top, color: paint, glazed,
+          vertices: [{ ...left, z: low }, { ...right, z: low },
+            { ...at(half, 0), z: top }, { ...at(-half, 0), z: top }] });
+      } else if (p.motion === "swing") {
+        const angle = a * Math.PI / 2;
+        pane(-half, 0, -half + o.length * Math.cos(angle), -o.length * Math.sin(angle), paint, bottom, top);
+      } else {
+        const track = p.motion === "slide-up" || p.motion === "slide-down" ? -2 : 0;
+        pane(-half, track, half, track, paint, bottom + shift, top + shift);
+      }
+      bottom = top;
+    });
+  } else if (motion === "swing") {
     const two = openingSash(o) === "double";
     const width = two ? half : o.length * openingSashSpan(o);
     const lean = o.type === "window" ? clamp(style.tilt) : 0;
@@ -88,7 +129,7 @@ export function openingSolids(
   } else if (motion === "roll") {
     pane(-half, 0, half, 0, color, z0 + (z1 - z0) * amount, z1, false);
   } else if (motion === "awning") {
-    const angle = amount * Math.PI / 2;
+    const angle = amount * (style.positionAware ? Math.PI / 2 : Math.PI / 6);
     const reach = (z1 - z0) * Math.sin(angle);
     const bottom = z1 - (z1 - z0) * Math.cos(angle);
     const a = at(-half, -reach);
@@ -128,11 +169,12 @@ export function openingSolids(
     const paint2 = shutter.second ? tone(b, shutter.second.active, shutter.accent ?? style.accent) : paint;
     if (shutter.style === "swing") {
       const side = shutter.flip ? -1 : 1;
-      swing(-half, half, half, a, b, paint, paint2, side, false, side * ((WALL_THICKNESS + 4) / 2 + 1.5));
+      swing(-half, half, half, a, b, paint, paint2, side, false, side * ((WALL_THICKNESS + 4) / 2 + 1.5), false);
     } else {
-      pane(-half, 2, half, 2, paint, z0 + (z1 - z0) * a, z1, false);
+      pane(-half, 2, half, 2, paint, z0 + (z1 - z0) * a, z1, false, false);
     }
   }
+  for (const solid of out) if (solid.kind === "panel") solid.frameColor = cssColor(o.frameColor);
   return out;
 }
 
@@ -215,5 +257,6 @@ function skylightSolids(
   out.push({ kind: "panel", id: o.id, base, z0: height, z1: freeZ,
     color: tone(amount, style.active), glazed: openingIsGlazed(o),
     vertices: [{ ...hingeA, z: height }, { ...hingeB, z: height }, { ...freeB, z: freeZ }, { ...freeA, z: freeZ }] });
+  for (const solid of out) if (solid.kind === "panel") solid.frameColor = cssColor(o.frameColor);
   return out;
 }

@@ -3710,6 +3710,9 @@ export class FloorplanCardEditor extends LitElement {
       "width",
       "ceilingHeight",
       "sill",
+      "openingHeight", "paneCount", "doorPanelCount",
+      ...Array.from({ length: 8 }, (_, i) => ["Height", "Material"].map(k => `doorPanel${i}${k}`)).flat(),
+      ...Array.from({ length: 8 }, (_, i) => ["Height", "Motion", "Entity", "Invert"].map((key) => `pane${i}${key}`)).flat(),
       "sash",
       "sashSpan",
       "hinge",
@@ -8662,6 +8665,15 @@ export class FloorplanCardEditor extends LitElement {
             ? group(
                 title,
                 names,
+                (o.type === "window" || o.type === "door") ? this._renderColorRow({
+                  label: "Frame and glazing bars",
+                  title: "Frame and glazing-bar color in 3D",
+                  value: o.frameColor,
+                  swatch: "#e2e8ed",
+                  placeholder: "(light frame)",
+                  onLive: (frameColor) => this._updateOpeningLive(o.id, { frameColor }),
+                  onCommit: (frameColor) => this._updateOpening(o.id, { frameColor }),
+                }) : nothing,
                 // Both colours paint the leaf, and a passage has none.
                 o.entity && !openingIsPassage(o)
                   ? html`${this._renderColorRow({

@@ -20,6 +20,8 @@ https://github.com/user-attachments/assets/ee1d5fb9-e40e-43af-a748-70698e2e455e
 
 ## Features
 
+- **Multipane windows and doors** — stack window panes with independent opening motions, or combine glass and solid door panels. Choose proportions and frame colors. See [Multipane configuration](docs/window-multipane.md).
+
 - **Trace a plan** — load a PDF or image in the editor, calibrate its scale and trace walls over it. See [Tracing over an existing plan](docs/editor.md#tracing-over-an-existing-plan).
 
 - **Visual editing** — draw walls, snap doors and windows into place, and arrange
