@@ -886,6 +886,56 @@ describe("itemForm", () => {
     expect(f.toPatch({ size: 40, badgeMode: "value" }).size).toBe(40);
   });
 
+  describe("Badge shows Picture (#420)", () => {
+    const person = { ...item, entity: "person.someone", kind: "sensor" } as FloorItem;
+    const options = (it: FloorItem) =>
+      (itemBadgeForm(it).fields.find((x) => x.name === "badgeMode")!.selector as {
+        select: { options: { value: string }[] };
+      }).select.options.map((o) => o.value);
+    const names = (it: FloorItem) => itemBadgeForm(it).fields.map((x) => x.name);
+
+    it("is offered on presence entities, before Nothing", () => {
+      expect(options(person)).toEqual(["icon", "spin", "pulse", "value", "picture", "none"]);
+      expect(options({ ...person, entity: "device_tracker.phone" } as FloorItem)).toContain("picture");
+    });
+
+    it("is offered wherever the device already shows one, so the menu can name it", () => {
+      expect(options({ ...item, badgeContent: "picture" } as FloorItem)).toContain("picture");
+      expect(options({ ...item, picture: "/local/guest.png" } as FloorItem)).toContain("picture");
+      expect(itemBadgeForm({ ...item, badgeContent: "picture" } as FloorItem).data.badgeMode).toBe("picture");
+    });
+
+    it("writes badgeContent: picture and leaves the stored animation alone", () => {
+      expect(itemBadgeForm(person).toPatch({ badgeMode: "picture" })).toEqual({
+        badgeContent: "picture",
+        display: "badge",
+        showIcon: undefined,
+      });
+    });
+
+    it("keeps the picture when the ring is toggled, on any domain", () => {
+      // The Effects group re-derives the badge keys from the item; a picture
+      // badge hand-written onto a motion sensor must not become an icon.
+      const ring = { ...item, entity: "binary_sensor.hall", kind: "binary_sensor", badgeContent: "picture" } as FloorItem;
+      const patch = itemEffectsForm(ring, "motion")!.toPatch({ ripple: true });
+      expect(patch.badgeContent).toBe("picture");
+      expect(patch.display).toBe("iconRipple");
+      expect(patch.iconAnimation).toBeUndefined();
+    });
+
+    it("offers a Picture URL field only while the badge shows a picture", () => {
+      expect(names(person)).not.toContain("picture");
+      const pic = { ...person, badgeContent: "picture" } as FloorItem;
+      expect(names(pic)).toContain("picture");
+      expect(itemBadgeForm(pic).data.picture).toBe("");
+      expect(itemBadgeForm(pic).toPatch({ picture: "/local/guest.png" })).toEqual({ picture: "/local/guest.png" });
+      // Cleared, it is no key at all, so the entity's own picture shows again.
+      expect(itemBadgeForm({ ...pic, picture: "/local/guest.png" }).toPatch({ picture: "" })).toEqual({
+        picture: undefined,
+      });
+    });
+  });
+
   // Issue #136: which of a device's two entities the value badge reads.
   describe("Badge reads (#136)", () => {
     const plug = {

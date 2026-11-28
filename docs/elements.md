@@ -353,6 +353,25 @@ vibration sensor on a door therefore rings like a motion sensor does. The underl
 
 <img width="540" height="304" alt="ripple_demo_gif" src="https://github.com/user-attachments/assets/e43949cf-13a2-48f8-804d-73738299475f" />
 
+### Profile pictures
+
+Set **Badge shows** to *Picture* on a `person` or `device_tracker` and the badge shows the
+profile picture Home Assistant has for it (`entity_picture`) instead of the account icon,
+clipped to the badge: a circle, or a rounded square under a skin that squares badges. The
+ring, state colour and presence ripple work as before, and a tap still opens more-info.
+It falls back to the icon when the entity has no picture, is offline, or the image will
+not load. **Picture URL** sets an image of your own instead.
+
+```yaml
+  - id: someone
+    entity: person.someone
+    badgeContent: picture
+    # picture: /local/people/guest.png   # optional, overrides entity_picture
+```
+
+In YAML `badgeContent: picture` works on any entity with an `entity_picture`, a media
+player's artwork for example.
+
 ### Fans
 
 A running fan's icon spins, and an active media player or vacuum pulses — the same

@@ -2814,8 +2814,8 @@ export function badgeContentOf(item: {
   badgeContent?: BadgeContent;
   showIcon?: boolean;
 }): BadgeContent {
-  if (item.badgeContent === "icon" || item.badgeContent === "value" || item.badgeContent === "none")
-    return item.badgeContent;
+  const v = item.badgeContent;
+  if (v === "icon" || v === "value" || v === "picture" || v === "none") return v;
   return item.showIcon === false ? "none" : "icon";
 }
 
@@ -2906,6 +2906,38 @@ export function renderBadgeFill(
       style="--mdc-icon-size:${iconSize};position:absolute;inset:0;clip-path:inset(${top}% 0 0 0);"
     ></ha-icon>
   </span>`;
+}
+
+/**
+ * The image a `badgeContent: "picture"` badge draws (issue #420), or
+ * `undefined` for "draw the icon instead". One function so the card and the
+ * editor canvas agree on when a face replaces the glyph.
+ *
+ * The item's own {@link FloorItem.picture} wins, else the entity's
+ * `entity_picture` — a person's profile photo, but also a media player's
+ * artwork or a camera still, so this is not limited to presence domains.
+ *
+ * An offline device gets its icon back even if it has a picture: the offline
+ * marking (issue #162) says "we have no reading", and a smiling face would
+ * say the opposite. That covers an entity gone from `hass` too.
+ *
+ * `entity_picture` is usually a bare path (`/api/image/serve/…`), so paths are
+ * passed through `hassUrl` when the frontend provides one, exactly as HA's own
+ * badges do. Inside a dashboard that is the same origin anyway; the raw path
+ * is the fallback.
+ */
+export function badgePictureOf(
+  item: { badgeContent?: BadgeContent; showIcon?: boolean; entity?: string; picture?: string },
+  st: { state: string; attributes?: Record<string, unknown> } | undefined,
+  hassUrl?: (path: string) => string,
+): string | undefined {
+  if (badgeContentOf(item) !== "picture") return undefined;
+  if (itemIsOffline(item, st?.state)) return undefined;
+  const own = typeof item.picture === "string" ? item.picture.trim() : "";
+  const attr = st?.attributes?.entity_picture;
+  const url = own || (typeof attr === "string" ? attr.trim() : "");
+  if (!url) return undefined;
+  return hassUrl && url.startsWith("/") && !url.startsWith("//") ? hassUrl(url) : url;
 }
 
 /**

@@ -40,6 +40,8 @@ https://github.com/user-attachments/assets/ee1d5fb9-e40e-43af-a748-70698e2e455e
   [vertical sections](docs/lighting.md#sunlight-on-a-section).
 - **Rooms and presence** — zoom into rooms, link Home Assistant areas, show
   presence ripples and track positions from distance sensors.
+- **Profile pictures** — show a person's Home Assistant picture in their badge
+  (`badgeContent: picture`), clipped to the badge shape. See [Profile pictures](docs/elements.md#profile-pictures).
 - **Zoom and pan** — opt-in +/− buttons that hold a zoom level, and dragging the
   plan around while zoomed, with a mouse or one finger (`zoomControls`). See
   [Zoom buttons and dragging](docs/appearance.md#zoom-buttons-and-dragging).

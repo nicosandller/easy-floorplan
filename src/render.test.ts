@@ -120,6 +120,7 @@ import {
   resolveItemIcon,
   matchStateRule,
   badgeContentOf,
+  badgePictureOf,
   pressEffectOf,
   offlineStyleOf,
   itemIsOffline,
@@ -2610,6 +2611,62 @@ describe("badgeContentOf (#106)", () => {
   it("ignores a junk value rather than blanking the badge", () => {
     expect(badgeContentOf({ badgeContent: "bogus" as never })).toBe("icon");
     expect(badgeContentOf({ badgeContent: "bogus" as never, showIcon: false })).toBe("none");
+  });
+});
+
+describe("badgePictureOf (#420)", () => {
+  // Placeholder paths only: nothing here is anyone's real photo.
+  const PIC = "/api/image/serve/placeholder0/512x512";
+  const home = { state: "home", attributes: { entity_picture: PIC } };
+  const item = { entity: "person.someone", badgeContent: "picture" as const };
+
+  it("draws the entity's entity_picture when the badge is set to Picture", () => {
+    expect(badgePictureOf(item, home)).toBe(PIC);
+  });
+
+  it("resolves a bare path against the HA origin when hassUrl is available", () => {
+    const hassUrl = (p: string) => `https://ha.example${p}`;
+    expect(badgePictureOf(item, home, hassUrl)).toBe(`https://ha.example${PIC}`);
+    // An absolute URL, a protocol-relative one and a data URI are left alone.
+    for (const url of ["https://img.example/a.png", "//img.example/a.png", "data:image/png;base64,AAAA"]) {
+      expect(badgePictureOf(item, { state: "home", attributes: { entity_picture: url } }, hassUrl)).toBe(url);
+    }
+  });
+
+  it("falls back to the icon when the entity has no picture", () => {
+    expect(badgePictureOf(item, { state: "home", attributes: {} })).toBeUndefined();
+    expect(badgePictureOf(item, { state: "home", attributes: { entity_picture: "  " } })).toBeUndefined();
+    expect(badgePictureOf(item, { state: "home", attributes: { entity_picture: 42 } })).toBeUndefined();
+  });
+
+  it("falls back to the icon while the entity is offline or gone", () => {
+    for (const state of ["unavailable", "unknown"]) {
+      expect(badgePictureOf(item, { state, attributes: { entity_picture: PIC } })).toBeUndefined();
+    }
+    expect(badgePictureOf(item, undefined)).toBeUndefined();
+    // A custom picture does not override that: offline is offline.
+    expect(badgePictureOf({ ...item, picture: "/local/guest.png" }, { state: "unavailable" })).toBeUndefined();
+  });
+
+  it("a custom picture wins over entity_picture", () => {
+    expect(badgePictureOf({ ...item, picture: "/local/guest.png" }, home)).toBe("/local/guest.png");
+    // …and works on a device with no entity at all, which is never offline.
+    expect(badgePictureOf({ badgeContent: "picture", picture: "/local/guest.png" }, undefined)).toBe(
+      "/local/guest.png"
+    );
+    // A blank one is no picture, not an empty <img>.
+    expect(badgePictureOf({ ...item, picture: " " }, home)).toBe(PIC);
+  });
+
+  it("draws nothing for any other badge content, so existing plans are unchanged", () => {
+    expect(badgePictureOf({ entity: "person.someone" }, home)).toBeUndefined();
+    for (const badgeContent of ["icon", "value", "none"] as const) {
+      expect(badgePictureOf({ ...item, badgeContent, picture: "/local/guest.png" }, home)).toBeUndefined();
+    }
+  });
+
+  it("badgeContentOf accepts picture", () => {
+    expect(badgeContentOf({ badgeContent: "picture", showIcon: false })).toBe("picture");
   });
 });
 

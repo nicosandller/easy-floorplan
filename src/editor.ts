@@ -145,6 +145,7 @@ import {
   itemRawValue,
   isRippleEntity,
   badgeContentOf,
+  badgePictureOf,
   badgeFillFraction,
   renderBadgeFill,
   editorItemLabel,
@@ -822,6 +823,8 @@ export class FloorplanCardEditor extends LitElement {
    * stand-in. On a plain 2D plan it lands on the same side.
    */
   private _autoSides = new Map<string, LabelSide>();
+  /** Badge pictures that failed to load, by URL — the card's rule (issue #420). */
+  private _failedPictures = new Set<string>();
   private _autoLabelSig: string[] = [];
   private _autoLayoutKey?: string;
   private _autoLayoutConfig?: unknown;
@@ -7632,6 +7635,11 @@ export class FloorplanCardEditor extends LitElement {
     const stateColor = cssColor(resolveStateColor(it.stateColor, rawValue));
     const labelColor = itemLabelColor(it, stateColor);
     const value = badgeContentOf(it) === "value" ? badgeValue(this.hass, it) : undefined;
+    // The picture the card would draw (issue #420), by the same rule, and the
+    // same icon fallback when it fails to load: a preview that disagrees with
+    // the card is worse than none.
+    const hass = this.hass;
+    const picture = badgePictureOf(it, st, hass?.hassUrl ? (p) => hass.hassUrl!(p) : undefined);
     // The icon fill (issue #421), from the same reading as the card.
     const fill = badgeFillFraction(it, rawValue);
     // The active colour — the one the user set, else the bulb's own colour
@@ -7686,7 +7694,20 @@ export class FloorplanCardEditor extends LitElement {
         inactiveColor ? `--fp-inactive:${inactiveColor};` : ""
       }${badgeInk ? `--fp-ink:${badgeInk};` : ""}"
     >
-      ${value
+      ${picture && !this._failedPictures.has(picture)
+        ? html`<img
+            class="badge-picture"
+            src=${picture}
+            alt=""
+            loading="lazy"
+            draggable="false"
+            @error=${() => {
+              if (this._failedPictures.has(picture)) return;
+              this._failedPictures.add(picture);
+              this.requestUpdate();
+            }}
+          />`
+        : value
         ? html`<span
             class="badge-value"
             style="font-size:${overlayLength(badgeValueSize(size, value), scale)};"
@@ -8788,7 +8809,7 @@ export class FloorplanCardEditor extends LitElement {
                 this._config.overlayScale,
                 badgeFillFraction({ fill: true }, itemRawValue(it, it.entity ? this.hass?.states[it.entity] : undefined)) !== undefined
               ),
-              ["badgeMode", "badgeEntity", "badgeDecimals", "fill", "fillMin", "fillMax"]
+              ["badgeMode", "picture", "badgeEntity", "badgeDecimals", "fill", "fillMin", "fillMax"]
             ),
             apply
           )
@@ -10435,6 +10456,20 @@ export class FloorplanCardEditor extends LitElement {
       justify-content: center;
       color: var(--fp-skin-text, var(--primary-text-color));
       box-shadow: var(--fp-skin-badge-shadow, 0 1px 3px rgba(0, 0, 0, 0.25));
+    }
+    /* Mirrors the card's .badge-picture (issue #420). Inert to the pointer so
+       dragging the device never starts a native image drag. */
+    .badge-picture {
+      display: block;
+      flex: none;
+      width: 100%;
+      height: 100%;
+      border-radius: inherit;
+      object-fit: cover;
+      pointer-events: none;
+      user-select: none;
+      -webkit-user-select: none;
+      -webkit-touch-callout: none;
     }
     /* Mirrors the card's .badge-value (issue #106) — the canvas must show the
        reading exactly as the plan will draw it. */
