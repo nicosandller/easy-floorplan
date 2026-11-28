@@ -18,9 +18,6 @@ and control your home in 2D or 3D.
 
 https://github.com/user-attachments/assets/ee1d5fb9-e40e-43af-a748-70698e2e455e
 
-22-second overview: draw walls and doors, connect a Home Assistant entity,
-control lights, follow the sun from day to night, and view the plan in 3D.
-
 ## Features
 
 - **Multipane windows and doors** — stack window panes with independent opening motions, or combine glass and solid door panels. Choose proportions and frame colors. See [Multipane configuration](docs/window-multipane.md).
