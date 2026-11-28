@@ -18,9 +18,6 @@ and control your home in 2D or 3D.
 
 https://github.com/user-attachments/assets/ee1d5fb9-e40e-43af-a748-70698e2e455e
 
-22-second overview: draw walls and doors, connect a Home Assistant entity,
-control lights, follow the sun from day to night, and view the plan in 3D.
-
 ## Features
 
 - **Trace a plan** — load a PDF or image in the editor, calibrate its scale and trace walls over it. See [Tracing over an existing plan](docs/editor.md#tracing-over-an-existing-plan).
